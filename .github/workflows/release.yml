@@ -1,0 +1,73 @@
+name: Release
+
+# Always releases develop: bumps the version there, merges it into main, tags,
+# and publishes, regardless of which ref the dispatch ran from.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump type
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Calculate new version
+        id: version
+        run: |
+          CURRENT=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/trackstarr/__init__.py)
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "${{ inputs.bump }}" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW="${MAJOR}.${MINOR}.${PATCH}"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          echo "Bumping $CURRENT -> $NEW (${{ inputs.bump }})"
+
+      - name: Bump version on develop
+        run: |
+          sed -i 's/^__version__ = ".*"/__version__ = "${{ steps.version.outputs.new }}"/' \
+            src/trackstarr/__init__.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Bump version to ${{ steps.version.outputs.new }}"
+
+      - name: Merge into main and tag
+        run: |
+          git checkout main
+          git merge --no-ff develop -m "Release ${{ steps.version.outputs.new }}"
+          git tag "v${{ steps.version.outputs.new }}"
+
+      - name: Push
+        run: git push origin develop main "v${{ steps.version.outputs.new }}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v${{ steps.version.outputs.new }}" --generate-notes --verify-tag
+
+      # Pushes made with GITHUB_TOKEN don't trigger other workflows, so the
+      # publish is dispatched explicitly on the new tag.
+      - name: Trigger publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run publish.yml --ref "v${{ steps.version.outputs.new }}"

@@ -1,0 +1,80 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trackstarr"
+dynamic = ["version"]
+description = "Keep media library audio and subtitle tracks tidy"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "MarcedForLife" }]
+keywords = ["ffmpeg", "media", "radarr", "sonarr", "plex", "transcoding"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Multimedia :: Video",
+]
+# No runtime dependencies on purpose: the whole thing is stdlib plus ffmpeg,
+# which keeps the image small and means nothing to patch on a CVE treadmill.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+trackstarr = "trackstarr.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/MarcedForLife/trackstarr"
+Issues = "https://github.com/MarcedForLife/trackstarr/issues"
+
+[tool.hatch.version]
+path = "src/trackstarr/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trackstarr"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "ffmpeg: requires ffmpeg and ffprobe on PATH",
+]
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 96
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "B",        # bugbear
+  "UP",       # pyupgrade
+  "N",        # pep8-naming
+  "SIM",      # flake8-simplify
+  "S",        # bandit
+  "RUF",
+]
+ignore = [
+  # Subprocess calls are the entire point of this tool; the argument lists are
+  # built as lists from validated config, never through a shell.
+  "S603", "S607",
+  # 0.0.0.0 is the right default for a container's listener.
+  "S104",
+  # urllib only ever gets the configured Radarr/Sonarr base URL.
+  "S310",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# S101: asserts are what tests are made of. S108: /tmp paths in the planner
+# tests are opaque strings handed to ffmpeg_args, never opened.
+"tests/*" = ["S101", "S108"]
+
+[tool.ruff.lint.isort]
+# conftest is a local test helper, not a third-party package.
+known-first-party = ["trackstarr", "conftest"]
