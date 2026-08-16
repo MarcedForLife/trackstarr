@@ -6,8 +6,6 @@ and its scheduler, :mod:`trackstarr.webhook` for the listener and its work
 queue. This one starts the threads and the server.
 """
 
-from __future__ import annotations
-
 import logging
 import threading
 from http.server import ThreadingHTTPServer
@@ -23,7 +21,10 @@ from .webhook import Handler, parked_recheck_loop, parking_enabled, register_web
 log = logging.getLogger(__name__)
 
 
-def serve() -> None:
+# No cover: this is wiring, not logic. It starts daemon threads and blocks in
+# serve_forever, so a test can only assert that the mocks it just installed were
+# called. The pieces it wires up are each covered in their own module.
+def serve() -> None:  # pragma: no cover
     with all_slots_held() as exclusive:
         clean_work_dir(exclusive=exclusive)
     if work_dir_is_remote():

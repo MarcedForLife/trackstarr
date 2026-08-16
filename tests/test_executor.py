@@ -1,8 +1,6 @@
 """apply_plan's pre-flight checks. No media needed: every test stops before
 ffmpeg would run."""
 
-from __future__ import annotations
-
 import contextlib
 import errno
 import os
@@ -14,7 +12,7 @@ import pytest
 from conftest import fake_run
 from trackstarr import config, executor
 from trackstarr.executor import Outcome, apply_plan, audio_codec_errors, work_dir_errors
-from trackstarr.planner import Plan, SourceSignature
+from trackstarr.planner import OutStream, Plan, SourceSignature
 from trackstarr.policy import Policy
 
 
@@ -333,3 +331,178 @@ def test_missing_ffmpeg_is_not_this_checks_problem(monkeypatch):
 
     monkeypatch.setattr(executor.subprocess, "run", no_ffmpeg)
     assert audio_codec_errors() == []
+
+
+def test_a_staged_file_that_cannot_be_removed_is_left_alone(tmp_path, monkeypatch, caplog):
+    """Another worker may hold it, or the work dir may have gone read-only.
+    Either way this runs at startup and must not stop the service coming up."""
+    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 0)
+    staged = tmp_path / ".trackstarr-cccc.partial"
+    staged.write_text("orphaned")
+
+    def refuse(path):
+        raise PermissionError("read-only file system")
+
+    monkeypatch.setattr(executor.os, "remove", refuse)
+    assert executor.drop_if_stale(str(staged)) is False
+    assert "could not remove stale staged file" in caplog.text
+    assert staged.exists()
+
+
+def test_a_vanished_staged_file_is_not_an_error(tmp_path, monkeypatch):
+    """Two workers can clean the same orphan; the loser sees it already gone."""
+    assert executor.drop_if_stale(str(tmp_path / "never-existed.partial")) is False
+
+
+def test_an_unreachable_work_dir_is_not_reported_as_remote(monkeypatch):
+    """Only used to log a note at startup, so an answer it cannot work out
+    has to be the quiet one. work_dir_errors is what actually refuses."""
+    monkeypatch.setattr(config, "WORK_DIR", "/definitely/not/here")
+    assert executor.work_dir_is_remote() is False
+
+
+def test_a_work_dir_that_cannot_be_staged_in_fails_the_plan(tmp_path, monkeypatch):
+    """Distinct from a failing ffmpeg: nothing has been written yet, and the
+    detail has to name the directory so the cause is obvious."""
+    _no_ffmpeg(monkeypatch)
+
+    def refuse(directory):
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(executor, "_new_temp", refuse)
+    source = tmp_path / "f.mkv"
+    source.write_bytes(b"content")
+
+    outcome, detail = apply_plan(Plan(path=str(source), reasons=["reorder streams"]))
+    assert outcome is Outcome.FAILED
+    assert config.WORK_DIR in detail
+    assert "no space left on device" in detail
+
+
+def test_an_ffmpeg_timeout_is_a_failure_naming_the_limit(tmp_path, monkeypatch):
+    """A wedged encode on one file must not stall a whole sweep silently."""
+    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 900)
+
+    def hang(args, **kwargs):
+        raise executor.subprocess.TimeoutExpired(cmd="ffmpeg", timeout=900)
+
+    monkeypatch.setattr(executor.subprocess, "run", hang)
+    source = tmp_path / "f.mkv"
+    source.write_bytes(b"content")
+
+    outcome, detail = apply_plan(Plan(path=str(source), reasons=["reorder streams"]))
+    assert outcome is Outcome.FAILED
+    assert "timed out after 900s" in detail
+    # The partial encode must not be left behind for the next sweep to find.
+    assert not os.listdir(config.WORK_DIR)
+
+
+def test_a_publish_failure_that_is_not_cross_device_is_raised(tmp_path, monkeypatch):
+    """EXDEV is the one os.replace failure with a fallback. Anything else —
+    a full disk, a read-only mount — must surface, not be papered over."""
+
+    def refuse(src, dst):
+        raise OSError(errno.EACCES, "permission denied")
+
+    monkeypatch.setattr(executor.os, "replace", refuse)
+    source = tmp_path / "f.mkv"
+    source.write_bytes(b"content")
+    staged = tmp_path / "staged.partial"
+    staged.write_bytes(b"rewritten")
+
+    with pytest.raises(OSError, match="permission denied"):
+        executor._publish(str(staged), str(source), os.stat(source))
+
+
+def test_verification_catches_a_truncated_result():
+    """The commonest bad rewrite: ffmpeg exits 0 having written a fraction of
+    the file. Publishing that would destroy the source."""
+    plan = Plan(path="f.mkv", src_duration=3600.0)
+    problem = executor._verify(plan, {"format": {"duration": "120.0"}, "streams": []})
+    assert problem is not None
+    assert "duration mismatch" in problem
+
+
+def test_verification_allows_a_little_drift():
+    """Container timestamps move by fractions of a second on a remux."""
+    plan = Plan(path="f.mkv", src_duration=3600.0)
+    assert executor._verify(plan, {"format": {"duration": "3600.4"}, "streams": []}) is None
+
+
+def test_verification_catches_a_missing_stream():
+    """A dropped track is silent otherwise: the file plays, just without the
+    audio somebody wanted kept."""
+    plan = Plan(path="f.mkv")
+    plan.streams.extend([OutStream(src=0, kind="video"), OutStream(src=1, kind="audio")])
+    problem = executor._verify(plan, {"format": {}, "streams": [{"index": 0}]})
+    assert problem is not None
+    assert "stream count mismatch: expected 2, got 1" in problem
+
+
+def test_a_result_that_fails_verification_is_discarded(tmp_path, monkeypatch):
+    """The source must still be there afterwards, untouched."""
+    monkeypatch.setattr(executor, "_verify", lambda plan, info: "duration mismatch: 10s -> 1s")
+    monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: fake_run())
+    monkeypatch.setattr(executor, "probe", lambda path: {"format": {}, "streams": []})
+    source = tmp_path / "f.mkv"
+    source.write_bytes(b"original")
+
+    outcome, detail = apply_plan(Plan(path=str(source), reasons=["reorder streams"]))
+    assert outcome is Outcome.FAILED
+    assert "result discarded" in detail
+    assert source.read_bytes() == b"original"
+
+
+def test_an_unremovable_remux_source_is_only_a_warning(tmp_path, monkeypatch, caplog):
+    """The .mkv is already published at this point; leaving the .mp4 behind is
+    untidy, not a failed import."""
+    monkeypatch.setattr(config, "REMUX_TO_MKV", True)
+    monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: fake_run())
+    monkeypatch.setattr(executor, "_verify", lambda plan, info: None)
+    monkeypatch.setattr(executor, "probe", lambda path: {"format": {}, "streams": []})
+    source = tmp_path / "f.mp4"
+    source.write_bytes(b"content")
+
+    real_remove = executor.os.remove
+
+    def refuse(path):
+        if path == str(source):
+            raise PermissionError("read-only file system")
+        real_remove(path)
+
+    monkeypatch.setattr(executor.os, "remove", refuse)
+    outcome, _ = apply_plan(Plan(path=str(source), reasons=["remux to mkv (REMUX_TO_MKV)"]))
+    assert outcome is Outcome.APPLIED
+    assert "could not remove" in caplog.text
+
+
+def test_an_encoder_list_that_cannot_be_read_is_not_an_error(monkeypatch):
+    """ffmpeg answering non-zero to -encoders says nothing about the codec, so
+    the check declines to guess rather than refusing a valid one."""
+    monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: fake_run(returncode=1))
+    assert audio_codec_errors() == []
+
+
+def test_a_work_dir_beside_the_library_is_not_remote(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "WORK_DIR", str(tmp_path / "work"))
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    os.makedirs(config.WORK_DIR, exist_ok=True)
+    assert executor.work_dir_is_remote() is False
+
+
+def test_cleaning_an_absent_work_dir_does_nothing(monkeypatch):
+    """serve calls this before anything creates the directory."""
+    monkeypatch.setattr(config, "WORK_DIR", str(Path("/definitely/not/here")))
+    executor.clean_work_dir()
+
+
+def test_an_exclusive_clean_warns_rather_than_stopping_startup(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(config, "WORK_DIR", str(tmp_path))
+    (tmp_path / ".trackstarr-dddd.partial").write_text("orphaned")
+
+    def refuse(path):
+        raise PermissionError("read-only file system")
+
+    monkeypatch.setattr(executor.os, "remove", refuse)
+    executor.clean_work_dir(exclusive=True)
+    assert "could not remove" in caplog.text

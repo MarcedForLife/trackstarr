@@ -2,8 +2,6 @@
 listener tests bind a loopback socket. The credential store itself is
 covered by test_auth.py."""
 
-from __future__ import annotations
-
 import http.client
 import json
 import os
@@ -204,6 +202,75 @@ def test_health_needs_no_secret(listener):
     assert request(listener, "GET", "/health")[0] == 200
 
 
+def test_ping_is_a_health_check_too(listener):
+    """Docker's HEALTHCHECK uses /health; /ping is what the *arrs probe."""
+    assert request(listener, "GET", "/ping")[0] == 200
+
+
+def test_an_unknown_path_is_a_404(listener):
+    """Nothing else is served, so a scanner finding this port learns nothing."""
+    assert request(listener, "GET", "/admin")[0] == 404
+
+
+def test_a_body_too_large_is_refused_unread(listener, media_root):
+    """A batch import body is a few KB. Anything vastly bigger is a mistake
+    or an attack, and must not be read into memory to find out."""
+    headers = {AUTH_HEADER: auth.mint("radarr"), "Content-Length": str(webhook._MAX_BODY + 1)}
+    conn = http.client.HTTPConnection("127.0.0.1", listener.server_address[1])
+    try:
+        conn.putrequest("POST", "/")
+        for key, value in headers.items():
+            conn.putheader(key, value)
+        conn.endheaders()
+        assert conn.getresponse().status == 413
+    finally:
+        conn.close()
+
+
+def test_a_body_that_is_not_json_is_a_400(listener):
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    status, _ = request(listener, "POST", "/", b"{not json", headers)
+    assert status == 400
+
+
+def test_a_bad_content_length_is_a_400_not_a_crash(listener):
+    """A bad Content-Length and unparseable JSON are both ValueErrors, and
+    both have to answer rather than drop the connection."""
+    headers = {AUTH_HEADER: auth.mint("radarr"), "Content-Length": "not-a-number"}
+    conn = http.client.HTTPConnection("127.0.0.1", listener.server_address[1])
+    try:
+        conn.putrequest("POST", "/")
+        for key, value in headers.items():
+            conn.putheader(key, value)
+        conn.endheaders()
+        assert conn.getresponse().status == 400
+    finally:
+        conn.close()
+
+
+def test_the_arrs_test_button_is_answered_without_queueing(listener):
+    """Saving the connection fires this; a 200 is what makes the *arr accept
+    the credential it just sent."""
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    queued_before = webhook._work_q.qsize()
+    assert post(listener, {"eventType": "Test"}, headers) == (200, "test ok")
+    assert webhook._work_q.qsize() == queued_before
+
+
+def test_a_path_already_in_flight_is_not_queued_twice(media_root):
+    """A sweep and a webhook can name the same file; the second must not
+    queue a rewrite behind the first for a file that is already correct."""
+    job = Job(str(media_root / "f.mkv"))
+    try:
+        assert webhook.enqueue(job) is True
+        assert webhook.enqueue(job) is False
+        assert webhook._work_q.qsize() == 1
+    finally:
+        with webhook._inflight_lock:
+            webhook._inflight.clear()
+        webhook._work_q.get_nowait()
+
+
 def test_original_of_handles_missing_fields():
     assert original_of(None) is None
     assert original_of({}) is None
@@ -273,3 +340,34 @@ def test_vanished_parked_file_is_dropped(parked, monkeypatch):
     webhook._recheck_parked()
     assert parked == {}
     assert queued == []
+
+
+def test_a_post_for_a_file_already_in_flight_queues_nothing(listener, media_root):
+    """A sweep and a webhook naming the same file is routine; the second must
+    answer 200 having queued nothing, not stack a second rewrite behind it."""
+    path = str(media_root / "f.mkv")
+    with webhook._inflight_lock:
+        webhook._inflight.add(path)
+    try:
+        headers = {AUTH_HEADER: auth.mint("radarr")}
+        body = movie_body(path, str(media_root))
+        assert post(listener, body, headers) == (200, "queued 0")
+    finally:
+        with webhook._inflight_lock:
+            webhook._inflight.discard(path)
+
+
+def test_a_released_file_already_in_flight_is_not_queued_twice(parked, seeded_file, tmp_path):
+    """The recheck loop and a fresh webhook can free the same file at once."""
+    webhook._parked[seeded_file] = Job(seeded_file)
+    os.remove(tmp_path / "seed.mkv")
+    with webhook._inflight_lock:
+        webhook._inflight.add(seeded_file)
+    try:
+        before = webhook._work_q.qsize()
+        webhook._recheck_parked()
+        assert webhook._work_q.qsize() == before
+        assert seeded_file not in webhook._parked
+    finally:
+        with webhook._inflight_lock:
+            webhook._inflight.discard(seeded_file)

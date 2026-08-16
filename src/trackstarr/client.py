@@ -1,7 +1,5 @@
 """The HTTP chokepoint for every service client: the *arrs, Plex, Jellyfin."""
 
-from __future__ import annotations
-
 import json
 import urllib.request
 

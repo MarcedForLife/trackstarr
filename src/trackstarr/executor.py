@@ -1,7 +1,5 @@
 """Carry out a plan, verifying the result before anything is overwritten."""
 
-from __future__ import annotations
-
 import contextlib
 import enum
 import errno
@@ -232,7 +230,7 @@ def audio_codec_errors() -> list[str]:
             text=True,
             timeout=30,
         )
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return []
     if out.returncode != 0:
         return []
@@ -243,8 +241,10 @@ def audio_codec_errors() -> list[str]:
         if flags.startswith("A") and rest.split()[:1] == [config.AUDIO_CODEC]:
             return []
     return [
-        f"AUDIO_CODEC {config.AUDIO_CODEC!r} is not an audio encoder this ffmpeg "
-        "provides (see ffmpeg -encoders)"
+        (
+            f"AUDIO_CODEC {config.AUDIO_CODEC!r} is not an audio encoder this ffmpeg "
+            "provides (see ffmpeg -encoders)"
+        )
     ]
 
 

@@ -5,9 +5,6 @@ build/
 dist/
 .venv/
 venv/
-# uv writes this when the dev env is driven with `uv run`. Nothing to pin:
-# there are no runtime dependencies, and CI installs with pip.
-uv.lock
 .pytest_cache/
 .ruff_cache/
 .coverage

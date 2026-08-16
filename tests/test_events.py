@@ -1,7 +1,5 @@
 """The append-only event history. No media, no network."""
 
-from __future__ import annotations
-
 import json
 import os
 
@@ -188,3 +186,17 @@ def test_sweep_events_share_a_run_id(monkeypatch, tmp_path):
     assert summary["event"] == "sweep"
     assert fixed["run"] == summary["run"]
     assert summary["library_bytes"] == 1
+
+
+def test_an_unreadable_history_file_is_skipped(tmp_path, monkeypatch, caplog):
+    """Event history is advisory. A file the container cannot read must not
+    stop a status query, let alone a sweep."""
+    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path))
+    events.record("fixed", path="/data/f.mkv")
+
+    def refuse(*args, **kwargs):
+        raise PermissionError("permission denied")
+
+    monkeypatch.setattr("builtins.open", refuse)
+    assert list(events.read()) == []
+    assert "could not read" in caplog.text

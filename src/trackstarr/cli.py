@@ -1,7 +1,5 @@
 """Command line entry point."""
 
-from __future__ import annotations
-
 import argparse
 import logging
 import os
@@ -217,7 +215,8 @@ def cmd_secret(name: str, rotate: bool) -> int:
     return 0
 
 
-def _run_serve(args: argparse.Namespace) -> int:
+# No cover: hands straight to app.serve, which blocks for ever.
+def _run_serve(args: argparse.Namespace) -> int:  # pragma: no cover
     serve()
     return 0
 

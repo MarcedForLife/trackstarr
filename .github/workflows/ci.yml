@@ -5,55 +5,105 @@ on:
     branches: [main, develop]
   pull_request:
   workflow_dispatch:
+  # Publish gates the release on this whole workflow, so a release runs the
+  # same lint, test and image checks a pull request does.
+  workflow_call:
 
 permissions:
   contents: read
 
+# github.workflow is the *caller's* name, so a run called from Publish gets its
+# own group: a re-dispatched publish cannot cancel the CI guarding another.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/ruff-action@v4.1.0
+      # Astral publishes no floating major tag past v7, so this has to be an
+      # exact version. Dependabot bumps it like any other pin.
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
-          args: check --output-format=github
-      - uses: astral-sh/ruff-action@v4.1.0
-        with:
-          args: format --check --diff
+          enable-cache: true
+      # uv.lock is the one place the ruff version lives, so this is the same
+      # lint that ran locally.
+      - run: uv run --locked ruff check --output-format=github
+      - run: uv run --locked ruff format --check --diff
+      # Paths and settings come from [tool.mypy]; keep it that way so the
+      # local run and this one cannot disagree.
+      - run: uv run --locked mypy
 
   test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # 3.14 is what the Alpine image actually runs.
-        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
+          # The one version requires-python allows, and the one the Alpine
+          # image ships. Raise both together, or CI stops testing what runs.
+          python-version: "3.14"
+          enable-cache: true
 
-      # ubuntu-latest ships ffmpeg, but pin the expectation explicitly so a
-      # runner image change surfaces here rather than as skipped tests.
-      - name: Check ffmpeg
-        run: ffmpeg -version | head -1 && ffprobe -version | head -1
+      # The runner has no ffmpeg, and 24.04 packages only 6.1, which drops the
+      # per-stream MP4 titles two tests turn on. Take the same release branch
+      # Alpine ships, so this job tests the version users run and nothing
+      # skips; the -latest tag follows that branch, moving as the image does.
+      #
+      # Each binary is matched with a case rather than a pipeline, so a missing
+      # or unexpected one is a named failure instead of a status swallowed by
+      # head. SERIES appears once, so a bump cannot leave the check behind.
+      - name: Install ffmpeg
+        env:
+          SERIES: n8.1
+        run: |
+          curl -fsSL --retry 3 -o /tmp/ffmpeg.tar.xz \
+            "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-$SERIES-latest-linux64-gpl-${SERIES#n}.tar.xz"
+          sudo tar -xJf /tmp/ffmpeg.tar.xz -C /usr/local/bin \
+            --strip-components=2 --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'
+          for binary in ffmpeg ffprobe; do
+            version=$("$binary" -version | head -1)
+            echo "$version"
+            case "$version" in
+              *"version $SERIES."*) ;;
+              *) echo "::error::expected $binary $SERIES on the runner, got: ${version:-nothing}"
+                 exit 1 ;;
+            esac
+          done
 
-      - name: Install
-        run: pip install -e '.[dev]'
+      # --locked fails rather than resolving, so an unlocked pyproject edit is
+      # caught here instead of silently testing against different versions.
+      - run: uv sync --locked
+      # --cov enforces the fail_under floor in pyproject. The suite refuses
+      # to start without the ffmpeg installed above, so nothing can skip past
+      # a broken install.
+      - run: uv run pytest -v --cov
 
-      - name: Test
-        run: pytest -v
-
+  # One entry per published architecture: publish.yml pushes a multi-arch
+  # manifest, so without this an image that only works on amd64 would still
+  # become :latest for arm64 users.
+  #
+  # Native runners rather than QEMU, because this runs the whole suite and the
+  # integration tests encode real video — the CPU-bound work emulation is
+  # worst at. Should ubuntu-24.04-arm ever be unavailable, the fallback is
+  # setup-qemu-action on ubuntu-latest.
   docker:
-    runs-on: ubuntu-latest
+    name: docker (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -63,22 +113,25 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
+          platforms: ${{ matrix.platform }}
           push: false
           load: true
           tags: trackstarr:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Scoped per platform: on the default shared scope the two jobs
+          # overwrite each other and both start cold every run.
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
 
       - name: Smoke test the image
         run: |
           docker run --rm trackstarr:ci --version
           docker run --rm trackstarr:ci plan --help
 
-      # The matrix above runs against ubuntu-latest's ffmpeg, which is older
-      # than the one we ship and silently drops per-stream MP4 titles, so the
-      # tests needing them skip there. This is what actually exercises them,
-      # against the exact ffmpeg and Python that users get. -rs reports the
-      # skips so a capability quietly disappearing is visible in the log.
+      # The suite again, but against Alpine's own build of ffmpeg, inside the
+      # image that ships, on both architectures — where a packaging difference
+      # would show up rather than in the test job's downloaded build. An image
+      # that lost ffmpeg, or its MP4 title support, fails here at startup
+      # rather than going quietly green on a third of the suite.
       - name: Test inside the image
         run: |
           docker run --rm --entrypoint sh \
@@ -86,14 +139,5 @@ jobs:
             -v "$PWD/pyproject.toml:/w/pyproject.toml:ro" \
             -w /w trackstarr:ci -c '
               apk add --no-cache py3-pytest >/dev/null
-              pytest -q -p no:cacheprovider -rs
-            ' 2>&1 | tee image-tests.log
-
-      - name: Fail if the image cannot round-trip MP4 titles
-        run: |
-          # A skip here means the shipped ffmpeg regressed, which the matrix
-          # cannot see: it skips these for its own reasons and stays green.
-          if grep -q "drops per-stream titles in MP4" image-tests.log; then
-            echo "::error::the shipped image skipped the MP4 title tests"
-            exit 1
-          fi
+              pytest -q -p no:cacheprovider
+            '

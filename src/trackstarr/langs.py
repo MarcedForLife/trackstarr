@@ -6,8 +6,6 @@ the wild also carry 639-1 and 639-2/T codes. Everything is normalised to
 639-2/B before any comparison.
 """
 
-from __future__ import annotations
-
 #: Every language Radarr and Sonarr can report, mapped to ISO 639-2/B.
 #: Sourced from their ``/api/v3/language`` endpoint.
 LANG_NAMES: dict[str, str] = {

@@ -1,7 +1,5 @@
 """ffprobe access and the stream predicates the planner reasons about."""
 
-from __future__ import annotations
-
 import json
 import subprocess
 
@@ -56,7 +54,7 @@ def probe(path: str) -> dict:
 def duration(info: dict) -> float:
     try:
         return float((info.get("format") or {}).get("duration") or 0.0)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return 0.0
 
 
@@ -98,7 +96,7 @@ def stream_bitrate(stream: dict) -> int | None:
         try:
             if rate := int(reported or 0):
                 return rate
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
     return None
 

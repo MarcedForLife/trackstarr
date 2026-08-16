@@ -11,8 +11,6 @@ The service only ever appends to that one file, but :func:`read` takes any
 can be archived by hand (``events-2026.jsonl``) and history stays whole.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import os

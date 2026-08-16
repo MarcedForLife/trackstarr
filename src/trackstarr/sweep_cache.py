@@ -12,8 +12,6 @@ Only verdicts that leave the file untouched are cached: a rewrite changes the
 file (its next probe is a fresh judgement), and failures may be transient.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import os
@@ -105,7 +103,9 @@ class SweepCache:
         if not asdict(key).items() <= entry.items():
             return None
         try:
-            return Verdict(Status(entry.get("status")), entry.get("reasons") or "")
+            # "" for a missing status, which Status rejects exactly as a
+            # damaged one, so both land in the ValueError below.
+            return Verdict(Status(entry.get("status", "")), entry.get("reasons") or "")
         except ValueError:
             # A hand-edited or damaged entry; treat it as a miss.
             return None

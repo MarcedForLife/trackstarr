@@ -5,8 +5,6 @@ one row per actionable file to STATE_DIR/pending.tsv, remembers untouched
 verdicts in the sweep cache, and leaves a summary event behind.
 """
 
-from __future__ import annotations
-
 import functools
 import logging
 import os
@@ -117,7 +115,7 @@ def _judge(
         return Judged(Job(path), None, Status.FAILED, detail=str(err))
 
 
-def sweep(dry_run: bool) -> dict[str, int]:
+def sweep(dry_run: bool) -> dict[Status, int]:
     if config.DRY_RUN and not dry_run:
         log.info("DRY_RUN is set; the sweep reports only")
         dry_run = True
@@ -209,11 +207,16 @@ def seconds_until(schedule: str, now: float | None = None) -> float:
     reschedule right after a sweep can never pick the slot that just fired.
     """
     now = time.time() if now is None else now
-    target = cron.next_run(cron.parse(schedule), datetime.fromtimestamp(now))
+    # DTZ006 is suppressed because local time is the point: a cron schedule
+    # means local wall clock — 03:00 is 03:00 in the container's TZ, across
+    # DST — so this is deliberately naive rather than pinned to UTC.
+    target = cron.next_run(cron.parse(schedule), datetime.fromtimestamp(now))  # noqa: DTZ006
     return target.timestamp() - now
 
 
-def scheduler() -> None:
+# No cover: a thread body. seconds_until decides when, and is covered; this
+# only sleeps until then and calls sweep.
+def scheduler() -> None:  # pragma: no cover
     while True:
         try:
             delay = seconds_until(config.SWEEP_AT)

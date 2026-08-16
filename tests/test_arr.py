@@ -1,7 +1,5 @@
 """Webhook registration against a faked *arr API. No network."""
 
-from __future__ import annotations
-
 import urllib.error
 from dataclasses import replace
 

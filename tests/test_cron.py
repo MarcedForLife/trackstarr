@@ -1,7 +1,5 @@
 """The cron schedule parser and its next-run walk. Pure datetime, no media."""
 
-from __future__ import annotations
-
 from datetime import datetime
 
 import pytest

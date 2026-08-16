@@ -1,7 +1,5 @@
 """Environment parsing: malformed values must reach errors(), never raise."""
 
-from __future__ import annotations
-
 import pytest
 
 from trackstarr import config, policy

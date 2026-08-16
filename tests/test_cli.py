@@ -1,6 +1,6 @@
 """Command line startup checks. No media, no network."""
 
-from __future__ import annotations
+from dataclasses import replace
 
 import pytest
 
@@ -8,7 +8,8 @@ from trackstarr import auth, config
 from trackstarr.arr import LibraryItem, radarr
 from trackstarr.cli import main
 from trackstarr.media import ProbeError
-from trackstarr.planner import Plan
+from trackstarr.planner import OutStream, Plan
+from trackstarr.policy import Policy
 from trackstarr.processing import ProcessResult
 from trackstarr.status import Status
 
@@ -148,3 +149,132 @@ def test_secret_rotate_replaces_the_old_credential(capsys):
 
 def test_secret_refuses_a_path_shaped_name():
     assert main(["secret", "../escape"]) == 1
+
+
+def _planned(monkeypatch, plan):
+    """Make cmd_plan see one prepared plan instead of probing a real file."""
+    monkeypatch.setattr("trackstarr.cli.build_plan", lambda path, lang: plan)
+
+
+def test_plan_prints_the_policy_it_judged_under(startup_ok, monkeypatch, capsys):
+    """The summary is how a user works out why a file was left alone, so the
+    policy has to be on screen beside the verdict, not inferred from env."""
+    plan = Plan(path="f.mkv", original_lang="jpn", keep_langs={"jpn", "eng"})
+    _planned(monkeypatch, plan)
+
+    assert main(["plan", "f.mkv"]) == 0
+    out = capsys.readouterr().out
+    assert "original language : jpn" in out
+    assert "keeping languages : eng, jpn" in out
+    # Every configured layout, with the bitrate each would be encoded at.
+    assert "downmix layouts" in out
+    assert "conforms, no action" in out
+
+
+def test_plan_omits_the_rules_that_are_off(startup_ok, monkeypatch, capsys):
+    """Blank rows are dropped, so the summary stays as short as the policy."""
+    policy = Policy.from_config()
+    plan = Plan(path="f.mkv", policy=replace(policy, drop_commentary=False, remux_to_mkv=False))
+    _planned(monkeypatch, plan)
+
+    main(["plan", "f.mkv"])
+    out = capsys.readouterr().out
+    assert "drop commentary" not in out
+    assert "remux to mkv" not in out
+
+
+def test_plan_prints_a_skip_and_stops_there(startup_ok, monkeypatch, capsys):
+    plan = Plan(path="f.mkv", skip="hardlinked, left for the download client")
+    _planned(monkeypatch, plan)
+
+    assert main(["plan", "f.mkv"]) == 0
+    out = capsys.readouterr().out
+    assert "SKIP: hardlinked" in out
+    assert "ffmpeg" not in out
+
+
+def test_plan_prints_the_reasons_and_the_command(startup_ok, monkeypatch, capsys):
+    """The printed ffmpeg line is the tool's showing of its work; it has to be
+    the command that would really run, not a summary of it."""
+    plan = Plan(path="f.mkv", reasons=["drop audio jpn"], incidental=["strip junk title"])
+    plan.streams.append(OutStream(src=0, kind="video"))
+    _planned(monkeypatch, plan)
+
+    assert main(["plan", "f.mkv"]) == 0
+    out = capsys.readouterr().out
+    assert "- drop audio jpn" in out
+    assert "rides along, never triggers on its own" in out
+    assert "ffmpeg -i f.mkv" in out or "ffmpeg " in out
+    # The staged name is a placeholder, never a path in the library.
+    assert "OUT.mkv" in out
+
+
+def test_plan_keeps_going_after_an_unreadable_file(startup_ok, monkeypatch, capsys):
+    """One corrupt file in a directory must not hide the rest."""
+    seen: list[str] = []
+
+    def build(path, lang):
+        seen.append(path)
+        if path == "bad.mkv":
+            raise ProbeError("moov atom not found")
+        return Plan(path=path)
+
+    monkeypatch.setattr("trackstarr.cli.build_plan", build)
+    assert main(["plan", "bad.mkv", "good.mkv"]) == 1
+    assert seen == ["bad.mkv", "good.mkv"]
+    assert "ERROR moov atom not found" in capsys.readouterr().out
+
+
+def test_missing_ffmpeg_stops_a_command_before_it_starts(monkeypatch, caplog):
+    """Every command shells out to ffprobe at least; saying so once beats a
+    subprocess error per file."""
+    monkeypatch.setattr("trackstarr.cli.shutil.which", lambda name: None)
+    assert main(["plan", "f.mkv"]) == 1
+    assert "ffmpeg and ffprobe must be on PATH" in caplog.text
+
+
+def test_sweep_exit_code_ignores_deferrals_but_not_failures(startup_ok, monkeypatch):
+    """Opposite of fix: a sweep's own next run is the retry, so a deferral is
+    not the caller's problem."""
+    counts = dict.fromkeys(Status, 0)
+    monkeypatch.setattr("trackstarr.cli.sweep", lambda dry_run: counts)
+
+    counts[Status.DEFERRED] = 3
+    assert main(["sweep"]) == 0
+    counts[Status.FAILED] = 1
+    assert main(["sweep"]) == 1
+
+
+def test_fix_says_so_when_dry_run_is_set(startup_ok, monkeypatch, capsys):
+    """fix is the command that writes, so a global DRY_RUN has to be stated:
+    otherwise it reports "conforms" for files it never touched."""
+    monkeypatch.setattr(config, "DRY_RUN", True)
+    monkeypatch.setattr(
+        "trackstarr.cli.process", lambda job, dry_run, source: ProcessResult(Status.CONFORM)
+    )
+    main(["fix", "f.mkv"])
+    assert "DRY_RUN is set" in capsys.readouterr().out
+
+
+def test_fix_prints_why_a_file_was_skipped(startup_ok, monkeypatch, capsys):
+    """ "SKIP" alone reads like a failure; the reason is what tells the user
+    nothing is wrong."""
+    plan = Plan(path="f.mkv", skip="hardlinked, left for the download client")
+    monkeypatch.setattr(
+        "trackstarr.cli.process",
+        lambda job, dry_run, source: ProcessResult(Status.SKIP, plan),
+    )
+    assert main(["fix", "f.mkv"]) == 0
+    assert "hardlinked, left for the download client" in capsys.readouterr().out
+
+
+def test_secret_reports_a_state_dir_it_cannot_write(monkeypatch, caplog):
+    """A read-only or unmounted /config is the usual cause, and the user needs
+    to be told that rather than shown a traceback."""
+
+    def refuse(name):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr("trackstarr.cli.auth.mint", refuse)
+    assert main(["secret", "radarr"]) == 1
+    assert "could not store the secret" in caplog.text

@@ -12,8 +12,6 @@ KDF would only tax :func:`authorized`, which runs once per imported file.
 Save those for credentials a human chose.
 """
 
-from __future__ import annotations
-
 import hashlib
 import hmac
 import os

@@ -7,8 +7,6 @@ back here so nothing has to be clicked together in their UIs.
 TMDB or IMDB lookup to configure and nothing to rate-limit.
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 

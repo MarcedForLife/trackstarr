@@ -10,8 +10,6 @@ the rule and layout vocabulary live in :func:`trackstarr.policy.errors`;
 startup exits on anything either returns.
 """
 
-from __future__ import annotations
-
 import os
 import re
 

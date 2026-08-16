@@ -6,10 +6,8 @@ or probe output. Startup refuses invalid entries via
 :func:`trackstarr.config.errors`.
 """
 
-from __future__ import annotations
-
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from . import config
 
@@ -38,6 +36,18 @@ class Layout:
     bitrate: str | None = None
 
 
+@dataclass(frozen=True)
+class ResolvedLayout(Layout):
+    """A Layout past :func:`resolved_layouts`, with its bitrate filled in.
+
+    Nothing but the type changes. It exists so the planner, which only ever
+    receives resolved layouts, states that in its signature instead of
+    re-checking for a None the parse already ruled out.
+    """
+
+    bitrate: str
+
+
 def parse_layout(entry: str) -> Layout | None:
     """``5.1`` or ``5.1:640k`` as a Layout, None for anything else
     (``surround``, ``5:1``, ``0.0``, ``5.1:640x``)."""
@@ -62,12 +72,16 @@ def downmix_bitrate(channels: int | None) -> str:
     return f"{scaled // 1000}k" if scaled % 1000 == 0 else str(scaled)
 
 
-def resolved_layouts() -> list[Layout]:
+def resolved_layouts() -> list[ResolvedLayout]:
     """DOWNMIX_LAYOUTS parsed with every bitrate filled in, invalid entries
     dropped, smallest layout first."""
     parsed = (parse_layout(entry) for entry in config.DOWNMIX_LAYOUTS)
     filled = [
-        replace(layout, bitrate=layout.bitrate or downmix_bitrate(layout.channels))
+        ResolvedLayout(
+            layout.name,
+            layout.channels,
+            layout.bitrate or downmix_bitrate(layout.channels),
+        )
         for layout in parsed
         if layout
     ]

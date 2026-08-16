@@ -1,8 +1,7 @@
 """Sweep scheduling and the DRY_RUN latch. The walk and cache behaviour
 live in the integration and sweep-cache suites."""
 
-from __future__ import annotations
-
+import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -11,6 +10,8 @@ from pathlib import Path
 import pytest
 
 from trackstarr import config, events
+from trackstarr import sweep as sweep_mod
+from trackstarr.policy import Policy
 from trackstarr.processing import Job, ProcessResult
 from trackstarr.status import Status
 from trackstarr.sweep import _MIN_PROBE_WORKERS, Judged, seconds_until, sweep
@@ -131,3 +132,60 @@ def test_seconds_until_never_picks_the_slot_that_just_fired():
 def test_seconds_until_rejects_garbage():
     with pytest.raises(ValueError):
         seconds_until("not-a-schedule")
+
+
+def test_a_missing_media_dir_is_reported_not_walked_silently(tmp_path, monkeypatch, caplog):
+    """os.walk yields nothing for a path that isn't there, which would make a
+    wrong mount indistinguishable from an empty library."""
+    real = tmp_path / "media"
+    real.mkdir()
+    (real / "f.mkv").write_bytes(b"x")
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "gone"), str(real)])
+
+    found = sweep_mod.walk_library(Policy.from_config())
+    assert found == [str(real / "f.mkv")]
+    assert "media dir" in caplog.text
+    assert "does not exist" in caplog.text
+
+
+def test_the_walk_clears_staged_files_scattered_through_the_library(tmp_path, monkeypatch):
+    """Cross-filesystem publishing lands its copy beside the file it replaces,
+    so a crash leaves these anywhere. This walk is the only thing that visits
+    them, and the age gate is what makes dropping them safe."""
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 0)
+    (tmp_path / "f.mkv").write_bytes(b"x")
+    orphan = tmp_path / ".trackstarr-eeee.partial"
+    orphan.write_text("orphaned by a crash")
+
+    found = sweep_mod.walk_library(Policy.from_config())
+    assert found == [str(tmp_path / "f.mkv")]
+    assert not orphan.exists()
+
+
+def test_hidden_directories_are_not_walked(tmp_path, monkeypatch):
+    """@eaDir, .recycle and friends hold copies that must never be rewritten."""
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    (tmp_path / "f.mkv").write_bytes(b"x")
+    hidden = tmp_path / ".recycle"
+    hidden.mkdir()
+    (hidden / "deleted.mkv").write_bytes(b"x")
+
+    assert sweep_mod.walk_library(Policy.from_config()) == [str(tmp_path / "f.mkv")]
+
+
+def test_a_long_sweep_logs_progress_as_it_goes(monkeypatch, tmp_path, caplog):
+    """A library sweep runs for hours. Without a periodic line the log looks
+    like it has hung, and there is nothing to judge the rate from."""
+    caplog.set_level(logging.INFO, logger="trackstarr.sweep")
+    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
+    walked = [f"/data/{i:04d}.mkv" for i in range(500)]
+    monkeypatch.setattr("trackstarr.sweep.walk_library", lambda policy: walked)
+    monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: [])
+    monkeypatch.setattr(
+        "trackstarr.sweep._judge",
+        lambda path, **kwargs: Judged(Job(path), None, Status.CONFORM),
+    )
+
+    sweep(dry_run=True)
+    assert "500/500" in caplog.text

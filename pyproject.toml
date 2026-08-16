@@ -8,7 +8,10 @@ dynamic = ["version"]
 description = "Keep media library audio and subtitle tracks tidy"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.11"
+# 3.14 is what the Alpine image ships and the only version CI tests. The image
+# is how trackstarr is deployed, so claiming a wider range would be claiming
+# something nothing verifies.
+requires-python = ">=3.14"
 authors = [{ name = "MarcedForLife" }]
 keywords = ["ffmpeg", "media", "radarr", "sonarr", "plex", "transcoding"]
 classifiers = [
@@ -20,15 +23,19 @@ classifiers = [
 # which keeps the image small and means nothing to patch on a CVE treadmill.
 dependencies = []
 
-[project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
-
 [project.scripts]
 trackstarr = "trackstarr.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/MarcedForLife/trackstarr"
 Issues = "https://github.com/MarcedForLife/trackstarr/issues"
+
+# A group rather than an optional-dependency, so the tooling stays out of the
+# published metadata and `uv sync` installs it without being asked. The bounds
+# are deliberately loose: uv.lock is what pins the exact versions, and CI
+# installs from it, so a ruff release cannot change what lint means mid-week.
+[dependency-groups]
+dev = ["mypy>=2", "pytest>=8", "pytest-cov>=5", "ruff>=0.14"]
 
 [tool.hatch.version]
 path = "src/trackstarr/__init__.py"
@@ -38,14 +45,53 @@ packages = ["src/trackstarr"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = [
-  "ffmpeg: requires ffmpeg and ffprobe on PATH",
-]
 filterwarnings = ["error"]
+# strict-markers so a typo in a mark is an error rather than a test that
+# quietly stops being selectable by -m; strict-config likewise for this table.
+addopts = ["--strict-markers", "--strict-config"]
+
+# --cov is deliberately not in addopts: it slows every run and the in-image
+# suite has no pytest-cov to honour it. `pytest --cov` picks the settings up
+# from here, so neither CI nor a local run has to name the package.
+[tool.coverage.run]
+source_pkgs = ["trackstarr"]
+branch = true
+# The `python -m trackstarr` shim: two imports and a call to cli.main, which
+# is covered directly. There is nothing here a test could assert about.
+omit = ["*/trackstarr/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = ["if __name__ == .__main__.:"]
+# 100%, and the floor is 100 so it stays there. Not a boast: the point is that
+# a line arriving without a test fails the build the day it lands, rather than
+# hiding in the slack under a lower number.
+#
+# The way to add genuinely untestable code is an explicit `# pragma: no cover`
+# with a reason, which is a decision someone makes and a reviewer sees. Every
+# one so far is a thread body or startup wiring a test could only hang inside,
+# and each carries its own note; the pieces they call are covered directly.
+# `grep -rn "pragma: no cover" src` is the list, rather than a copy here that
+# would rot.
+fail_under = 100
+
+# src only: the tests are checked by running, and type-checking them buys an
+# ignore for the one method they monkeypatch and little else.
+#
+# Not --strict, which wants an annotation on every ffprobe dict — those are
+# arbitrary JSON whose shape is the thing being interrogated, so naming a type
+# for them would be fiction. These are the strict flags that pass clean today,
+# so the gate stays a gate instead of becoming a wall of ignores.
+[tool.mypy]
+files = ["src"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unreachable = true
+no_implicit_reexport = true
+strict_equality = true
 
 [tool.ruff]
 line-length = 96
-target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -58,8 +104,27 @@ select = [
   "N",        # pep8-naming
   "SIM",      # flake8-simplify
   "S",        # bandit
+  "A",        # builtin shadowing
+  "C4",       # comprehensions
+  "DTZ",      # naive datetimes
+  "FURB",     # refurb, modern idiom
+  "G",        # logging call format
+  "ISC",      # implicit string concatenation, i.e. the comma you forgot
+  "LOG",      # logging misuse
+  "PERF",     # obviously slow constructs
+  "PIE",      # assorted lint
+  "RET",      # return flow
+  "SLOT",
+  "TID",      # tidy imports
+  "PLC", "PLE",  # pylint's conventions and errors
   "RUF",
 ]
+# Deliberately unselected: TRY, PLW, PT, C90 and the PL refactor rules fire
+# here only on deliberate code — subprocess.run without check= so ffmpeg's
+# stderr can be formatted into the failure, log.error where a traceback would
+# be noise for an expected config mistake — so they buy a row of noqa comments
+# and nothing else. ANN and D duplicate mypy and the docstrings. PTH would be
+# an os.path-to-pathlib migration, not a lint fix.
 ignore = [
   # Subprocess calls are the entire point of this tool; the argument lists are
   # built as lists from validated config, never through a shell.
@@ -73,8 +138,10 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # S101: asserts are what tests are made of. S108: /tmp paths in the planner
 # tests are opaque strings handed to ffmpeg_args, never opened.
-# S105/S106: the "hardcoded passwords" are fixture webhook secrets.
-"tests/*" = ["S101", "S105", "S106", "S108"]
+# S105/S106: the "hardcoded passwords" are fixture webhook secrets. DTZ001:
+# the cron tests are about wall-clock matching, so naive datetimes are the
+# subject, not an oversight.
+"tests/*" = ["S101", "S105", "S106", "S108", "DTZ001"]
 
 [tool.ruff.lint.isort]
 # conftest is a local test helper, not a third-party package.

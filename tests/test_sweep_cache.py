@@ -1,12 +1,11 @@
 """The sweep verdict cache. Filesystem only, no media."""
 
-from __future__ import annotations
-
+import json
 from pathlib import Path
 
 import pytest
 
-from trackstarr import config, policy
+from trackstarr import __version__, config, policy
 from trackstarr.policy import Policy
 from trackstarr.status import Status
 from trackstarr.sweep_cache import FileKey, SweepCache, Verdict, cache_key
@@ -128,3 +127,37 @@ def test_checkpoint_keeps_unvisited_entries(cache_path, media, tmp_path):
 
     reloaded = SweepCache.load(cache_path, fingerprint())
     assert reloaded.lookup(str(other), other_key) == CONFORM
+
+
+def test_an_entry_with_a_status_we_no_longer_have_is_a_miss(cache_path, media):
+    """The cache outlives upgrades. An entry naming a status this build does
+    not know must re-probe, not crash the sweep that reads it."""
+    key = cache_key(media, "eng")
+    saved_cache(cache_path, (media, key, CONFORM))
+
+    stored = json.loads(Path(cache_path).read_text())
+    stored["files"][media]["status"] = "invented-status"
+    Path(cache_path).write_text(json.dumps(stored))
+
+    assert SweepCache.load(cache_path, fingerprint()).lookup(media, key) is None
+
+
+def test_a_cache_that_cannot_be_written_does_not_fail_the_sweep(tmp_path, caplog, media):
+    """The cache is an optimisation. Losing it costs a slow sweep next time,
+    which is not worth failing a run that has already done its work."""
+    cache = SweepCache(str(tmp_path / "no-such-dir" / "cache.json"), fingerprint())
+    cache.record(media, cache_key(media, "eng"), CONFORM)
+    cache.save()
+    assert "could not write sweep cache" in caplog.text
+
+
+def test_a_cache_whose_entries_are_the_wrong_shape_is_ignored(cache_path, media):
+    """Valid JSON, wrong structure: a hand-edit or a half-written file. Every
+    lookup must miss rather than the sweep failing on the first one."""
+    Path(cache_path).write_text(
+        json.dumps(
+            {"config": fingerprint(), "version": __version__, "files": ["not", "a", "map"]}
+        )
+    )
+    cache = SweepCache.load(cache_path, fingerprint())
+    assert cache.lookup(media, cache_key(media, "eng")) is None

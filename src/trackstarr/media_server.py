@@ -10,8 +10,6 @@ running is muted for the rest of the process instead of costing a timeout
 per file. A missed nudge heals on the server's next scheduled scan.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 import urllib.parse

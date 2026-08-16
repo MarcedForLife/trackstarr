@@ -1,22 +1,17 @@
 """End-to-end against real files. Requires ffmpeg."""
 
-from __future__ import annotations
-
 import os
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from conftest import requires_ffmpeg, requires_mp4_titles
 from trackstarr import config, events, executor, planner
 from trackstarr.cli import main as cli_main
 from trackstarr.executor import Outcome, apply_plan
 from trackstarr.media import ProbeError, duration, probe, stream_title
 from trackstarr.planner import build_plan
 from trackstarr.sweep import sweep
-
-pytestmark = [requires_ffmpeg, pytest.mark.ffmpeg]
 
 #: The defect this tool exists to fix: a 5.1 main track and a 2.0 commentary.
 COMMENTARY_CASE = [(6, "eng", "Surround"), (2, "eng", "Commentary")]
@@ -89,7 +84,6 @@ def test_regenerate_downmix_end_to_end(make_file, monkeypatch):
     assert len(streams_of(path, "audio")) == 3
 
 
-@requires_mp4_titles
 def test_mp4_commentary_titles_are_read_and_survive(make_file):
     """MP4 reports track titles as ``name``, and a plain copy drops them;
     commentary must be caught before the rewrite and still be labelled
@@ -102,7 +96,6 @@ def test_mp4_commentary_titles_are_read_and_survive(make_file):
     assert not build_plan(path, "eng").needed
 
 
-@requires_mp4_titles
 def test_remux_to_mkv_end_to_end(make_file, monkeypatch):
     """An MP4 converts to its .mkv sibling: subtitles become SRT, the
     generated downmix carries its settings tag, and the original is gone."""

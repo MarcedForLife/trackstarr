@@ -1,14 +1,12 @@
 """The Policy snapshot and its fingerprint. No media, no network."""
 
-from __future__ import annotations
-
 import dataclasses
 import json
 import re
 
 import pytest
 
-from trackstarr import config
+from trackstarr import config, policy
 from trackstarr.policy import Policy
 
 
@@ -68,3 +66,12 @@ def test_fingerprint_tracks_the_bitrate_through_resolved_layouts(monkeypatch):
     before = Policy.from_config().fingerprint()
     monkeypatch.setattr(config, "AUDIO_BITRATE", "128k")
     assert Policy.from_config().fingerprint() != before
+
+
+def test_a_container_with_no_muxer_is_refused_at_startup(monkeypatch):
+    """ALLOWED_EXTS drives the walk, so an extension ffmpeg cannot mux would
+    be collected all sweep and then fail one file at a time."""
+    monkeypatch.setattr(config, "ALLOWED_EXTS", {".mkv", ".rmvb"})
+    problems = policy.errors()
+    assert any(".rmvb" in problem for problem in problems)
+    assert any("no known muxer" in problem for problem in problems)

@@ -1,18 +1,20 @@
 """process() outcomes and their side effects. No media, no network."""
 
-from __future__ import annotations
-
 import fcntl
 import os
 import threading
 import time
+from dataclasses import replace
 
 import pytest
 
 from trackstarr import config, processing
+from trackstarr.arr import radarr
 from trackstarr.executor import Outcome
+from trackstarr.media import ProbeError
 from trackstarr.planner import Plan
-from trackstarr.processing import Job
+from trackstarr.processing import Job, process
+from trackstarr.status import Status
 
 
 def test_deferred_rewrite_is_not_a_failure(monkeypatch):
@@ -151,3 +153,62 @@ def test_a_raising_rewrite_releases_its_slot(monkeypatch):
             raise RuntimeError("ffmpeg exploded")
     assert processing._running == 0
     assert _peak_concurrency(2) == 1
+
+
+def test_a_probe_failure_during_a_rewrite_is_reported_not_raised(tmp_path, monkeypatch):
+    """One corrupt file must not take the rest of a sweep down with it."""
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    path = tmp_path / "f.mkv"
+    path.write_bytes(b"x")
+
+    def fail(plan):
+        raise ProbeError("moov atom not found")
+
+    monkeypatch.setattr(processing, "apply_plan", fail)
+    monkeypatch.setattr(
+        processing, "build_plan", lambda p, lang: Plan(path=str(path), reasons=["reorder"])
+    )
+    result = process(Job(str(path)), dry_run=False)
+    assert result.status is Status.FAILED
+    assert "moov atom not found" in result.detail
+
+
+def test_a_fixed_file_asks_its_arr_to_rescan(tmp_path, monkeypatch):
+    """Otherwise Radarr keeps reporting the old size and media info."""
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    path = tmp_path / "f.mkv"
+    path.write_bytes(b"x")
+    rescanned: list[int] = []
+
+    arr = replace(radarr(), url="http://radarr:7878", key="key")
+    monkeypatch.setattr(type(arr), "rescan", lambda self, item_id: rescanned.append(item_id))
+    monkeypatch.setattr(
+        processing, "build_plan", lambda p, lang: Plan(path=str(path), reasons=["reorder"])
+    )
+    monkeypatch.setattr(processing, "apply_plan", lambda plan: (Outcome.APPLIED, ""))
+
+    result = process(Job(str(path), "eng", 12, arr), dry_run=False)
+    assert result.status is Status.FIXED
+    assert rescanned == [12]
+
+
+def test_a_rewrite_waits_for_a_busy_slot_rather_than_failing(tmp_path, monkeypatch):
+    """The budget is a queue, not a limit that rejects: a webhook import
+    arriving mid-sweep waits its turn instead of being dropped."""
+    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
+    held = processing._claim_slot()
+    released: list[bool] = []
+
+    def release_on_first_wait(seconds):
+        """Stand in for the other worker finishing while we poll."""
+        if not released:
+            released.append(True)
+            held.close()
+
+    monkeypatch.setattr(processing.time, "sleep", release_on_first_wait)
+    got = processing._claim_slot()
+    try:
+        assert released == [True]
+    finally:
+        got.close()

@@ -6,8 +6,6 @@ restarting *arr can never stall the webhook response. The credentials
 callers present live in :mod:`trackstarr.auth`.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import os
@@ -97,7 +95,9 @@ def _handle(job: Job) -> None:
         )
 
 
-def worker() -> None:
+# No cover: a thread body. It blocks on the queue for ever, and _handle,
+# which is the part with decisions in it, is covered directly.
+def worker() -> None:  # pragma: no cover
     while True:
         job = _work_q.get()
         try:
@@ -135,7 +135,8 @@ def _recheck_parked() -> None:
             log.info("hard link released, queued %s", job.path)
 
 
-def parked_recheck_loop() -> None:
+# No cover: a thread body around _recheck_parked, which is covered directly.
+def parked_recheck_loop() -> None:  # pragma: no cover
     while True:
         time.sleep(config.HARDLINK_RECHECK)
         try:
@@ -239,7 +240,9 @@ class Handler(BaseHTTPRequestHandler):
         log.debug("http %s", fmt % args)
 
 
-def register_webhooks() -> None:
+# No cover: retries until every *arr answers, sleeping between rounds.
+# Arr.register_webhook, which does the work, is covered directly.
+def register_webhooks() -> None:  # pragma: no cover
     """Keep at it until every enabled *arr has the connection.
 
     The containers usually start together, so the first attempts can land

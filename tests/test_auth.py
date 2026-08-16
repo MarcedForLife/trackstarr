@@ -1,7 +1,5 @@
 """The credential store: minting, verification and revocation."""
 
-from __future__ import annotations
-
 import os
 import re
 

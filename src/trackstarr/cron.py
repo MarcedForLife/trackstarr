@@ -8,8 +8,6 @@ dependencies on purpose; times are wall-clock local, like every schedule
 here.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 

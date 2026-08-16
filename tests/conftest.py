@@ -1,11 +1,9 @@
 """Fixtures shared by the unit and integration suites.
 
 The unit suite builds ffprobe-shaped dicts by hand so the rules can be tested
-without media. The integration suite generates real files with ffmpeg and is
-skipped when ffmpeg is unavailable.
+without media. The integration suite generates real files with ffmpeg, which
+:func:`pytest_configure` insists on before any of it runs.
 """
-
-from __future__ import annotations
 
 import json
 import os
@@ -18,10 +16,6 @@ import pytest
 
 from trackstarr import config
 
-HAVE_FFMPEG = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
-
-requires_ffmpeg = pytest.mark.skipif(not HAVE_FFMPEG, reason="ffmpeg and ffprobe not on PATH")
-
 
 def _mp4_titles_round_trip() -> bool:
     """Whether this ffmpeg can store a per-stream title in MP4.
@@ -33,10 +27,8 @@ def _mp4_titles_round_trip() -> bool:
 
     Detected rather than compared against a version string, because
     distributions backport and rebuild: what matters is what this binary
-    does, and asking costs one sub-second encode at collection time.
+    does, and asking costs a tenth of a second at startup.
     """
-    if not HAVE_FFMPEG:
-        return False
     with tempfile.TemporaryDirectory() as work:
         sample = os.path.join(work, "probe.mp4")
         try:
@@ -76,21 +68,27 @@ def _mp4_titles_round_trip() -> bool:
                 text=True,
                 timeout=60,
             )
-        except (subprocess.SubprocessError, OSError):
+        except subprocess.SubprocessError, OSError:
             return False
     tags = (json.loads(probed.stdout).get("streams") or [{}])[0].get("tags", {})
     return "Commentary" in (tags.get("name", ""), tags.get("title", ""))
 
 
-MP4_TITLES_ROUND_TRIP = _mp4_titles_round_trip()
+def pytest_configure(config):
+    """Refuse to run at all without the ffmpeg the tests are written against.
 
-#: MP4 per-stream titles need ffmpeg 8.1 or newer. The shipped image has one;
-#: ubuntu-latest, and so the CI test matrix, does not — which is why the
-#: Docker job runs this suite inside the image too.
-requires_mp4_titles = pytest.mark.skipif(
-    not MP4_TITLES_ROUND_TRIP,
-    reason="this ffmpeg drops per-stream titles in MP4 (needs 8.1+)",
-)
+    trackstarr is an ffmpeg wrapper, so a development environment without one
+    is not a limited environment, it is an unconfigured one. Saying so once,
+    up front, beats either skipping a third of the suite where nobody looks or
+    failing deep inside a fixture with an error about a missing track title.
+    """
+    if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
+        raise pytest.UsageError("ffmpeg and ffprobe must be on PATH to run the tests")
+    if not _mp4_titles_round_trip():
+        raise pytest.UsageError(
+            "this ffmpeg drops per-stream titles in MP4; 8.1 or newer is needed "
+            "(distribution builds are usually older, including 8.0)"
+        )
 
 
 @pytest.fixture(autouse=True)

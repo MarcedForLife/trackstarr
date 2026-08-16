@@ -5,8 +5,6 @@ A leaf module with no intra-package imports, so the pipeline
 can share it without importing each other.
 """
 
-from __future__ import annotations
-
 import enum
 
 

@@ -11,14 +11,12 @@ names, the regenerate modes, the containers we can write — along with
 :func:`errors`, which validates the configured values against it.
 """
 
-from __future__ import annotations
-
 import os
 import re
 from dataclasses import dataclass, fields
 
 from . import __version__, config
-from .layouts import Layout, parse_layout, resolved_layouts
+from .layouts import Layout, ResolvedLayout, parse_layout, resolved_layouts
 
 #: The rules, keyed by the name DISABLED_RULES uses to switch each off.
 #: Single source for the CLI help text.
@@ -86,7 +84,7 @@ class Policy:
     remux_to_mkv: bool
     #: The layouts the downmix rule guarantees, resolved (every bitrate
     #: filled in) and smallest first.
-    downmix_layouts: tuple[Layout, ...]
+    downmix_layouts: tuple[ResolvedLayout, ...]
     audio_codec: str
     skip_hardlinks: bool
     commentary_re: re.Pattern[str]

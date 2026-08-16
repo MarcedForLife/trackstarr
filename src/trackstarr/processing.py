@@ -1,7 +1,5 @@
 """Plan-and-rewrite for one file, shared by the webhook worker and the sweep."""
 
-from __future__ import annotations
-
 import contextlib
 import fcntl
 import logging

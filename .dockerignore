@@ -1,6 +1,7 @@
 .git
 .github
 tests
+uv.lock
 *.md
 !README.md
 .gitignore

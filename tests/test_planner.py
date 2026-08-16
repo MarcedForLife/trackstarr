@@ -1,7 +1,5 @@
 """The rules, tested against synthetic ffprobe output. No media required."""
 
-from __future__ import annotations
-
 import os
 
 import pytest
@@ -11,6 +9,9 @@ from trackstarr import config, policy
 from trackstarr.layouts import resolved_layouts
 from trackstarr.media import is_junk_title
 from trackstarr.planner import (
+    OutStream,
+    Plan,
+    _downmix_rank,
     build_plan,
     channel_rank,
     ffmpeg_args,
@@ -716,3 +717,85 @@ def test_per_layout_bitrate_overrides_the_scaled_default(monkeypatch):
     args = ffmpeg_args(plan, "/tmp/out.mkv")
     assert args[args.index("-b:a:0") + 1] == "320k"
     assert args[args.index("-b:a:1") + 1] == "640k"
+
+
+def test_an_unrelated_language_sorts_behind_english():
+    """First track is what disposition-blind players pick, so the order is
+    original, then English, then everything else."""
+    original = audio(1, 6, lang="jpn")
+    english = audio(2, 6, lang="eng")
+    other = audio(3, 6, lang="fre")
+    ranked = sorted([other, english, original], key=lambda s: _downmix_rank(s, "jpn"))
+    assert [s["tags"]["language"] for s in ranked] == ["jpn", "eng", "fre"]
+
+
+def test_a_kept_subtitle_title_is_reasserted_in_the_command():
+    """MP4 drops track names on a plain copy, so every kept title is written
+    again explicitly rather than relied upon to survive."""
+    plan = Plan(path="f.mkv")
+    plan.streams.extend(
+        [
+            OutStream(src=0, kind="video"),
+            OutStream(src=1, kind="subtitle", title="Forced (English)"),
+        ]
+    )
+    args = ffmpeg_args(plan, "OUT.mkv")
+    assert "title=Forced (English)" in args
+
+
+def test_a_copied_audio_track_keeps_its_own_title():
+    """Between a generated downmix and a track whose junk title is stripped
+    sits the ordinary case: copied through, title re-asserted as it was."""
+    plan = Plan(path="f.mkv")
+    plan.streams.extend(
+        [
+            OutStream(src=0, kind="video"),
+            OutStream(src=1, kind="audio", title="Surround 5.1"),
+            OutStream(src=2, kind="audio", title="Commentary"),
+        ]
+    )
+    args = ffmpeg_args(plan, "OUT.mkv")
+    assert "title=Surround 5.1" in args
+    assert "title=Commentary" in args
+
+
+def test_a_generated_downmix_is_not_the_last_word_on_the_audio():
+    """The downmix sorts ahead of the track it came from, so its language tag
+    is written mid-list and the copied original still follows it."""
+    plan = Plan(path="f.mkv")
+    plan.streams.extend(
+        [
+            OutStream(src=0, kind="video"),
+            OutStream(
+                src=1,
+                kind="audio",
+                encode=True,
+                channels=2,
+                lang="jpn",
+                title="2.0",
+                bitrate="192k",
+            ),
+            OutStream(src=1, kind="audio", title="Surround 5.1"),
+        ]
+    )
+    args = ffmpeg_args(plan, "OUT.mkv")
+    assert "language=jpn" in args
+    assert "title=Surround 5.1" in args
+
+
+def test_a_downmix_from_an_untagged_source_asserts_no_language():
+    """Plenty of files carry audio with no language tag. The downmix inherits
+    that, and must not be given a language the source never claimed."""
+    plan = Plan(path="f.mkv")
+    plan.streams.extend(
+        [
+            OutStream(src=0, kind="video"),
+            OutStream(
+                src=1, kind="audio", encode=True, channels=2, title="2.0", bitrate="192k"
+            ),
+            OutStream(src=1, kind="audio", title="Surround 5.1"),
+        ]
+    )
+    args = ffmpeg_args(plan, "OUT.mkv")
+    assert not any(arg.startswith("language=") for arg in args)
+    assert "title=Surround 5.1" in args

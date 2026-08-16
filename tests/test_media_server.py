@@ -1,13 +1,11 @@
 """Plex and Jellyfin refresh against faked HTTP. No network."""
 
-from __future__ import annotations
-
 import urllib.error
 
 import pytest
 
 from trackstarr import config, media_server
-from trackstarr.media_server import refresh_servers
+from trackstarr.media_server import refresh_servers, server_status
 
 PLEX_SECTIONS = {
     "MediaContainer": {
@@ -118,3 +116,13 @@ def test_unexpected_errors_never_escape(plex, monkeypatch):
 
     monkeypatch.setattr(media_server, "request", broken)
     refresh_servers("/data/media/movies/A/A.mkv")
+
+
+def test_server_status_reports_each_server_for_the_startup_summary(monkeypatch):
+    """serve logs this so a misconfigured token shows up as "off" at boot
+    rather than as refreshes that silently never happen."""
+    monkeypatch.setattr(config, "PLEX_URL", "http://plex:32400")
+    monkeypatch.setattr(config, "PLEX_TOKEN", "token")
+    monkeypatch.setattr(config, "JELLYFIN_URL", "")
+    monkeypatch.setattr(config, "JELLYFIN_API_KEY", "")
+    assert server_status() == {"plex": True, "jellyfin": False}
