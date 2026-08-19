@@ -135,8 +135,14 @@ def apply_plan(plan: Plan) -> tuple[Outcome, str]:
     """
     if plan.out_path != plan.path and os.path.exists(plan.out_path):
         # A remux lands beside the source under a new name; an .mkv sibling
-        # already sitting there is not ours to overwrite.
-        return Outcome.FAILED, f"remux target already exists: {plan.out_path}"
+        # already sitting there is not ours to overwrite. This recurs every
+        # sweep until a human removes one of the two, so the detail says
+        # which file to delete for which outcome.
+        return Outcome.FAILED, (
+            f"remux target already exists: {plan.out_path} "
+            f"(delete {plan.path} if the .mkv is a finished remux, "
+            "or delete the .mkv to redo it)"
+        )
 
     src_before = os.stat(plan.path)
     # A plan goes stale waiting on the rewrite lock: another thread may have
@@ -200,11 +206,8 @@ def work_dir_errors() -> list[str]:
 
     Creates it when missing, so a fresh install starts clean, and writes a
     byte to prove the mount is writable rather than discovering it after the
-    first ffmpeg run.
-
-    It deliberately does not care which filesystem WORK_DIR is on. Publishing
-    falls back to a copy when the rename can't cross, so a scratch disk, a
-    different array or a tmpfs are all valid; see :func:`_publish`.
+    first ffmpeg run. Which filesystem it is on deliberately doesn't matter;
+    see :func:`_publish`.
     """
     try:
         os.makedirs(config.WORK_DIR, exist_ok=True)
@@ -213,6 +216,36 @@ def work_dir_errors() -> list[str]:
     except OSError as err:
         return [f"WORK_DIR {config.WORK_DIR} is not usable: {err}"]
     return []
+
+
+def audio_codec_errors() -> list[str]:
+    """Whether AUDIO_CODEC names an audio encoder this ffmpeg carries.
+
+    A typo'd codec otherwise surfaces as the first rewrite failing, hours
+    after the restart that introduced it. ffmpeg's absence is not reported
+    here; startup already checks PATH separately.
+    """
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if out.returncode != 0:
+        return []
+    for line in out.stdout.splitlines():
+        # One encoder per line: " A....D aac   AAC (Advanced Audio Coding)".
+        # The first flag character is the codec type, A for audio.
+        flags, _, rest = line.strip().partition(" ")
+        if flags.startswith("A") and rest.split()[:1] == [config.AUDIO_CODEC]:
+            return []
+    return [
+        f"AUDIO_CODEC {config.AUDIO_CODEC!r} is not an audio encoder this ffmpeg "
+        "provides (see ffmpeg -encoders)"
+    ]
 
 
 def work_dir_is_remote() -> bool:
@@ -227,7 +260,9 @@ def work_dir_is_remote() -> bool:
     except OSError:
         return False
     return any(
-        os.stat(root).st_dev != work_dev for root in config.MEDIA_ROOTS if os.path.isdir(root)
+        os.stat(media_dir).st_dev != work_dev
+        for media_dir in config.MEDIA_DIRS
+        if os.path.isdir(media_dir)
     )
 
 

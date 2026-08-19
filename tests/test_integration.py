@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 
 from conftest import requires_ffmpeg, requires_mp4_titles
-from trackstarr import config, executor, planner
+from trackstarr import config, events, executor, planner
+from trackstarr.cli import main as cli_main
 from trackstarr.executor import Outcome, apply_plan
 from trackstarr.media import ProbeError, duration, probe, stream_title
 from trackstarr.planner import build_plan
@@ -272,7 +273,7 @@ def test_corrupt_file_raises_rather_than_being_rewritten(tmp_path):
 @pytest.fixture
 def swept_library(monkeypatch, tmp_path):
     """Point the sweep at the fixture directory and count planner probes."""
-    monkeypatch.setattr(config, "MEDIA_ROOTS", [str(tmp_path)])
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
     monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
 
     probed = []
@@ -336,6 +337,20 @@ def test_junk_titles_cleared_end_to_end(make_file):
     assert again.incidental == []
 
 
+def test_fix_command_end_to_end(make_file, capsys):
+    """fix runs the whole pipeline for real: startup checks, the plan, the
+    rewrite under the slot locks, and the cli-sourced event."""
+    path = make_file("f.mkv", COMMENTARY_CASE)
+    assert cli_main(["--log-level", "WARNING", "fix", "--original", "eng", path]) == 0
+    assert capsys.readouterr().out.startswith("fixed")
+    assert sorted(stream["channels"] for stream in streams_of(path, "audio")) == [2, 2, 6]
+    (entry,) = [event for event in events.read() if event["event"] == "fixed"]
+    assert entry["source"] == "cli"
+    # Idempotent like every other source: a second run conforms.
+    assert cli_main(["--log-level", "WARNING", "fix", "--original", "eng", path]) == 0
+    assert capsys.readouterr().out.startswith("conform")
+
+
 def test_hardlinked_file_is_processed_by_default(make_file, tmp_path):
     path = make_file("f.mkv", COMMENTARY_CASE)
     os.link(path, tmp_path / "seed.mkv")
@@ -349,7 +364,7 @@ def test_seed_release_invalidates_cached_hardlink_skip(
     monkeypatch.setattr(config, "SKIP_HARDLINKS", True)
     library = tmp_path / "media"
     library.mkdir()
-    monkeypatch.setattr(config, "MEDIA_ROOTS", [str(library)])
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(library)])
     path = make_file("media/f.mkv", COMMENTARY_CASE)
     seed = tmp_path / "seed.mkv"
     os.link(path, seed)

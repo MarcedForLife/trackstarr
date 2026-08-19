@@ -28,7 +28,7 @@ def test_bad_regex_keeps_default_and_records_error(monkeypatch):
 def test_good_values_record_nothing(monkeypatch):
     monkeypatch.setenv("LISTEN_PORT", "9090")
     monkeypatch.setenv("FORCED_PATTERN", "forced|signs")
-    assert config._int("LISTEN_PORT", "8080") == 9090
+    assert config._int("LISTEN_PORT", "5120") == 9090
     assert config._regex("FORCED_PATTERN", r"\bforced\b").search("signs")
     assert config.errors() == []
 
@@ -49,6 +49,74 @@ def test_always_keep_entries_normalise_to_639_2b(monkeypatch, raw, expected):
     assert config._langs("ALWAYS_KEEP_LANGS", "eng") == expected
 
 
+@pytest.mark.parametrize("variable", ["RADARR_API_KEY_FILE", "FILE__RADARR_API_KEY"])
+def test_a_credential_can_come_from_a_file(monkeypatch, tmp_path, variable):
+    """Both conventions, because every *arr beside us uses one or the other."""
+    secret_file = tmp_path / "radarr_api_key"
+    # Trailing newline included: echo > file puts one there, and it would
+    # otherwise be sent as part of the key and rejected as a bad one.
+    secret_file.write_text("abc123\n")
+    monkeypatch.setenv(variable, str(secret_file))
+    assert config._secret("RADARR_API_KEY") == "abc123"
+    assert config.errors() == []
+
+
+def test_a_credential_still_comes_from_the_environment(monkeypatch):
+    monkeypatch.setenv("RADARR_API_KEY", " abc123 ")
+    assert config._secret("RADARR_API_KEY") == "abc123"
+    assert config.errors() == []
+
+
+def test_an_unset_credential_is_blank(monkeypatch):
+    monkeypatch.delenv("RADARR_API_KEY", raising=False)
+    assert config._secret("RADARR_API_KEY") == ""
+    assert config.errors() == []
+
+
+def test_naming_a_credential_two_ways_is_refused(monkeypatch, tmp_path):
+    """Which one is live would otherwise be invisible, and the wrong key
+    looks exactly like a revoked one from the far end."""
+    secret_file = tmp_path / "radarr_api_key"
+    secret_file.write_text("from-the-file")
+    monkeypatch.setenv("RADARR_API_KEY_FILE", str(secret_file))
+    monkeypatch.setenv("RADARR_API_KEY", "from-the-environment")
+    assert config._secret("RADARR_API_KEY") == ""
+    errors = config.errors()
+    assert len(errors) == 1
+    assert "RADARR_API_KEY_FILE" in errors[0] and "RADARR_API_KEY" in errors[0]
+
+
+def test_a_credential_left_expanding_to_nothing_is_not_a_conflict(monkeypatch, tmp_path):
+    """A forgotten RADARR_API_KEY: ${RADARR_API_KEY} line expands to empty.
+    That is a leftover, not an ambiguity, and must not block startup."""
+    secret_file = tmp_path / "radarr_api_key"
+    secret_file.write_text("from-the-file")
+    monkeypatch.setenv("RADARR_API_KEY_FILE", str(secret_file))
+    monkeypatch.setenv("RADARR_API_KEY", "")
+    assert config._secret("RADARR_API_KEY") == "from-the-file"
+    assert config.errors() == []
+
+
+def test_an_unreadable_credential_file_is_refused(monkeypatch, tmp_path):
+    monkeypatch.setenv("RADARR_API_KEY_FILE", str(tmp_path / "absent"))
+    assert config._secret("RADARR_API_KEY") == ""
+    errors = config.errors()
+    assert len(errors) == 1
+    assert "RADARR_API_KEY_FILE" in errors[0]
+
+
+def test_an_empty_credential_file_is_refused(monkeypatch, tmp_path):
+    """A blank key reads the same as one never set, so the *arr would be
+    silently disabled rather than reported as misconfigured."""
+    secret_file = tmp_path / "radarr_api_key"
+    secret_file.write_text("\n")
+    monkeypatch.setenv("RADARR_API_KEY_FILE", str(secret_file))
+    assert config._secret("RADARR_API_KEY") == ""
+    errors = config.errors()
+    assert len(errors) == 1
+    assert "is empty" in errors[0]
+
+
 def test_unknown_rule_names_are_refused(monkeypatch):
     monkeypatch.setattr(config, "DISABLED_RULES", {"languages", "subtitles"})
     errors = policy.errors()
@@ -63,18 +131,18 @@ def test_unknown_regenerate_mode_is_refused(monkeypatch):
     assert "REGENERATE_DOWNMIXES" in errors[0]
 
 
-@pytest.mark.parametrize("value", ["4am", "0400", "24:30", "12:60", "not-a-time"])
-def test_a_bad_sweep_time_is_refused(monkeypatch, value):
-    """The scheduler would otherwise die alone ("not-a-time") or mktime would
-    quietly normalise the value ("24:30" sweeps at 00:30)."""
+@pytest.mark.parametrize("value", ["04:00", "0 4 * *", "60 4 * * *", "0 4 * * mon"])
+def test_a_bad_sweep_schedule_is_refused(monkeypatch, value):
+    """The scheduler would otherwise die alone; "04:00" matters most, it is
+    the format SWEEP_AT took before it became a cron schedule."""
     monkeypatch.setattr(config, "SWEEP_AT", value)
     errors = config.errors()
     assert len(errors) == 1
     assert "SWEEP_AT" in errors[0]
 
 
-@pytest.mark.parametrize("value", ["", "04:00", "4:05", "23:59"])
-def test_a_valid_sweep_time_passes(monkeypatch, value):
+@pytest.mark.parametrize("value", ["", "0 4 * * *", "*/30 * * * *", "0 6 * * 1-5"])
+def test_a_valid_sweep_schedule_passes(monkeypatch, value):
     monkeypatch.setattr(config, "SWEEP_AT", value)
     assert config.errors() == []
 

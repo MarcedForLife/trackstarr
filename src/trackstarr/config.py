@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import re
 
+from . import cron
 from .langs import norm_lang
 
 #: Problems found while parsing the environment, reported via errors().
@@ -53,6 +54,50 @@ def _regex(name: str, default: str) -> re.Pattern[str]:
         return re.compile(default, re.IGNORECASE)
 
 
+def _secret(name: str) -> str:
+    """A credential, read from the file a companion variable names.
+
+    ``NAME_FILE`` is the convention the official images use and ``FILE__NAME``
+    is linuxserver.io's. Every *arr in a normal stack is one or the other, so
+    both work here rather than making it something to look up. Pointing at a
+    file keeps the credential out of the compose file and out of ``docker
+    inspect``, which is where these actually leak; it is still plaintext on
+    disk, so it is hygiene rather than a boundary.
+
+    Naming the same credential more than one way is refused instead of
+    resolved by precedence, because which one was live would otherwise be
+    invisible. A variable set to whitespace doesn't count as naming it: a
+    leftover ``RADARR_API_KEY: ${RADARR_API_KEY}`` with nothing behind it
+    expands to empty, and that is not a conflict worth refusing to start over.
+    """
+    named = [
+        (variable, value)
+        for variable in (f"{name}_FILE", f"FILE__{name}", name)
+        if (value := os.environ.get(variable, "").strip())
+    ]
+    if len(named) > 1:
+        _LOAD_ERRORS.append(
+            f"{name} is set more than one way ({', '.join(var for var, _ in named)}); keep one"
+        )
+        return ""
+    if not named:
+        return ""
+    variable, value = named[0]
+    if variable == name:
+        return value
+    try:
+        with open(value) as secret_file:
+            content = secret_file.read().strip()
+    except OSError as err:
+        _LOAD_ERRORS.append(f"{variable}={value!r} could not be read ({err})")
+        return ""
+    if not content:
+        # An empty file would leave the service quietly disabled, since a
+        # blank key reads the same as one that was never set.
+        _LOAD_ERRORS.append(f"{variable}={value!r} is empty")
+    return content
+
+
 def _langs(name: str, default: str) -> set[str]:
     """A language set normalised to ISO 639-2/B like every track tag, so
     "en", "English" and "eng" all mean the same thing (norm_lang's lookup
@@ -62,30 +107,33 @@ def _langs(name: str, default: str) -> set[str]:
     return {code for entry in _set(name, default) if (code := norm_lang(entry))}
 
 
-MEDIA_ROOTS = _list("MEDIA_ROOTS", "/data/media/movies:/data/media/tv")
+#: Where the sweep walks, and what startup compares WORK_DIR's filesystem
+#: against. Webhook and fix paths are taken as given, wherever they live.
+MEDIA_DIRS = _list("MEDIA_DIRS", "/data/media/movies:/data/media/tv")
 
 #: Where a rewrite is staged while ffmpeg writes it, before it replaces the
-#: original. Anywhere is fine, including a different drive from the media:
-#: publishing falls back to a copy onto the target's filesystem when the
-#: rename can't cross, so atomicity holds either way. Somewhere with room
-#: for the largest file in the library, and fast, since every byte of every
-#: rewrite is written here.
+#: original. Any filesystem works, even another drive; executor._publish
+#: keeps the replacement atomic either way. Somewhere with room for the
+#: largest file in the library, and fast, since every byte of every rewrite
+#: is written here.
 WORK_DIR = os.environ.get("WORK_DIR", "/data/trackstarr-work")
 
 STATE_DIR = os.environ.get("STATE_DIR", "/config")
 
+#: Every credential also takes RADARR_API_KEY_FILE or FILE__RADARR_API_KEY
+#: naming a file to read it from; see _secret.
 RADARR_URL = os.environ.get("RADARR_URL", "").rstrip("/")
-RADARR_API_KEY = os.environ.get("RADARR_API_KEY", "")
+RADARR_API_KEY = _secret("RADARR_API_KEY")
 SONARR_URL = os.environ.get("SONARR_URL", "").rstrip("/")
-SONARR_API_KEY = os.environ.get("SONARR_API_KEY", "")
+SONARR_API_KEY = _secret("SONARR_API_KEY")
 
 #: Media servers to nudge after a rewrite, so track lists and sizes stay
 #: true even when the library is on a network mount their own filesystem
 #: watchers can't see. Omit to disable. The Jellyfin settings fit Emby too.
 PLEX_URL = os.environ.get("PLEX_URL", "").rstrip("/")
-PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "")
+PLEX_TOKEN = _secret("PLEX_TOKEN")
 JELLYFIN_URL = os.environ.get("JELLYFIN_URL", "").rstrip("/")
-JELLYFIN_API_KEY = os.environ.get("JELLYFIN_API_KEY", "")
+JELLYFIN_API_KEY = _secret("JELLYFIN_API_KEY")
 
 #: Languages kept regardless of the title's original language.
 ALWAYS_KEEP = _langs("ALWAYS_KEEP_LANGS", "eng")
@@ -121,12 +169,11 @@ AUDIO_BITRATE = os.environ.get("AUDIO_BITRATE", "320k")
 REMUX_TO_MKV = _bool("REMUX_TO_MKV")
 
 #: What the downmix rule may rebuild, beyond creating missing layouts.
-#: "generated" rebuilds tracks this tool made (recognised by the tag written
-#: at encode time) whose recorded codec or bitrate no longer match config.
-#: "all" additionally replaces any real track for a configured layout whose
-#: reported bitrate sits well below the layout's own rate. Unset does
-#: neither, the default: either value queues rewrites across the library
-#: after a settings change. Startup refuses anything else.
+#: "generated" rebuilds this tool's own tracks when their recorded settings
+#: no longer match config; "all" additionally replaces a real track reported
+#: well below its layout's rate. Unset (the default) does neither: either
+#: value queues rewrites across the library after a settings change.
+#: Startup refuses anything else.
 REGENERATE_DOWNMIXES = os.environ.get("REGENERATE_DOWNMIXES", "").strip().lower()
 
 #: Containers we will rewrite. AVI and MPG are deliberately excluded: they
@@ -175,7 +222,10 @@ JUNK_TITLE_RE = _regex(
 )
 
 LISTEN_ADDR = os.environ.get("LISTEN_ADDR", "0.0.0.0")
-LISTEN_PORT = _int("LISTEN_PORT", "8080")
+#: 5120 spells the two layouts the downmix rule guarantees, 5.1 and 2.0. The
+#: point is that it is free: 8080 is qBittorrent's and SABnzbd's, so the one
+#: port a media stack is guaranteed to have already spent is that one.
+LISTEN_PORT = _int("LISTEN_PORT", "5120")
 
 #: Advertised to Radarr and Sonarr when registering the webhook connection,
 #: so it must be reachable from their containers. The default matches the
@@ -192,12 +242,12 @@ PROBE_TIMEOUT = _int("PROBE_TIMEOUT", "180")
 #: parallel rewrites fight over the heads. That assumption is often wrong: a
 #: rewrite is a stream copy plus a few audio encodes, the encodes are
 #: single-threaded, and on storage that isn't the bottleneck the whole job
-#: is one busy core while the rest idle. Measure before raising it — time a
-#: sweep at 1, then at 3, and keep 1 if they match, because concurrency buys
-#: nothing once the disk is saturated.
+#: is one busy core while the rest idle. The README covers how to measure
+#: whether raising it pays.
 MAX_CONCURRENT_REWRITES = _int("MAX_CONCURRENT_REWRITES", "1")
 
-#: Nightly sweep as HH:MM local time; empty disables it. The sweep exists to
+#: When the sweep runs, as a five-field cron schedule in local time
+#: ("0 4 * * *" is 4am nightly); empty disables it. The sweep exists to
 #: catch files that arrived without a webhook, so it reports by default and
 #: only rewrites when SWEEP_APPLY is set.
 SWEEP_AT = os.environ.get("SWEEP_AT", "").strip()
@@ -220,9 +270,11 @@ def errors() -> list[str]:
     problems = list(_LOAD_ERRORS)
     if MAX_CONCURRENT_REWRITES < 1:
         problems.append(f"MAX_CONCURRENT_REWRITES={MAX_CONCURRENT_REWRITES} must be at least 1")
-    if SWEEP_AT and not re.fullmatch(r"(?:[01]?\d|2[0-3]):[0-5]\d", SWEEP_AT):
-        # Left to the scheduler, garbage kills only its thread (serve keeps
-        # running, sweeps never) and mktime quietly normalises out-of-range
-        # times, so "24:30" would sweep at 00:30 without a word.
-        problems.append(f"SWEEP_AT={SWEEP_AT!r} is not a valid HH:MM time")
+    if SWEEP_AT:
+        try:
+            # Left to the scheduler, garbage kills only its thread: serve
+            # keeps running and sweeps never happen.
+            cron.parse(SWEEP_AT)
+        except ValueError as err:
+            problems.append(f"SWEEP_AT={SWEEP_AT!r}: {err}")
     return problems

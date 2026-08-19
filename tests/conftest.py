@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import types
 
 import pytest
 
@@ -26,8 +27,9 @@ def _mp4_titles_round_trip() -> bool:
     """Whether this ffmpeg can store a per-stream title in MP4.
 
     It writes one as the ``name`` atom, which the mov muxer only learned in
-    ffmpeg 7; 6.x accepts the option and silently drops it. Two tests turn on
-    that, and so do the MP4 fixtures they build.
+    ffmpeg 8.1; everything before that, 8.0 included, accepts the option and
+    silently drops it. Two tests turn on that, and so do the MP4 fixtures
+    they build.
 
     Detected rather than compared against a version string, because
     distributions backport and rebuild: what matters is what this binary
@@ -82,12 +84,12 @@ def _mp4_titles_round_trip() -> bool:
 
 MP4_TITLES_ROUND_TRIP = _mp4_titles_round_trip()
 
-#: MP4 per-stream titles need ffmpeg 7 or newer. The shipped image has one;
+#: MP4 per-stream titles need ffmpeg 8.1 or newer. The shipped image has one;
 #: ubuntu-latest, and so the CI test matrix, does not — which is why the
 #: Docker job runs this suite inside the image too.
 requires_mp4_titles = pytest.mark.skipif(
     not MP4_TITLES_ROUND_TRIP,
-    reason="this ffmpeg drops per-stream titles in MP4 (needs 7+)",
+    reason="this ffmpeg drops per-stream titles in MP4 (needs 8.1+)",
 )
 
 
@@ -112,6 +114,11 @@ def _no_services(monkeypatch):
         "JELLYFIN_API_KEY",
     ):
         monkeypatch.setattr(config, name, "")
+
+
+def fake_run(returncode: int = 0, stdout: str = "", stderr: str = ""):
+    """A subprocess.run result double, for tests that monkeypatch it."""
+    return types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
 
 
 def _tags(lang: str | None, title: str) -> dict:

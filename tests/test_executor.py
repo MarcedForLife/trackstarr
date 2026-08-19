@@ -11,8 +11,9 @@ from pathlib import Path
 
 import pytest
 
+from conftest import fake_run
 from trackstarr import config, executor
-from trackstarr.executor import Outcome, apply_plan, work_dir_errors
+from trackstarr.executor import Outcome, apply_plan, audio_codec_errors, work_dir_errors
 from trackstarr.planner import Plan, SourceSignature
 from trackstarr.policy import Policy
 
@@ -243,7 +244,7 @@ def test_matching_source_passes_the_staleness_check(tmp_path, monkeypatch):
     )
 
     ran = []
-    fake = type("Res", (), {"returncode": 1, "stderr": "boom", "stdout": ""})()
+    fake = fake_run(returncode=1, stderr="boom")
     monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: ran.append(a) or fake)
     outcome, detail = apply_plan(plan)
     assert ran, "the rewrite should have been attempted"
@@ -257,7 +258,7 @@ def test_ffmpeg_stderr_in_the_detail_is_bounded(tmp_path, monkeypatch):
     path = tmp_path / "f.mkv"
     path.write_bytes(b"content")
     noise = "deprecated pixel format used\n" * 1000 + "final: everything broke"
-    fake = type("Res", (), {"returncode": 1, "stderr": noise, "stdout": ""})()
+    fake = fake_run(returncode=1, stderr=noise)
     monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: fake)
 
     outcome, detail = apply_plan(Plan(path=str(path), reasons=["reorder streams"]))
@@ -269,14 +270,14 @@ def test_ffmpeg_stderr_in_the_detail_is_bounded(tmp_path, monkeypatch):
 def test_work_dir_on_the_same_filesystem_is_fine(tmp_path, monkeypatch):
     root = tmp_path / "media"
     root.mkdir()
-    monkeypatch.setattr(config, "MEDIA_ROOTS", [str(root)])
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
     assert work_dir_errors() == []
     assert os.path.isdir(config.WORK_DIR), "the check should create WORK_DIR"
 
 
 def test_a_work_dir_on_another_filesystem_is_allowed(tmp_path, monkeypatch):
     """The refusal this replaced ruled out every multi-drive library."""
-    monkeypatch.setattr(config, "MEDIA_ROOTS", ["/mnt/disk1/movies", "/mnt/disk2/tv"])
+    monkeypatch.setattr(config, "MEDIA_DIRS", ["/mnt/disk1/movies", "/mnt/disk2/tv"])
     assert work_dir_errors() == []
 
 
@@ -287,3 +288,48 @@ def test_unusable_work_dir_is_an_error(tmp_path, monkeypatch):
     errors = work_dir_errors()
     assert len(errors) == 1
     assert "not usable" in errors[0]
+
+
+ENCODERS_OUTPUT = """Encoders:
+ V..... = Video
+ A..... = Audio
+ ------
+ V....D libx264              H.264 / AVC / MPEG-4 AVC
+ A....D aac                  AAC (Advanced Audio Coding)
+ A....D ac3                  ATSC A/52A (AC-3)
+"""
+
+
+def _fake_encoders(monkeypatch):
+    result = fake_run(stdout=ENCODERS_OUTPUT)
+    monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: result)
+
+
+def test_a_known_audio_codec_passes(monkeypatch):
+    _fake_encoders(monkeypatch)
+    monkeypatch.setattr(config, "AUDIO_CODEC", "aac")
+    assert audio_codec_errors() == []
+
+
+def test_a_typoed_audio_codec_is_refused(monkeypatch):
+    """A bad codec must fail the restart that introduced it, not the first
+    rewrite hours later."""
+    _fake_encoders(monkeypatch)
+    monkeypatch.setattr(config, "AUDIO_CODEC", "acc")
+    errors = audio_codec_errors()
+    assert len(errors) == 1
+    assert "'acc'" in errors[0]
+
+
+def test_a_video_codec_is_not_an_audio_encoder(monkeypatch):
+    _fake_encoders(monkeypatch)
+    monkeypatch.setattr(config, "AUDIO_CODEC", "libx264")
+    assert len(audio_codec_errors()) == 1
+
+
+def test_missing_ffmpeg_is_not_this_checks_problem(monkeypatch):
+    def no_ffmpeg(*args, **kwargs):
+        raise FileNotFoundError("ffmpeg")
+
+    monkeypatch.setattr(executor.subprocess, "run", no_ffmpeg)
+    assert audio_codec_errors() == []

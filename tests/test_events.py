@@ -155,7 +155,7 @@ def test_dry_webhook_import_records_a_would_fix_event(monkeypatch):
 
 
 def test_sweep_leaves_a_summary_event(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "MEDIA_ROOTS", [str(tmp_path / "empty")])
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "empty")])
     os.makedirs(tmp_path / "empty")
 
     sweep(dry_run=True)
@@ -176,7 +176,7 @@ def test_sweep_events_share_a_run_id(monkeypatch, tmp_path):
     root = tmp_path / "library"
     root.mkdir()
     (root / "f.mkv").write_bytes(b"x")
-    monkeypatch.setattr(config, "MEDIA_ROOTS", [str(root)])
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan(p))
     monkeypatch.setattr(processing, "apply_plan", lambda plan: (Outcome.APPLIED, ""))
 

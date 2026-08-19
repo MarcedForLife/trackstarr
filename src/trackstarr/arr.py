@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from . import config
+from . import auth, config
 from .client import API_ERRORS, request
 from .langs import ARR_NON_LANGUAGES, from_name
 from .paths import path_within
@@ -21,6 +21,10 @@ log = logging.getLogger(__name__)
 
 #: What the connection is called inside Radarr and Sonarr.
 WEBHOOK_NAME = "trackstarr"
+
+#: Header the connection is configured to send back with every webhook,
+#: carrying the shared secret the listener requires.
+AUTH_HEADER = "X-Api-Key"
 
 
 @dataclass
@@ -72,28 +76,40 @@ class Arr:
     def register_webhook(self, url: str) -> bool:
         """Create or update this *arr's webhook connection back to us.
 
-        Returns True once the connection exists and points at ``url``; a
-        False means the *arr was unreachable or rejected the save, and the
-        call is safe to retry.
+        Returns True once the connection exists, points at ``url`` and
+        carries a secret the listener will accept; False means the *arr was
+        unreachable or rejected the save, and the call is safe to retry.
+
+        The secret is only ever written here, never read back out of our own
+        storage, which keeps a digest and nothing else. What the *arr already
+        holds is checked against that digest instead, so the connection is
+        left alone when it still verifies and given a freshly minted secret
+        when it does not — after a wiped STATE_DIR, or a connection edited by
+        hand in the *arr's UI.
         """
         if not self.enabled:
             return True
-        payload = {
-            "name": WEBHOOK_NAME,
-            "implementation": "Webhook",
-            "configContract": "WebhookSettings",
-            # Import and upgrade are the only events the listener acts on.
-            "onDownload": True,
-            "onUpgrade": True,
-            "fields": [{"name": "url", "value": url}, {"name": "method", "value": 1}],
-        }
         try:
             existing = self._call("/api/v3/notification") or []
-            ours = next(
-                (entry for entry in existing if entry.get("name") == WEBHOOK_NAME), None
+        except API_ERRORS as err:
+            log.warning("%s: webhook registration failed (%s), will retry", self.name, err)
+            return False
+        ours = next((entry for entry in existing if entry.get("name") == WEBHOOK_NAME), None)
+        if (
+            ours
+            and _webhook_current(ours, _payload(url))
+            and auth.matches(self.name, _sent_secret(ours))
+        ):
+            return True
+        try:
+            secret = auth.mint(self.name)
+        except OSError as err:
+            log.warning(
+                "%s: cannot provision a webhook secret (%s), will retry", self.name, err
             )
-            if ours and _webhook_current(ours, payload):
-                return True
+            return False
+        payload = _payload(url, secret)
+        try:
             # Saving makes the *arr fire a test event at the url, so the
             # listener must already be accepting connections.
             if ours:
@@ -104,11 +120,14 @@ class Arr:
                 )
             else:
                 self._call("/api/v3/notification", payload)
-            log.info("%s: webhook connection registered -> %s", self.name, url)
-            return True
         except API_ERRORS as err:
             log.warning("%s: webhook registration failed (%s), will retry", self.name, err)
             return False
+        # Says "fresh secret" because reaching here always rotates one: a
+        # restart that logs this every time means the *arr is not giving the
+        # header back as it was saved, so nothing we store can ever match it.
+        log.info("%s: webhook connection registered with a fresh secret -> %s", self.name, url)
+        return True
 
     def rescan(self, item_id: int) -> None:
         """Re-read the file, so the *arr's size and media info stay true."""
@@ -118,6 +137,45 @@ class Arr:
             self._call("/api/v3/command", {"name": self.rescan_cmd, self.rescan_key: item_id})
         except API_ERRORS as err:
             log.warning("%s: rescan of id %s failed (%s)", self.name, item_id, err)
+
+
+def _payload(url: str, secret: str | None = None) -> dict:
+    """The connection we want the *arr to hold.
+
+    Without a secret this is the settings half alone, which is what an
+    existing connection is compared against; with one it is the body to
+    save. The credential is left out of the comparison because we keep only
+    its digest, so there is nothing here to compare it with — it gets its
+    own check in :func:`Arr.register_webhook`.
+    """
+    fields = [
+        {"name": "url", "value": url},
+        {"name": "method", "value": 1},
+    ]
+    if secret is not None:
+        # Custom headers, sent with every callback including the test.
+        fields.append({"name": "headers", "value": [{"key": AUTH_HEADER, "value": secret}]})
+    return {
+        "name": WEBHOOK_NAME,
+        "implementation": "Webhook",
+        "configContract": "WebhookSettings",
+        # Import and upgrade are the only events the listener acts on.
+        "onDownload": True,
+        "onUpgrade": True,
+        "fields": fields,
+    }
+
+
+def _sent_secret(notification: dict) -> str:
+    """The AUTH_HEADER value an existing connection would call us with."""
+    fields = {
+        entry.get("name"): entry.get("value") for entry in notification.get("fields") or []
+    }
+    headers = fields.get("headers")
+    for header in headers if isinstance(headers, list) else []:
+        if isinstance(header, dict) and header.get("key") == AUTH_HEADER:
+            return str(header.get("value") or "")
+    return ""
 
 
 def _webhook_current(notification: dict, payload: dict) -> bool:

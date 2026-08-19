@@ -25,10 +25,17 @@ COPY --from=build /out /
 RUN python3 -m compileall -q /usr/lib/python3*/site-packages/trackstarr
 
 ENV PYTHONUNBUFFERED=1
-EXPOSE 8080
+EXPOSE 5120
 
+# Only serve opens a port, so probe only serve: a one-shot `docker run
+# trackstarr sweep` has no listener and would otherwise sit at unhealthy for
+# its whole run, which is what a restarter watches for. Docker has no "not
+# applicable" health status, so those commands report healthy instead.
+# LISTEN_PORT rather than a literal 5120, or moving the listener would leave
+# the container permanently unhealthy.
 HEALTHCHECK --interval=60s --timeout=10s --start-period=15s --retries=3 \
-  CMD wget -q --spider -T 5 http://127.0.0.1:8080/health || exit 1
+  CMD tr '\0' '\n' < /proc/1/cmdline | grep -qx serve || exit 0; \
+      wget -q --spider -T 5 "http://127.0.0.1:${LISTEN_PORT:-5120}/health" || exit 1
 
 ENTRYPOINT ["trackstarr"]
 CMD ["serve"]

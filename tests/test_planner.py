@@ -682,13 +682,23 @@ def test_command_tags_the_downmix_with_its_source_language():
     assert "title=2.0" in args
 
 
-def test_bitrate_scales_with_the_generated_layout(monkeypatch):
+@pytest.mark.parametrize(
+    ("rate", "stereo", "surround"),
+    [
+        ("192k", "192k", "576k"),
+        # Uppercase and plain forms must scale too: 320K once resolved to an
+        # unparseable 960K, silently disabling the weak-track comparison.
+        ("320K", "320K", "960k"),
+        ("192000", "192000", "576k"),
+    ],
+)
+def test_bitrate_scales_with_the_generated_layout(monkeypatch, rate, stereo, surround):
     """AUDIO_BITRATE names the stereo rate, so the 5.1 downmix gets triple."""
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "192k")
+    monkeypatch.setattr(config, "AUDIO_BITRATE", rate)
     plan = plan_for(video(0), audio(1, 8))
     args = ffmpeg_args(plan, "/tmp/out.mkv")
-    assert args[args.index("-b:a:0") + 1] == "192k"
-    assert args[args.index("-b:a:1") + 1] == "576k"
+    assert args[args.index("-b:a:0") + 1] == stereo
+    assert args[args.index("-b:a:1") + 1] == surround
     assert "title=5.1" in args
 
 
@@ -697,20 +707,6 @@ def test_unparseable_bitrate_is_passed_through(monkeypatch):
     plan = plan_for(video(0), audio(1, 8))
     args = ffmpeg_args(plan, "/tmp/out.mkv")
     assert args[args.index("-b:a:1") + 1] == "0.2M"
-
-
-def test_plain_and_uppercase_rates_scale_too(monkeypatch):
-    """320K once resolved to an unparseable 960K, silently disabling the
-    weak-track comparison; one bitrate grammar keeps every form scalable."""
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "320K")
-    plan = plan_for(video(0), audio(1, 8))
-    args = ffmpeg_args(plan, "/tmp/out.mkv")
-    assert args[args.index("-b:a:1") + 1] == "960k"
-
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "192000")
-    plan = plan_for(video(0), audio(1, 8))
-    args = ffmpeg_args(plan, "/tmp/out.mkv")
-    assert args[args.index("-b:a:1") + 1] == "576k"
 
 
 def test_per_layout_bitrate_overrides_the_scaled_default(monkeypatch):

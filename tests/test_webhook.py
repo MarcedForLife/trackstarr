@@ -1,14 +1,20 @@
-"""Webhook parsing and hardlink parking. No media, no network."""
+"""Webhook parsing, the listener and hardlink parking. No media; the
+listener tests bind a loopback socket. The credential store itself is
+covered by test_auth.py."""
 
 from __future__ import annotations
 
+import http.client
+import json
 import os
+import threading
 from dataclasses import replace
+from http.server import ThreadingHTTPServer
 
 import pytest
 
-from trackstarr import config, events, processing, webhook
-from trackstarr.arr import original_of, radarr
+from trackstarr import auth, config, events, processing, webhook
+from trackstarr.arr import AUTH_HEADER, original_of, radarr
 from trackstarr.planner import Plan
 from trackstarr.processing import Job, ProcessResult
 from trackstarr.status import Status
@@ -122,6 +128,80 @@ def test_dry_run_never_rewrites_a_webhook_import(monkeypatch):
     webhook._handle(Job("/x.mkv"))
     (entry,) = list(events.read())
     assert entry["event"] == "would-fix"
+
+
+@pytest.fixture
+def listener():
+    """A live Handler on a loopback socket, cleaned up with the in-flight set."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), webhook.Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield server
+    server.shutdown()
+    server.server_close()
+    with webhook._inflight_lock:
+        webhook._inflight.clear()
+
+
+def request(server, method: str, path: str, body: bytes | None = None, headers=None):
+    """One HTTP request against a listener, returning (status code, JSON body)."""
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+    try:
+        conn.request(method, path, body, headers or {})
+        response = conn.getresponse()
+        return response.status, json.loads(response.read())
+    finally:
+        conn.close()
+
+
+def post(server, body: dict, headers: dict | None = None) -> tuple[int, str]:
+    """POST a webhook body, returning (status code, answer)."""
+    status, answer = request(server, "POST", "/", json.dumps(body).encode(), headers)
+    return status, answer["status"]
+
+
+def movie_body(path: str, folder: str) -> dict:
+    return {
+        "eventType": "Download",
+        "movie": {"id": 1, "folderPath": folder},
+        "movieFile": {"path": path},
+    }
+
+
+@pytest.fixture
+def media_root(tmp_path):
+    """A library directory holding one file, f.mkv."""
+    root = tmp_path / "media"
+    root.mkdir()
+    (root / "f.mkv").write_bytes(b"x")
+    return root
+
+
+def test_post_queues_only_existing_paths(listener, media_root):
+    """A POST naming a file this container cannot see (usually a mount
+    mismatch) must answer 200 and queue nothing."""
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+
+    body = movie_body(str(media_root / "missing.mkv"), str(media_root))
+    assert post(listener, body, headers) == (200, "queued 0")
+    body = movie_body(str(media_root / "f.mkv"), str(media_root))
+    assert post(listener, body, headers) == (200, "queued 1")
+    # No worker threads run here, so the accepted job is still queued.
+    assert webhook._work_q.get_nowait().path == str(media_root / "f.mkv")
+
+
+def test_unauthenticated_posts_never_reach_the_queue(listener, media_root):
+    auth.mint("radarr")  # provisioned, but not what these requests send
+    queued_before = webhook._work_q.qsize()
+
+    body = movie_body(str(media_root / "f.mkv"), str(media_root))
+    assert post(listener, body)[0] == 401
+    assert post(listener, body, {AUTH_HEADER: "guessed-wrong"})[0] == 401
+    assert post(listener, {"eventType": "Test"})[0] == 401
+    assert webhook._work_q.qsize() == queued_before
+
+
+def test_health_needs_no_secret(listener):
+    assert request(listener, "GET", "/health")[0] == 200
 
 
 def test_original_of_handles_missing_fields():

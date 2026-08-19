@@ -1,8 +1,9 @@
-"""The webhook side: the HTTP listener, the work queue, and hardlink parking.
+"""The webhook side: the listener, the work queue, and hardlink parking.
 
 Radarr and Sonarr fire per imported file. The HTTP handler only parses and
 queues; a single worker thread does the probing and rewriting, so a slow or
-restarting *arr can never stall the webhook response.
+restarting *arr can never stall the webhook response. The credentials
+callers present live in :mod:`trackstarr.auth`.
 """
 
 from __future__ import annotations
@@ -17,8 +18,8 @@ import urllib.parse
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler
 
-from . import config, events
-from .arr import all_arrs, original_of
+from . import auth, config, events
+from .arr import AUTH_HEADER, all_arrs, original_of
 from .processing import Job, downmixed_names, process
 from .status import Status
 
@@ -182,7 +183,7 @@ def _paths(files: list[dict], folder: str) -> list[str]:
 
 
 #: A full-season Sonarr import is tens of KB; anything past this is not a
-#: webhook, and the listener has no auth to hide behind.
+#: webhook.
 _MAX_BODY = 8 << 20
 
 
@@ -202,6 +203,10 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(404, "not found")
 
     def do_POST(self) -> None:
+        if not auth.authorized(self.headers.get(AUTH_HEADER) or ""):
+            log.warning("rejecting POST without a valid shared secret")
+            self._reply(401, "unauthorized")
+            return
         try:
             length = int(self.headers.get("Content-Length") or 0)
             if length > _MAX_BODY:
@@ -220,13 +225,14 @@ class Handler(BaseHTTPRequestHandler):
 
         queued = 0
         for job in jobs_from_hook(body):
+            # Usually the *arr and this container spelling the library
+            # differently, i.e. a mount mismatch.
             if not os.path.exists(job.path):
-                log.warning("webhook path does not exist: %s", job.path)
+                log.warning("ignoring webhook path (does not exist): %s", job.path)
                 continue
             if enqueue(job):
                 queued += 1
                 log.info("queued %s (original=%s)", job.path, job.lang or "unknown")
-        # Answer immediately; the *arr should never wait on ffmpeg.
         self._reply(200, f"queued {queued}")
 
     def log_message(self, fmt: str, *args) -> None:

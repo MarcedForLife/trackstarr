@@ -73,7 +73,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # S101: asserts are what tests are made of. S108: /tmp paths in the planner
 # tests are opaque strings handed to ffmpeg_args, never opened.
-"tests/*" = ["S101", "S108"]
+# S105/S106: the "hardcoded passwords" are fixture webhook secrets.
+"tests/*" = ["S101", "S105", "S106", "S108"]
 
 [tool.ruff.lint.isort]
 # conftest is a local test helper, not a third-party package.

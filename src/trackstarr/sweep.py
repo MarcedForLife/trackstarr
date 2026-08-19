@@ -13,8 +13,9 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 
-from . import config, events
+from . import config, cron, events
 from .arr import LibraryItem, all_arrs, match_path, path_index
 from .executor import drop_if_stale, is_staged_file
 from .planner import describe
@@ -35,13 +36,13 @@ CACHEABLE_STATUSES = frozenset({Status.SKIP, Status.CONFORM, Status.WOULD_FIX})
 
 def walk_library(policy: Policy) -> list[str]:
     found: list[str] = []
-    for root in config.MEDIA_ROOTS:
-        if not os.path.isdir(root):
+    for media_dir in config.MEDIA_DIRS:
+        if not os.path.isdir(media_dir):
             # os.walk would yield nothing, making a wrong mount or a typo in
-            # MEDIA_ROOTS indistinguishable from an empty library.
-            log.warning("media root %s does not exist", root)
+            # MEDIA_DIRS indistinguishable from an empty library.
+            log.warning("media dir %s does not exist", media_dir)
             continue
-        for dirpath, dirnames, names in os.walk(root):
+        for dirpath, dirnames, names in os.walk(media_dir):
             dirnames[:] = [child for child in dirnames if not child.startswith(".")]
             for name in names:
                 if policy.allowed_container(name):
@@ -57,6 +58,13 @@ def walk_library(policy: Policy) -> list[str]:
 
 #: Longest pending.tsv cell; a 30-track plan's reasons get cut, not the row.
 _CELL_MAX = 400
+
+#: Fewest judging threads a sweep runs, whatever the rewrite budget. The
+#: pool parallelizes probing, which is a cheap header read; the rewrite
+#: budget is enforced separately by the slots in processing, so a budget of
+#: 1 must not force a cold report-only sweep to probe thousands of files one
+#: at a time. Kept modest because concurrent probes still share the disk.
+_MIN_PROBE_WORKERS = 4
 
 #: Fewest seconds between mid-sweep cache checkpoints. Each checkpoint
 #: rewrites the whole cache, so on a big, fully cached library (thousands of
@@ -137,13 +145,15 @@ def sweep(dry_run: bool) -> dict[str, int]:
     with (
         open(report, "w") as report_file,
         ThreadPoolExecutor(
-            max_workers=config.MAX_CONCURRENT_REWRITES, thread_name_prefix="sweep"
+            max_workers=max(_MIN_PROBE_WORKERS, config.MAX_CONCURRENT_REWRITES),
+            thread_name_prefix="sweep",
         ) as pool,
     ):
         report_file.write("status\toriginal_lang\tpath\treasons\tdetail\n")
         # map, not as_completed: results arrive in walk order however many
-        # workers there are, so raising the budget doesn't reshuffle
-        # pending.tsv and a one-worker sweep behaves exactly as it always did.
+        # workers there are, so the pool size never reshuffles pending.tsv.
+        # Completed verdicts can buffer behind a long rewrite at the head of
+        # the line; a crash then costs at most a few re-probes.
         for i, judged in enumerate(pool.map(judge, files), 1):
             if judged.key:
                 library_bytes += judged.key.size
@@ -192,29 +202,23 @@ def sweep(dry_run: bool) -> dict[str, int]:
     return counts
 
 
-#: A target closer than this counts as just fired and rolls to tomorrow, so
-#: the scheduler rescheduling right after a sweep never picks the same slot.
-_MIN_LEAD_SECONDS = 30
+def seconds_until(schedule: str, now: float | None = None) -> float:
+    """Seconds until the cron schedule's next run, in local time.
 
-
-def seconds_until(hhmm: str, now: float | None = None) -> float:
-    """Seconds until the next occurrence of HH:MM local time."""
-    hour, minute = (int(part) for part in hhmm.split(":", 1))
+    The next run is strictly after ``now`` on a minute boundary, so a
+    reschedule right after a sweep can never pick the slot that just fired.
+    """
     now = time.time() if now is None else now
-    local = time.localtime(now)
-    target = time.mktime(
-        (local.tm_year, local.tm_mon, local.tm_mday, hour, minute, 0, 0, 0, -1)
-    )
-    delay = target - now
-    return delay if delay > _MIN_LEAD_SECONDS else delay + 86400
+    target = cron.next_run(cron.parse(schedule), datetime.fromtimestamp(now))
+    return target.timestamp() - now
 
 
 def scheduler() -> None:
     while True:
         try:
             delay = seconds_until(config.SWEEP_AT)
-        except ValueError:
-            log.error("SWEEP_AT=%r is not HH:MM, scheduler stopping", config.SWEEP_AT)
+        except ValueError as err:
+            log.error("SWEEP_AT=%r: %s, scheduler stopping", config.SWEEP_AT, err)
             return
         log.info("next sweep in %.1f hours (apply=%s)", delay / 3600, config.SWEEP_APPLY)
         time.sleep(delay)

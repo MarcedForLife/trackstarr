@@ -385,8 +385,7 @@ def _drop_stale_downmixes(plan: Plan, kept_audio: list[dict]) -> list[dict]:
 
     The REGENERATE_DOWNMIXES opt-in; see :func:`_stale_reason` for what each
     mode drops. Nothing is dropped unless a bigger track to rebuild the
-    layout from survives, so a file never loses a layout it had, and only
-    tag-preserving containers are touched at all.
+    layout from survives, so a file never loses a layout it had.
     """
     if not plan.policy.regenerate_downmixes or not plan.policy.rule_enabled("downmix"):
         return kept_audio
