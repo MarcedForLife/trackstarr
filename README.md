@@ -75,6 +75,7 @@ services:
       - /mnt/config/trackstarr:/config
     environment:
       TZ: Pacific/Auckland
+      MEDIA_DIRS: /data/media/movies:/data/media/tv
       RADARR_URL: http://radarr:7878
       RADARR_API_KEY: ${RADARR_API_KEY}
       SONARR_URL: http://sonarr:8989
@@ -82,9 +83,16 @@ services:
       SWEEP_AT: "0 4 * * *"
 ```
 
-`user:` takes PUID and PGID from your `.env` when they're defined, and
-nothing here ever runs as root, so trackstarr can't fix `/config` ownership
-for you. Create it before first start, Docker would create it root-owned:
+`MEDIA_DIRS` is where the sweep walks, in the container's paths, so it has
+to match your own layout under the mount above. It is spelled out here
+rather than left to its default because a wrong one is quiet: the sweep logs
+that the directory doesn't exist and finds nothing. Webhook imports still
+work, they carry their own paths.
+
+`user:` takes PUID and PGID from your `.env` when they're defined. The image
+itself defaults to `1000:1000`, so nothing here runs as root whether or not
+you set it, and trackstarr therefore can't fix `/config` ownership for you.
+Create it before first start, Docker would create it root-owned:
 
 ```sh
 install -d -o 1000 -g 1000 /mnt/config/trackstarr   # or mkdir + chown
@@ -127,6 +135,12 @@ A few behaviours worth knowing:
 - An authenticated caller can queue any path the container can reach, the
   mounts are the boundary. A path that doesn't exist here is logged and
   dropped, usually the *arr and trackstarr spelling the library differently.
+- A file the download client still hard-links is left alone and re-checked
+  every `HARDLINK_RECHECK` seconds, so it is rewritten minutes after seeding
+  ends. Rewriting one is safe for the seed, which keeps the old inode, but it
+  breaks the link and the file then occupies disk twice until the torrent
+  goes. `SKIP_HARDLINKS=false` rewrites on import instead and takes that
+  cost, which is worth it only if you don't seed.
 - Configure Plex or Jellyfin below and each rewrite nudges the server, so
   track lists stay correct even on network mounts its own watcher can't see.
 - A file that changes mid-rewrite (an upgrade landing) is deferred, the
@@ -178,7 +192,7 @@ Tears of Steel (2012).mkv
 | `DISABLED_RULES`                    | (unset)                             | any of `languages,downmix,cover_art,order,sdh`                                            |
 | `DROP_COMMENTARY`                   | `false`                             | remove commentary tracks instead of protecting them                                       |
 | `DOWNMIX_LAYOUTS`                   | `2.0,5.1`                           | layouts guaranteed to exist; own rate as `5.1:640k`                                       |
-| `SKIP_HARDLINKS`                    | `false`                             | leave files the download client still links alone                                         |
+| `SKIP_HARDLINKS`                    | `true`                              | leave files the download client still links alone, until it lets go                       |
 | `HARDLINK_RECHECK`                  | `900`                               | seconds between re-checks; 0 leaves them to the sweep                                     |
 | `ALLOWED_EXTS`                      | `.mkv,.mp4,.m4v`                    | containers that will be rewritten                                                         |
 | `AUDIO_CODEC`                       | `aac`                               | downmix encoder; `libfdk_aac` if your ffmpeg carries it                                   |

@@ -31,7 +31,7 @@ _FIELD_CHANGES = {
     "remux_to_mkv": ("REMUX_TO_MKV", True),
     "downmix_layouts": ("DOWNMIX_LAYOUTS", {"2.0", "7.1"}),
     "audio_codec": ("AUDIO_CODEC", "libfdk_aac"),
-    "skip_hardlinks": ("SKIP_HARDLINKS", True),
+    "skip_hardlinks": ("SKIP_HARDLINKS", False),
     "commentary_re": ("COMMENTARY_RE", re.compile("changed", re.IGNORECASE)),
     "sdh_re": ("SDH_RE", re.compile("changed", re.IGNORECASE)),
     "forced_re": ("FORCED_RE", re.compile("changed", re.IGNORECASE)),

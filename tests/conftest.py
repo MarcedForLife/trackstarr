@@ -8,6 +8,7 @@ without media. The integration suite generates real files with ffmpeg, which
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import types
@@ -100,6 +101,19 @@ def _isolated_state(monkeypatch, tmp_path):
     """Point STATE_DIR at the test's tmp dir; process() appends event history
     there, so no test may reach a real /config."""
     monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
+
+
+@pytest.fixture(autouse=True)
+def _restore_sigterm():
+    """Put the SIGTERM disposition back after every test.
+
+    main() installs a handler, and most of this suite calls it, so without
+    this the first test to do so changes how the pytest process itself
+    responds to a signal for the rest of the run.
+    """
+    original = signal.getsignal(signal.SIGTERM)
+    yield
+    signal.signal(signal.SIGTERM, original)
 
 
 @pytest.fixture(autouse=True)

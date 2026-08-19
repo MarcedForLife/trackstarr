@@ -181,13 +181,20 @@ ALLOWED_EXTS = _set("ALLOWED_EXTS", ".mkv,.mp4,.m4v")
 
 #: Leave files with multiple hard links alone, i.e. still seeding in a
 #: download client. Rewriting one is safe for the seed (it keeps the old
-#: inode) but breaks the link, so the file occupies disk twice. The sweep
-#: picks the file up once the download client lets go.
-SKIP_HARDLINKS = _bool("SKIP_HARDLINKS")
+#: inode) but breaks the link, so the file occupies disk twice until the seed
+#: is removed.
+#:
+#: On by default because hard-linking imports is what the standard *arr and
+#: download-client layout does, so off means every import silently doubles
+#: until the torrent goes — the library's whole seeding backlog, on the disk
+#: it can least afford. Nothing is skipped for good: the file is parked and
+#: re-stat'd (HARDLINK_RECHECK), and the sweep is the backstop.
+SKIP_HARDLINKS = _bool("SKIP_HARDLINKS", "true")
 
 #: How often (seconds) to re-stat webhook files parked by SKIP_HARDLINKS,
 #: so they are processed minutes after seeding ends instead of at the next
 #: sweep. 0 parks nothing and leaves skipped imports to the sweep alone.
+#: Nothing reads this while SKIP_HARDLINKS is off, since nothing is parked.
 HARDLINK_RECHECK = _int("HARDLINK_RECHECK", "900")
 
 #: Matched against the track title when the muxer left the disposition flags

@@ -132,9 +132,12 @@ jobs:
       # would show up rather than in the test job's downloaded build. An image
       # that lost ffmpeg, or its MP4 title support, fails here at startup
       # rather than going quietly green on a third of the suite.
+      #
+      # --user root only because pytest has to be installed into the image
+      # first; the smoke test above is what runs it as the image's own user.
       - name: Test inside the image
         run: |
-          docker run --rm --entrypoint sh \
+          docker run --rm --entrypoint sh --user root \
             -v "$PWD/tests:/w/tests:ro" \
             -v "$PWD/pyproject.toml:/w/pyproject.toml:ro" \
             -w /w trackstarr:ci -c '

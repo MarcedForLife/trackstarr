@@ -111,6 +111,33 @@ def test_publish_falls_back_to_a_copy_across_filesystems(tmp_path, monkeypatch):
     assert calls[1][1] == str(target)
 
 
+@pytest.mark.skipif(
+    os.geteuid() == 0,
+    reason="root's DAC_OVERRIDE ignores the mode this turns on, so it would pass "
+    "either way; the CI job that gates coverage runs unprivileged",
+)
+@pytest.mark.parametrize("cross_device", [False, True], ids=["rename", "copy"])
+def test_publish_handles_a_read_only_source(tmp_path, monkeypatch, cross_device):
+    """A library kept at 0444 is still republished. The staged file wears the
+    source's mode before it is flushed, and such a file cannot be reopened
+    for writing even by the user that owns it."""
+    library = tmp_path / "library"
+    library.mkdir()
+    target = library / "f.mkv"
+    target.write_bytes(b"old content")
+    target.chmod(0o444)
+    source_stat = os.stat(target)
+
+    staged = tmp_path / "elsewhere.partial"
+    staged.write_bytes(b"new content")
+    if cross_device:
+        _exdev(monkeypatch, staged)
+
+    executor._publish(str(staged), str(target), source_stat)
+    assert target.read_bytes() == b"new content"
+    assert target.stat().st_mode & 0o777 == 0o444
+
+
 def test_publish_does_not_copy_when_a_rename_will_do(tmp_path):
     """The free path has to stay free; copying every rewrite would double
     the writing for nothing."""

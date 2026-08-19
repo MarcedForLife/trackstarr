@@ -46,6 +46,27 @@ def _adopt(path: str, source: os.stat_result) -> None:
         os.chown(path, source.st_uid, source.st_gid)
 
 
+def _flush(path: str) -> None:
+    """Get a staged file's contents onto the disk before it is renamed.
+
+    Durability, not visibility: the renames below are atomic either way, but
+    ffmpeg and copyfile both return with the write still in the page cache,
+    so without this a crash just after the rename can leave the final name
+    pointing at a partially written file. Cheap in practice, since the kernel
+    has been writing back throughout the rewrite and only the tail is left.
+
+    Opened read-only, because by now the staged file carries the mode of the
+    file it replaces, and a library kept at 0444 cannot be reopened for
+    writing even by its owner. fsync flushes the inode's dirty pages however
+    the descriptor asking for it was opened.
+    """
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def _publish(tmp: str, out_path: str, source: os.stat_result) -> None:
     """Move the finished rewrite into place, atomically, from anywhere.
 
@@ -61,6 +82,11 @@ def _publish(tmp: str, out_path: str, source: os.stat_result) -> None:
     rename. Readers still see the old file or the new one, never a partial.
     """
     _adopt(tmp, source)
+    # Before the attempt, not after it fails: a flush is only worth anything
+    # ahead of the rename it protects. The cost when EXDEV does fire is one
+    # redundant flush on the path startup has already reported as the slow
+    # one, which is the cheaper mistake.
+    _flush(tmp)
     try:
         os.replace(tmp, out_path)
         return
@@ -72,11 +98,7 @@ def _publish(tmp: str, out_path: str, source: os.stat_result) -> None:
     try:
         shutil.copyfile(tmp, landing)
         _adopt(landing, source)
-        # Durability, not visibility: the rename below is atomic either way,
-        # but without this a crash just after it can leave the final name
-        # pointing at a partially written file.
-        with open(landing, "rb+") as handle:
-            os.fsync(handle.fileno())
+        _flush(landing)
         os.replace(landing, out_path)
     except BaseException:
         with contextlib.suppress(OSError):

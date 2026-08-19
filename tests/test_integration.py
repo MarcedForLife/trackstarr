@@ -344,7 +344,28 @@ def test_fix_command_end_to_end(make_file, capsys):
     assert capsys.readouterr().out.startswith("conform")
 
 
-def test_hardlinked_file_is_processed_by_default(make_file, tmp_path):
+def test_hardlinked_file_is_left_alone_by_default(make_file, tmp_path):
+    """The standard *arr layout hard-links every import, so rewriting one by
+    default would break the link and double the file on disk for as long as
+    the download client seeds it."""
+    path = make_file("f.mkv", COMMENTARY_CASE)
+    os.link(path, tmp_path / "seed.mkv")
+    assert not build_plan(path, "eng").needed
+
+
+def test_hardlinked_file_is_processed_once_the_seed_is_gone(make_file, tmp_path):
+    """Skipping parks the file, it does not give up on it."""
+    path = make_file("f.mkv", COMMENTARY_CASE)
+    seed = tmp_path / "seed.mkv"
+    os.link(path, seed)
+    seed.unlink()
+    assert build_plan(path, "eng").needed
+
+
+def test_hardlinks_are_rewritten_when_the_skip_is_switched_off(
+    make_file, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(config, "SKIP_HARDLINKS", False)
     path = make_file("f.mkv", COMMENTARY_CASE)
     os.link(path, tmp_path / "seed.mkv")
     assert build_plan(path, "eng").needed

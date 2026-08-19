@@ -4,8 +4,10 @@ import argparse
 import logging
 import os
 import shutil
+import signal
 import sys
 import textwrap
+from types import FrameType
 
 from . import __version__, auth, config, policy
 from .app import serve
@@ -14,7 +16,7 @@ from .executor import audio_codec_errors, work_dir_errors
 from .langs import norm_lang
 from .media import ProbeError
 from .planner import build_plan, describe, ffmpeg_args
-from .processing import Job, process
+from .processing import Job, process, state_dir_errors
 from .status import Status
 from .sweep import sweep
 
@@ -219,9 +221,9 @@ def _run_sweep(args: argparse.Namespace) -> int:
 
 
 #: Each command's handler and the startup checks it needs: "read" is the
-#: config, policy and ffmpeg-on-PATH report; "rewrite" adds WORK_DIR and the
-#: encoder. secret runs bare, it needs only a writable STATE_DIR and must
-#: work on a host without ffmpeg.
+#: config, policy and ffmpeg-on-PATH report; "rewrite" adds the two
+#: directories and the encoder. secret runs bare, it needs only a writable
+#: STATE_DIR, reports that failure itself, and must work without ffmpeg.
 COMMANDS = {
     "serve": (_run_serve, "rewrite"),
     "sweep": (_run_sweep, "rewrite"),
@@ -231,8 +233,30 @@ COMMANDS = {
 }
 
 
+def _on_sigterm(signum: int, frame: FrameType | None) -> None:
+    raise SystemExit(128 + signum)
+
+
+def handle_sigterm() -> None:
+    """Make SIGTERM end the process, the way SIGINT already does.
+
+    Python installs no SIGTERM handler, and the kernel does not apply a
+    signal's default action to PID 1 — which is what the container runs. So
+    without this ``docker stop`` is ignored, waits out its whole grace period
+    and then SIGKILLs: ten seconds on every restart and update.
+
+    Exiting promptly is the whole aim; a rewrite in flight is not waited for.
+    It is a daemon thread, so it dies with the interpreter and leaves its
+    staged file behind, which is the same orphan a SIGKILL left and which
+    startup already clears. Waiting instead would mean blocking the stop for
+    the minutes a remux takes, only to be SIGKILLed at the same deadline.
+    """
+    signal.signal(signal.SIGTERM, _on_sigterm)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    handle_sigterm()
 
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper(), logging.INFO),
@@ -250,6 +274,7 @@ def main(argv: list[str] | None = None) -> int:
             problems.append("ffmpeg and ffprobe must be on PATH")
     if checks == "rewrite":
         problems += work_dir_errors()
+        problems += state_dir_errors()
         problems += audio_codec_errors()
     if problems:
         for message in problems:

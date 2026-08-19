@@ -77,6 +77,27 @@ def _claim_slot():
         time.sleep(_SLOT_POLL_SECONDS)
 
 
+def state_dir_errors() -> list[str]:
+    """Whether STATE_DIR can hold what a rewrite needs, as ready-to-log messages.
+
+    Creates it when missing, then takes a slot lock, which is the same open
+    :func:`_claim_slot` does and the first thing to fail on a ``/config`` the
+    container cannot write — a bind mount Docker created root-owned, which the
+    README warns about because it is the mistake to make. That failure lands
+    in :func:`trackstarr.app.serve` before the listener binds, so without this
+    it surfaces as a traceback from a restart loop rather than a line in the
+    startup report. A slot another process is holding is not a problem here:
+    the open succeeded, which is the whole question.
+    """
+    try:
+        os.makedirs(config.STATE_DIR, exist_ok=True)
+        if lock_file := _try_lock(f"{_SLOT_PREFIX}0"):
+            lock_file.close()
+    except OSError as err:
+        return [f"STATE_DIR {config.STATE_DIR} is not usable: {err}"]
+    return []
+
+
 @contextlib.contextmanager
 def all_slots_held() -> Iterator[bool]:
     """Every rewrite slot on the machine, or none: yields whether it got all.

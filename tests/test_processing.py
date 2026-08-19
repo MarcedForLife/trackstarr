@@ -89,6 +89,32 @@ def test_all_slots_held_yields_false_while_a_rewrite_runs():
         assert held is True
 
 
+def test_a_writable_state_dir_passes_and_is_created():
+    assert processing.state_dir_errors() == []
+    assert os.path.isdir(config.STATE_DIR), "the check should create STATE_DIR"
+
+
+def test_an_unusable_state_dir_is_an_error(tmp_path, monkeypatch):
+    """A STATE_DIR serve cannot use, which it would otherwise hit as an
+    uncaught OSError before it ever bound the listener. In the field that is
+    the root-owned /config bind mount; here it is a blocker file, because
+    mode bits mean nothing to the root the in-image CI suite runs as, and a
+    test that quietly stops testing anything is worse than none."""
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_bytes(b"")
+    monkeypatch.setattr(config, "STATE_DIR", str(blocker))
+    errors = processing.state_dir_errors()
+    assert len(errors) == 1
+    assert "not usable" in errors[0]
+
+
+def test_a_state_dir_check_tolerates_a_slot_another_process_holds():
+    """The question is whether the directory can be written, not whether a
+    rewrite is running; a busy slot must not read as a broken mount."""
+    with processing._exclusive_rewrite():
+        assert processing.state_dir_errors() == []
+
+
 def test_all_slots_held_sees_slots_beyond_our_budget(monkeypatch):
     """A process started with a bigger budget can hold a slot past our range;
     its lock file exists on disk, so it must be checked too."""

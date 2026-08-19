@@ -1,5 +1,8 @@
 """Command line startup checks. No media, no network."""
 
+import os
+import signal
+import time
 from dataclasses import replace
 
 import pytest
@@ -7,7 +10,7 @@ import pytest
 from conftest import needed_plan
 from trackstarr import auth, config
 from trackstarr.arr import LibraryItem, radarr
-from trackstarr.cli import main
+from trackstarr.cli import handle_sigterm, main
 from trackstarr.media import ProbeError
 from trackstarr.planner import OutStream, Plan
 from trackstarr.policy import Policy
@@ -36,6 +39,42 @@ def startup_ok(monkeypatch, tmp_path):
     """Pass main()'s environment checks: ffmpeg "on PATH", writable WORK_DIR."""
     monkeypatch.setattr("trackstarr.cli.shutil.which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(config, "WORK_DIR", str(tmp_path / "work"))
+
+
+def test_sigterm_ends_the_process():
+    """The container runs this as PID 1, where the kernel applies no default
+    action, and Python installs no handler of its own. Without one `docker
+    stop` is ignored for its whole grace period and then SIGKILLs."""
+    handle_sigterm()
+    with pytest.raises(SystemExit) as stopped:
+        os.kill(os.getpid(), signal.SIGTERM)
+        # Delivery is not synchronous with the kill; the handler runs at the
+        # next bytecode boundary, and sleeping is interrupted by it.
+        time.sleep(5)
+    assert stopped.value.code == 128 + signal.SIGTERM
+
+
+def test_every_command_installs_the_sigterm_handler(startup_ok):
+    """A stop must be prompt whatever is running, not only serve: a sweep
+    holds rewrite slots that another process is waiting on."""
+    before = signal.getsignal(signal.SIGTERM)
+    main(["plan", "--original", "eng", "/nowhere/missing.mkv"])
+    assert signal.getsignal(signal.SIGTERM) is not before
+
+
+def test_an_unusable_state_dir_stops_a_rewriting_command(
+    startup_ok, monkeypatch, tmp_path, caplog
+):
+    """serve would otherwise hit this as a traceback from a restart loop,
+    since it takes a slot lock before it binds the listener. Asserted on the
+    message, not the exit code: a fix of a missing file exits 1 anyway, so
+    the code alone would pass with the check unwired."""
+    blocker = tmp_path / "not-a-dir"
+    blocker.write_bytes(b"")
+    monkeypatch.setattr(config, "STATE_DIR", str(blocker))
+    assert main(["fix", "--original", "eng", "/lib/a.mkv"]) == 1
+    assert "STATE_DIR" in caplog.text
+    assert "not usable" in caplog.text
 
 
 def test_plan_fails_when_a_file_cannot_be_read(startup_ok, capsys):

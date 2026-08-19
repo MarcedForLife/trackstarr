@@ -27,6 +27,13 @@ RUN python3 -m compileall -q /usr/lib/python3*/site-packages/trackstarr
 ENV PYTHONUNBUFFERED=1
 EXPOSE 5120
 
+# The default the compose example spells out anyway, so that a bare `docker
+# run` is not the one way to end up as root — writing root-owned files into
+# /config and the library, which the next non-root start then cannot read.
+# A numeric id needs no passwd entry, and `user:` or `--user` still wins, so
+# a stack on different ids is unaffected.
+USER 1000:1000
+
 # Only serve opens a port, so probe only serve: a one-shot `docker run
 # trackstarr sweep` has no listener and would otherwise sit at unhealthy for
 # its whole run, which is what a restarter watches for. Docker has no "not
