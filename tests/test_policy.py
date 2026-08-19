@@ -12,8 +12,8 @@ from trackstarr.policy import Policy
 
 
 def test_fingerprint_covers_every_field():
-    """Derived from the fields, so a setting added to Policy can never be
-    forgotten by the sweep cache the way a hand-maintained list could."""
+    """Derived from the fields, so a setting added to Policy can never be forgotten
+    the way a hand-maintained list could."""
     fingerprint = Policy.from_config().fingerprint()
     field_names = {field.name for field in dataclasses.fields(Policy)}
     assert set(fingerprint) == {"version", *field_names}
@@ -23,7 +23,7 @@ def test_fingerprint_covers_every_field():
 #: field needs an entry here (the parametrize fails loudly without one),
 #: which is the moment to make sure from_config actually populates it.
 _FIELD_CHANGES = {
-    "always_keep": ("ALWAYS_KEEP", {"eng", "fre"}),
+    "always_keep": ("ALWAYS_KEEP_LANGS", {"eng", "fre"}),
     "allowed_exts": ("ALLOWED_EXTS", {".mkv"}),
     "disabled_rules": ("DISABLED_RULES", {"sdh"}),
     "drop_commentary": ("DROP_COMMENTARY", True),
@@ -38,18 +38,12 @@ _FIELD_CHANGES = {
     "junk_title_re": ("JUNK_TITLE_RE", re.compile("changed", re.IGNORECASE)),
 }
 
-#: Not config-driven: a code constant, covered by the version field.
-_CONSTANT_FIELDS = {"image_codecs"}
 
-
-@pytest.mark.parametrize(
-    "field_name",
-    [field.name for field in dataclasses.fields(Policy) if field.name not in _CONSTANT_FIELDS],
-)
+@pytest.mark.parametrize("field_name", [field.name for field in dataclasses.fields(Policy)])
 def test_every_field_varies_with_its_setting(monkeypatch, field_name):
-    """from_config must populate every field from config. A field with a
-    forgotten mapping would fingerprint as a constant and never invalidate
-    the cache, the exact failure the hand-maintained list had."""
+    """from_config has to populate every field. A forgotten mapping would
+    fingerprint as a constant and never invalidate the cache, the exact
+    failure the hand-maintained list had."""
     before = Policy.from_config().fingerprint()
     setting, changed = _FIELD_CHANGES[field_name]
     monkeypatch.setattr(config, setting, changed)
@@ -61,18 +55,36 @@ def test_fingerprint_is_json_serialisable():
     json.dumps(Policy.from_config().fingerprint())
 
 
+def test_the_digest_identifies_the_policy_it_was_taken_from(monkeypatch):
+    """Every event carries one. Unstable across calls and one generation reads as
+    two; unchanged across an edit and the trace lies."""
+    assert Policy.from_config().digest() == Policy.from_config().digest()
+    before = Policy.from_config().digest()
+    monkeypatch.setattr(config, "AUDIO_CODEC", "libfdk_aac")
+    assert Policy.from_config().digest() != before
+
+
+def test_the_digest_does_not_depend_on_key_order():
+    """Two dicts of the same settings have to hash alike, or a Python release that
+    reorders anything splits one generation into two."""
+    policy_now = Policy.from_config()
+    shuffled = dict(reversed(list(policy_now.fingerprint().items())))
+    assert json.dumps(shuffled, sort_keys=True) == json.dumps(
+        policy_now.fingerprint(), sort_keys=True
+    )
+
+
 def test_the_tag_is_written_even_for_a_rate_nothing_can_parse():
-    """Startup refuses such a rate on a configured layout, so this is only
-    reachable from a hand-built stream — but encode_settings writes the tag
-    a later pass identifies our own tracks by, and must never be the thing
-    that fails a rewrite."""
+    """Startup refuses such a rate on a configured layout, so only a hand-built
+    stream reaches this. encode_settings writes the tag a later pass
+    identifies our tracks by, and must never be what fails a rewrite."""
     assert encode_settings("aac", "0.2M") == "aac 0.2M"
 
 
 def test_fingerprint_tracks_the_bitrate_through_resolved_layouts(monkeypatch):
-    """The layout rates are not a field of their own; they reach the
-    fingerprint through downmix_layouts, and must still invalidate on
-    change, or a sweep would keep serving verdicts judged at the old rate."""
+    """The layout rates reach the fingerprint through downmix_layouts rather than
+    a field of their own, and still have to invalidate on change, or a sweep
+    keeps serving verdicts judged at the old rate."""
     before = Policy.from_config().fingerprint()
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "128k", "5.1": "640k"})
     assert Policy.from_config().fingerprint() != before
@@ -84,8 +96,8 @@ def test_fingerprint_tracks_the_bitrate_through_resolved_layouts(monkeypatch):
 
 
 def test_a_container_with_no_muxer_is_refused_at_startup(monkeypatch):
-    """ALLOWED_EXTS drives the walk, so an extension ffmpeg cannot mux would
-    be collected all sweep and then fail one file at a time."""
+    """ALLOWED_EXTS drives the walk, so an extension ffmpeg cannot mux would be
+    collected all sweep and fail one file at a time."""
     monkeypatch.setattr(config, "ALLOWED_EXTS", {".mkv", ".rmvb"})
     problems = policy.errors()
     assert any(".rmvb" in problem for problem in problems)
@@ -118,8 +130,8 @@ def test_invalid_layouts_catch_typos(monkeypatch):
 
 
 def test_the_shipped_layout_defaults_resolve_as_documented():
-    """The two layouts the downmix rule guarantees, at the rates a library
-    inherits without configuring anything."""
+    """The two layouts the downmix rule guarantees, at the rates a library inherits
+    without configuring anything."""
     assert [(layout.name, layout.bitrate) for layout in resolved_layouts()] == [
         ("2.0", "320k"),
         ("5.1", "640k"),
@@ -128,18 +140,17 @@ def test_the_shipped_layout_defaults_resolve_as_documented():
 
 @pytest.mark.parametrize("rate", ["320k", "320000", " 320K "])
 def test_one_rate_has_one_spelling(monkeypatch, rate):
-    """The resolved rate is written into the file as a stream tag that a
-    later pass compares for equality, so two spellings of one rate would
-    read as a settings change and regenerate every track we have made."""
+    """The resolved rate goes into the file as a stream tag a later pass compares
+    for equality, so two spellings would read as a settings change and
+    regenerate every track we have made."""
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": rate})
     monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
     assert [layout.bitrate for layout in resolved_layouts()] == ["320k"]
 
 
 def test_a_layout_with_no_rate_is_refused_at_startup(monkeypatch):
-    """Nothing is derived from anything else, so a layout beyond the two
-    shipped defaults has to be given a rate. Skipping it silently would drop
-    the layout the setting just asked for."""
+    """Nothing is derived from anything else, so a layout past the two shipped
+    defaults needs a rate. Skipping it would drop the layout just asked for."""
     monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0", "7.1"})
     errors = policy.errors()
     assert len(errors) == 1
@@ -148,8 +159,7 @@ def test_a_layout_with_no_rate_is_refused_at_startup(monkeypatch):
 
 
 def test_a_layout_rate_that_is_not_a_bitrate_is_refused(monkeypatch):
-    """Named separately from the layout, so the report says which of the two
-    is wrong and which variable to fix."""
+    """Named separately from the layout, so the report says which is wrong."""
     monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"5.1"})
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"5.1": "loud"})
     errors = policy.errors()
@@ -158,8 +168,8 @@ def test_a_layout_rate_that_is_not_a_bitrate_is_refused(monkeypatch):
 
 
 def test_duplicate_channel_counts_are_refused_at_startup(monkeypatch):
-    """Two entries for one channel count generate identical tracks and leave
-    the rules judging against an arbitrary one of the rates."""
+    """Two entries for one channel count generate identical tracks and leave the
+    rules judging against an arbitrary rate."""
     monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"4.2", "5.1"})
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"4.2": "640k", "5.1": "640k"})
     errors = policy.errors()

@@ -1,6 +1,6 @@
 # Build stage: install the package under /out for the runtime stage to copy.
 # pip and the source tree never reach the final image, and nothing has to be
-# deleted after the fact — a file removed in a later layer still ships in the
+# deleted after the fact, a file removed in a later layer still ships in the
 # earlier one.
 FROM alpine:3.24 AS build
 
@@ -28,7 +28,7 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 5120
 
 # The default the compose example spells out anyway, so that a bare `docker
-# run` is not the one way to end up as root — writing root-owned files into
+# run` is not the one way to end up as root, writing root-owned files into
 # /config and the library, which the next non-root start then cannot read.
 # A numeric id needs no passwd entry, and `user:` or `--user` still wins, so
 # a stack on different ids is unaffected.

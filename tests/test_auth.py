@@ -44,8 +44,8 @@ def test_each_caller_authenticates_with_its_own_secret():
 
 
 def test_minting_again_replaces_the_old_secret():
-    """Losing a secret means rotating, so the replacement has to take effect
-    at once rather than leaving both live."""
+    """Losing a secret means rotating, so the replacement takes effect at once
+    rather than leaving both live."""
     first = auth.mint("my-scanner")
     second = auth.mint("my-scanner")
     assert first != second
@@ -85,9 +85,8 @@ def test_a_name_that_is_not_a_bare_filename_is_refused(name):
 
 
 def test_a_non_ascii_secret_file_authorises_nothing():
-    """compare_digest refuses a str carrying non-ASCII, so a file written by
-    hand must come back as no match rather than an exception in the auth
-    path, where it would surface as a broken listener."""
+    """compare_digest refuses a str carrying non-ASCII, so a hand-written file
+    has to come back as no match rather than a broken listener."""
     auth.mint("radarr")
     with open(stored_file("radarr"), "w") as handle:
         handle.write("héllo")
@@ -105,8 +104,7 @@ def test_an_empty_secret_file_authorises_nothing():
 
 
 def test_verification_survives_a_missing_state_dir():
-    """STATE_DIR is a mount; a request arriving before it exists is a 401,
-    not a crash."""
+    """STATE_DIR is a mount, so a request arriving before it exists is a 401."""
     assert not auth.authorized("anything")
     assert not auth.matches("radarr", "anything")
     assert auth.names() == []

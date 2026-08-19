@@ -131,7 +131,12 @@ A few behaviours worth knowing:
   not ffprobe runs. Changing any rule setting drops the cache by itself.
 - Every rewrite, failure, deferral and sweep appends a JSON line to
   `events.jsonl`, the history a future stats view will aggregate, kept from
-  day one because it cannot be backfilled.
+  day one because it cannot be backfilled. Each line says what changed twice:
+  `reasons` in prose, and `rules` in fixed names (`downmix`, `languages`,
+  `sdh`) so aggregating never means parsing English that will be reworded.
+  Each also carries a `config_id`, the digest of the settings it was judged
+  under; startup and every sweep record the full settings beside theirs, so
+  a rewrite years old still resolves to the rules that ordered it.
 - Webhook secrets are stored only as SHA-256 digests in
   `/config/webhook-secrets`, verified and re-provisioned at startup, so a
   wiped `/config` heals itself and a copied one leaks nothing. Delete a
@@ -144,7 +149,10 @@ A few behaviours worth knowing:
   ends. Rewriting one is safe for the seed, which keeps the old inode, but it
   breaks the link and the file then occupies disk twice until the torrent
   goes. `SKIP_HARDLINKS=false` rewrites on import instead and takes that
-  cost, which is worth it only if you don't seed.
+  cost, which is worth it only if you don't seed. The set of files waiting
+  this way is kept in `parked.json` and restored at startup: nothing ever
+  re-fires an import, so a restart mid-seed would otherwise leave them for a
+  sweep, and `SWEEP_AT` is unset by default.
 - Configure Plex or Jellyfin below and each rewrite nudges the server, so
   track lists stay correct even on network mounts its own watcher can't see.
 - A file that changes mid-rewrite (an upgrade landing) is deferred, the
@@ -187,7 +195,7 @@ Tears of Steel (2012).mkv
 | ----------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
 | `MEDIA_DIRS`                        | `/data/media/movies:/data/media/tv` | colon-separated; where the sweep walks                                                    |
 | `WORK_DIR`                          | `/data/trackstarr-work`             | any filesystem; a cross-filesystem one costs a copy per rewrite                           |
-| `STATE_DIR`                         | `/config`                           | pending.tsv, the sweep cache, the event history, webhook secrets and `locks/` live here   |
+| `STATE_DIR`                         | `/config`                           | pending.tsv, the sweep cache, the event history, the parked set, webhook secrets and `locks/` live here |
 | `RADARR_URL` / `RADARR_API_KEY`     | (unset)                             | omit to disable; the key also takes `_FILE` / `FILE__`                                    |
 | `SONARR_URL` / `SONARR_API_KEY`     | (unset)                             | omit to disable; the key also takes `_FILE` / `FILE__`                                    |
 | `PLEX_URL` / `PLEX_TOKEN`           | (unset)                             | refresh after rewrites; omit to disable; token also takes `_FILE` / `FILE__`              |
@@ -247,7 +255,10 @@ dependencies, so `pip install -e .` is still all an install needs.
 
 The rules live in `planner.py` and are pure functions of ffprobe output and
 a `Policy` snapshot (`policy.py`), so `tests/test_planner.py` covers them
-with hand-built stream dicts and no media at all. `tests/test_integration.py`
+with hand-built stream dicts and no media at all. Deciding stops there:
+`command.py` turns a plan into an ffmpeg argument list and `executor.py`
+runs it, which is what lets `plan` print the exact command without going
+near a rewrite. `tests/test_integration.py`
 generates real files with ffmpeg, and the suite refuses to start without one
 new enough to round-trip per-stream MP4 titles, rather than skipping a third
 of itself where nobody would notice.

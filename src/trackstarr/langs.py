@@ -1,9 +1,9 @@
 """ISO 639 normalisation.
 
-Track tags are ISO 639-2/B, which is what Matroska and ffmpeg write. Radarr
-and Sonarr report a title's original language as an English name, and rips in
-the wild also carry 639-1 and 639-2/T codes. Everything is normalised to
-639-2/B before any comparison.
+Track tags are ISO 639-2/B, which is what Matroska and ffmpeg write. The
+*arrs report an original language as an English name, and rips in the wild
+carry 639-1 and 639-2/T codes too. Everything is normalised to 639-2/B
+before any comparison.
 """
 
 #: Every language Radarr and Sonarr can report, mapped to ISO 639-2/B.
@@ -168,28 +168,27 @@ LANG_ALIASES: dict[str, str] = {
     "zhs": "chi",
 }
 
-#: The three tables above, merged for lookup. 639-2/B codes map to themselves.
-#: The source tables stay separate because they document different things.
+#: The tables above merged for lookup, 639-2/B codes mapping to themselves.
+#: Separate up there because they document different things.
 _LOOKUP: dict[str, str] = (
     LANG_NAMES | LANG_ALIASES | {code: code for code in LANG_NAMES.values()}
 )
 
-#: Tags that positively mean "no language", as distinct from a missing tag.
-#: Both end up as None; an untagged track is always kept.
+#: Tags that mean "no language", as opposed to a missing one. Both become
+#: None, and an untagged track is always kept.
 _UNDEFINED = {"", "und", "unknown", "zxx", "mis", "mul", "none", "null"}
 
-#: Names the *arrs report that deliberately aren't a language. Shared with
-#: arr.original_of, which warns about unmapped names but must not warn on
-#: these.
+#: Names the *arrs report that aren't languages. Shared with
+#: arr.original_of, which warns about unmapped names but not these.
 ARR_NON_LANGUAGES = frozenset({"unknown", "original", "any"})
 
 
 def norm_lang(tag: str | None) -> str | None:
     """Normalise a language tag to ISO 639-2/B.
 
-    Returns None for anything that means "undefined". An unrecognised code is
-    returned unchanged so it fails the keep test and shows up in logs by name
-    rather than being silently treated as undefined and kept.
+    None for anything meaning "undefined". An unrecognised code comes back
+    unchanged, so it fails the keep test and shows up in the logs by name
+    instead of passing as undefined and being kept.
     """
     if not tag:
         return None

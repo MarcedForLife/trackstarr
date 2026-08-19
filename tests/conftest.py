@@ -1,8 +1,7 @@
 """Fixtures shared by the unit and integration suites.
 
-The unit suite builds ffprobe-shaped dicts by hand so the rules can be tested
-without media. The integration suite generates real files with ffmpeg, which
-:func:`pytest_configure` insists on before any of it runs.
+The unit suite builds ffprobe-shaped dicts by hand. The integration suite
+makes real files with ffmpeg, which :func:`pytest_configure` insists on.
 """
 
 import json
@@ -25,14 +24,11 @@ from trackstarr.planner import Plan
 def _mp4_titles_round_trip() -> bool:
     """Whether this ffmpeg can store a per-stream title in MP4.
 
-    It writes one as the ``name`` atom, which the mov muxer only learned in
-    ffmpeg 8.1; everything before that, 8.0 included, accepts the option and
-    silently drops it. Two tests turn on that, and so do the MP4 fixtures
-    they build.
+    The mov muxer only learned the ``name`` atom in 8.1; before that it
+    accepts the option and drops it. Two tests and their fixtures turn on it.
 
-    Detected rather than compared against a version string, because
-    distributions backport and rebuild: what matters is what this binary
-    does, and asking costs a tenth of a second at startup.
+    Detected rather than compared against a version string, since
+    distributions backport and rebuild. Costs a tenth of a second.
     """
     with tempfile.TemporaryDirectory() as work:
         sample = os.path.join(work, "probe.mp4")
@@ -82,10 +78,9 @@ def _mp4_titles_round_trip() -> bool:
 def pytest_configure() -> None:
     """Refuse to run at all without the ffmpeg the tests are written against.
 
-    trackstarr is an ffmpeg wrapper, so a development environment without one
-    is not a limited environment, it is an unconfigured one. Saying so once,
-    up front, beats either skipping a third of the suite where nobody looks or
-    failing deep inside a fixture with an error about a missing track title.
+    trackstarr is an ffmpeg wrapper, so an environment without one is
+    unconfigured rather than limited. Saying so up front beats skipping a
+    third of the suite where nobody looks.
     """
     if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
         raise pytest.UsageError("ffmpeg and ffprobe must be on PATH to run the tests")
@@ -98,8 +93,8 @@ def pytest_configure() -> None:
 
 @pytest.fixture(autouse=True)
 def _isolated_state(monkeypatch, tmp_path):
-    """Point STATE_DIR at the test's tmp dir; process() appends event history
-    there, so no test may reach a real /config."""
+    """Point STATE_DIR at the test's tmp dir, so nothing reaches a real
+    /config."""
     monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
 
 
@@ -107,9 +102,8 @@ def _isolated_state(monkeypatch, tmp_path):
 def _restore_sigterm():
     """Put the SIGTERM disposition back after every test.
 
-    main() installs a handler, and most of this suite calls it, so without
-    this the first test to do so changes how the pytest process itself
-    responds to a signal for the rest of the run.
+    main() installs a handler and most of this suite calls it, so otherwise
+    the first test to do so changes how pytest itself handles a signal.
     """
     original = signal.getsignal(signal.SIGTERM)
     yield
@@ -137,15 +131,28 @@ def fake_run(returncode: int = 0, stdout: str = "", stderr: str = ""):
     return types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
 
 
+def read_events() -> list[dict]:
+    """Every event recorded under the test's STATE_DIR, in written order.
+
+    The service only writes the history. This lives here because the tests
+    are the only thing that reads it back.
+    """
+    try:
+        with open(os.path.join(config.STATE_DIR, "events.jsonl")) as events_file:
+            return [json.loads(line) for line in events_file if line.strip()]
+    except FileNotFoundError:
+        return []
+
+
 #: Where each *arr really listens, so a test url reads like a real one.
 _ARR_URLS = {"radarr": "http://radarr:7878", "sonarr": "http://sonarr:8989"}
 
 
 def configured_arr(name: str = "radarr", key: str = "key") -> Arr:
-    """A reachable-looking *arr, for the code paths gated on ``Arr.enabled``.
+    """A reachable-looking *arr, for the paths gated on ``Arr.enabled``.
 
-    One with no url or key is switched off and returns before it touches the
-    network, so anything exercising a real call has to start here.
+    One with no url or key returns before it touches the network, so a test
+    of a real call has to start here.
     """
     arr = sonarr() if name == "sonarr" else radarr()
     return replace(arr, url=_ARR_URLS[name], key=key)
@@ -154,21 +161,21 @@ def configured_arr(name: str = "radarr", key: str = "key") -> Arr:
 def needed_plan(path: str = "/x.mkv", **overrides) -> Plan:
     """A plan with work to do, since ``Plan.needed`` is having a reason.
 
-    The reason is a placeholder: most tests want *a* plan that would be
-    rewritten, not a particular one. Pass ``reasons`` yourself where what it
-    says is the thing under test.
+    The reason is a placeholder; most tests want *a* plan that would be
+    rewritten. Pass ``reasons`` where it matters, and ``rules`` with it: the
+    planner writes the two together, so setting one alone would let a test
+    assert against a pairing the real thing cannot produce.
     """
-    return Plan(path=path, reasons=["reorder streams"], **overrides)
+    return Plan(path=path, reasons=["reorder streams"], rules={"order"}, **overrides)
 
 
 @pytest.fixture
 def stub_rewrite(monkeypatch):
     """Give process() a prepared plan and a canned apply_plan result.
 
-    The outcome handling, its events and its notifications are what these
-    tests are about, so the probe and the ffmpeg run are both stubbed out.
-    Call it as ``stub_rewrite(plan)`` for the applied case, or pass an
-    ``outcome`` and ``detail`` for the others.
+    The outcome handling is what these tests are about, so the probe and the
+    ffmpeg run are stubbed. ``stub_rewrite(plan)`` for the applied case, or
+    pass an ``outcome`` and ``detail``.
     """
 
     def _stub(plan: Plan, outcome: Outcome = Outcome.APPLIED, detail: str = "") -> None:
@@ -199,8 +206,8 @@ def audio(
     """An ffprobe-shaped audio stream.
 
     ``bitrate`` is the per-stream ``bit_rate`` MP4 reports and Matroska
-    usually omits; left off entirely rather than set to a placeholder, since
-    "the container doesn't say" is a case the rules treat differently.
+    usually omits. Left off rather than defaulted, since "the container
+    doesn't say" is a case the rules treat differently.
     """
     stream = {
         "index": index,
@@ -268,8 +275,7 @@ def make_file(tmp_path):
             "-i",
             "testsrc=size=320x240:rate=24:duration=2",
         ]
-        # One map entry per input added so far, so len(maps) is always the
-        # index of the input about to be appended.
+        # One entry per input so far, so len(maps) is the index of the next.
         maps = ["0:v"]
         for _ in audio_specs:
             cmd += ["-f", "lavfi", "-i", "sine=frequency=440:duration=2:sample_rate=48000"]

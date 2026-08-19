@@ -35,6 +35,43 @@ def test_good_values_record_nothing(monkeypatch):
     assert config.errors() == []
 
 
+def test_a_boolean_typo_keeps_the_default_and_records_an_error(monkeypatch):
+    """DRY_RUN read as false by a typo is the worst misread config could make:
+    the owner believes nothing will be rewritten."""
+    monkeypatch.setenv("DRY_RUN", "enalbed")
+    monkeypatch.setenv("SKIP_HARDLINKS", "ture")
+    assert config._bool("DRY_RUN") is False
+    assert config._bool("SKIP_HARDLINKS", "true") is True
+    errors = config.errors()
+    assert len(errors) == 2
+    assert "DRY_RUN" in errors[0]
+    assert "SKIP_HARDLINKS" in errors[1]
+
+
+@pytest.mark.parametrize("raw", ["1", "true", "Yes", " ON "])
+def test_every_spelling_of_true_reads_as_true(monkeypatch, raw):
+    monkeypatch.setenv("DRY_RUN", raw)
+    assert config._bool("DRY_RUN") is True
+    assert config.errors() == []
+
+
+@pytest.mark.parametrize("raw", ["0", "false", "No", " OFF "])
+def test_every_spelling_of_false_reads_as_false(monkeypatch, raw):
+    monkeypatch.setenv("SKIP_HARDLINKS", raw)
+    assert config._bool("SKIP_HARDLINKS", "true") is False
+    assert config.errors() == []
+
+
+def test_an_empty_boolean_reads_as_its_default(monkeypatch):
+    """A leftover ``DRY_RUN: ${DRY_RUN}`` in a compose file expands to empty,
+    which is a leftover, not a typo, and must not block startup."""
+    monkeypatch.setenv("DRY_RUN", "")
+    monkeypatch.setenv("SKIP_HARDLINKS", " ")
+    assert config._bool("DRY_RUN") is False
+    assert config._bool("SKIP_HARDLINKS", "true") is True
+    assert config.errors() == []
+
+
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
@@ -76,8 +113,8 @@ def test_an_unset_credential_is_blank(monkeypatch):
 
 
 def test_naming_a_credential_two_ways_is_refused(monkeypatch, tmp_path):
-    """Which one is live would otherwise be invisible, and the wrong key
-    looks exactly like a revoked one from the far end."""
+    """Which one is live would be invisible, and the wrong key looks exactly like
+    a revoked one from the far end."""
     secret_file = tmp_path / "radarr_api_key"
     secret_file.write_text("from-the-file")
     monkeypatch.setenv("RADARR_API_KEY_FILE", str(secret_file))
@@ -89,8 +126,8 @@ def test_naming_a_credential_two_ways_is_refused(monkeypatch, tmp_path):
 
 
 def test_a_credential_left_expanding_to_nothing_is_not_a_conflict(monkeypatch, tmp_path):
-    """A forgotten RADARR_API_KEY: ${RADARR_API_KEY} line expands to empty.
-    That is a leftover, not an ambiguity, and must not block startup."""
+    """A forgotten ``RADARR_API_KEY: ${RADARR_API_KEY}`` line is a leftover, not an
+    ambiguity, and must not block startup."""
     secret_file = tmp_path / "radarr_api_key"
     secret_file.write_text("from-the-file")
     monkeypatch.setenv("RADARR_API_KEY_FILE", str(secret_file))
@@ -108,8 +145,8 @@ def test_an_unreadable_credential_file_is_refused(monkeypatch, tmp_path):
 
 
 def test_an_empty_credential_file_is_refused(monkeypatch, tmp_path):
-    """A blank key reads the same as one never set, so the *arr would be
-    silently disabled rather than reported as misconfigured."""
+    """A blank key reads the same as one never set, so the *arr would be silently
+    disabled rather than reported."""
     secret_file = tmp_path / "radarr_api_key"
     secret_file.write_text("\n")
     monkeypatch.setenv("RADARR_API_KEY_FILE", str(secret_file))
@@ -121,8 +158,8 @@ def test_an_empty_credential_file_is_refused(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("value", ["04:00", "0 4 * *", "60 4 * * *", "0 4 * * mon"])
 def test_a_bad_sweep_schedule_is_refused(monkeypatch, value):
-    """The scheduler would otherwise die alone; "04:00" matters most, it is
-    the format SWEEP_AT took before it became a cron schedule."""
+    """The scheduler would otherwise die alone. "04:00" matters most: it is what
+    SWEEP_AT took before it became a cron schedule."""
     monkeypatch.setattr(config, "SWEEP_AT", value)
     errors = config.errors()
     assert len(errors) == 1
@@ -151,24 +188,23 @@ def test_a_rule_can_be_named_with_either_separator(monkeypatch, raw):
 
 @pytest.mark.parametrize("value", ["off", "none", "false", "no", "0", "", "  OFF  "])
 def test_every_spelling_of_off_reads_as_unset(monkeypatch, value):
-    """A setting offering named modes invites a value, and startup refuses
-    anything that is neither a mode nor off, so guessing one would otherwise
-    be a failed boot rather than the default."""
+    """Startup refuses anything that is neither a mode nor off, so guessing one
+    would be a failed boot rather than the default."""
     monkeypatch.setenv("REGENERATE_DOWNMIXES", value)
     assert config._mode("REGENERATE_DOWNMIXES") == ""
 
 
 @pytest.mark.parametrize("value", ["generated", "ALL", " all "])
 def test_a_named_mode_survives_normalisation(monkeypatch, value):
-    """Only the case and spacing are this function's business; whether the
-    name means anything is policy.errors()'."""
+    """Case and spacing are this function's business; whether the name means
+    anything is policy.errors()'."""
     monkeypatch.setenv("REGENERATE_DOWNMIXES", value)
     assert config._mode("REGENERATE_DOWNMIXES") == value.strip().lower()
 
 
 def test_a_missing_media_dir_is_a_warning_not_an_error(monkeypatch, tmp_path):
-    """Quiet otherwise: the sweep says so as it walks, but that is hours
-    later, and an install with no SWEEP_AT never walks at all."""
+    """Quiet otherwise: the sweep says so as it walks, hours later, and an install
+    with no SWEEP_AT never walks at all."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path), str(tmp_path / "absent")])
     warnings = config.warnings()
     assert len(warnings) == 1
@@ -178,8 +214,7 @@ def test_a_missing_media_dir_is_a_warning_not_an_error(monkeypatch, tmp_path):
 
 
 def test_a_rate_for_a_layout_nobody_asked_for_is_a_warning(monkeypatch, tmp_path):
-    """Half of an edit: the variable added, the layout not. Silent otherwise,
-    since a rate nothing reads changes nothing."""
+    """Half an edit: the variable added, the layout not. Silent otherwise."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
     monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "7.1": "1280k"})
@@ -190,8 +225,8 @@ def test_a_rate_for_a_layout_nobody_asked_for_is_a_warning(monkeypatch, tmp_path
 
 
 def test_dropping_a_default_layout_is_not_a_leftover(monkeypatch, tmp_path):
-    """2.0 and 5.1 always carry a rate, so running only one of them would
-    otherwise report the other's default as an orphan every startup."""
+    """2.0 and 5.1 always carry a rate, so running one would otherwise report the
+    other's default as an orphan every startup."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
     monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
     monkeypatch.delenv("AUDIO_BITRATE_5_1", raising=False)
@@ -203,8 +238,8 @@ def test_dropping_a_default_layout_is_not_a_leftover(monkeypatch, tmp_path):
     [("AUDIO_BITRATE_2_0", "2.0"), ("AUDIO_BITRATE_7_1", "7.1")],
 )
 def test_a_layout_rate_is_read_from_its_own_variable(monkeypatch, variable, name):
-    """A dot is not allowed in an environment variable name, so the layout
-    is spelled with underscores and mapped back here."""
+    """A dot is not allowed in an environment variable name, so the layout is
+    spelled with underscores and mapped back here."""
     monkeypatch.setenv(variable, "448k")
     assert config.bitrate_variable(name) == variable
     assert config._bitrates()[name] == "448k"
@@ -219,8 +254,18 @@ def test_the_shipped_rates_apply_when_nothing_states_one(monkeypatch):
 @pytest.mark.parametrize("value", [0, -1])
 def test_a_rewrite_budget_below_one_is_refused(monkeypatch, value):
     """Zero leaves the pool with no workers, so the sweep would hang rather
-    than fail, which is the worse way to find out."""
+    than fail, the worse way to find out."""
     monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", value)
     errors = config.errors()
     assert len(errors) == 1
     assert "MAX_CONCURRENT_REWRITES" in errors[0]
+
+
+@pytest.mark.parametrize("name", ["FFMPEG_TIMEOUT", "PROBE_TIMEOUT"])
+def test_a_timeout_below_one_is_refused(monkeypatch, name):
+    """Zero or negative fails every run as "timed out", hours after the
+    restart that set it."""
+    monkeypatch.setattr(config, name, 0)
+    errors = config.errors()
+    assert len(errors) == 1
+    assert name in errors[0]

@@ -17,8 +17,8 @@ def test_daily_schedule():
 
 
 def test_next_run_is_strictly_after():
-    """An exact hit rolls forward, so rescheduling at fire time never
-    returns the run that just happened."""
+    """An exact hit rolls forward, so rescheduling at fire time never returns the
+    run that just happened."""
     assert runs_at("0 4 * * *", datetime(2026, 8, 13, 4, 0)) == datetime(2026, 8, 14, 4, 0)
 
 
@@ -46,8 +46,8 @@ def test_sunday_is_zero_and_seven():
 
 
 def test_restricted_day_fields_match_either():
-    """Cron's day rule: day-of-month 13 plus weekday Friday fires on both,
-    not only on Friday the 13th."""
+    """Cron's day rule: day-of-month 13 plus weekday Friday fires on both, not only
+    on Friday the 13th."""
     schedule = parse("0 0 13 * 5")
     assert next_run(schedule, datetime(2026, 11, 1, 0, 0)) == datetime(2026, 11, 6, 0, 0)
     assert next_run(schedule, datetime(2026, 11, 7, 0, 0)) == datetime(2026, 11, 13, 0, 0)

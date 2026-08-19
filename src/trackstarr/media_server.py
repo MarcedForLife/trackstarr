@@ -1,13 +1,11 @@
 """Plex and Jellyfin nudges, to refresh their view of a rewritten file.
 
-Both servers normally notice library changes through their own filesystem
-watchers, which see nothing on a network mount. One nudge per rewritten file
-keeps their track lists and sizes true.
+Both normally notice changes through their own filesystem watchers, which
+see nothing on a network mount.
 
-Best effort by contract: nothing here may fail the job that fixed the file,
-so refresh_servers catches everything, and a server that fails a few times
-running is muted for the rest of the process instead of costing a timeout
-per file. A missed nudge heals on the server's next scheduled scan.
+Best effort by contract: nothing here may fail the job that fixed the file.
+A server failing repeatedly is muted for the rest of the process, and a
+missed nudge heals on the next scheduled scan.
 """
 
 import logging
@@ -20,8 +18,8 @@ from .client import request
 log = logging.getLogger(__name__)
 
 
-#: Generous for a LAN nudge nothing waits on; a hung (not refusing) server
-#: costs this per attempt until muting kicks in.
+#: Generous for a LAN nudge nothing waits on. A hung server costs this per
+#: attempt until muting kicks in.
 _TIMEOUT = 10
 
 #: Consecutive failures per server before it is left alone until restart.
@@ -37,14 +35,14 @@ def _plex_headers() -> dict:
     return {"X-Plex-Token": config.PLEX_TOKEN, "Accept": "application/json"}
 
 
-#: Section locations per (url, token): static server config, fetched once
+#: Section locations per (url, token). Static server config, so fetched once
 #: per process rather than once per fixed file.
 _plex_sections: dict[tuple[str, str], list[tuple[str, str]]] = {}
 
 
 def _plex_locations() -> list[tuple[str, str]]:
-    """``(location, section key)`` pairs, longest location first so the
-    first prefix match is the most specific one."""
+    """``(location, section key)`` pairs, longest first, so the first
+    prefix match is the most specific."""
     cache_key = (config.PLEX_URL, config.PLEX_TOKEN)
     if cache_key not in _plex_sections:
         data = request(f"{config.PLEX_URL}/library/sections", _plex_headers(), timeout=_TIMEOUT)
@@ -63,18 +61,17 @@ def _plex_locations() -> list[tuple[str, str]]:
 def path_within(path: str, base: str) -> bool:
     """True when path is base itself or inside it, on directory boundaries.
 
-    A purely lexical test, right because Plex reports these locations and
-    they need not exist here; callers must hand in bases with no trailing
-    slash. The trailing-slash join is what keeps /data/media from matching
-    /data/media2.
+    Lexical, which is right because Plex reports these locations and they
+    need not exist here. Callers pass bases with no trailing slash; the
+    trailing-slash join is what keeps /data/media off /data/media2.
     """
     return path == base or path.startswith(base + "/")
 
 
 def _plex_refresh(path: str) -> None:
-    """Partial-scan the innermost library section containing the file.
+    """Partial-scan the innermost library section holding the file.
 
-    Plex has no "this one file changed" endpoint; the closest is a
+    Plex has no "this one file changed" endpoint. The closest is a
     path-scoped refresh of the owning section.
     """
     folder = os.path.dirname(path)
@@ -108,7 +105,7 @@ def _jellyfin_refresh(path: str) -> None:
     log.info("jellyfin: notified about %s", path)
 
 
-#: name -> (configured?, refresh). Adding a server is one line here.
+#: name -> (configured?, refresh). A new server is one line here.
 _SERVERS = {
     "plex": (_plex_enabled, _plex_refresh),
     "jellyfin": (_jellyfin_enabled, _jellyfin_refresh),

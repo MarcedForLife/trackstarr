@@ -119,8 +119,8 @@ def test_unexpected_errors_never_escape(plex, monkeypatch):
 
 
 def test_server_status_reports_each_server_for_the_startup_summary(monkeypatch):
-    """serve logs this so a misconfigured token shows up as "off" at boot
-    rather than as refreshes that silently never happen."""
+    """serve logs this, so a misconfigured token shows as "off" at boot rather
+    than as refreshes that silently never happen."""
     monkeypatch.setattr(config, "PLEX_URL", "http://plex:32400")
     monkeypatch.setattr(config, "PLEX_TOKEN", "token")
     monkeypatch.setattr(config, "JELLYFIN_URL", "")

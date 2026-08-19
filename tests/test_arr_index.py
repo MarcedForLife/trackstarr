@@ -1,8 +1,7 @@
 """The title index: which *arr title, if any, a library file belongs to.
 
-Built once per sweep and then asked about every file, so the answers matter
-as much as the speed. The paths are the *arrs' own and need not exist here,
-which is why every case below is lexical.
+The paths are the *arrs' own and need not exist here, which is why every
+case below is lexical.
 """
 
 import pytest
@@ -54,8 +53,8 @@ def test_match_path_finds_the_title_containing_a_file(path, found):
 
 
 def test_match_path_prefers_the_innermost_title():
-    """One title's folder inside another's: the file belongs to the nearest,
-    which is what walking outwards from the file buys."""
+    """One title's folder inside another's: the file belongs to the nearest, which
+    is what walking outwards buys."""
     index = indexed(
         ("/data/media/movies", "English"),
         ("/data/media/movies/Film", "Korean"),
@@ -65,8 +64,8 @@ def test_match_path_prefers_the_innermost_title():
 
 
 def test_an_unindexed_path_never_walks_past_the_root():
-    """A file under no title at all has to end as None rather than looping
-    forever on a root whose parent is itself."""
+    """A file under no title has to end as None rather than loop on a root whose
+    parent is itself."""
     assert match_path(indexed(), "/f.mkv") is None
     assert match_path(indexed(), "relative.mkv") is None
 
@@ -85,8 +84,8 @@ def test_a_title_folder_that_is_no_folder_is_not_indexed(folder):
 
 
 def test_the_first_arr_wins_a_folder_they_both_claim():
-    """Radarr and Sonarr pointed at one directory is a misconfiguration, but
-    it has to resolve the same way every sweep rather than by insertion luck."""
+    """A misconfiguration, but it has to resolve the same way every sweep rather
+    than by insertion luck."""
     index = path_index(
         [
             stub_arr(("/data/media", "Korean")),

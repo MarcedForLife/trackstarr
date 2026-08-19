@@ -1,5 +1,6 @@
 """process() outcomes and their side effects. No media, no network."""
 
+import contextlib
 import fcntl
 import os
 import threading
@@ -49,6 +50,12 @@ def test_global_dry_run_bottoms_out_in_process(monkeypatch):
     assert result.status == "would-fix"
 
 
+def held_slot():
+    """One claimed rewrite slot; closing the handle releases it, which is
+    exactly what process() does around apply_plan."""
+    return contextlib.closing(processing._claim_slot())
+
+
 def _is_locked(name: str) -> bool:
     """Whether another holder has the named slot; closing the probe handle
     releases whatever this took."""
@@ -62,7 +69,7 @@ def _is_locked(name: str) -> bool:
 
 def test_rewrites_hold_a_cross_process_file_lock():
     """A sweep run via docker exec must queue behind serve's rewrites."""
-    with processing._exclusive_rewrite():
+    with held_slot():
         assert _is_locked("rewrite.lock.0")
     assert not _is_locked("rewrite.lock.0")
 
@@ -71,7 +78,7 @@ def test_every_slot_gets_its_own_lock_file(monkeypatch):
     """Two processes sharing one lock file would serialize whatever the
     budget says."""
     monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 3)
-    with processing._exclusive_rewrite(), processing._exclusive_rewrite():
+    with held_slot(), held_slot():
         held = sorted(
             name
             for name in os.listdir(processing._lock_dir())
@@ -81,9 +88,9 @@ def test_every_slot_gets_its_own_lock_file(monkeypatch):
 
 
 def test_all_slots_held_yields_false_while_a_rewrite_runs():
-    """Startup's WORK_DIR cleanup relies on this to know whether a staged
-    file could still be another process's live rewrite."""
-    with processing._exclusive_rewrite(), processing.all_slots_held() as held:
+    """Startup's WORK_DIR cleanup relies on this to tell a live rewrite from an
+    orphan."""
+    with held_slot(), processing.all_slots_held() as held:
         assert held is False
     with processing.all_slots_held() as held:
         assert held is True
@@ -95,11 +102,10 @@ def test_a_writable_state_dir_passes_and_is_created():
 
 
 def test_an_unusable_state_dir_is_an_error(tmp_path, monkeypatch):
-    """A STATE_DIR serve cannot use, which it would otherwise hit as an
-    uncaught OSError before it ever bound the listener. In the field that is
-    the root-owned /config bind mount; here it is a blocker file, because
-    mode bits mean nothing to the root the in-image CI suite runs as, and a
-    test that quietly stops testing anything is worse than none."""
+    """A STATE_DIR serve cannot use, which it would otherwise meet as an
+    uncaught OSError before binding the listener. In the field that is a
+    root-owned /config; here it is a blocker file, since mode bits mean
+    nothing to the root the in-image CI suite runs as."""
     blocker = tmp_path / "not-a-dir"
     blocker.write_bytes(b"")
     monkeypatch.setattr(config, "STATE_DIR", str(blocker))
@@ -109,9 +115,9 @@ def test_an_unusable_state_dir_is_an_error(tmp_path, monkeypatch):
 
 
 def test_a_state_dir_check_tolerates_a_slot_another_process_holds():
-    """The question is whether the directory can be written, not whether a
-    rewrite is running; a busy slot must not read as a broken mount."""
-    with processing._exclusive_rewrite():
+    """The question is whether the directory can be written, so a busy slot must
+    not read as a broken mount."""
+    with held_slot():
         assert processing.state_dir_errors() == []
 
 
@@ -126,15 +132,20 @@ def test_all_slots_held_sees_slots_beyond_our_budget(monkeypatch):
             assert held is False
 
 
-def _peak_concurrency(jobs: int) -> int:
-    """Most rewrite slots held at once across ``jobs`` racing threads."""
+def _peak_concurrency(monkeypatch, jobs: int) -> int:
+    """Most rewrite slots held at once across ``jobs`` racing threads.
+
+    The poll interval is shortened because waiters block on the flock pool
+    alone; at the real one-second interval this would mostly be asleep.
+    """
+    monkeypatch.setattr(processing, "_SLOT_POLL_SECONDS", 0.005)
     running = 0
     peak = 0
     counter_lock = threading.Lock()
 
     def hold() -> None:
         nonlocal running, peak
-        with processing._exclusive_rewrite():
+        with held_slot():
             with counter_lock:
                 running += 1
                 peak = max(peak, running)
@@ -157,17 +168,16 @@ def _peak_concurrency(jobs: int) -> int:
 )
 def test_the_budget_bounds_concurrent_rewrites(monkeypatch, budget, jobs):
     monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", budget)
-    assert _peak_concurrency(jobs) == budget
+    assert _peak_concurrency(monkeypatch, jobs) == budget
 
 
 def test_a_raising_rewrite_releases_its_slot(monkeypatch):
-    """Leak one and the budget bleeds to zero, hanging every later rewrite."""
+    """Leak one lock handle and the pool drains, hanging every later rewrite."""
     monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
     for _ in range(3):
-        with pytest.raises(RuntimeError), processing._exclusive_rewrite():
+        with pytest.raises(RuntimeError), held_slot():
             raise RuntimeError("ffmpeg exploded")
-    assert processing._running == 0
-    assert _peak_concurrency(2) == 1
+    assert _peak_concurrency(monkeypatch, 2) == 1
 
 
 def test_a_probe_failure_during_a_rewrite_is_reported_not_raised(tmp_path, monkeypatch):
@@ -203,8 +213,8 @@ def test_a_fixed_file_asks_its_arr_to_rescan(tmp_path, monkeypatch, stub_rewrite
 
 
 def test_a_rewrite_waits_for_a_busy_slot_rather_than_failing(monkeypatch):
-    """The budget is a queue, not a limit that rejects: a webhook import
-    arriving mid-sweep waits its turn instead of being dropped."""
+    """The budget is a queue, not a limit that rejects: an import arriving
+    mid-sweep waits its turn."""
     monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
     held = processing._claim_slot()
     released: list[bool] = []

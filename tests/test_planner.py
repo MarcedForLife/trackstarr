@@ -6,6 +6,7 @@ import pytest
 
 from conftest import audio, probe_data, subtitle, video
 from trackstarr import config
+from trackstarr.command import ffmpeg_args
 from trackstarr.media import is_junk_title
 from trackstarr.planner import (
     OutStream,
@@ -13,7 +14,6 @@ from trackstarr.planner import (
     _downmix_rank,
     build_plan,
     channel_rank,
-    ffmpeg_args,
     new_plan,
     plan_from_probe,
 )
@@ -50,11 +50,8 @@ def other_stream(index: int, kind: str, codec: str) -> dict:
 
 
 def test_commentary_stereo_does_not_satisfy_the_downmix_rule():
-    """The defect this tool exists to fix.
-
-    A 2.0 commentary track alongside a 5.1 main track must still produce a
-    real downmix, or the file has nothing a stereo client can direct play.
-    """
+    """The defect this tool exists to fix: a 2.0 commentary beside a 5.1 main
+    track still needs a real downmix, or nothing stereo can direct play."""
     plan = plan_for(
         video(0),
         audio(1, 6, title="Surround 5.1"),
@@ -80,11 +77,8 @@ def test_commentary_stereo_does_not_satisfy_the_downmix_rule():
     ids=["isolated score", "mp4 name tag", "comment", "visual impaired", "descriptions"],
 )
 def test_commentary_is_recognised_however_it_is_marked(marked):
-    """Each of these has to keep the 2.0 from counting as the stereo track.
-
-    The disposition flags are authoritative when a muxer set them; most rips
-    don't, so the title is the fallback.
-    """
+    """Each of these has to keep the 2.0 from counting as the stereo track. The
+    flags win when a muxer set them; most rips don't, so the title is next."""
     plan = plan_for(video(0), audio(1, 6), audio(2, 2) | marked)
     assert any("downmix from stream 1" in reason for reason in plan.reasons)
 
@@ -175,9 +169,8 @@ def test_generated_mode_leaves_matching_downmixes(monkeypatch):
 
 @pytest.mark.parametrize("rate", ["320k", "320000", "320K"])
 def test_respelling_a_rate_is_not_a_settings_change(monkeypatch, rate):
-    """The tag written into the file is compared for equality, so without one
-    canonical spelling per rate, editing AUDIO_BITRATE_2_0 from 320k to
-    320000 — the same rate — would re-encode every track we have made."""
+    """The tag is compared for equality, so without one canonical spelling per
+    rate, editing 320k to 320000 would re-encode every track we have made."""
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": rate, "5.1": "640k"})
     plan = plan_for(video(0), tagged_downmix(1, 2, "aac 320k"), audio(2, 6))
@@ -230,8 +223,8 @@ def test_all_mode_leaves_unknown_bitrates_alone(monkeypatch):
 
 
 def test_all_mode_only_replaces_clearly_weak_tracks(monkeypatch):
-    """A decent 448k AC3 5.1 survives a 640k AAC target; see
-    planner._WEAK_BITRATE_RATIO for why the margin is that wide."""
+    """A decent 448k AC3 5.1 survives a 640k AAC target; _WEAK_BITRATE_RATIO says
+    why the margin is that wide."""
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
     plan = plan_for(
@@ -241,18 +234,17 @@ def test_all_mode_only_replaces_clearly_weak_tracks(monkeypatch):
 
 
 def test_regeneration_is_matroska_only(monkeypatch):
-    """MP4 drops the identifying tag, where regeneration deleted commentary
-    and re-encoded its own tracks every sweep; it must drop nothing there."""
+    """MP4 drops the identifying tag, where regeneration deleted commentary and
+    re-encoded its own tracks every sweep."""
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
     plan = plan_for(video(0), audio(1, 2, bitrate="96000"), audio(2, 6), path="/x/f.mp4")
     assert not plan.needed
 
 
 def test_duplicate_layouts_regenerate_toward_one_target(monkeypatch):
-    """The drop side must judge against the same layout the rebuild uses, or
-    two names for one channel count regenerate forever, each rewrite making
-    a track the other reads as stale. Startup refuses the pair, so this is
-    the belt to that braces."""
+    """The drop side has to judge against the layout the rebuild uses, or two
+    names for one channel count regenerate forever, each rewrite making a
+    track the other reads as stale. Startup refuses the pair; this is the belt."""
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
     monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"4.2", "5.1"})
     # Both 6 channels; 4.2 sorts first, so its rate is the one target.
@@ -293,8 +285,8 @@ def test_remux_converts_only_mp4_and_only_when_asked(
 
 
 def test_remux_converts_mov_text_subtitles(monkeypatch):
-    """Matroska has no mov_text, so the text converts to SRT; other
-    subtitle codecs stream copy as usual."""
+    """Matroska has no mov_text, so the text converts to SRT; other subtitle codecs
+    stream copy as usual."""
     monkeypatch.setattr(config, "REMUX_TO_MKV", True)
     mov_text = subtitle(3, "eng")
     mov_text["codec_name"] = "mov_text"
@@ -563,9 +555,8 @@ def test_is_junk_title(title, junk):
 
 
 def test_load_bearing_titles_are_never_cleared():
-    """Clearing a title the planner reads would break idempotence: the next
-    plan would classify the track differently and make a different decision.
-    """
+    """Clearing a title the planner reads breaks idempotence: the next plan would
+    classify the track differently."""
     plan = plan_for(
         video(0),
         audio(1, 6),
@@ -621,10 +612,7 @@ def test_file_with_no_video_is_skipped():
 
 
 def test_hardlinked_file_is_skipped_when_configured(tmp_path, monkeypatch):
-    """A file the download client still seeds is left alone.
-
-    The skip happens before the probe, so no ffmpeg is needed here.
-    """
+    """A file the download client still seeds is left alone, before the probe."""
     monkeypatch.setattr(config, "SKIP_HARDLINKS", True)
     library_file = tmp_path / "f.mkv"
     library_file.write_bytes(b"x")
@@ -671,8 +659,8 @@ def test_command_tags_the_downmix_with_its_source_language():
 
 
 def test_each_layout_is_encoded_at_its_own_rate(monkeypatch):
-    """Nothing is derived from anything else: a downmix is made at the rate
-    its own variable states, whatever the other layouts are set to."""
+    """Nothing is derived from anything else: a downmix is made at the rate its own
+    variable states."""
     monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0", "5.1"})
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "192k", "5.1": "448k"})
     args = ffmpeg_args(plan_for(video(0), audio(1, 8)), "/tmp/out.mkv")
@@ -683,8 +671,8 @@ def test_each_layout_is_encoded_at_its_own_rate(monkeypatch):
 
 @pytest.mark.parametrize("rate", ["320K", "320000"])
 def test_a_rate_reaches_ffmpeg_in_its_one_spelling(monkeypatch, rate):
-    """The command and the tag agree whatever the variable said, because a
-    320K left as 320K once made the weak-track comparison unparseable."""
+    """The command and the tag agree whatever the variable said, because a 320K
+    left as 320K made the weak-track comparison unparseable."""
     monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": rate})
     args = ffmpeg_args(plan_for(video(0), audio(1, 8)), "/tmp/out.mkv")
@@ -702,8 +690,7 @@ def test_an_unrelated_language_sorts_behind_english():
 
 
 def test_a_kept_subtitle_title_is_reasserted_in_the_command():
-    """MP4 drops track names on a plain copy, so every kept title is written
-    again explicitly rather than relied upon to survive."""
+    """MP4 drops track names on a plain copy, so every kept title is written again."""
     args = args_for(
         OutStream(src=0, kind="video"),
         OutStream(src=1, kind="subtitle", title="Forced (English)"),
@@ -712,8 +699,8 @@ def test_a_kept_subtitle_title_is_reasserted_in_the_command():
 
 
 def test_a_copied_audio_track_keeps_its_own_title():
-    """Between a generated downmix and a track whose junk title is stripped
-    sits the ordinary case: copied through, title re-asserted as it was."""
+    """The ordinary case between a generated downmix and a stripped junk title:
+    copied through, title re-asserted as it was."""
     args = args_for(
         OutStream(src=0, kind="video"),
         OutStream(src=1, kind="audio", title="Surround 5.1"),
@@ -725,11 +712,9 @@ def test_a_copied_audio_track_keeps_its_own_title():
 
 @pytest.mark.parametrize("lang", ["jpn", None], ids=["tagged source", "untagged source"])
 def test_a_downmix_asserts_only_the_language_its_source_had(lang):
-    """Plenty of files carry audio with no language tag; the downmix inherits
-    that and must not be given a language the source never claimed. Either
-    way it sorts ahead of the track it came from, so its metadata is written
-    mid-list and the copied original still follows it.
-    """
+    """A downmix inherits an untagged source and must not claim a language the
+    source never had. It also sorts ahead of that source, so its metadata is
+    written mid-list with the copied original still following."""
     args = args_for(
         OutStream(src=0, kind="video"),
         OutStream(

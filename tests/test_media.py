@@ -1,9 +1,8 @@
 """probe's failure paths, and the tag readers that meet junk values.
 
-A sweep points ffprobe at a whole library, so it will eventually meet a
-truncated download, a file on a stalled mount, and a container whose tags say
-something ridiculous. Each has to become a ProbeError or a None the planner
-already knows how to skip, never a traceback that abandons the walk.
+A sweep points ffprobe at a whole library, so it eventually meets a
+truncated download, a stalled mount, and tags saying something ridiculous.
+Each has to become a ProbeError or a None, never a traceback.
 """
 
 import json
@@ -34,8 +33,8 @@ def test_a_probe_timeout_is_a_probe_error(monkeypatch):
 
 
 def test_a_failing_probe_carries_its_stderr(monkeypatch):
-    """The stderr text is the only clue about what is wrong with the file, so
-    it has to survive into the message the sweep reports."""
+    """The stderr text is the only clue about what is wrong, so it has to survive
+    into the message the sweep reports."""
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -46,8 +45,8 @@ def test_a_failing_probe_carries_its_stderr(monkeypatch):
 
 
 def test_a_long_probe_failure_is_truncated(monkeypatch):
-    """Whole files have been known to come back on stderr; the event log and
-    the report are line oriented, so the message is capped."""
+    """Whole files have been known to come back on stderr, and the report is line
+    oriented."""
     monkeypatch.setattr(
         subprocess, "run", lambda *a, **k: fake_run(returncode=1, stderr="x" * 5000)
     )

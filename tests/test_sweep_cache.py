@@ -80,7 +80,7 @@ def test_unreadable_file_is_never_cached(cache_path, tmp_path):
 @pytest.mark.parametrize(
     ("module", "attribute", "changed"),
     [
-        (config, "ALWAYS_KEEP", {"eng", "fre"}),
+        (config, "ALWAYS_KEEP_LANGS", {"eng", "fre"}),
         (policy, "__version__", "0.0.0-test"),
     ],
     ids=["a rule setting", "the package version"],
@@ -88,8 +88,7 @@ def test_unreadable_file_is_never_cached(cache_path, tmp_path):
 def test_a_changed_fingerprint_drops_the_cache(
     cache_path, media, monkeypatch, module, attribute, changed
 ):
-    """Rule changes shipped in code must invalidate old verdicts too, not
-    just the settings a user can see."""
+    """Rule changes shipped in code have to invalidate old verdicts too."""
     key = cache_key(media, "eng")
     saved_cache(cache_path, (media, key, CONFORM))
     monkeypatch.setattr(module, attribute, changed)
@@ -103,11 +102,9 @@ def test_corrupt_cache_is_ignored(cache_path):
 
 
 def _one_of_two_visited(cache_path, media, tmp_path):
-    """A cache holding two files, of which a sweep has so far visited one.
-
-    Yields the cache and the unvisited file's path and key, which is what
-    both persist paths differ about.
-    """
+    """A cache holding two files, of which a sweep has visited one. Yields the
+    cache and the unvisited file's path and key, which is what the two persist
+    paths differ about."""
     other = tmp_path / "other.mkv"
     other.write_bytes(b"z" * 5)
     key = cache_key(media, "eng")
@@ -139,8 +136,8 @@ def test_a_checkpoint_keeps_them(cache_path, media, tmp_path):
 
 
 def test_an_entry_with_a_status_we_no_longer_have_is_a_miss(cache_path, media):
-    """The cache outlives upgrades. An entry naming a status this build does
-    not know must re-probe, not crash the sweep that reads it."""
+    """The cache outlives upgrades, so an entry naming an unknown status re-probes
+    rather than crashing the sweep."""
     key = cache_key(media, "eng")
     saved_cache(cache_path, (media, key, CONFORM))
 
@@ -162,7 +159,7 @@ def test_a_cache_that_cannot_be_written_does_not_fail_the_sweep(tmp_path, caplog
 
 def test_a_cache_whose_entries_are_the_wrong_shape_is_ignored(cache_path, media):
     """Valid JSON, wrong structure: a hand-edit or a half-written file. Every
-    lookup must miss rather than the sweep failing on the first one."""
+    lookup misses rather than the sweep failing."""
     Path(cache_path).write_text(
         json.dumps(
             {"config": fingerprint(), "version": __version__, "files": ["not", "a", "map"]}

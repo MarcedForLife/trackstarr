@@ -3,8 +3,8 @@
 import json
 import urllib.request
 
-#: Everything request() can raise: connection and HTTP failures
-#: (urllib.error.URLError subclasses OSError) and an unparseable response.
+#: Everything request() can raise: connection and HTTP failures, since
+#: urllib.error.URLError subclasses OSError, plus a response that won't parse.
 API_ERRORS = (OSError, json.JSONDecodeError)
 
 

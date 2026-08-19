@@ -1,17 +1,17 @@
-"""Webhook parsing, the listener and hardlink parking. No media; the
-listener tests bind a loopback socket. The credential store itself is
-covered by test_auth.py."""
+"""Webhook parsing, the listener and hardlink parking. The listener tests
+bind a loopback socket; the credential store is test_auth.py's."""
 
 import http.client
 import json
 import os
+import socket
 import threading
 from http.server import ThreadingHTTPServer
 
 import pytest
 
-from conftest import configured_arr, needed_plan
-from trackstarr import auth, config, events, processing, webhook
+from conftest import configured_arr, needed_plan, read_events
+from trackstarr import auth, config, processing, webhook
 from trackstarr.arr import AUTH_HEADER
 from trackstarr.processing import Job, ProcessResult
 from trackstarr.status import Status
@@ -20,8 +20,8 @@ from trackstarr.webhook import _resolve_lang, jobs_from_hook
 
 @pytest.fixture(autouse=True)
 def _drain_queue():
-    """The work queue and the in-flight set are module state, so a test that
-    queues a job must not leave it for the next one to trip over."""
+    """The queue and the in-flight set are module state, so a test that queues a
+    job must not leave it for the next one."""
     yield
     with webhook._inflight_lock:
         webhook._inflight.clear()
@@ -90,8 +90,12 @@ def test_sonarr_multi_file_webhook():
     ]
 
 
-@pytest.mark.parametrize("event", ["Grab", "Test", "HealthIssue", "ApplicationUpdate"])
+@pytest.mark.parametrize(
+    "event", ["Grab", "Test", "HealthIssue", "ApplicationUpdate", "Rename"]
+)
 def test_uninteresting_events_are_ignored(event):
+    """Rename included: its body carries files only under renamed*Files keys
+    nothing here reads, and a rename changes no track content."""
     assert jobs_from_hook({"eventType": event, "movie": {}}) == []
 
 
@@ -126,7 +130,7 @@ def test_worker_keeps_a_language_the_webhook_already_carried():
 
 def test_dry_run_never_rewrites_a_webhook_import(monkeypatch):
     """The DRY_RUN latch lives inside process(), so the handler's plain
-    dry_run=False must still end as a would-fix, never a rewrite."""
+    dry_run=False still has to end as a would-fix."""
     monkeypatch.setattr(config, "DRY_RUN", True)
     plan = needed_plan()
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: plan)
@@ -134,7 +138,7 @@ def test_dry_run_never_rewrites_a_webhook_import(monkeypatch):
         processing, "apply_plan", lambda plan: pytest.fail("DRY_RUN must not rewrite")
     )
     webhook._handle(Job("/x.mkv"))
-    (entry,) = list(events.read())
+    (entry,) = read_events()
     assert entry["event"] == "would-fix"
 
 
@@ -197,8 +201,8 @@ def media_root(tmp_path):
 
 
 def test_post_queues_only_existing_paths(listener, media_root):
-    """A POST naming a file this container cannot see (usually a mount
-    mismatch) must answer 200 and queue nothing."""
+    """A POST naming a file this container cannot see, usually a mount mismatch,
+    answers 200 and queues nothing."""
     headers = {AUTH_HEADER: auth.mint("radarr")}
 
     body = movie_body(str(media_root / "missing.mkv"), str(media_root))
@@ -223,14 +227,26 @@ def test_health_needs_no_secret(listener):
     assert request(listener, "GET", "/health")[0] == 200
 
 
-def test_ping_is_a_health_check_too(listener):
-    """Docker's HEALTHCHECK uses /health; /ping is what the *arrs probe."""
-    assert request(listener, "GET", "/ping")[0] == 200
-
-
 def test_an_unknown_path_is_a_404(listener):
     """Nothing else is served, so a scanner finding this port learns nothing."""
     assert request(listener, "GET", "/admin")[0] == 404
+
+
+def test_a_silent_connection_is_dropped_rather_than_held(listener, monkeypatch):
+    """Python leaves BaseHTTPRequestHandler.timeout unset, so a peer that
+    connects and says nothing holds a server thread indefinitely, without
+    authenticating, since the secret is checked long after the request line."""
+    assert webhook.Handler.timeout, "a finite timeout has to ship, not just be testable"
+    monkeypatch.setattr(webhook.Handler, "timeout", 0.2)
+
+    sock = socket.create_connection(("127.0.0.1", listener.server_address[1]))
+    try:
+        # Long enough that a hung server fails the test rather than the client.
+        sock.settimeout(10)
+        # No request line, ever. The server has to give up on its own.
+        assert sock.recv(64) == b""
+    finally:
+        sock.close()
 
 
 def test_a_body_too_large_is_refused_unread(listener):
@@ -247,14 +263,14 @@ def test_a_body_that_is_not_json_is_a_400(listener):
 
 
 def test_a_bad_content_length_is_a_400_not_a_crash(listener):
-    """A bad Content-Length and unparseable JSON are both ValueErrors, and
-    both have to answer rather than drop the connection."""
+    """A bad Content-Length and unparseable JSON are both ValueErrors, and both
+    have to answer rather than drop the connection."""
     headers = {AUTH_HEADER: auth.mint("radarr"), "Content-Length": "not-a-number"}
     assert post_headers_only(listener, headers) == 400
 
 
 def test_the_arrs_test_button_is_answered_without_queueing(listener):
-    """Saving the connection fires this; a 200 is what makes the *arr accept
+    """Saving the connection fires this, and the 200 is what makes the *arr accept
     the credential it just sent."""
     headers = {AUTH_HEADER: auth.mint("radarr")}
     assert post(listener, {"eventType": "Test"}, headers) == (200, "test ok")
@@ -342,6 +358,84 @@ def test_a_post_for_a_file_already_in_flight_queues_nothing(listener, media_root
         webhook._inflight.add(path)
     headers = {AUTH_HEADER: auth.mint("radarr")}
     assert post(listener, movie_body(path, str(media_root)), headers) == (200, "queued 0")
+
+
+def test_parking_survives_a_restart(parked, seeded_file):
+    """Nothing re-fires an import and SWEEP_AT is unset by default, so a set
+    lost to a restart is a file nothing comes back to."""
+    webhook._park(Job(seeded_file, "kor", 12, configured_arr("sonarr")))
+
+    parked.clear()  # stand in for the process going away
+    webhook.load_parked()
+
+    (job,) = parked.values()
+    assert job.path == seeded_file
+    assert job.lang == "kor"
+    assert job.item_id == 12
+    # Stored by name and rebuilt from current config, so a job restored after
+    # its *arr was reconfigured carries the new settings, not the old ones.
+    assert job.arr.name == "sonarr"
+
+
+def test_a_parked_job_with_no_arr_round_trips(parked, seeded_file):
+    """`fix` and a hand-rolled client both queue jobs matched to nothing."""
+    webhook._park(Job(seeded_file))
+
+    parked.clear()
+    webhook.load_parked()
+
+    (job,) = parked.values()
+    assert (job.lang, job.item_id, job.arr) == (None, None, None)
+
+
+def test_releasing_the_last_parked_file_clears_the_stored_set(
+    parked, seeded_file, tmp_path, monkeypatch
+):
+    """Otherwise the next restart restores a file that was long since done."""
+    monkeypatch.setattr(webhook, "enqueue", lambda job: True)
+    webhook._park(Job(seeded_file))
+    os.unlink(tmp_path / "seed.mkv")
+
+    webhook._recheck_parked()
+
+    parked.clear()
+    webhook.load_parked()
+    assert parked == {}
+
+
+def test_no_stored_set_restores_nothing(parked):
+    webhook.load_parked()
+    assert parked == {}
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["not json", '{"path": "/x.mkv"}', '[["/x.mkv"], {}, {"lang": "eng"}]'],
+    ids=["unparseable", "not a list", "entries with no path"],
+)
+def test_a_damaged_stored_set_restores_nothing(parked, content):
+    """Advisory state: a mangled file costs the parked entries, not the
+    listener that was about to start."""
+    os.makedirs(config.STATE_DIR, exist_ok=True)
+    with open(webhook._parked_path(), "w") as parked_file:
+        parked_file.write(content)
+
+    webhook.load_parked()
+    assert parked == {}
+
+
+def test_an_unwritable_state_dir_does_not_fail_an_import(
+    parked, seeded_file, tmp_path, monkeypatch, caplog
+):
+    """Persisting is a convenience; the in-memory set still works without it."""
+    blocker = tmp_path / "a-file"
+    blocker.write_text("")
+    monkeypatch.setattr(config, "STATE_DIR", str(blocker / "under-a-file"))
+
+    webhook._park(Job(seeded_file))
+
+    assert seeded_file in parked
+    assert "could not persist the parked set" in caplog.text
 
 
 def test_a_released_file_already_in_flight_is_not_queued_twice(parked, seeded_file, tmp_path):

@@ -1,5 +1,5 @@
-"""Sweep scheduling and the DRY_RUN latch. The walk and cache behaviour
-live in the integration and sweep-cache suites."""
+"""Sweep scheduling and the DRY_RUN latch. The walk and the cache live in
+the integration and sweep-cache suites."""
 
 import logging
 import os
@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from trackstarr import config, events
+from conftest import read_events
+from trackstarr import config
 from trackstarr import sweep as sweep_mod
 from trackstarr.policy import Policy
 from trackstarr.processing import Job, ProcessResult
@@ -28,8 +29,8 @@ def _library(tmp_path, monkeypatch, count: int) -> list[str]:
 
 
 def test_concurrent_sweep_reports_in_walk_order(monkeypatch, tmp_path):
-    """Results are booked in walk order however many workers produced them,
-    so turning concurrency up doesn't reshuffle pending.tsv."""
+    """Verdicts are booked in walk order however many workers produced them, so
+    raising concurrency doesn't reshuffle pending.tsv."""
     monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 4)
     _library(tmp_path, monkeypatch, 40)
     # Fixed order of our own, since os.walk's is the filesystem's business.
@@ -51,9 +52,8 @@ def test_concurrent_sweep_reports_in_walk_order(monkeypatch, tmp_path):
 
 def test_a_path_cannot_break_its_own_report_row(monkeypatch, tmp_path):
     """Tabs and newlines are legal in filenames and would shift every column
-    after the path, so a report row would parse as a different verdict about
-    a different file. The reasons and detail cells go through _cell; this is
-    the column that cannot be truncated to be made safe."""
+    after the path, so the row would parse as a different verdict about a
+    different file. This is the one column that cannot be truncated instead."""
     awkward = str(tmp_path / "lib" / "two\tcolumns\nand a row.mkv")
     monkeypatch.setattr("trackstarr.sweep.walk_library", lambda policy: [awkward])
     monkeypatch.setattr(
@@ -86,10 +86,9 @@ def test_a_worker_raising_does_not_abandon_the_sweep(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("budget", [1, 6])
 def test_probing_is_not_serialized_by_the_rewrite_budget(monkeypatch, tmp_path, budget):
-    """The rewrite budget is enforced by the slots inside process(), not by
-    the judging pool, so a budget of 1 must still probe files concurrently
-    (a cold report-only sweep is probe-bound) and a budget above the floor
-    must still get a worker per rewrite slot."""
+    """The budget is enforced by the slots inside process(), not by the judging
+    pool, so a budget of 1 must still probe concurrently (a cold report-only
+    sweep is probe-bound) and a raised one must still get a worker per slot."""
     monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", budget)
     _library(tmp_path, monkeypatch, 1)
     captured = {}
@@ -111,14 +110,14 @@ def test_dry_run_overrides_an_applying_sweep(monkeypatch, tmp_path):
 
     sweep(dry_run=False)
 
-    (entry,) = list(events.read())
+    (entry,) = read_events()
     assert entry["event"] == "sweep"
     assert entry["dry_run"] is True
 
 
 def test_checkpoints_come_from_time_not_file_count(monkeypatch, tmp_path):
-    """An applying sweep can spend minutes on one file; what it learned must
-    not wait on a 500-file count that a small library never reaches."""
+    """An applying sweep can spend minutes on one file, so what it learned must not
+    wait on a count a small library never reaches."""
     _library(tmp_path, monkeypatch, 3)
     monkeypatch.setattr("trackstarr.sweep._CHECKPOINT_SECONDS", 0.0)
     checkpoints = []
@@ -152,8 +151,8 @@ def test_seconds_until_rejects_garbage():
 
 
 def test_a_missing_media_dir_is_reported_not_walked_silently(tmp_path, monkeypatch, caplog):
-    """os.walk yields nothing for a path that isn't there, which would make a
-    wrong mount indistinguishable from an empty library."""
+    """os.walk yields nothing for a path that isn't there, so a wrong mount would
+    look like an empty library."""
     real = tmp_path / "media"
     real.mkdir()
     (real / "f.mkv").write_bytes(b"x")
@@ -166,8 +165,8 @@ def test_a_missing_media_dir_is_reported_not_walked_silently(tmp_path, monkeypat
 
 
 def test_the_walk_clears_staged_files_scattered_through_the_library(tmp_path, monkeypatch):
-    """Cross-filesystem publishing lands its copy beside the file it replaces,
-    so a crash leaves these anywhere. This walk is the only thing that visits
+    """Cross-filesystem publishing lands its copy beside the file it replaces, so
+    a crash leaves these anywhere. This walk is the only thing that visits
     them, and the age gate is what makes dropping them safe."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
     monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 0)
@@ -192,8 +191,8 @@ def test_hidden_directories_are_not_walked(tmp_path, monkeypatch):
 
 
 def test_a_long_sweep_logs_progress_as_it_goes(monkeypatch, caplog):
-    """A library sweep runs for hours. Without a periodic line the log looks
-    like it has hung, and there is nothing to judge the rate from."""
+    """A library sweep runs for hours. Without a periodic line the log looks hung
+    and there is nothing to judge the rate from."""
     caplog.set_level(logging.INFO, logger="trackstarr.sweep")
     walked = [f"/data/{i:04d}.mkv" for i in range(500)]
     monkeypatch.setattr("trackstarr.sweep.walk_library", lambda policy: walked)

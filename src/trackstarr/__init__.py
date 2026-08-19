@@ -1,4 +1,4 @@
-"""trackstarr — keep library audio and subtitle tracks tidy."""
+"""Keep library audio and subtitle tracks tidy."""
 
 __version__ = "0.1.0"
 

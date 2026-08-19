@@ -1,16 +1,16 @@
-"""The rule policy: every setting the rules read, snapshotted as one object.
+"""The rule policy: every setting the rules read, as one object.
 
-:class:`Policy` is built from :mod:`trackstarr.config` once per plan, so a
-plan carries the exact policy it was judged under and the CLI can show it.
-Deriving :meth:`Policy.fingerprint` from the fields means a new setting is
-fingerprinted the day it is added; a hand-maintained list would let cached
-verdicts survive a change to a forgotten setting.
+Built from :mod:`trackstarr.config` once per plan, so a plan carries the
+settings it was judged under. :meth:`Policy.fingerprint` derives from the
+fields, so a new setting is fingerprinted the day it lands; a hand-kept list
+would let cached verdicts outlive whichever setting someone forgot.
 
-The vocabulary those settings are written in lives here too — the rule
-names, the regenerate modes, the containers we can write — along with
-:func:`errors`, which validates the configured values against it.
+The vocabulary those settings are written in lives here too, with
+:func:`errors` to check the configured values against it.
 """
 
+import hashlib
+import json
 import os
 import re
 from dataclasses import dataclass, fields
@@ -18,8 +18,8 @@ from dataclasses import dataclass, fields
 from . import __version__, config
 from .layouts import Layout, bitrate_bps, layout_bitrate, parse_channels, resolved_layouts
 
-#: The rules, keyed by the name DISABLED_RULES uses to switch each off.
-#: Single source for the CLI help text.
+#: Keyed by the name DISABLED_RULES uses to switch each off, and the one
+#: source for the CLI help text.
 RULES = {
     "languages": "Keep audio and subtitle tracks whose language is English, the "
     "title's original language, or untagged. Drop the rest.",
@@ -32,9 +32,8 @@ RULES = {
     "rewriting anyway. Forced subtitles are always kept.",
 }
 
-#: Behaviours that are off by default, with the setting that turns each on.
-#: Named beside RULES so the CLI help stays the one place the tool describes
-#: itself.
+#: Off by default, with the setting that turns each on. Beside RULES so the
+#: CLI help is the one place the tool describes itself.
 OPT_IN_RULES = {
     "commentary": "Drop commentary, described-audio and isolated-score tracks "
     "outright (set DROP_COMMENTARY).",
@@ -48,20 +47,29 @@ OPT_IN_RULES = {
     "else is re-encoded beyond the usual downmixes.",
 }
 
+#: Ride-alongs never worth a rewrite alone, so unlike RULES they have no
+#: switch. Named anyway, because the history records which of them fired.
+INCIDENTAL_RULES = {
+    "junk_titles": "Clear release junk from track and container titles.",
+    "stray_streams": "Drop data and timecode streams nothing plays.",
+}
+
+#: Every name a plan may put in Plan.rules or Plan.incidental_rules, and so
+#: every name the history can carry.
+RULE_NAMES = frozenset(RULES) | frozenset(OPT_IN_RULES) | frozenset(INCIDENTAL_RULES)
+
 #: Valid REGENERATE_DOWNMIXES values besides unset. errors() refuses others.
 REGENERATE_MODES = ("generated", "all")
 
-#: The ffmpeg muxer for each container we write, since the staging file's
-#: name never carries the real extension. Every entry ALLOWED_EXTS can hold
-#: must appear here; errors() checks that.
+#: The ffmpeg muxer per container, since the staging name carries no real
+#: extension. errors() checks every ALLOWED_EXTS entry appears here.
 MUXERS = {".mkv": "matroska", ".mp4": "mp4", ".m4v": "mp4"}
 
-#: Containers that preserve custom stream tags. Regeneration depends on the
-#: tag to recognise its own tracks, so it never drops anything elsewhere: on
-#: MP4 it would re-encode its own unrecognisable tracks every sweep, and
-#: judge commentary (whose title-based protection is also container-fragile)
-#: as a weak track to delete.
-TAG_PRESERVING_EXTS = frozenset({".mkv", ".webm"})
+#: Containers that keep custom stream tags. Regeneration finds its own tracks
+#: by that tag, so it drops nothing elsewhere: on MP4 it would re-encode its
+#: own tracks every sweep and read commentary as weak. A subset of MUXERS by
+#: construction, since nothing reaches the rules we cannot also write.
+TAG_PRESERVING_EXTS = frozenset({".mkv"})
 
 #: Video codecs that mean embedded artwork rather than a real video stream.
 IMAGE_CODECS = frozenset({"mjpeg", "png", "gif", "bmp", "webp", "tiff"})
@@ -71,9 +79,9 @@ IMAGE_CODECS = frozenset({"mjpeg", "png", "gif", "bmp", "webp", "tiff"})
 class Policy:
     """Everything the rules read, resolved from config at build time.
 
-    A plan snapshots one of these, so the command built from it always
-    matches the settings it was judged with, and the sweep cache can
-    fingerprint exactly what its verdicts depended on.
+    A plan snapshots one, so the command built from it matches the settings
+    it was judged with, and the sweep cache can fingerprint just what its
+    verdicts depended on.
     """
 
     always_keep: frozenset[str]
@@ -90,12 +98,11 @@ class Policy:
     sdh_re: re.Pattern[str]
     forced_re: re.Pattern[str]
     junk_title_re: re.Pattern[str]
-    image_codecs: frozenset[str] = IMAGE_CODECS
 
     @classmethod
     def from_config(cls) -> Policy:
         return cls(
-            always_keep=frozenset(config.ALWAYS_KEEP),
+            always_keep=frozenset(config.ALWAYS_KEEP_LANGS),
             allowed_exts=frozenset(config.ALLOWED_EXTS),
             disabled_rules=frozenset(config.DISABLED_RULES),
             drop_commentary=config.DROP_COMMENTARY,
@@ -125,15 +132,27 @@ class Policy:
         return os.path.splitext(path)[1].lower() in self.allowed_exts
 
     def fingerprint(self) -> dict:
-        """Everything a cached plan verdict depends on besides the file
-        itself, as a JSON-serialisable dict.
+        """Everything a cached verdict depends on besides the file itself,
+        as a JSON-serialisable dict.
 
-        Every field, plus the package version so rule changes shipped in
+        Every field, plus the package version, so rule changes shipped in
         code invalidate cached verdicts too.
         """
         return {"version": __version__} | {
             field.name: _fingerprint_value(getattr(self, field.name)) for field in fields(self)
         }
+
+    def digest(self) -> str:
+        """A short, stable id for this exact policy.
+
+        Every event carries one, so a months-old rewrite still traces to the
+        settings that ordered it. ``serve`` and every sweep record the full
+        fingerprint beside theirs, which is what a digest resolves against.
+        Twelve hex characters: this separates the handful of settings
+        generations an install goes through, not adversarial collisions.
+        """
+        canonical = json.dumps(self.fingerprint(), sort_keys=True)
+        return hashlib.sha256(canonical.encode()).hexdigest()[:12]
 
 
 def _fingerprint_value(value):
@@ -153,8 +172,8 @@ def errors() -> list[str]:
     """Startup-fatal problems with the configured rule vocabulary.
 
     Each would otherwise fail silently: a typo leaves a rule on, drops a
-    layout, regenerates nothing, or plans a container the ffmpeg call then
-    chokes on. :mod:`trackstarr.cli` reports these beside config.errors().
+    layout, regenerates nothing, or plans a container ffmpeg then chokes on.
+    :mod:`trackstarr.cli` reports these beside config.errors().
     """
     problems: list[str] = []
     if unmuxable := config.ALLOWED_EXTS - MUXERS.keys():
@@ -173,9 +192,7 @@ def errors() -> list[str]:
             f"DOWNMIX_LAYOUTS contains unrecognised layouts: {', '.join(sorted(invalid))} "
             "(use forms like 2.0, 5.1)"
         )
-    # Asked separately from the name so the report says which half is wrong:
-    # a layout nothing gives a rate is a different mistake from a typo, and
-    # the fix is a variable rather than an edit to this list.
+    # Name and rate are checked separately, so the report says which is wrong.
     for entry in sorted(entry for entry, channels in layouts.items() if channels):
         variable = config.bitrate_variable(entry)
         rate = layout_bitrate(entry)
@@ -188,8 +205,8 @@ def errors() -> list[str]:
         if channels:
             by_channels.setdefault(channels, []).append(entry)
     for channels, entries in sorted(by_channels.items()):
-        # Two entries for one channel count would generate identical tracks
-        # and leave the rules judging against an arbitrary one of the rates.
+        # Two entries of one channel count generate identical tracks and
+        # leave the rules judging against whichever rate came first.
         if len(entries) > 1:
             problems.append(
                 f"DOWNMIX_LAYOUTS entries {', '.join(sorted(entries))} are all "

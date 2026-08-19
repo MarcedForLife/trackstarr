@@ -1,8 +1,8 @@
 """The library sweep: plan every file, report, and rewrite when asked.
 
-The sweep exists to catch files that arrived without a webhook. It writes
-one row per actionable file to STATE_DIR/pending.tsv, remembers untouched
-verdicts in the sweep cache, and leaves a summary event behind.
+It exists to catch files that arrived without a webhook. One row per
+actionable file goes to STATE_DIR/pending.tsv, untouched verdicts go to the
+sweep cache, and a summary event goes to the history.
 """
 
 import functools
@@ -27,8 +27,8 @@ log = logging.getLogger(__name__)
 #: The statuses worth a row in pending.tsv.
 REPORTED_STATUSES = frozenset({Status.WOULD_FIX, Status.FIXED, Status.DEFERRED, Status.FAILED})
 
-#: Verdicts that leave the file untouched, safe for the sweep cache. Fixed
-#: changes the file, and failures may be transient.
+#: Verdicts safe to cache: the file is untouched. Fixed changes it, and a
+#: failure may be transient.
 CACHEABLE_STATUSES = frozenset({Status.SKIP, Status.CONFORM, Status.WOULD_FIX})
 
 
@@ -36,8 +36,8 @@ def walk_library(policy: Policy) -> list[str]:
     found: list[str] = []
     for media_dir in config.MEDIA_DIRS:
         if not os.path.isdir(media_dir):
-            # os.walk would yield nothing, making a wrong mount or a typo in
-            # MEDIA_DIRS indistinguishable from an empty library.
+            # os.walk yields nothing here, so a wrong mount would look
+            # exactly like an empty library.
             log.warning("media dir %s does not exist", media_dir)
             continue
         for dirpath, dirnames, names in os.walk(media_dir):
@@ -46,10 +46,8 @@ def walk_library(policy: Policy) -> list[str]:
                 if policy.allowed_container(name):
                     found.append(os.path.join(dirpath, name))
                 elif is_staged_file(name):
-                    # Cross-filesystem publishing lands its copy beside the
-                    # file being replaced, so a crash scatters these through
-                    # the library rather than into one directory startup
-                    # could clear. This walk is the only thing visiting them.
+                    # Cross-filesystem publishing stages beside the file it
+                    # replaces, so a crash scatters these. Nothing else looks.
                     drop_staged(os.path.join(dirpath, name))
     return found
 
@@ -57,30 +55,18 @@ def walk_library(policy: Policy) -> list[str]:
 #: Longest pending.tsv cell; a 30-track plan's reasons get cut, not the row.
 _CELL_MAX = 400
 
-#: Fewest judging threads a sweep runs, whatever the rewrite budget. The
-#: pool parallelizes probing, which is a cheap header read; the rewrite
-#: budget is enforced separately by the slots in processing, so a budget of
-#: 1 must not force a cold report-only sweep to probe thousands of files one
-#: at a time. Kept modest because concurrent probes still share the disk.
-#:
-#: A fully cached sweep gives the pool nothing to overlap, so there it is
-#: pure overhead: measured at 135ms per 20,000 files, against the ~30
-#: minutes those files would cost to probe serially. Far too little to
-#: justify sending hits and misses down separate paths, so every file goes
-#: through the pool whether or not it ends up probing.
+#: Fewest judging threads, whatever the rewrite budget: the slots don't gate
+#: probes, and a budget of 1 must not make a cold sweep probe thousands of
+#: files one at a time.
 _MIN_PROBE_WORKERS = 4
 
-#: Fewest seconds between mid-sweep cache checkpoints. Each checkpoint
-#: rewrites the whole cache, so on a big, fully cached library (thousands of
-#: files per second, no probes) anything more eager would spend more time
-#: serializing the cache than sweeping.
+#: Fewest seconds between mid-sweep checkpoints. Each rewrites the whole
+#: cache, so anything more eager would out-cost the sweep on a cached library.
 _CHECKPOINT_SECONDS = 60
 
 
-#: What would break a pending.tsv row, mapped to a space. All three are legal
-#: in a filename, so the path column has to be defended like the free-text
-#: ones — but by substitution rather than _cell, since a path cut at
-#: _CELL_MAX is worse than a long row.
+#: What would break a pending.tsv row, mapped to a space. All three are
+#: legal in a filename, and a truncated path is worse than a long row.
 _ROW_BREAKERS = str.maketrans({"\t": " ", "\n": " ", "\r": " "})
 
 
@@ -107,16 +93,16 @@ def _judge(
 ) -> Judged:
     """Decide one file, on a worker thread.
 
-    Reads the cache but never writes it; the sweep records verdicts as it
-    books them, on one thread. Nothing here is allowed to raise: this runs
-    inside a pool, where an exception would abandon every file after it.
+    Reads the cache, never writes it; the sweep books verdicts on one thread.
+    Nothing here may raise: an exception inside the pool would abandon every
+    file after it.
     """
     try:
         job = Job.from_match(path, match_path(index, path))
         key = cache_key(path, job.lang)
         verdict = cache.lookup(path, key)
-        # A cached would-fix only stands in for the probe while reporting; an
-        # applying sweep must rewrite the file.
+        # A cached would-fix stands in for the probe only while reporting;
+        # an applying sweep has to rewrite the file.
         if verdict and (dry_run or verdict.status is not Status.WOULD_FIX):
             return Judged(job, key, verdict.status, verdict.reasons, cached=True)
         result = process(job, dry_run, source="sweep", run=run)
@@ -140,8 +126,7 @@ def sweep(dry_run: bool) -> dict[Status, int]:
     started = time.monotonic()
     last_checkpoint = started
     # Every event this sweep writes carries its start time as the run id, so
-    # a night's work groups without window arithmetic and a crashed sweep's
-    # orphaned events still say when their run began.
+    # a night's work groups without window arithmetic.
     run = events.timestamp()
     counts = dict.fromkeys(Status, 0)
     cached_hits = 0
@@ -161,20 +146,15 @@ def sweep(dry_run: bool) -> dict[Status, int]:
         ) as pool,
     ):
         report_file.write("status\toriginal_lang\tpath\treasons\tdetail\n")
-        # map, not as_completed: results arrive in walk order however many
-        # workers there are, so the pool size never reshuffles pending.tsv.
-        # Completed verdicts can buffer behind a long rewrite at the head of
-        # the line; a crash then costs at most a few re-probes.
+        # map, not as_completed: results arrive in walk order whatever the
+        # pool size, so it never reshuffles pending.tsv.
         for i, judged in enumerate(pool.map(judge, files), 1):
             if judged.key:
                 library_bytes += judged.key.size
             if judged.cached:
                 cached_hits += 1
-            # Recording here rather than in the worker keeps the cache
-            # single-threaded, so it needs no lock of its own. A hit needs no
-            # case of its own: its verdict was stored under this same gate,
-            # so anything read back is cacheable by construction, and a
-            # hand-edited entry that isn't simply falls out on the next save.
+            # Here rather than in the worker, which keeps the cache
+            # single-threaded and needing no lock of its own.
             if judged.status in CACHEABLE_STATUSES:
                 cache.record(
                     judged.job.path, judged.key, Verdict(judged.status, judged.reasons)
@@ -190,9 +170,8 @@ def sweep(dry_run: bool) -> dict[Status, int]:
                 report_file.flush()
             if i % 500 == 0:
                 log.info("  %d/%d ... %s", i, len(files), counts)
-            # Time-based, not per-N-files: an applying sweep can spend
-            # minutes on one file, so a count gate would space checkpoints
-            # hours apart and never fire at all on a small library.
+            # Time-based: an applying sweep can spend minutes on one file,
+            # so a count gate would fire hours apart, or never.
             if time.monotonic() - last_checkpoint >= _CHECKPOINT_SECONDS:
                 cache.checkpoint()
                 last_checkpoint = time.monotonic()
@@ -203,11 +182,11 @@ def sweep(dry_run: bool) -> dict[Status, int]:
         run=run,
         dry_run=dry_run,
         files=len(files),
-        # The one place library size is known, so growth can be plotted; and
-        # the settings the run judged with, so a churny night is explicable
-        # years later (rule changes queue rewrites across the library).
+        # The one place library size is known, and the full fingerprint every
+        # other event's config_id resolves against.
         library_bytes=library_bytes,
         config=policy.fingerprint(),
+        config_id=policy.digest(),
         cached=cached_hits,
         counts=counts,
         seconds=round(time.monotonic() - started, 1),
@@ -220,19 +199,18 @@ def sweep(dry_run: bool) -> dict[Status, int]:
 def seconds_until(schedule: str, now: float | None = None) -> float:
     """Seconds until the cron schedule's next run, in local time.
 
-    The next run is strictly after ``now`` on a minute boundary, so a
-    reschedule right after a sweep can never pick the slot that just fired.
+    Strictly after ``now``, so rescheduling right after a sweep cannot pick
+    the slot that just fired.
     """
     now = time.time() if now is None else now
-    # DTZ006 is suppressed because local time is the point: a cron schedule
-    # means local wall clock — 03:00 is 03:00 in the container's TZ, across
-    # DST — so this is deliberately naive rather than pinned to UTC.
+    # DTZ006 suppressed because local time is the point: 03:00 means 03:00
+    # in the container's TZ, across DST. Naive on purpose.
     target = cron.next_run(cron.parse(schedule), datetime.fromtimestamp(now))  # noqa: DTZ006
     return target.timestamp() - now
 
 
-# No cover: a thread body. seconds_until decides when, and is covered; this
-# only sleeps until then and calls sweep.
+# No cover: a thread body. seconds_until decides when and is covered; this
+# sleeps until then and calls sweep.
 def scheduler() -> None:  # pragma: no cover
     while True:
         try:

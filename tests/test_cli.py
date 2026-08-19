@@ -44,8 +44,8 @@ def startup_ok(monkeypatch, tmp_path):
 
 def test_sigterm_ends_the_process():
     """The container runs this as PID 1, where the kernel applies no default
-    action, and Python installs no handler of its own. Without one `docker
-    stop` is ignored for its whole grace period and then SIGKILLs."""
+    action and Python installs no handler. Without one, `docker stop` is
+    ignored for its whole grace period and then SIGKILLs."""
     handle_sigterm()
     with pytest.raises(SystemExit) as stopped:
         os.kill(os.getpid(), signal.SIGTERM)
@@ -56,8 +56,8 @@ def test_sigterm_ends_the_process():
 
 
 def test_every_command_installs_the_sigterm_handler(startup_ok):
-    """A stop must be prompt whatever is running, not only serve: a sweep
-    holds rewrite slots that another process is waiting on."""
+    """A stop has to be prompt whatever is running: a sweep holds rewrite slots
+    another process is waiting on."""
     before = signal.getsignal(signal.SIGTERM)
     main(["plan", "--original", "eng", "/nowhere/missing.mkv"])
     assert signal.getsignal(signal.SIGTERM) is not before
@@ -66,10 +66,10 @@ def test_every_command_installs_the_sigterm_handler(startup_ok):
 def test_an_unusable_state_dir_stops_a_rewriting_command(
     startup_ok, monkeypatch, tmp_path, caplog
 ):
-    """serve would otherwise hit this as a traceback from a restart loop,
-    since it takes a slot lock before it binds the listener. Asserted on the
-    message, not the exit code: a fix of a missing file exits 1 anyway, so
-    the code alone would pass with the check unwired."""
+    """serve takes a slot lock before it binds, so this would otherwise be a
+    traceback from a restart loop. Asserted on the message, not the exit code:
+    a fix of a missing file exits 1 anyway, so the code alone would pass with
+    the check unwired."""
     blocker = tmp_path / "not-a-dir"
     blocker.write_bytes(b"")
     monkeypatch.setattr(config, "STATE_DIR", str(blocker))
@@ -79,10 +79,9 @@ def test_an_unusable_state_dir_stops_a_rewriting_command(
 
 
 def test_a_missing_media_dir_is_reported_at_startup(startup_ok, monkeypatch, tmp_path, caplog):
-    """The mistake the README singles out, and the quiet one: walk_library
-    says so as it walks, which under serve is whenever SWEEP_AT next fires,
-    and with no schedule set is never. Startup is where it can still be
-    acted on."""
+    """The mistake the README singles out, and a quiet one: walk_library says so
+    as it walks, which under serve is whenever SWEEP_AT next fires, and with
+    no schedule is never. Startup is where it can still be acted on."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "wrong-mount")])
     monkeypatch.setattr("trackstarr.cli.sweep", lambda dry_run: dict.fromkeys(Status, 0))
     with caplog.at_level(logging.WARNING):
@@ -93,8 +92,8 @@ def test_a_missing_media_dir_is_reported_at_startup(startup_ok, monkeypatch, tmp
 def test_a_command_handed_its_files_says_nothing_about_media_dirs(
     startup_ok, monkeypatch, tmp_path, caplog
 ):
-    """plan is the quiet one, run against a single file wherever it lives;
-    MEDIA_DIRS has nothing to do with it and must not be mentioned."""
+    """plan runs against a single file wherever it lives, so MEDIA_DIRS has nothing
+    to do with it."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "wrong-mount")])
     with caplog.at_level(logging.WARNING):
         main(["plan", "--original", "eng", "/nowhere/missing.mkv"])
@@ -108,8 +107,8 @@ def test_plan_fails_when_a_file_cannot_be_read(startup_ok, capsys):
 
 
 def test_plan_normalises_the_original_language(startup_ok, monkeypatch):
-    """Stream tags are ISO 639-2/B, so a 639-1 flag value must become one
-    too or the plan drops the very language it was told to keep."""
+    """Stream tags are ISO 639-2/B, so a 639-1 flag has to become one too or the
+    plan drops the language it was told to keep."""
     seen = []
 
     def capture_lang(path, lang):
@@ -122,10 +121,9 @@ def test_plan_normalises_the_original_language(startup_ok, monkeypatch):
 
 
 def test_fix_rewrites_files_and_reports_failures(startup_ok, monkeypatch, capsys):
-    """One real rewrite path per file, through process() like every other
-    source, and a non-zero exit when any of them was not rewritten. A
-    deferral counts: the sweep's next run is its retry, a fix's retry is
-    the caller, who must not read it as success."""
+    """One real rewrite path per file, through process(), and a non-zero exit
+    when any was not rewritten. A deferral counts: a fix's retry is the
+    caller, who must not read it as success."""
     results = {
         "/lib/a.mkv": ProcessResult(Status.FIXED, needed_plan("/lib/a.mkv")),
         "/lib/b.mkv": ProcessResult(Status.FAILED, detail="ffmpeg failed (1): boom"),
@@ -153,8 +151,8 @@ def test_fix_rewrites_files_and_reports_failures(startup_ok, monkeypatch, capsys
 
 
 def test_fix_still_matches_arr_items_when_original_is_given(startup_ok, monkeypatch):
-    """--original overrides the language only. The item match must survive,
-    or the *arr never gets its rescan and keeps pre-rewrite media info."""
+    """--original overrides the language only. The item match has to survive, or
+    the *arr never gets its rescan."""
     index = {"/lib/Movie": LibraryItem("kor", 7, radarr())}
     monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: index)
     jobs = []
@@ -169,8 +167,7 @@ def test_fix_still_matches_arr_items_when_original_is_given(startup_ok, monkeypa
 
 
 def test_fix_exit_code_flags_a_deferral_alone(startup_ok, monkeypatch):
-    """Deferred means not rewritten. A one-shot command's retry is the
-    caller, so it must not exit 0 even when nothing outright failed."""
+    """Deferred means not rewritten, and a one-shot command's retry is the caller."""
     monkeypatch.setattr(
         "trackstarr.cli.process",
         lambda job, dry_run, source: ProcessResult(Status.DEFERRED, detail="source changed"),
@@ -187,9 +184,8 @@ def test_secret_prints_a_credential_once(capsys):
 
 
 def test_secret_will_not_replace_a_working_one_by_accident(capsys):
-    """Only a digest is kept, so a second run cannot reprint. Rotating
-    silently would lock out a client that was working, so it must be asked
-    for."""
+    """Only a digest is kept, so a second run cannot reprint. Rotating silently
+    would lock out a working client, so it has to be asked for."""
     assert main(["secret", "my-scanner"]) == 0
     minted = capsys.readouterr().out.strip()
 
@@ -220,7 +216,7 @@ def _planned(monkeypatch, plan):
 
 def test_plan_prints_the_policy_it_judged_under(startup_ok, monkeypatch, capsys):
     """The summary is how a user works out why a file was left alone, so the
-    policy has to be on screen beside the verdict, not inferred from env."""
+    policy belongs on screen beside the verdict, not inferred from env."""
     plan = Plan(path="f.mkv", original_lang="jpn", keep_langs={"jpn", "eng"})
     _planned(monkeypatch, plan)
 
@@ -256,8 +252,8 @@ def test_plan_prints_a_skip_and_stops_there(startup_ok, monkeypatch, capsys):
 
 
 def test_plan_prints_the_reasons_and_the_command(startup_ok, monkeypatch, capsys):
-    """The printed ffmpeg line is the tool's showing of its work; it has to be
-    the command that would really run, not a summary of it."""
+    """The printed ffmpeg line is the tool showing its work, so it has to be the
+    command that would really run."""
     plan = Plan(path="f.mkv", reasons=["drop audio jpn"], incidental=["strip junk title"])
     plan.streams.append(OutStream(src=0, kind="video"))
     _planned(monkeypatch, plan)
@@ -290,16 +286,15 @@ def test_plan_keeps_going_after_an_unreadable_file(startup_ok, monkeypatch, caps
 
 
 def test_missing_ffmpeg_stops_a_command_before_it_starts(monkeypatch, caplog):
-    """Every command shells out to ffprobe at least; saying so once beats a
-    subprocess error per file."""
+    """Every command shells out to ffprobe, so saying it once beats a subprocess
+    error per file."""
     monkeypatch.setattr("trackstarr.cli.shutil.which", lambda name: None)
     assert main(["plan", "f.mkv"]) == 1
     assert "ffmpeg and ffprobe must be on PATH" in caplog.text
 
 
 def test_sweep_exit_code_ignores_deferrals_but_not_failures(startup_ok, monkeypatch):
-    """Opposite of fix: a sweep's own next run is the retry, so a deferral is
-    not the caller's problem."""
+    """Opposite of fix: a sweep's own next run is the retry."""
     counts = dict.fromkeys(Status, 0)
     monkeypatch.setattr("trackstarr.cli.sweep", lambda dry_run: counts)
 
@@ -310,8 +305,8 @@ def test_sweep_exit_code_ignores_deferrals_but_not_failures(startup_ok, monkeypa
 
 
 def test_fix_says_so_when_dry_run_is_set(startup_ok, monkeypatch, capsys):
-    """fix is the command that writes, so a global DRY_RUN has to be stated:
-    otherwise it reports "conforms" for files it never touched."""
+    """fix is the command that writes, so a global DRY_RUN has to be stated or it
+    reports "conforms" for files it never touched."""
     monkeypatch.setattr(config, "DRY_RUN", True)
     monkeypatch.setattr(
         "trackstarr.cli.process", lambda job, dry_run, source: ProcessResult(Status.CONFORM)
@@ -321,8 +316,7 @@ def test_fix_says_so_when_dry_run_is_set(startup_ok, monkeypatch, capsys):
 
 
 def test_fix_prints_why_a_file_was_skipped(startup_ok, monkeypatch, capsys):
-    """ "SKIP" alone reads like a failure; the reason is what tells the user
-    nothing is wrong."""
+    """ "SKIP" alone reads like a failure; the reason is what says nothing is wrong."""
     plan = Plan(path="f.mkv", skip="hardlinked, left for the download client")
     monkeypatch.setattr(
         "trackstarr.cli.process",
@@ -334,7 +328,7 @@ def test_fix_prints_why_a_file_was_skipped(startup_ok, monkeypatch, capsys):
 
 def test_secret_reports_a_state_dir_it_cannot_write(monkeypatch, caplog):
     """A read-only or unmounted /config is the usual cause, and the user needs
-    to be told that rather than shown a traceback."""
+    telling rather than a traceback."""
 
     def refuse(name):
         raise OSError("read-only file system")

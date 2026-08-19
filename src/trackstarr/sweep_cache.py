@@ -1,15 +1,13 @@
 """Remember each file's verdict between sweeps.
 
-On a settled library the nightly sweep re-probes thousands of unchanged files
-to re-derive the same verdicts, at 50-200ms of ffprobe each. A size and mtime
-signature is enough to skip that: a rewrite, an *arr upgrade or a manual
-replacement all change both. Entries carry the original language and report
-reasons they were judged with, and the whole cache is dropped when
-:meth:`trackstarr.policy.Policy.fingerprint` changes. Deleting the cache file
+On a settled library the nightly sweep re-probes thousands of unchanged
+files to reach the same verdicts, at 50-200ms of ffprobe each. Size and
+mtime are enough to skip that. The whole cache is dropped when
+:meth:`trackstarr.policy.Policy.fingerprint` changes, and deleting the file
 forces a full re-probe.
 
-Which verdicts are safe to cache is the sweep's call rather than this
-module's; see :data:`trackstarr.sweep.CACHEABLE_STATUSES`.
+Which verdicts are safe to cache is the sweep's call; see
+:data:`trackstarr.sweep.CACHEABLE_STATUSES`.
 """
 
 import json
@@ -26,11 +24,10 @@ log = logging.getLogger(__name__)
 class FileKey:
     """Everything file-side a verdict depends on.
 
-    Taken before the file is probed, so a change landing mid-sweep leaves the
-    cached entry stale rather than caching the new file under the old
-    verdict. The hard-link count is included because SKIP_HARDLINKS verdicts
-    change when a seeding download client lets go of a file, which alters
-    neither size nor mtime.
+    Taken before the probe, so a change landing mid-sweep leaves a stale
+    entry rather than filing the new file under the old verdict. The
+    hard-link count is in there because a SKIP_HARDLINKS verdict changes when
+    the download client lets go, which moves neither size nor mtime.
     """
 
     size: int
@@ -48,7 +45,7 @@ class Verdict:
 
 
 def cache_key(path: str, lang: str | None) -> FileKey | None:
-    """The file's current FileKey, or None when it is unreadable; None is
+    """The file's current FileKey, or None if it is unreadable. None is
     never cached."""
     try:
         stat_result = os.stat(path)
@@ -61,14 +58,11 @@ class SweepCache:
     """Verdicts from previous sweeps, keyed by path.
 
     ``lookup`` hits carried forward by ``record`` build the next sweep's
-    contents, so entries for files a sweep never visits (deleted or moved)
-    fall away on ``save``; ``checkpoint`` persists mid-sweep without that
-    pruning. Each persisted entry is a flat dict of the FileKey fields plus
-    ``status`` and ``reasons``.
+    contents, so entries for files a sweep never visits fall away on ``save``.
+    ``checkpoint`` persists mid-sweep without that pruning.
 
-    ``fingerprint`` is the policy the verdicts were judged under
-    (:meth:`trackstarr.policy.Policy.fingerprint`); a mismatch on load
-    drops the cache.
+    ``fingerprint`` is the policy the verdicts were judged under; a mismatch on
+    load drops the cache.
     """
 
     def __init__(self, path: str, fingerprint: dict):
@@ -103,7 +97,7 @@ class SweepCache:
         if not asdict(key).items() <= entry.items():
             return None
         try:
-            # "" so a missing status is as invalid as a damaged one.
+            # "" makes a missing status as invalid as a damaged one.
             return Verdict(Status(entry.get("status", "")), entry.get("reasons") or "")
         except ValueError:
             # A hand-edited or damaged entry; treat it as a miss.

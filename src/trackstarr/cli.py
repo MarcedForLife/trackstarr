@@ -12,10 +12,11 @@ from types import FrameType
 from . import __version__, auth, config, policy
 from .app import serve
 from .arr import all_arrs, match_path, path_index
+from .command import ffmpeg_args
 from .executor import audio_codec_errors, work_dir_errors
 from .langs import norm_lang
 from .media import ProbeError
-from .planner import build_plan, describe, ffmpeg_args
+from .planner import build_plan, describe
 from .processing import Job, process, state_dir_errors
 from .status import Status
 from .sweep import sweep
@@ -88,14 +89,12 @@ def _resolve_jobs(
 ) -> list[Job]:
     """One Job per file, its language from the flag or the *arrs' index.
 
-    The flag is normalised to ISO 639-2/B like every stream tag;
-    --original ja would otherwise sit in keep_langs while the tracks all
-    say jpn, and the plan would drop the very language it was told to keep.
+    The flag is normalised like every stream tag, or ``--original ja`` would sit
+    in keep_langs while the tracks all say jpn.
 
-    ``match_items`` builds the index even when the flag supplies the
-    language: fix needs the matched item id so the *arr still gets its
-    rescan after the rewrite, while plan skips the *arr round trip entirely,
-    which is what lets it run with no *arr reachable at all.
+    ``match_items`` builds the index even when the flag supplies the language,
+    because fix needs the item id for its rescan; plan skips the round trip
+    and so runs with no *arr up.
     """
     original = norm_lang(original)
     index = path_index(all_arrs()) if match_items or not original else {}
@@ -113,7 +112,7 @@ def cmd_plan(files: list[str], original: str | None) -> int:
             failed = True
             continue
         print(f"\n{path}")
-        # One row per policy fact, blank values omitted; a new Policy field
+        # One row per policy fact, blank values omitted. A new Policy field
         # joins the summary by adding a row.
         rows = [
             ("original language", plan.original_lang or "unknown"),
@@ -151,13 +150,10 @@ def cmd_plan(files: list[str], original: str | None) -> int:
 def cmd_fix(files: list[str], original: str | None) -> int:
     """Plan and rewrite specific files, wherever they live.
 
-    The ad-hoc path beside the webhook and the sweep, where having a shell
-    is the authorisation. Rewrites take the same locks, events and DRY_RUN
-    latch as every other source, via process().
-
-    Deferred fails the exit code here, unlike the sweep: the sweep's next
-    run is its retry, but a one-shot command's retry is the caller, who
-    must not read "not rewritten, run it again" as success.
+    Having a shell is the authorisation; same locks, events and DRY_RUN latch
+    as everything else. Deferred fails the exit code here, unlike in the
+    sweep: a one-shot command's retry is the caller, who must not read "not
+    rewritten, run it again" as success.
     """
     if config.DRY_RUN:
         print("DRY_RUN is set, planning only, nothing will be rewritten")
@@ -165,9 +161,8 @@ def cmd_fix(files: list[str], original: str | None) -> int:
     for job in _resolve_jobs(files, original, match_items=True):
         result = process(job, dry_run=False, source="cli")
         print(f"{result.status}  {job.path}")
-        # A deferred plan is stale by definition, so its reasons are left
-        # unprinted: they would read as work performed on a file that has
-        # since changed.
+        # A deferred plan is stale by definition, so its reasons would read
+        # as work done on a file that has since changed.
         if (
             result.plan
             and result.status is not Status.DEFERRED
@@ -183,12 +178,9 @@ def cmd_fix(files: list[str], original: str | None) -> int:
 def cmd_secret(name: str, rotate: bool) -> int:
     """Mint a webhook secret for a named caller and print it once.
 
-    This is how a custom client gets a credential the listener accepts.
-    Only a digest is kept, so this is the single time the secret is shown:
-    losing it means rotating rather than looking it up, which is why a
-    caller that already has one needs --rotate. Without that guard a second
-    run would silently lock out a client that was working. Deleting its
-    file under STATE_DIR/webhook-secrets revokes that caller alone.
+    Only a digest is kept, so this is the one time the secret is shown and
+    losing it means rotating. Hence --rotate for a caller that already has
+    one: without it a second run would quietly lock out a working client.
     """
     if auth.exists(name) and not rotate:
         log.error(
@@ -220,10 +212,9 @@ def _run_sweep(args: argparse.Namespace) -> int:
     return 0 if counts[Status.FAILED] == 0 else 1
 
 
-#: Each command's handler and the startup checks it needs: "read" is the
-#: config, policy and ffmpeg-on-PATH report; "rewrite" adds the two
-#: directories and the encoder. secret runs bare, it needs only a writable
-#: STATE_DIR, reports that failure itself, and must work without ffmpeg.
+#: Each command's handler and the startup checks it needs. "read" is the
+#: config, policy and ffmpeg-on-PATH report; "rewrite" adds the directories
+#: and the encoder. secret runs bare, and has to work without ffmpeg.
 COMMANDS = {
     "serve": (_run_serve, "rewrite"),
     "sweep": (_run_sweep, "rewrite"),
@@ -233,9 +224,8 @@ COMMANDS = {
 }
 
 
-#: The commands that walk MEDIA_DIRS, and so want config.warnings() said out
-#: loud. plan and fix are handed their files, wherever those happen to live,
-#: so a MEDIA_DIRS that has nothing to do with them is not worth a line.
+#: The commands that walk MEDIA_DIRS, and so want config.warnings() out loud.
+#: plan and fix are handed their files wherever those live.
 LIBRARY_COMMANDS = frozenset({"serve", "sweep"})
 
 
@@ -246,16 +236,13 @@ def _on_sigterm(signum: int, frame: FrameType | None) -> None:
 def handle_sigterm() -> None:
     """Make SIGTERM end the process, the way SIGINT already does.
 
-    Python installs no SIGTERM handler, and the kernel does not apply a
-    signal's default action to PID 1 — which is what the container runs. So
-    without this ``docker stop`` is ignored, waits out its whole grace period
-    and then SIGKILLs: ten seconds on every restart and update.
+    Python installs no SIGTERM handler and the kernel skips default actions for
+    PID 1, which is what the container runs. Without this, ``docker stop`` waits
+    out its grace period and SIGKILLs: ten seconds every update.
 
-    Exiting promptly is the whole aim; a rewrite in flight is not waited for.
-    It is a daemon thread, so it dies with the interpreter and leaves its
-    staged file behind, which is the same orphan a SIGKILL left and which
-    startup already clears. Waiting instead would mean blocking the stop for
-    the minutes a remux takes, only to be SIGKILLed at the same deadline.
+    A rewrite in flight is not waited for. Its daemon thread dies with the
+    interpreter and leaves the staged orphan a SIGKILL would, which startup
+    clears anyway.
     """
     signal.signal(signal.SIGTERM, _on_sigterm)
 
@@ -271,8 +258,8 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     handler, checks = COMMANDS[args.cmd]
-    # One report covering every startup problem at once, so a bad pattern
-    # and a bad mount don't take two restarts to discover.
+    # Every startup problem in one report, so a bad pattern and a bad mount
+    # don't take two restarts to find.
     problems: list[str] = []
     if checks:
         problems += config.errors() + policy.errors()

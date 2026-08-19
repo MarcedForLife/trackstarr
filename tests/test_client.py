@@ -1,10 +1,9 @@
 """client.request against a real loopback server.
 
-Every Radarr, Sonarr, Plex and Jellyfin call funnels through request(), and
-the rest of the suite replaces it wholesale, so nothing else exercises what
-it actually puts on the wire. A loopback server rather than a faked urlopen
-for exactly that reason: the method inference and the JSON content type are
-the things worth checking, and a fake would be checking the fake.
+Every *arr and media-server call goes through request(), and the rest of
+the suite replaces it wholesale, so nothing else exercises what it puts on
+the wire. A real server rather than a faked urlopen, since a fake would be
+checking the fake.
 """
 
 import json

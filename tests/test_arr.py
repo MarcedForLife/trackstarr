@@ -72,8 +72,8 @@ def test_leaves_a_current_connection_alone():
 
 
 def test_registering_twice_rotates_nothing():
-    """The digest kept at minting verifies the value we saved, so a restart
-    finds its own connection current instead of re-registering forever."""
+    """The digest verifies the value we saved, so a restart finds its own
+    connection current instead of re-registering forever."""
     first_calls: list[tuple] = []
     assert make_arr([], first_calls).register_webhook(URL)
     saved = first_calls[-1][2]
@@ -109,10 +109,9 @@ def test_updates_when_an_event_was_unticked():
     ids=["the header was edited in the arr's UI", "STATE_DIR was wiped"],
 )
 def test_replaces_a_secret_the_listener_would_reject(we_hold_a_digest):
-    """We cannot read our own copy back to compare, so the check is against
-    the digest, and anything failing it is replaced rather than left to 401
-    every callback. Either the *arr's copy was changed under us, or ours is
-    gone and its plaintext is unrecoverable; both end the same way."""
+    """We cannot read our own copy back, so the check is against the digest and
+    anything failing it is replaced rather than left to 401 every callback.
+    The *arr's copy was changed under us, or ours is gone; same ending."""
     if we_hold_a_digest:
         auth.mint("radarr")
     calls: list[tuple] = []
@@ -142,8 +141,8 @@ def test_reports_failure_for_retry_when_arr_is_down():
 
 
 def test_reports_failure_for_retry_when_the_secret_cannot_be_stored(monkeypatch):
-    """A secret we cannot check later would be registered and then refused,
-    so the *arr must keep its working connection until STATE_DIR is writable."""
+    """A secret we cannot check later would be registered and then refused, so the
+    *arr keeps its working connection until STATE_DIR is writable."""
 
     def cannot_store(name):
         raise OSError("read-only file system")

@@ -1,15 +1,12 @@
 """Per-caller credentials for the webhook listener.
 
 One file per caller under ``STATE_DIR/webhook-secrets``, holding a SHA-256
-digest rather than the secret itself. The listener only ever asks whether a
-presented value matches, and registration only ever writes a value out, so
-the plaintext has no reason to outlive the moment it is minted: a copy of
-the config volume yields nothing that can be replayed.
+digest rather than the secret. Nothing ever reads a secret back, so a copy
+of the config volume yields nothing replayable.
 
-A bare digest, not a password hash. These are 256-bit ``token_urlsafe``
-values, so there is no dictionary to salt against and nothing to guess; a
-KDF would only tax :func:`authorized`, which runs once per imported file.
-Save those for credentials a human chose.
+A bare digest, not a password hash: these are 256-bit ``token_urlsafe``
+values, so there is no dictionary to salt against. Save the KDF for
+credentials a human chose.
 """
 
 import hashlib
@@ -20,9 +17,8 @@ import secrets
 
 from . import config
 
-#: What may name a secret: a bare filename, so a name can never reach
-#: outside the secrets directory. Reads trust the same shape, so dotfiles
-#: and editor droppings in there are never mistaken for credentials.
+#: A bare filename, so a name can never reach outside the secrets directory.
+#: Reads trust the same shape, so dotfiles in there are never credentials.
 _NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
@@ -41,10 +37,9 @@ def _digest(secret: str) -> str:
 def _write(name: str, stored: str) -> None:
     """Replace one secret file atomically.
 
-    A reader authorising a request at the same moment sees the old digest
-    or the new one, never the half of a line that happened to be flushed.
-    The staging name is a dotfile, which _NAME_RE rejects, so one left
-    behind by a crash is never read back as a caller of its own.
+    A reader authorising a request at that moment sees the old digest or the
+    new one, never half a line. The staging name is a dotfile, which _NAME_RE
+    rejects, so one left by a crash is never read back as a caller.
     """
     os.makedirs(_secrets_dir(), exist_ok=True)
     partial = _path(f".{name}.{os.getpid()}.partial")
@@ -76,13 +71,12 @@ def names() -> list[str]:
 def mint(name: str) -> str:
     """A fresh secret for ``name``, stored as a digest and returned once.
 
-    The plaintext is written nowhere, so this return value is the only copy
-    and whatever asked for it must deliver it now. Minting again replaces
-    the old secret, which stops being accepted immediately.
+    This return value is the only copy, so whatever asked for it has to deliver
+    it now. Minting again replaces the old secret immediately.
 
-    Raises ValueError for a name that isn't a bare filename, and OSError
-    when STATE_DIR cannot hold the file, because a secret we cannot check
-    later would be handed out but never accepted.
+    Raises ValueError for a name that isn't a bare filename, and OSError when
+    STATE_DIR cannot hold the file: a secret we could not check later would be
+    handed out and never accepted.
     """
     if not _NAME_RE.fullmatch(name):
         raise ValueError(
@@ -101,8 +95,8 @@ def exists(name: str) -> bool:
 def matches(name: str, given: str) -> bool:
     """Whether ``given`` is the secret held for ``name``.
 
-    Compared as bytes because compare_digest refuses a str carrying
-    non-ASCII, which a file written by hand could.
+    Compared as bytes: compare_digest refuses a str with non-ASCII in it,
+    which a hand-written file could have.
     """
     stored = _stored(name)
     if not (given and stored):

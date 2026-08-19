@@ -78,7 +78,7 @@ fail_under = 100
 # src only: the tests are checked by running, and type-checking them buys an
 # ignore for the one method they monkeypatch and little else.
 #
-# Not --strict, which wants an annotation on every ffprobe dict — those are
+# Not --strict, which wants an annotation on every ffprobe dict; those are
 # arbitrary JSON whose shape is the thing being interrogated, so naming a type
 # for them would be fiction. These are the strict flags that pass clean today,
 # so the gate stays a gate instead of becoming a wall of ignores.
@@ -120,9 +120,9 @@ select = [
   "RUF",
 ]
 # Deliberately unselected: TRY, PLW, PT, C90 and the PL refactor rules fire
-# here only on deliberate code — subprocess.run without check= so ffmpeg's
+# here only on deliberate code (subprocess.run without check= so ffmpeg's
 # stderr can be formatted into the failure, log.error where a traceback would
-# be noise for an expected config mistake — so they buy a row of noqa comments
+# be noise for an expected config mistake), so they buy a row of noqa comments
 # and nothing else. ANN and D duplicate mypy and the docstrings. PTH would be
 # an os.path-to-pathlib migration, not a lint fix.
 ignore = [

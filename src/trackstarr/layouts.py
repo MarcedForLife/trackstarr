@@ -1,14 +1,13 @@
 """The DOWNMIX_LAYOUTS vocabulary and the rate each layout is encoded at.
 
-Parsing, validation and resolution into the concrete settings an encode
-uses. Pure string-and-config work: nothing here knows about plans, streams
-or probe output. Startup refuses invalid entries via
-:func:`trackstarr.config.errors`.
+Pure string-and-config work; nothing here knows about plans, streams or
+probe output. Startup refuses bad entries through
+:func:`trackstarr.policy.errors`.
 
-Every layout states its own rate, in its own ``AUDIO_BITRATE_`` variable.
-Nothing is derived from anything else: a rate that was scaled per channel
-from a single setting had to be worked out before it could be judged, and
-was silently wrong for a codec whose efficiency did not happen to match.
+Every layout states its own rate in its own ``AUDIO_BITRATE_`` variable,
+derived from nothing. A rate scaled per channel from one setting had to be
+worked out before it could be judged, and was quietly wrong for any codec
+whose efficiency didn't match.
 """
 
 import re
@@ -18,11 +17,12 @@ from . import config
 
 
 def bitrate_bps(rate: str) -> int | None:
-    """``320k``, ``1M`` or ``320000`` as bits per second, None if unparseable.
+    """``320k``, ``1M`` or ``320000`` as bits per second, None if it won't
+    parse.
 
-    The one grammar for bitrate strings: the layout rates and the weak-track
-    comparison all parse through here, so they can never disagree about what
-    a rate means.
+    The one grammar for bitrate strings. Layout rates and the weak-track
+    comparison both go through here, so they cannot disagree about what a
+    rate means.
     """
     matched = re.fullmatch(r"(\d+)([km]?)", rate.strip().lower())
     if not matched:
@@ -31,13 +31,12 @@ def bitrate_bps(rate: str) -> int | None:
 
 
 def canonical_bitrate(rate: str) -> str:
-    """A rate reduced to its one spelling, so ``320k`` and ``320000`` agree.
+    """A rate reduced to one spelling, so ``320k`` and ``320000`` agree.
 
-    :func:`encode_settings` writes the result into the file as a stream tag
-    that a later pass compares for equality, so two spellings of one rate
-    would read as a settings change and regenerate every track this tool has
-    made. A rate ffmpeg accepts but bitrate_bps cannot parse (``0.2M``) is
-    passed through unchanged, as everywhere else.
+    :func:`encode_settings` writes this into the file as a stream tag a later
+    pass compares for equality, so two spellings of one rate would read as a
+    settings change and regenerate every track we have made. A rate ffmpeg
+    takes but bitrate_bps cannot parse passes through unchanged.
     """
     bps = bitrate_bps(rate)
     if bps is None:
@@ -47,11 +46,10 @@ def canonical_bitrate(rate: str) -> str:
 
 @dataclass(frozen=True)
 class Layout:
-    """One entry of DOWNMIX_LAYOUTS: a channel layout and the bitrate its
-    downmixes are encoded at, as its ``AUDIO_BITRATE_`` variable states it.
-    Always present, so nothing downstream re-checks for it, and always
-    canonical, so one rate has one spelling wherever it lands: the ffmpeg
-    argument, the plan summary, the fingerprint and the tag."""
+    """One DOWNMIX_LAYOUTS entry: a channel layout and the bitrate its
+    downmixes are encoded at. Always present, so nothing downstream rechecks
+    it, and always canonical, so one rate has one spelling wherever it lands,
+    the ffmpeg argument, the plan summary, the fingerprint, the tag."""
 
     name: str  # "5.1"
     channels: int  # 6
@@ -59,12 +57,12 @@ class Layout:
 
 
 def parse_channels(name: str) -> int | None:
-    """How many channels a layout name means (``5.1`` is 6), None for
-    anything that isn't one (``surround``, ``5:1``, ``0.0``)."""
+    """How many channels a layout name means, so ``5.1`` is 6. None for
+    anything that isn't one: ``surround``, ``5:1``, ``0.0``."""
     matched = re.fullmatch(r"(\d)\.(\d)", name)
     if not matched:
         return None
-    # 0.0 names no channels, so it is a typo rather than a layout.
+    # 0.0 names no channels, so it is a typo, not a layout.
     return int(matched.group(1)) + int(matched.group(2)) or None
 
 
@@ -74,12 +72,12 @@ def layout_bitrate(name: str) -> str:
 
 
 def parse_layout(entry: str) -> Layout | None:
-    """A DOWNMIX_LAYOUTS entry as a Layout, None when it is not a layout name
-    or nothing gives it a usable rate.
+    """A DOWNMIX_LAYOUTS entry as a Layout, or None if it isn't a layout
+    name or nothing gives it a usable rate.
 
-    Both halves collapse to None here because callers want a Layout or
-    nothing; :func:`trackstarr.policy.errors` asks the two questions
-    separately, so the startup report can say which one failed.
+    Both halves collapse to None because callers want a Layout or nothing.
+    :func:`trackstarr.policy.errors` asks the two separately, so the startup
+    report can say which failed.
     """
     channels = parse_channels(entry)
     rate = layout_bitrate(entry)
@@ -91,17 +89,17 @@ def parse_layout(entry: str) -> Layout | None:
 def resolved_layouts() -> list[Layout]:
     """DOWNMIX_LAYOUTS parsed, unusable entries dropped, smallest first.
 
-    Sorted by name within a channel count, so two layouts of the same size
-    ("4.2" and "5.1") order deterministically; a set has no order of its own.
+    By name within a channel count, so two layouts of the same size order
+    the same every time. A set has no order of its own.
     """
     parsed = [layout for entry in config.DOWNMIX_LAYOUTS if (layout := parse_layout(entry))]
     return sorted(parsed, key=lambda layout: (layout.channels, layout.name))
 
 
 def encode_settings(codec: str, bitrate: str) -> str:
-    """What media.GENERATED_TAG records about an encode: its codec and rate.
+    """What media.GENERATED_TAG records about an encode: codec and rate.
 
-    Written into the file, so the spelling is settled by
-    :func:`canonical_bitrate` rather than left as whatever the setting said.
+    This goes into the file, so :func:`canonical_bitrate` settles the
+    spelling rather than leaving whatever the setting said.
     """
     return f"{codec} {canonical_bitrate(bitrate)}"

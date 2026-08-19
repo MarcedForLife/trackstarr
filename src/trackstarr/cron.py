@@ -1,11 +1,12 @@
 """A five-field cron schedule: minute, hour, day of month, month, day of week.
 
 Standard syntax: ``*``, numbers, ranges (``1-5``), steps (``*/15``,
-``2-10/2``), comma lists, and 0 or 7 both meaning Sunday. The day rule is
-cron's: when day of month and day of week are both restricted, a date
-matches when either does. Hand-rolled because the project has no runtime
-dependencies on purpose; times are wall-clock local, like every schedule
-here.
+``2-10/2``), comma lists, and 0 or 7 for Sunday. The day rule is cron's own:
+with day of month and day of week both restricted, a date matches when
+either does.
+
+Hand-rolled because the project has no runtime dependencies on purpose.
+Times are wall-clock local.
 """
 
 from dataclasses import dataclass
@@ -20,9 +21,8 @@ _FIELDS = (
     ("day of week", 0, 7),
 )
 
-#: How far next_run() searches before declaring the schedule impossible.
-#: The rarest real schedule is a Feb 29 date-and-weekday combination, which
-#: can sit 8 years apart; past that nothing ever matches ("0 0 30 2 *").
+#: How far next_run() searches before calling a schedule impossible. The
+#: rarest real one, a Feb 29 date-and-weekday pair, can sit 8 years apart.
 _HORIZON = timedelta(days=366 * 9)
 
 
@@ -61,8 +61,8 @@ def parse(expr: str) -> Cron:
 def next_run(cron: Cron, after: datetime) -> datetime:
     """The first matching minute strictly after ``after``.
 
-    Walks the calendar a day, then an hour, then a minute at a time, so the
-    worst case is a few thousand cheap set lookups, once per scheduling.
+    Walks the calendar a day, then an hour, then a minute at a time. Worst
+    case is a few thousand set lookups, once per scheduling.
     """
     candidate = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
     limit = candidate + _HORIZON
@@ -102,7 +102,7 @@ def _field(part: str, label: str, low: int, high: int) -> frozenset[int]:
             first_raw, _, last_raw = span.partition("-")
             first, last = _number(first_raw, label), _number(last_raw, label)
         else:
-            # A bare number; with a step it opens a range, as in Vixie cron.
+            # A bare number. With a step it opens a range, as Vixie cron does.
             first = _number(span, label)
             last = high if step_raw else first
         if not low <= first <= last <= high:

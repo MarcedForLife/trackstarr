@@ -5,19 +5,18 @@ import subprocess
 
 from . import config
 from .langs import norm_lang
-from .policy import Policy
+from .policy import IMAGE_CODECS, Policy
 
-#: Stream tag recording the settings a generated downmix was encoded with,
-#: written at encode time so a later pass can recognise our own tracks. MP4
-#: does not preserve custom stream tags, so it only survives in Matroska.
+#: The settings a generated downmix was encoded with, so a later pass knows
+#: our own tracks. MP4 drops custom stream tags; this survives in Matroska.
 GENERATED_TAG = "TRACKSTARR"
 
 
 class ProbeError(RuntimeError):
     """ffprobe could not produce usable output for a file.
 
-    The one exception callers need to handle: it covers a corrupt or
-    truncated file, a probe timeout, and unparseable probe output.
+    The one exception callers have to handle. Covers a corrupt or truncated
+    file, a probe timeout, and output that won't parse.
     """
 
 
@@ -25,8 +24,8 @@ def probe(path: str) -> dict:
     """Return ffprobe's JSON for a file, raising ProbeError when it can't."""
     try:
         out = subprocess.run(
-            # -v error rather than quiet: on a damaged file the stderr text is
-            # the only clue about what is actually wrong with it.
+            # -v error, not quiet: on a damaged file that stderr text is the
+            # only clue about what is wrong.
             [
                 "ffprobe",
                 "-v",
@@ -63,10 +62,10 @@ def container_title(info: dict) -> str:
 
 
 def stream_title(stream: dict) -> str:
-    """The track title: Matroska reports it as ``title``, MP4 as ``name``.
+    """The track title. Matroska reports it as ``title``, MP4 as ``name``.
 
-    ``handler_name`` is deliberately not consulted; it is muxer boilerplate
-    ("SoundHandler"), not a title anyone set.
+    ``handler_name`` is left alone on purpose: it is muxer boilerplate
+    ("SoundHandler"), not a title anyone chose.
     """
     tags = stream.get("tags") or {}
     return tags.get("title") or tags.get("name") or ""
@@ -89,7 +88,7 @@ def tag_value(stream: dict, name: str) -> str | None:
 def stream_bitrate(stream: dict) -> int | None:
     """Bits per second, or None when the container doesn't say.
 
-    MP4 reports per-stream bit_rate; Matroska usually doesn't, but mkvmerge
+    MP4 reports per-stream bit_rate. Matroska usually doesn't, but mkvmerge
     writes the BPS statistics tags most release files carry.
     """
     for reported in (stream.get("bit_rate"), tag_value(stream, "BPS")):
@@ -115,10 +114,10 @@ def has_disposition(stream: dict, *flags: str) -> bool:
 def is_commentary(stream: dict, policy: Policy) -> bool:
     """Commentary, audio description and interview tracks.
 
-    The disposition flags are authoritative when a muxer bothered to set
-    them; most rips don't, so the track title is the fallback. Getting this
-    right is the whole point of the downmix rule: a 2.0 commentary track must
-    not count as the stereo track a player can fall back to.
+    The disposition flags win when a muxer bothered to set them. Most rips
+    don't, so the title is the fallback. This is the whole point of the
+    downmix rule: a 2.0 commentary track must not count as the stereo track a
+    player falls back to.
     """
     return has_disposition(stream, "comment", "visual_impaired", "descriptions") or bool(
         policy.commentary_re.search(stream_title(stream))
@@ -126,7 +125,7 @@ def is_commentary(stream: dict, policy: Policy) -> bool:
 
 
 def is_forced(stream: dict, policy: Policy) -> bool:
-    """Forced subtitles display even with subtitles off (foreign dialogue,
+    """Forced subtitles show even with subtitles off (foreign dialogue,
     signs), so they are always kept and never make another track redundant."""
     return has_disposition(stream, "forced") or bool(
         policy.forced_re.search(stream_title(stream))
@@ -141,24 +140,22 @@ def is_sdh(stream: dict, policy: Policy) -> bool:
     )
 
 
-def is_cover_art(stream: dict, policy: Policy) -> bool:
+def is_cover_art(stream: dict) -> bool:
     """Embedded artwork, which players otherwise read as a second video track."""
-    return has_disposition(stream, "attached_pic") or (
-        stream.get("codec_name") in policy.image_codecs
-    )
+    return has_disposition(stream, "attached_pic") or (stream.get("codec_name") in IMAGE_CODECS)
 
 
 def title_is_load_bearing(stream: dict, policy: Policy) -> bool:
-    """Titles the planner's own decisions read, so a rewrite must not clear
-    them: the next plan would classify the track differently, breaking
-    idempotence."""
+    """Titles the planner's own decisions read. Clearing one would have the
+    next plan classify the track differently, breaking idempotence."""
     return is_commentary(stream, policy) or is_sdh(stream, policy) or is_forced(stream, policy)
 
 
 def is_junk_title(title: str, policy: Policy) -> bool:
-    """Release junk (bitrates, resolutions, source tags) rather than meaning.
+    """Release junk (bitrates, resolutions, source tags) rather than
+    meaning.
 
-    A pure pattern test; callers clearing stream titles must guard them with
+    A pure pattern test. Callers clearing stream titles have to guard with
     title_is_load_bearing first.
     """
     return bool(title) and bool(policy.junk_title_re.search(title))

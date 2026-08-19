@@ -1,8 +1,7 @@
 """What each *arr call does when the *arr is down, or switched off.
 
-Every one of these runs inside a sweep or a webhook import. A Radarr that is
-restarting must degrade to "no library information" and let the rewrite go on
-using what the file itself says, never abandon the walk.
+All of these run inside a sweep or a webhook import, so a restarting Radarr
+has to degrade to "no library information" rather than abandon the walk.
 """
 
 import pytest
@@ -26,9 +25,8 @@ def down(monkeypatch):
 
 @pytest.fixture
 def off():
-    """A Radarr with no URL or key configured, as when the user runs Sonarr
-    only. The suite blanks the service env vars, so an unbuilt one is already
-    switched off."""
+    """A Radarr with no URL or key, as when the user runs Sonarr only. The suite
+    blanks the service env vars, so an unbuilt one is already off."""
     return radarr()
 
 
@@ -44,8 +42,8 @@ def test_a_disabled_arr_is_never_called(off, monkeypatch):
 
 
 def test_a_library_fetch_that_fails_yields_no_items(down):
-    """Empty, not an exception: the sweep still has files to judge, it just
-    cannot ask which language they were released in."""
+    """Empty, not an exception: the sweep still has files to judge, it just cannot
+    ask what language they were released in."""
     assert down.all_items() == []
 
 
@@ -54,8 +52,8 @@ def test_an_item_lookup_that_fails_yields_none(down):
 
 
 def test_a_rescan_that_fails_is_swallowed(down):
-    """The rewrite has already happened by this point. Failing to tell Radarr
-    about it leaves stale metadata, which is not worth failing the import."""
+    """The rewrite has already happened. Stale Radarr metadata is not worth failing
+    the import over."""
     down.rescan(1)
 
 
@@ -83,8 +81,8 @@ def test_an_empty_library_response_is_a_list(monkeypatch):
 
 
 def test_all_arrs_reports_both_regardless_of_configuration():
-    """The startup banner lists each with its on/off state, so both are always
-    present and `enabled` is what varies."""
+    """The startup banner lists each with its state, so both are always present
+    and `enabled` is what varies."""
     assert [a.name for a in all_arrs()] == ["radarr", "sonarr"]
     assert all(isinstance(a, Arr) for a in all_arrs())
 
@@ -115,15 +113,15 @@ def test_an_unmapped_language_is_unknown_not_an_error(caplog):
 
 
 def test_oserror_is_an_api_error():
-    """The fixtures above raise OSError to stand in for every transport
-    failure, which only holds while API_ERRORS keeps covering it."""
+    """The fixtures above raise OSError for every transport failure, which only
+    holds while API_ERRORS covers it."""
     assert issubclass(OSError, API_ERRORS)
 
 
 def test_a_save_that_fails_leaves_the_registration_to_be_retried(monkeypatch):
-    """The listing succeeds and the save does not, which is the shape of a
-    restart racing the *arr coming up. Reporting False is what schedules the
-    retry; reporting True would leave the webhook permanently unregistered."""
+    """The listing succeeds and the save does not, which is a restart racing the
+    *arr coming up. False is what schedules the retry; True would leave the
+    webhook permanently unregistered."""
     calls: list[str] = []
 
     def flaky(url, headers=None, payload=None, timeout=30, method=None):

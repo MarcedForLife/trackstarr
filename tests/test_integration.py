@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from trackstarr import config, events, executor, planner
+from conftest import read_events
+from trackstarr import config, executor, planner
 from trackstarr.cli import main as cli_main
 from trackstarr.executor import Outcome, apply_plan
 from trackstarr.media import ProbeError, duration, probe, stream_title
@@ -85,9 +86,8 @@ def test_regenerate_downmix_end_to_end(make_file, monkeypatch):
 
 
 def test_mp4_commentary_titles_are_read_and_survive(make_file):
-    """MP4 reports track titles as ``name``, and a plain copy drops them;
-    commentary must be caught before the rewrite and still be labelled
-    after it, or the next pass is blind to it."""
+    """MP4 reports titles as ``name`` and a plain copy drops them, so commentary
+    has to be caught before the rewrite and still labelled after it."""
     path = make_file("f.mp4", COMMENTARY_CASE)
     plan = build_plan(path, "eng")
     assert any("downmix from stream 1" in reason for reason in plan.reasons)
@@ -126,8 +126,8 @@ def test_remux_never_overwrites_an_existing_sibling(make_file, monkeypatch, tmp_
 
 
 def test_generated_track_inherits_no_statistics_tags(make_file, tmp_path):
-    """A fresh encode advertising the source's mkvmerge BPS would show the
-    old track's numbers in every player and poison the weak-track test."""
+    """A fresh encode advertising the source's mkvmerge BPS would show the old
+    numbers in every player and poison the weak-track test."""
     path = make_file("f.mkv", COMMENTARY_CASE)
     remuxed = tmp_path / "remux.mkv"
     subprocess.run(
@@ -337,7 +337,7 @@ def test_fix_command_end_to_end(make_file, capsys):
     assert cli_main(["--log-level", "WARNING", "fix", "--original", "eng", path]) == 0
     assert capsys.readouterr().out.startswith("fixed")
     assert sorted(stream["channels"] for stream in streams_of(path, "audio")) == [2, 2, 6]
-    (entry,) = [event for event in events.read() if event["event"] == "fixed"]
+    (entry,) = [event for event in read_events() if event["event"] == "fixed"]
     assert entry["source"] == "cli"
     # Idempotent like every other source: a second run conforms.
     assert cli_main(["--log-level", "WARNING", "fix", "--original", "eng", path]) == 0
@@ -345,9 +345,8 @@ def test_fix_command_end_to_end(make_file, capsys):
 
 
 def test_hardlinked_file_is_left_alone_by_default(make_file, tmp_path):
-    """The standard *arr layout hard-links every import, so rewriting one by
-    default would break the link and double the file on disk for as long as
-    the download client seeds it."""
+    """The standard *arr layout hard-links every import, so rewriting one would
+    break the link and double the file for as long as the client seeds it."""
     path = make_file("f.mkv", COMMENTARY_CASE)
     os.link(path, tmp_path / "seed.mkv")
     assert not build_plan(path, "eng").needed
@@ -393,8 +392,8 @@ def test_seed_release_invalidates_cached_hardlink_skip(
 
 
 def test_report_only_sweep_reuses_would_fix_verdicts(make_file, swept_library, tmp_path):
-    """Nightly report-only sweeps re-emit their rows without re-probing, but
-    an applying sweep must not trust a cached would-fix verdict."""
+    """Report-only sweeps re-emit their rows without re-probing, but an applying
+    sweep must not trust a cached would-fix."""
     make_file("f.mkv", COMMENTARY_CASE)
 
     assert sweep(dry_run=True)["would-fix"] == 1

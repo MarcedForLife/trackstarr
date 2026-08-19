@@ -71,8 +71,8 @@ def _exdev(monkeypatch, staged) -> list[tuple[str, str]]:
 
 
 def test_rewrites_stage_in_the_work_dir(tmp_path, monkeypatch):
-    """Not in the library: the point of WORK_DIR is that a half-written
-    rewrite never appears beside the file it will replace."""
+    """The point of WORK_DIR is that a half-written rewrite never appears beside
+    the file it will replace."""
     staged = _capture_staged(monkeypatch)
     path = tmp_path / "f.mkv"
     path.write_bytes(b"content")
@@ -118,9 +118,8 @@ def test_publish_falls_back_to_a_copy_across_filesystems(tmp_path, monkeypatch):
 )
 @pytest.mark.parametrize("cross_device", [False, True], ids=["rename", "copy"])
 def test_publish_handles_a_read_only_source(tmp_path, monkeypatch, cross_device):
-    """A library kept at 0444 is still republished. The staged file wears the
-    source's mode before it is flushed, and such a file cannot be reopened
-    for writing even by the user that owns it."""
+    """A library kept at 0444 is still republished, though the staged file wears
+    that mode before the flush and cannot be reopened for writing."""
     library = tmp_path / "library"
     library.mkdir()
     target = library / "f.mkv"
@@ -139,8 +138,7 @@ def test_publish_handles_a_read_only_source(tmp_path, monkeypatch, cross_device)
 
 
 def test_publish_does_not_copy_when_a_rename_will_do(tmp_path):
-    """The free path has to stay free; copying every rewrite would double
-    the writing for nothing."""
+    """Copying every rewrite would double the writing for nothing."""
     target = tmp_path / "f.mkv"
     target.write_bytes(b"old")
     staged = tmp_path / ".trackstarr-x.partial"
@@ -171,8 +169,8 @@ def test_a_failed_landing_copy_leaves_the_original_alone(tmp_path, monkeypatch):
 
 
 def test_failed_preflight_leaves_no_staged_file(tmp_path, monkeypatch):
-    """The remux-target check returns before the cleanup, so staging any
-    earlier left an empty file behind on every collision."""
+    """The remux-target check returns before the cleanup, so staging any earlier
+    left an empty file behind on every collision."""
     monkeypatch.setattr(config, "REMUX_TO_MKV", True)
     _no_ffmpeg(monkeypatch)
     source = tmp_path / "f.mp4"
@@ -186,10 +184,9 @@ def test_failed_preflight_leaves_no_staged_file(tmp_path, monkeypatch):
 
 
 def test_clean_work_dir_age_gates_unless_no_rewrite_can_be_running(monkeypatch):
-    """serve can restart while a ``sweep --apply`` in another process is
-    mid-rewrite in the same WORK_DIR; a fresh staged file may be its live
-    ffmpeg output, so only proof that every rewrite slot is free (exclusive)
-    allows clearing them unconditionally."""
+    """serve can restart while a ``sweep --apply`` is mid-rewrite in the same
+    WORK_DIR, so a fresh staged file may be its live ffmpeg output. Only proof
+    that every slot is free allows clearing those."""
     monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 7200)
     work = Path(config.WORK_DIR)
     work.mkdir(parents=True)
@@ -227,12 +224,9 @@ def test_stale_staged_files_are_dropped_but_live_ones_are_not(tmp_path, monkeypa
 
 
 def test_concurrent_rewrites_get_their_own_temp_file(tmp_path, monkeypatch):
-    """Two rewrites starting in the same second must not share a temp path.
-
-    A name built from the pid and whole seconds gave them one: both ffmpegs
-    wrote to it and whichever finished last was renamed over both sources.
-    Invisible while rewrites were serialized, data loss once they aren't.
-    """
+    """Two rewrites starting in the same second must not share a temp path. A
+    name built from the pid and whole seconds gave them one, and whichever
+    finished last was renamed over both sources."""
     staged = _capture_staged(monkeypatch)
     for name in ("a.mkv", "b.mkv", "c.mkv"):
         path = tmp_path / name
@@ -246,8 +240,8 @@ def test_concurrent_rewrites_get_their_own_temp_file(tmp_path, monkeypatch):
 
 
 def test_stale_plan_is_deferred_before_ffmpeg(tmp_path, monkeypatch):
-    """A plan whose file changed while it waited on the rewrite lock must not
-    be applied: its stream maps describe a file that no longer exists."""
+    """A plan whose file changed while it waited on the lock describes streams
+    that no longer exist."""
     _no_ffmpeg(monkeypatch)
     path = tmp_path / "f.mkv"
     path.write_bytes(b"planned content")
@@ -274,8 +268,8 @@ def test_matching_source_passes_the_staleness_check(tmp_path, monkeypatch):
 
 
 def test_ffmpeg_stderr_in_the_detail_is_bounded(tmp_path, monkeypatch):
-    """A damaged file can make ffmpeg log per-packet noise; the fatal message
-    at the tail is what matters, and the detail lands in events.jsonl whole."""
+    """A damaged file can make ffmpeg log per-packet noise; the fatal message at
+    the tail is what matters."""
     path = tmp_path / "f.mkv"
     path.write_bytes(b"content")
     noise = "deprecated pixel format used\n" * 1000 + "final: everything broke"
@@ -292,8 +286,8 @@ def test_ffmpeg_stderr_in_the_detail_is_bounded(tmp_path, monkeypatch):
     "elsewhere", [False, True], ids=["beside the library", "on another drive"]
 )
 def test_a_writable_work_dir_passes_wherever_it_lives(tmp_path, monkeypatch, elsewhere):
-    """Which filesystem it is on deliberately doesn't matter; the refusal
-    this replaced ruled out every multi-drive library."""
+    """Which filesystem it is on deliberately doesn't matter; the refusal this
+    replaced ruled out every multi-drive library."""
     media = ["/mnt/disk1/movies", "/mnt/disk2/tv"] if elsewhere else [str(tmp_path)]
     monkeypatch.setattr(config, "MEDIA_DIRS", media)
     assert work_dir_errors() == []
@@ -333,7 +327,7 @@ def test_an_audio_encoder_this_ffmpeg_has_passes(monkeypatch, codec):
 
 @pytest.mark.parametrize("codec", ["acc", "libx264"], ids=["a typo", "a video encoder"])
 def test_an_audio_codec_ffmpeg_cannot_encode_is_refused(monkeypatch, codec):
-    """A bad codec must fail the restart that introduced it, not the first
+    """A bad codec has to fail the restart that introduced it, not the first
     rewrite hours later."""
     _fake_encoders(monkeypatch)
     monkeypatch.setattr(config, "AUDIO_CODEC", codec)
@@ -351,8 +345,8 @@ def test_missing_ffmpeg_is_not_this_checks_problem(monkeypatch):
 
 
 def test_a_staged_file_that_cannot_be_removed_is_left_alone(tmp_path, monkeypatch, caplog):
-    """Another worker may hold it, or the work dir may have gone read-only.
-    Either way this runs at startup and must not stop the service coming up."""
+    """Another worker may hold it, or the work dir may have gone read-only. This
+    runs at startup either way and must not stop the service coming up."""
     monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 0)
     staged = tmp_path / ".trackstarr-cccc.partial"
     staged.write_text("orphaned")
@@ -369,15 +363,14 @@ def test_a_vanished_staged_file_is_not_an_error(tmp_path, monkeypatch):
 
 
 def test_an_unreachable_work_dir_is_not_reported_as_remote(monkeypatch):
-    """Only used to log a note at startup, so an answer it cannot work out
-    has to be the quiet one. work_dir_errors is what actually refuses."""
+    """Only used for a startup note, so an answer it cannot work out has to be
+    the quiet one. work_dir_errors is what refuses."""
     monkeypatch.setattr(config, "WORK_DIR", "/definitely/not/here")
     assert executor.work_dir_is_remote() is False
 
 
 def test_a_work_dir_that_cannot_be_staged_in_fails_the_plan(tmp_path, monkeypatch):
-    """Distinct from a failing ffmpeg: nothing has been written yet, and the
-    detail has to name the directory so the cause is obvious."""
+    """Nothing has been written yet, so the detail names the directory."""
     _no_ffmpeg(monkeypatch)
 
     def refuse(directory):
@@ -412,8 +405,8 @@ def test_an_ffmpeg_timeout_is_a_failure_naming_the_limit(tmp_path, monkeypatch):
 
 
 def test_a_publish_failure_that_is_not_cross_device_is_raised(tmp_path, monkeypatch):
-    """EXDEV is the one os.replace failure with a fallback. Anything else —
-    a full disk, a read-only mount — must surface, not be papered over."""
+    """EXDEV is the one os.replace failure with a fallback. A full disk or a
+    read-only mount has to surface."""
 
     def refuse(src, dst):
         raise OSError(errno.EACCES, "permission denied")
@@ -429,8 +422,8 @@ def test_a_publish_failure_that_is_not_cross_device_is_raised(tmp_path, monkeypa
 
 
 def test_verification_catches_a_truncated_result():
-    """The commonest bad rewrite: ffmpeg exits 0 having written a fraction of
-    the file. Publishing that would destroy the source."""
+    """The commonest bad rewrite: ffmpeg exits 0 having written a fraction of the
+    file, and publishing that destroys the source."""
     plan = Plan(path="f.mkv", src_duration=3600.0)
     problem = executor._verify(plan, {"format": {"duration": "120.0"}, "streams": []})
     assert problem is not None
@@ -444,8 +437,8 @@ def test_verification_allows_a_little_drift():
 
 
 def test_verification_catches_a_missing_stream():
-    """A dropped track is silent otherwise: the file plays, just without the
-    audio somebody wanted kept."""
+    """A dropped track is silent otherwise: the file plays, just without the audio
+    somebody wanted kept."""
     plan = Plan(path="f.mkv")
     plan.streams.extend([OutStream(src=0, kind="video"), OutStream(src=1, kind="audio")])
     problem = executor._verify(plan, {"format": {}, "streams": [{"index": 0}]})
@@ -468,8 +461,7 @@ def test_a_result_that_fails_verification_is_discarded(tmp_path, monkeypatch):
 
 
 def test_an_unremovable_remux_source_is_only_a_warning(tmp_path, monkeypatch, caplog):
-    """The .mkv is already published at this point; leaving the .mp4 behind is
-    untidy, not a failed import."""
+    """The .mkv is already published, so a leftover .mp4 is untidy, not a failure."""
     monkeypatch.setattr(config, "REMUX_TO_MKV", True)
     monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: fake_run())
     monkeypatch.setattr(executor, "_verify", lambda plan, info: None)
@@ -491,8 +483,8 @@ def test_an_unremovable_remux_source_is_only_a_warning(tmp_path, monkeypatch, ca
 
 
 def test_an_encoder_list_that_cannot_be_read_is_not_an_error(monkeypatch):
-    """ffmpeg answering non-zero to -encoders says nothing about the codec, so
-    the check declines to guess rather than refusing a valid one."""
+    """ffmpeg answering non-zero to -encoders says nothing about the codec, so the
+    check declines to guess."""
     monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: fake_run(returncode=1))
     assert audio_codec_errors() == []
 

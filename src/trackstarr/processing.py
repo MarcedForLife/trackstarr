@@ -4,7 +4,6 @@ import contextlib
 import fcntl
 import logging
 import os
-import threading
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -19,40 +18,15 @@ from .status import Status
 
 log = logging.getLogger(__name__)
 
-#: Guards _running against MAX_CONCURRENT_REWRITES. A condition rather than a
-#: semaphore because the limit is read at acquire time, so a test can move it
-#: with monkeypatch like every other setting.
-_rewrite_cv = threading.Condition()
-_running = 0
-
-#: How long a rewrite waits before re-checking the cross-process slots. Only
-#: reached when other processes hold them all, and rewrites run for minutes,
-#: so polling this slowly costs nothing.
+#: How long a rewrite waits before re-checking the slots. Rewrites run for
+#: minutes, so polling this slowly costs nothing. The flock pool is the only
+#: thing enforcing the limit; a semaphore beside it could drift from it.
 _SLOT_POLL_SECONDS = 1.0
-
-
-@contextlib.contextmanager
-def _budget():
-    """One of MAX_CONCURRENT_REWRITES slots within this process."""
-    global _running
-    with _rewrite_cv:
-        _rewrite_cv.wait_for(lambda: _running < config.MAX_CONCURRENT_REWRITES)
-        _running += 1
-    try:
-        yield
-    finally:
-        with _rewrite_cv:
-            _running -= 1
-            _rewrite_cv.notify()
-
 
 _SLOT_PREFIX = "rewrite.lock."
 
-#: Slot locks get a directory of their own. STATE_DIR is a volume people open
-#: to read pending.tsv and the event history, and a pool of empty lock files
-#: sitting beside those reads as state rather than the runtime scratch it is
-#: — the more so because lowering MAX_CONCURRENT_REWRITES strands every slot
-#: past the new limit, where they stay until someone deletes them.
+#: Slot locks live in their own directory: empty lock files beside
+#: pending.tsv and the history would read as state rather than scratch.
 _LOCK_DIRNAME = "locks"
 
 
@@ -61,8 +35,8 @@ def _lock_dir() -> str:
 
 
 def _try_lock(name: str):
-    """Flock a slot file and return the open handle, or None when another
-    holder has it. The handle *is* the lock; closing it releases."""
+    """Flock a slot file and return the open handle, or None if someone
+    else holds it. The handle *is* the lock; closing it releases."""
     lock_file = open(os.path.join(_lock_dir(), name), "w")  # noqa: SIM115
     try:
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -75,10 +49,10 @@ def _try_lock(name: str):
 def _claim_slot():
     """Lock one of the STATE_DIR slot files and return the open handle.
 
-    The in-process budget can't see a ``docker exec trackstarr sweep --apply``
-    running beside serve, so the limit is mirrored as a pool of flock files
-    every process competes for. Blocks until one frees: rewrites are a queue
-    by design.
+    MAX_CONCURRENT_REWRITES is machine-wide, not per-process: a ``docker exec
+    trackstarr sweep --apply`` beside a running serve competes for the same
+    budget. Hence a pool of flock files rather than a semaphore no other
+    process could see. Blocks until one frees; rewrites are a queue by design.
     """
     os.makedirs(_lock_dir(), exist_ok=True)
     while True:
@@ -89,17 +63,13 @@ def _claim_slot():
 
 
 def state_dir_errors() -> list[str]:
-    """Whether STATE_DIR can hold what a rewrite needs, as ready-to-log messages.
+    """Whether STATE_DIR can hold what a rewrite needs, as messages.
 
-    Creates it and its lock directory when missing, then takes a slot lock,
-    which is the same open :func:`_claim_slot` does and the first thing to
-    fail on a ``/config`` the container cannot write — a bind mount Docker
-    created root-owned, which the README warns about because it is the
-    mistake to make. That failure lands
-    in :func:`trackstarr.app.serve` before the listener binds, so without this
-    it surfaces as a traceback from a restart loop rather than a line in the
-    startup report. A slot another process is holding is not a problem here:
-    the open succeeded, which is the whole question.
+    Creates it and its lock directory, then takes a slot lock, the same open
+    :func:`_claim_slot` does and the first thing to fail on a root-owned
+    ``/config``. Caught here it is a line in the startup report rather than
+    a restart-loop traceback. A slot another process holds is fine; the open
+    succeeded.
     """
     try:
         os.makedirs(_lock_dir(), exist_ok=True)
@@ -112,17 +82,17 @@ def state_dir_errors() -> list[str]:
 
 @contextlib.contextmanager
 def all_slots_held() -> Iterator[bool]:
-    """Every rewrite slot on the machine, or none: yields whether it got all.
+    """Every rewrite slot on the machine, or none; yields which.
 
-    A staged file only exists while its rewrite holds a slot, so holding them
-    all proves WORK_DIR contains nothing but orphans; startup cleans it under
-    this. Never waits: when any slot is taken (a sweep in another process,
-    mid-rewrite), everything is released and False yielded immediately.
+    A staged file exists only while its rewrite holds a slot, so holding them
+    all proves WORK_DIR has nothing but orphans in it, and startup cleans it
+    under this. Never waits: if any slot is taken, everything is released and
+    False yielded at once.
     """
     os.makedirs(_lock_dir(), exist_ok=True)
     wanted = {f"{_SLOT_PREFIX}{slot}" for slot in range(config.MAX_CONCURRENT_REWRITES)}
-    # A process given a bigger budget can hold slots past our range, but a
-    # held slot's file always exists, so the union covers every rewrite.
+    # A bigger budget elsewhere can hold slots past our range, but a held
+    # slot's file always exists, so the union covers every rewrite.
     wanted.update(name for name in os.listdir(_lock_dir()) if name.startswith(_SLOT_PREFIX))
     held: list = []
     try:
@@ -141,18 +111,6 @@ def all_slots_held() -> Iterator[bool]:
             lock_file.close()
 
 
-@contextlib.contextmanager
-def _exclusive_rewrite():
-    """A rewrite slot held against every other rewrite on the machine."""
-    with _budget():
-        lock_file = _claim_slot()
-        try:
-            yield
-        finally:
-            # Closing releases the flock, even if the rewrite raised.
-            lock_file.close()
-
-
 @dataclass(frozen=True)
 class Job:
     """One file to process, with what the *arrs know about it."""
@@ -166,9 +124,8 @@ class Job:
     def from_match(cls, path: str, item: LibraryItem | None, lang: str | None = None) -> Job:
         """A job for ``path``, carrying whatever its title was matched to.
 
-        ``lang`` wins over the matched language, for ``--original``. The item
-        is still worth having when it does: its id is what gets the *arr its
-        rescan after the rewrite.
+        ``lang`` beats the matched language, for ``--original``. The item is
+        still worth having: its id is what gets the *arr its rescan.
         """
         if item is None:
             return cls(path, lang)
@@ -191,8 +148,8 @@ def _file_size(path: str) -> int | None:
 
 
 def downmixed_names(plan: Plan) -> list[str]:
-    """Layout names of the downmixes this plan creates or rebuilds; encode
-    streams carry their layout's name as the track title."""
+    """Layout names of the downmixes this plan makes. Encode streams carry
+    their layout's name as the track title."""
     return [stream.title for stream in plan.streams if stream.encode]
 
 
@@ -200,11 +157,8 @@ def effective_dry_run(dry_run: bool) -> bool:
     """Whether a run may rewrite, given what the caller asked and DRY_RUN.
 
     The latch bottoms out in :func:`process`, so no new entry point can
-    rewrite a library its owner is still observing. It is a function rather
-    than an expression inline there because the sweep needs the answer
-    before it calls process() — to log it, to record it on the summary
-    event, and to decide whether a cached would-fix verdict still stands —
-    and must not have to restate how it is worked out.
+    rewrite a library its owner is still watching. A function because the
+    sweep needs the answer before it calls process().
     """
     return dry_run or config.DRY_RUN
 
@@ -214,10 +168,10 @@ def process(
 ) -> ProcessResult:
     """Plan one file and, unless dry_run, rewrite it.
 
-    ``source`` and ``run`` label the event history entry a rewrite attempt
-    leaves; ``run`` ties a sweep's rewrites to its summary event. Probe
-    failures leave no entry: they recur every sweep until the file is fixed,
-    which would fill the history with repeats of one problem.
+    ``source`` and ``run`` label the history entry a rewrite attempt leaves,
+    and ``run`` ties a sweep's rewrites to its summary. Probe failures leave
+    no entry: they recur every sweep until the file is fixed, filling the
+    history with one repeated problem.
     """
     dry_run = effective_dry_run(dry_run)
     try:
@@ -237,34 +191,38 @@ def process(
 
     log.info("fixing %s: %s", job.path, describe(plan))
     # The size at plan time, which apply_plan guarantees is still the size
-    # now; the fallback covers hand-built plans that carry no signature.
+    # now. The fallback covers hand-built plans with no signature.
     bytes_before = plan.src_signature.size if plan.src_signature else _file_size(job.path)
     started = time.monotonic()
     try:
-        with _exclusive_rewrite():
+        # Closing the slot handle releases the flock, even if this raises.
+        with contextlib.closing(_claim_slot()):
             outcome, detail = apply_plan(plan)
-    # Everything the rewrite can raise: the verify probe on a corrupt
-    # result, a source deleted mid-job, WORK_DIR or the lock file's home
-    # gone. One file failing must not take the rest of a sweep down with it.
+    # The verify probe on a corrupt result, a source deleted mid-job, WORK_DIR
+    # gone. One file failing must not take the rest of a sweep with it.
     except (ProbeError, OSError) as err:
         outcome, detail = Outcome.FAILED, str(err)
-    seconds = round(time.monotonic() - started, 1)
+    event_fields = {
+        "run": run,
+        "source": source,
+        "config_id": plan.policy.digest(),
+        "reasons": plan.reasons,
+        "rules": sorted(plan.rules),
+        "seconds": round(time.monotonic() - started, 1),
+    }
     if outcome is Outcome.APPLIED:
         events.record(
             "fixed",
-            run=run,
-            source=source,
             path=plan.out_path,
-            # Only when a remux published under a new extension, since None
-            # is dropped: without it the history says an .mkv was fixed and
-            # nothing records the .mp4 it used to be.
+            # Only for a remux, since None is dropped. Without it the history
+            # says an .mkv was fixed and never names the .mp4 it was.
             from_path=plan.path if plan.out_path != plan.path else None,
-            reasons=plan.reasons,
             incidental=plan.incidental,
+            incidental_rules=sorted(plan.incidental_rules),
             downmixed=downmixed_names(plan) or None,
             bytes_before=bytes_before,
             bytes_after=_file_size(plan.out_path),
-            seconds=seconds,
+            **event_fields,
         )
         if job.arr and job.item_id:
             job.arr.rescan(job.item_id)
@@ -273,28 +231,10 @@ def process(
         return ProcessResult(Status.FIXED, plan)
     if outcome is Outcome.DEFERRED:
         log.info("deferred %s: %s", job.path, detail)
-        # Recorded even though one deferral is benign and retried: a file
-        # that defers on every pass — an upgrade that keeps landing
-        # mid-rewrite, a plan that keeps going stale — leaves no other trace,
-        # and the counts on the sweep summary cannot say which file it was.
-        events.record(
-            "deferred",
-            run=run,
-            source=source,
-            path=job.path,
-            reasons=plan.reasons,
-            detail=detail,
-            seconds=seconds,
-        )
+        # One deferral is benign, but a file that defers every pass leaves no
+        # other trace and the sweep's counts cannot name it.
+        events.record("deferred", path=job.path, detail=detail, **event_fields)
         return ProcessResult(Status.DEFERRED, plan, detail)
     log.warning("rewrite of %s failed: %s", job.path, detail)
-    events.record(
-        "failed",
-        run=run,
-        source=source,
-        path=job.path,
-        reasons=plan.reasons,
-        detail=detail,
-        seconds=seconds,
-    )
+    events.record("failed", path=job.path, detail=detail, **event_fields)
     return ProcessResult(Status.FAILED, plan, detail)

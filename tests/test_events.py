@@ -1,18 +1,14 @@
 """The append-only event history. No media, no network."""
 
-import json
 import os
 
-from conftest import needed_plan
-from trackstarr import __version__, config, events, processing, webhook
+from conftest import audio, needed_plan, probe_data, read_events, subtitle, video
+from trackstarr import __version__, config, events, policy, processing, webhook
 from trackstarr.executor import Outcome
-from trackstarr.planner import OutStream, Plan
+from trackstarr.planner import OutStream, Plan, new_plan, plan_from_probe
+from trackstarr.policy import Policy
 from trackstarr.processing import Job
 from trackstarr.sweep import sweep
-
-
-def read_events() -> list[dict]:
-    return list(events.read())
 
 
 def test_record_appends_json_lines():
@@ -38,32 +34,8 @@ def test_record_never_raises(monkeypatch, tmp_path):
     events.record("fixed", path="/a.mkv")
 
 
-def test_read_spans_archives_oldest_first():
-    """A hand-archived chunk is read before the live file: the service only
-    appends to events.jsonl, but readers glob events*.jsonl."""
-    events.record("fixed", path="/new.mkv")
-    with open(os.path.join(config.STATE_DIR, "events-2025.jsonl"), "w") as archive:
-        archive.write(json.dumps({"event": "fixed", "path": "/old.mkv"}) + "\n")
-
-    assert [entry["path"] for entry in events.read()] == ["/old.mkv", "/new.mkv"]
-
-
-def test_read_skips_junk_lines():
-    events.record("fixed", path="/a.mkv")
-    with open(events.path(), "a") as events_file:
-        events_file.write("not json\n\n[1, 2]\n")
-    events.record("fixed", path="/b.mkv")
-
-    assert [entry["path"] for entry in events.read()] == ["/a.mkv", "/b.mkv"]
-
-
-def test_read_without_history_is_empty(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "never-created"))
-    assert read_events() == []
-
-
 def make_plan(path: str) -> Plan:
-    return needed_plan(path, incidental=["clear junk title"])
+    return needed_plan(path, incidental=["clear junk title"], incidental_rules={"junk_titles"})
 
 
 def test_fixed_file_leaves_an_event(tmp_path, stub_rewrite):
@@ -86,6 +58,61 @@ def test_fixed_file_leaves_an_event(tmp_path, stub_rewrite):
     assert "downmixed" not in entry
     # Likewise from_path: the rewrite landed on the file it started from.
     assert "from_path" not in entry
+
+
+def test_events_name_their_rules_as_well_as_describing_them(tmp_path, stub_rewrite):
+    """`reasons` gets reworded between releases, so a stats view reading only
+    that would lose its history every time the wording moved."""
+    path = tmp_path / "f.mkv"
+    path.write_bytes(b"x")
+    stub_rewrite(make_plan(str(path)))
+
+    processing.process(Job(str(path)), dry_run=False)
+
+    (entry,) = read_events()
+    assert entry["rules"] == ["order"]
+    assert entry["incidental_rules"] == ["junk_titles"]
+    # Beside the prose, not instead of it: the log line and pending.tsv still
+    # want a sentence.
+    assert entry["reasons"] == ["reorder streams"]
+
+
+def _named(path: str, *streams: dict, title: str = "") -> set[str]:
+    """Every rule a plan for these streams names, however it named it."""
+    plan = plan_from_probe(new_plan(path, "eng"), probe_data(*streams, title=title))
+    return plan.rules | plan.incidental_rules
+
+
+def test_the_rules_a_plan_can_name_are_exactly_the_vocabulary(monkeypatch):
+    """Both directions matter. A key invented at a call site reaches the history
+    as a name nothing else knows; one in RULE_NAMES that nothing emits
+    promises a breakdown the data will never contain."""
+    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
+    monkeypatch.setattr(config, "DROP_COMMENTARY", True)
+    monkeypatch.setattr(config, "REMUX_TO_MKV", True)
+
+    named = _named(
+        "/x.mp4",
+        video(0),
+        # A junk title to clear, and a foreign track and a commentary to drop.
+        audio(1, 8, "eng", "AC3 5.1 @ 640kbps"),
+        audio(2, 2, "eng", "Director's Commentary"),
+        audio(3, 6, "fre"),
+        subtitle(4, "eng"),
+        subtitle(5, "eng", "English SDH"),
+        {"index": 6, "codec_type": "data"},
+        title="Film 1080p BluRay",
+    )
+    # Cover art and a stale downmix of our own, which only Matroska carries
+    # the tag for. Its 2.0 was made at a rate config no longer asks for.
+    stale = audio(3, 2, "eng")
+    stale["tags"]["TRACKSTARR"] = "aac 128k"
+    named |= _named("/y.mkv", video(0), video(1, "mjpeg", attached_pic=1), audio(2, 8), stale)
+    # Order is the one rule that reports only when nothing else does, so it
+    # needs a file whose sole fault is the order of its streams.
+    named |= _named("/z.mkv", video(0), audio(1, 2), subtitle(2), audio(3, 6))
+
+    assert named == policy.RULE_NAMES
 
 
 def test_fixed_event_names_the_downmixes_created(tmp_path, stub_rewrite):
@@ -123,8 +150,8 @@ def test_failed_rewrite_leaves_an_event(stub_rewrite):
 
 
 def test_a_dry_sweep_leaves_no_per_file_events(stub_rewrite):
-    """A dry sweep re-derives the same verdicts nightly; recording them per
-    file would drown the history in repeats. pending.tsv holds them."""
+    """A dry sweep re-derives the same verdicts nightly, which would drown the
+    history in repeats. pending.tsv holds them."""
     stub_rewrite(make_plan("/x.mkv"))
     processing.process(Job("/x.mkv"), dry_run=True, source="sweep")
 
@@ -132,9 +159,9 @@ def test_a_dry_sweep_leaves_no_per_file_events(stub_rewrite):
 
 
 def test_deferred_rewrite_leaves_an_event(stub_rewrite):
-    """One deferral is a benign race the next pass retries, but a file that
-    defers on every pass has nothing else to show for it: the sweep summary
-    counts a deferral without naming the file it happened to."""
+    """One deferral is a benign race, but a file that defers every pass has
+    nothing else to show for it: the sweep summary counts deferrals without
+    naming the file."""
     stub_rewrite(make_plan("/x.mkv"), Outcome.DEFERRED, "source changed")
 
     processing.process(Job("/x.mkv"), dry_run=False, source="sweep")
@@ -163,8 +190,8 @@ def test_a_remux_event_names_the_file_it_replaced(tmp_path, monkeypatch, stub_re
 
 
 def test_dry_webhook_import_records_a_would_fix_event(monkeypatch):
-    """Under DRY_RUN a webhook import leaves no other trace, so the webhook
-    handler records what would have happened."""
+    """Under DRY_RUN an import leaves no other trace, so the handler records what
+    would have happened."""
     monkeypatch.setattr(config, "DRY_RUN", True)
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan("/x.mkv"))
     webhook._handle(Job("/x.mkv"))
@@ -193,9 +220,43 @@ def test_sweep_leaves_a_summary_event(monkeypatch, tmp_path):
     assert entry["seconds"] >= 0
 
 
+def test_a_rewrites_config_id_resolves_against_the_sweeps_config(
+    monkeypatch, tmp_path, stub_rewrite
+):
+    """`version` alone cannot say what the rules were (two installs on one
+    release rewrite differently), so every event carries a digest of them."""
+    root = tmp_path / "library"
+    root.mkdir()
+    (root / "f.mkv").write_bytes(b"x")
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
+    stub_rewrite(make_plan(str(root / "f.mkv")))
+
+    sweep(dry_run=False)
+
+    fixed, summary = read_events()
+    assert fixed["config_id"] == summary["config_id"]
+    assert summary["config"]["audio_codec"] == config.AUDIO_CODEC
+
+
+def test_a_webhook_only_install_can_still_resolve_its_config_ids(monkeypatch):
+    """An install that never sweeps writes no other line carrying the full
+    fingerprint, so without serve's its digests point at nothing."""
+    monkeypatch.setattr(config, "DRY_RUN", True)
+    monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan("/x.mkv"))
+    started = Policy.from_config()
+    events.record("config", config=started.fingerprint(), config_id=started.digest())
+
+    webhook._handle(Job("/x.mkv"))
+
+    startup, would_fix = read_events()
+    assert startup["event"] == "config"
+    assert would_fix["config_id"] == startup["config_id"]
+    assert startup["config"]["audio_codec"] == config.AUDIO_CODEC
+
+
 def test_sweep_events_share_a_run_id(monkeypatch, tmp_path, stub_rewrite):
-    """A sweep's rewrites carry its start time as a run id, so one night's
-    work groups together without timestamp window arithmetic."""
+    """A sweep's rewrites carry its start time, so one night's work groups without
+    timestamp window arithmetic."""
     root = tmp_path / "library"
     root.mkdir()
     (root / "f.mkv").write_bytes(b"x")
@@ -210,16 +271,3 @@ def test_sweep_events_share_a_run_id(monkeypatch, tmp_path, stub_rewrite):
     assert summary["event"] == "sweep"
     assert fixed["run"] == summary["run"]
     assert summary["library_bytes"] == 1
-
-
-def test_an_unreadable_history_file_is_skipped(monkeypatch, caplog):
-    """Event history is advisory. A file the container cannot read must not
-    stop a status query, let alone a sweep."""
-    events.record("fixed", path="/data/f.mkv")
-
-    def refuse(*args, **kwargs):
-        raise PermissionError("permission denied")
-
-    monkeypatch.setattr("builtins.open", refuse)
-    assert list(events.read()) == []
-    assert "could not read" in caplog.text
