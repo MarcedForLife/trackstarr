@@ -77,18 +77,22 @@ def test_unreadable_file_is_never_cached(cache_path, tmp_path):
     assert cache.lookup(missing, key) is None
 
 
-def test_config_change_drops_the_cache(cache_path, media, monkeypatch):
+@pytest.mark.parametrize(
+    ("module", "attribute", "changed"),
+    [
+        (config, "ALWAYS_KEEP", {"eng", "fre"}),
+        (policy, "__version__", "0.0.0-test"),
+    ],
+    ids=["a rule setting", "the package version"],
+)
+def test_a_changed_fingerprint_drops_the_cache(
+    cache_path, media, monkeypatch, module, attribute, changed
+):
+    """Rule changes shipped in code must invalidate old verdicts too, not
+    just the settings a user can see."""
     key = cache_key(media, "eng")
     saved_cache(cache_path, (media, key, CONFORM))
-    monkeypatch.setattr(config, "ALWAYS_KEEP", {"eng", "fre"})
-    assert SweepCache.load(cache_path, fingerprint()).lookup(media, key) is None
-
-
-def test_version_change_drops_the_cache(cache_path, media, monkeypatch):
-    """Rule changes shipped in code must invalidate old verdicts too."""
-    key = cache_key(media, "eng")
-    saved_cache(cache_path, (media, key, CONFORM))
-    monkeypatch.setattr(policy, "__version__", "0.0.0-test")
+    monkeypatch.setattr(module, attribute, changed)
     assert SweepCache.load(cache_path, fingerprint()).lookup(media, key) is None
 
 
@@ -98,35 +102,40 @@ def test_corrupt_cache_is_ignored(cache_path):
     assert cache.lookup("/x.mkv", FileKey(1, 2, 1, None)) is None
 
 
-def test_unvisited_entries_are_pruned_on_save(cache_path, media, tmp_path):
-    gone = tmp_path / "gone.mkv"
-    gone.write_bytes(b"z" * 5)
-    key = cache_key(media, "eng")
-    gone_key = cache_key(str(gone), "eng")
-    cache = saved_cache(cache_path, (media, key, CONFORM), (str(gone), gone_key, CONFORM))
+def _one_of_two_visited(cache_path, media, tmp_path):
+    """A cache holding two files, of which a sweep has so far visited one.
 
-    # A sweep that only visits the surviving file, then persists.
-    cache.record(media, key, CONFORM)
-    cache.save()
-
-    reloaded = SweepCache.load(cache_path, fingerprint())
-    assert reloaded.lookup(media, key) == CONFORM
-    assert reloaded.lookup(str(gone), gone_key) is None
-
-
-def test_checkpoint_keeps_unvisited_entries(cache_path, media, tmp_path):
+    Yields the cache and the unvisited file's path and key, which is what
+    both persist paths differ about.
+    """
     other = tmp_path / "other.mkv"
     other.write_bytes(b"z" * 5)
     key = cache_key(media, "eng")
     other_key = cache_key(str(other), "eng")
     cache = saved_cache(cache_path, (media, key, CONFORM), (str(other), other_key, CONFORM))
-
-    # Mid-sweep: only the first file visited so far.
     cache.record(media, key, CONFORM)
+    return cache, key, str(other), other_key
+
+
+def test_save_prunes_entries_the_sweep_never_visited(cache_path, media, tmp_path):
+    """A save ends a sweep, so a file it never saw has been moved or deleted."""
+    cache, key, other, other_key = _one_of_two_visited(cache_path, media, tmp_path)
+    cache.save()
+
+    reloaded = SweepCache.load(cache_path, fingerprint())
+    assert reloaded.lookup(media, key) == CONFORM
+    assert reloaded.lookup(other, other_key) is None
+
+
+def test_a_checkpoint_keeps_them(cache_path, media, tmp_path):
+    """Mid-sweep, where the rest of the library is simply still ahead of the
+    walk rather than gone."""
+    cache, key, other, other_key = _one_of_two_visited(cache_path, media, tmp_path)
     cache.checkpoint()
 
     reloaded = SweepCache.load(cache_path, fingerprint())
-    assert reloaded.lookup(str(other), other_key) == CONFORM
+    assert reloaded.lookup(media, key) == CONFORM
+    assert reloaded.lookup(other, other_key) == CONFORM
 
 
 def test_an_entry_with_a_status_we_no_longer_have_is_a_miss(cache_path, media):

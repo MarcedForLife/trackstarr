@@ -7,6 +7,7 @@ import re
 import pytest
 
 from trackstarr import config, policy
+from trackstarr.layouts import resolved_layouts
 from trackstarr.policy import Policy
 
 
@@ -68,6 +69,11 @@ def test_fingerprint_tracks_the_bitrate_through_resolved_layouts(monkeypatch):
     assert Policy.from_config().fingerprint() != before
 
 
+# What policy.errors() refuses at startup. Every one of these would otherwise
+# fail silently: a typo leaves a rule on, drops a layout, or regenerates
+# nothing.
+
+
 def test_a_container_with_no_muxer_is_refused_at_startup(monkeypatch):
     """ALLOWED_EXTS drives the walk, so an extension ffmpeg cannot mux would
     be collected all sweep and then fail one file at a time."""
@@ -75,3 +81,37 @@ def test_a_container_with_no_muxer_is_refused_at_startup(monkeypatch):
     problems = policy.errors()
     assert any(".rmvb" in problem for problem in problems)
     assert any("no known muxer" in problem for problem in problems)
+
+
+def test_unknown_rule_names_are_refused(monkeypatch):
+    monkeypatch.setattr(config, "DISABLED_RULES", {"languages", "subtitles"})
+    errors = policy.errors()
+    assert len(errors) == 1
+    assert "subtitles" in errors[0]
+
+
+def test_unknown_regenerate_mode_is_refused(monkeypatch):
+    """A typo, or a bare "true", would silently regenerate nothing."""
+    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "everything")
+    errors = policy.errors()
+    assert len(errors) == 1
+    assert "REGENERATE_DOWNMIXES" in errors[0]
+
+
+def test_invalid_layouts_catch_typos(monkeypatch):
+    monkeypatch.setattr(
+        config, "DOWNMIX_LAYOUTS", {"2.0", "surround", "5:1", "0.0", "5.1:640x"}
+    )
+    errors = policy.errors()
+    assert len(errors) == 1
+    assert all(bad in errors[0] for bad in ("surround", "5:1", "0.0", "5.1:640x"))
+    assert [(layout.name, layout.channels) for layout in resolved_layouts()] == [("2.0", 2)]
+
+
+def test_duplicate_channel_counts_are_refused_at_startup(monkeypatch):
+    """Two entries for one channel count generate identical tracks and leave
+    the rules judging against an arbitrary one of the rates."""
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"5.1", "5.1:640k"})
+    errors = policy.errors()
+    assert len(errors) == 1
+    assert "5.1, 5.1:640k" in errors[0]

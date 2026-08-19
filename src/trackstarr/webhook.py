@@ -55,9 +55,8 @@ _parked_lock = threading.Lock()
 def _resolve_lang(job: Job) -> Job:
     """Fetch the original language from the *arr when the webhook body lacked it.
 
-    Older Radarr and Sonarr versions don't carry ``originalLanguage`` in the
-    webhook. Resolved here on the worker rather than in the HTTP handler, so
-    a slow or restarting *arr can never stall the webhook response.
+    Older Radarr and Sonarr versions don't carry ``originalLanguage``, so it
+    is looked up here, on the worker rather than in the HTTP handler.
     """
     if job.lang is not None or not job.arr or not job.item_id:
         return job

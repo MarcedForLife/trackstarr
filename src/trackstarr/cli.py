@@ -96,19 +96,8 @@ def _resolve_jobs(
     which is what lets it run with no *arr reachable at all.
     """
     original = norm_lang(original)
-    index = path_index(all_arrs()) if match_items or not original else []
-    jobs = []
-    for path in files:
-        matched = match_path(index, path)
-        jobs.append(
-            Job(
-                path,
-                original or (matched.lang if matched else None),
-                matched.item_id if matched else None,
-                matched.arr if matched else None,
-            )
-        )
-    return jobs
+    index = path_index(all_arrs()) if match_items or not original else {}
+    return [Job.from_match(path, match_path(index, path), original) for path in files]
 
 
 def cmd_plan(files: list[str], original: str | None) -> int:
@@ -174,14 +163,15 @@ def cmd_fix(files: list[str], original: str | None) -> int:
     for job in _resolve_jobs(files, original, match_items=True):
         result = process(job, dry_run=False, source="cli")
         print(f"{result.status}  {job.path}")
-        if result.plan and result.plan.skip:
-            print(f"  {result.plan.skip}")
-        elif result.status is Status.DEFERRED:
-            # A deferred plan is stale by definition; printing its reasons
-            # would read as work performed on a file that has since changed.
-            pass
-        elif result.plan and (reasons := describe(result.plan)):
-            print(f"  {reasons}")
+        # A deferred plan is stale by definition, so its reasons are left
+        # unprinted: they would read as work performed on a file that has
+        # since changed.
+        if (
+            result.plan
+            and result.status is not Status.DEFERRED
+            and (note := result.plan.skip or describe(result.plan))
+        ):
+            print(f"  {note}")
         if result.detail:
             print(f"  {result.detail}")
         failed = failed or result.status in (Status.FAILED, Status.DEFERRED)

@@ -87,7 +87,7 @@ def test_stream_bitrate_ignores_junk(value):
     assert stream_bitrate({"bit_rate": value, "tags": {}}) is None
 
 
-def test_stream_bitrate_falls_back_to_the_mkvmerge_tag(monkeypatch):
+def test_stream_bitrate_falls_back_to_the_mkvmerge_tag():
     """Matroska rarely reports bit_rate, but mkvmerge writes BPS."""
     assert stream_bitrate({"tags": {"BPS": "640000"}}) == 640000
 

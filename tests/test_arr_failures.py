@@ -5,10 +5,9 @@ restarting must degrade to "no library information" and let the rewrite go on
 using what the file itself says, never abandon the walk.
 """
 
-from dataclasses import replace
-
 import pytest
 
+from conftest import configured_arr
 from trackstarr import arr as arr_mod
 from trackstarr.arr import Arr, all_arrs, original_of, radarr
 from trackstarr.client import API_ERRORS
@@ -22,13 +21,15 @@ def down(monkeypatch):
         raise OSError("connection refused")
 
     monkeypatch.setattr(arr_mod, "request", fail)
-    return replace(radarr(), url="http://radarr:7878", key="key")
+    return configured_arr()
 
 
 @pytest.fixture
 def off():
-    """A Radarr with no URL or key configured, as when the user runs Sonarr only."""
-    return replace(radarr(), url="", key="")
+    """A Radarr with no URL or key configured, as when the user runs Sonarr
+    only. The suite blanks the service env vars, so an unbuilt one is already
+    switched off."""
+    return radarr()
 
 
 def test_a_disabled_arr_is_never_called(off, monkeypatch):
@@ -58,10 +59,6 @@ def test_a_rescan_that_fails_is_swallowed(down):
     down.rescan(1)
 
 
-def test_registration_reports_failure_so_it_is_retried(down):
-    assert down.register_webhook("http://trackstarr:5120") is False
-
-
 def test_the_call_carries_the_api_key(monkeypatch):
     seen = {}
 
@@ -70,7 +67,7 @@ def test_the_call_carries_the_api_key(monkeypatch):
         return [{"id": 1}]
 
     monkeypatch.setattr(arr_mod, "request", record)
-    client = replace(radarr(), url="http://radarr:7878", key="secret-key")
+    client = configured_arr(key="secret-key")
 
     assert client.all_items() == [{"id": 1}]
     assert seen["url"] == "http://radarr:7878/api/v3/movie"
@@ -82,7 +79,7 @@ def test_the_call_carries_the_api_key(monkeypatch):
 def test_an_empty_library_response_is_a_list(monkeypatch):
     """The *arrs answer 200 with no body on an empty library."""
     monkeypatch.setattr(arr_mod, "request", lambda *a, **k: None)
-    assert replace(radarr(), url="http://radarr:7878", key="k").all_items() == []
+    assert configured_arr().all_items() == []
 
 
 def test_all_arrs_reports_both_regardless_of_configuration():
@@ -92,7 +89,16 @@ def test_all_arrs_reports_both_regardless_of_configuration():
     assert all(isinstance(a, Arr) for a in all_arrs())
 
 
-@pytest.mark.parametrize("item", [None, {}, {"originalLanguage": None}])
+@pytest.mark.parametrize(
+    "item",
+    [
+        None,
+        {},
+        {"originalLanguage": None},
+        {"originalLanguage": {}},
+        {"originalLanguage": {"name": "Unknown"}},
+    ],
+)
 def test_original_of_missing_language_is_none(item):
     assert original_of(item) is None
 
@@ -127,7 +133,7 @@ def test_a_save_that_fails_leaves_the_registration_to_be_retried(monkeypatch):
         raise OSError("connection reset")
 
     monkeypatch.setattr(arr_mod, "request", flaky)
-    client = replace(radarr(), url="http://radarr:7878", key="key")
+    client = configured_arr()
 
     assert client.register_webhook("http://trackstarr:5120") is False
     # It got as far as trying to save, rather than failing on the listing.

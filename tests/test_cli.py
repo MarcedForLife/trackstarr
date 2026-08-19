@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from conftest import needed_plan
 from trackstarr import auth, config
 from trackstarr.arr import LibraryItem, radarr
 from trackstarr.cli import main
@@ -63,9 +64,7 @@ def test_fix_rewrites_files_and_reports_failures(startup_ok, monkeypatch, capsys
     deferral counts: the sweep's next run is its retry, a fix's retry is
     the caller, who must not read it as success."""
     results = {
-        "/lib/a.mkv": ProcessResult(
-            Status.FIXED, Plan(path="/lib/a.mkv", reasons=["reorder streams"])
-        ),
+        "/lib/a.mkv": ProcessResult(Status.FIXED, needed_plan("/lib/a.mkv")),
         "/lib/b.mkv": ProcessResult(Status.FAILED, detail="ffmpeg failed (1): boom"),
         "/lib/c.mkv": ProcessResult(Status.DEFERRED, detail="source changed"),
     }
@@ -93,8 +92,8 @@ def test_fix_rewrites_files_and_reports_failures(startup_ok, monkeypatch, capsys
 def test_fix_still_matches_arr_items_when_original_is_given(startup_ok, monkeypatch):
     """--original overrides the language only. The item match must survive,
     or the *arr never gets its rescan and keeps pre-rewrite media info."""
-    item = LibraryItem("/lib/Movie", "kor", 7, radarr())
-    monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: [item])
+    index = {"/lib/Movie": LibraryItem("kor", 7, radarr())}
+    monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: index)
     jobs = []
     monkeypatch.setattr(
         "trackstarr.cli.process",
@@ -204,9 +203,11 @@ def test_plan_prints_the_reasons_and_the_command(startup_ok, monkeypatch, capsys
     out = capsys.readouterr().out
     assert "- drop audio jpn" in out
     assert "rides along, never triggers on its own" in out
-    assert "ffmpeg -i f.mkv" in out or "ffmpeg " in out
+    # The real command, not a summary of it: the stream map is the part a user
+    # would copy out to run by hand.
+    assert "ffmpeg -hide_banner -nostdin -y -loglevel error -i f.mkv -map 0:0" in out
     # The staged name is a placeholder, never a path in the library.
-    assert "OUT.mkv" in out
+    assert out.rstrip().endswith("OUT.mkv")
 
 
 def test_plan_keeps_going_after_an_unreadable_file(startup_ok, monkeypatch, capsys):

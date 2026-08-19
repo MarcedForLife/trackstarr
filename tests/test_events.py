@@ -3,6 +3,7 @@
 import json
 import os
 
+from conftest import needed_plan
 from trackstarr import __version__, config, events, processing, webhook
 from trackstarr.executor import Outcome
 from trackstarr.planner import OutStream, Plan
@@ -62,14 +63,13 @@ def test_read_without_history_is_empty(monkeypatch, tmp_path):
 
 
 def make_plan(path: str) -> Plan:
-    return Plan(path=path, reasons=["reorder streams"], incidental=["clear junk title"])
+    return needed_plan(path, incidental=["clear junk title"])
 
 
-def test_fixed_file_leaves_an_event(monkeypatch, tmp_path):
+def test_fixed_file_leaves_an_event(tmp_path, stub_rewrite):
     path = tmp_path / "f.mkv"
     path.write_bytes(b"x" * 10)
-    monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan(str(path)))
-    monkeypatch.setattr(processing, "apply_plan", lambda plan: (Outcome.APPLIED, ""))
+    stub_rewrite(make_plan(str(path)))
 
     processing.process(Job(str(path)), dry_run=False)
 
@@ -86,20 +86,20 @@ def test_fixed_file_leaves_an_event(monkeypatch, tmp_path):
     assert "downmixed" not in entry
 
 
-def test_fixed_event_names_the_downmixes_created(monkeypatch, tmp_path):
+def test_fixed_event_names_the_downmixes_created(tmp_path, stub_rewrite):
     path = tmp_path / "f.mkv"
     path.write_bytes(b"x")
-    plan = Plan(
-        path=str(path),
-        reasons=["add 2.0 downmix from stream 3 (6ch eng)"],
-        streams=[
-            OutStream(src=3, kind="audio"),
-            # The planner titles every encode stream with its layout's name.
-            OutStream(src=3, kind="audio", encode=True, channels=2, title="2.0"),
-        ],
+    stub_rewrite(
+        Plan(
+            path=str(path),
+            reasons=["add 2.0 downmix from stream 3 (6ch eng)"],
+            streams=[
+                OutStream(src=3, kind="audio"),
+                # The planner titles every encode stream with its layout's name.
+                OutStream(src=3, kind="audio", encode=True, channels=2, title="2.0"),
+            ],
+        )
     )
-    monkeypatch.setattr(processing, "build_plan", lambda p, lang: plan)
-    monkeypatch.setattr(processing, "apply_plan", lambda plan: (Outcome.APPLIED, ""))
 
     processing.process(Job(str(path)), dry_run=False)
 
@@ -107,11 +107,8 @@ def test_fixed_event_names_the_downmixes_created(monkeypatch, tmp_path):
     assert entry["downmixed"] == ["2.0"]
 
 
-def test_failed_rewrite_leaves_an_event(monkeypatch):
-    monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan("/x.mkv"))
-    monkeypatch.setattr(
-        processing, "apply_plan", lambda plan: (Outcome.FAILED, "ffmpeg failed")
-    )
+def test_failed_rewrite_leaves_an_event(stub_rewrite):
+    stub_rewrite(make_plan("/x.mkv"), Outcome.FAILED, "ffmpeg failed")
 
     processing.process(Job("/x.mkv"), dry_run=False, source="sweep")
 
@@ -123,15 +120,11 @@ def test_failed_rewrite_leaves_an_event(monkeypatch):
     assert entry["reasons"] == ["reorder streams"]
 
 
-def test_sweep_dry_runs_and_deferrals_leave_no_events(monkeypatch):
+def test_sweep_dry_runs_and_deferrals_leave_no_events(stub_rewrite):
     """A dry sweep re-derives the same verdicts nightly; recording them per
     file would drown the history in repeats. pending.tsv holds them."""
-    monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan("/x.mkv"))
+    stub_rewrite(make_plan("/x.mkv"), Outcome.DEFERRED, "source changed")
     processing.process(Job("/x.mkv"), dry_run=True, source="sweep")
-
-    monkeypatch.setattr(
-        processing, "apply_plan", lambda plan: (Outcome.DEFERRED, "source changed")
-    )
     processing.process(Job("/x.mkv"), dry_run=False)
 
     assert read_events() == []
@@ -168,15 +161,14 @@ def test_sweep_leaves_a_summary_event(monkeypatch, tmp_path):
     assert entry["seconds"] >= 0
 
 
-def test_sweep_events_share_a_run_id(monkeypatch, tmp_path):
+def test_sweep_events_share_a_run_id(monkeypatch, tmp_path, stub_rewrite):
     """A sweep's rewrites carry its start time as a run id, so one night's
     work groups together without timestamp window arithmetic."""
     root = tmp_path / "library"
     root.mkdir()
     (root / "f.mkv").write_bytes(b"x")
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
-    monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan(p))
-    monkeypatch.setattr(processing, "apply_plan", lambda plan: (Outcome.APPLIED, ""))
+    stub_rewrite(make_plan(str(root / "f.mkv")))
 
     sweep(dry_run=False)
 
@@ -188,10 +180,9 @@ def test_sweep_events_share_a_run_id(monkeypatch, tmp_path):
     assert summary["library_bytes"] == 1
 
 
-def test_an_unreadable_history_file_is_skipped(tmp_path, monkeypatch, caplog):
+def test_an_unreadable_history_file_is_skipped(monkeypatch, caplog):
     """Event history is advisory. A file the container cannot read must not
     stop a status query, let alone a sweep."""
-    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path))
     events.record("fixed", path="/data/f.mkv")
 
     def refuse(*args, **kwargs):

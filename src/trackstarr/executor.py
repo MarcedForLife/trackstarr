@@ -202,10 +202,10 @@ def apply_plan(plan: Plan) -> tuple[Outcome, str]:
 def work_dir_errors() -> list[str]:
     """Whether WORK_DIR is usable, as ready-to-log messages.
 
-    Creates it when missing, so a fresh install starts clean, and writes a
-    byte to prove the mount is writable rather than discovering it after the
-    first ffmpeg run. Which filesystem it is on deliberately doesn't matter;
-    see :func:`_publish`.
+    Creates it when missing, so a fresh install starts clean, and stages a
+    file in it to prove the mount is writable rather than discovering it
+    after the first ffmpeg run. Which filesystem it is on deliberately
+    doesn't matter; see :func:`_publish`.
     """
     try:
         os.makedirs(config.WORK_DIR, exist_ok=True)
@@ -270,22 +270,24 @@ def is_staged_file(name: str) -> bool:
     return name.startswith(TEMP_PREFIX) and name.endswith(TEMP_SUFFIX)
 
 
-def drop_if_stale(path: str) -> bool:
+def drop_staged(path: str, force: bool = False) -> bool:
     """Remove a staged file left behind by a crash, if it can't be in use.
 
-    Age is the only safe test: with rewrites running concurrently, and
-    possibly in another process, a staged file younger than the ffmpeg
+    Age is normally the only safe test: with rewrites running concurrently,
+    and possibly in another process, a staged file younger than the ffmpeg
     timeout may still be being written. Anything older than that has
-    outlived the longest run its writer was allowed.
+    outlived the longest run its writer was allowed. ``force`` is for the
+    caller that holds every rewrite slot, which is proof no writer exists;
+    see :func:`clean_work_dir`.
     """
     try:
-        if time.time() - os.stat(path).st_mtime <= config.FFMPEG_TIMEOUT:
+        if not force and time.time() - os.stat(path).st_mtime <= config.FFMPEG_TIMEOUT:
             return False
         os.remove(path)
     except OSError as err:
-        log.warning("could not remove stale staged file %s: %s", path, err)
+        log.warning("could not remove staged file %s: %s", path, err)
         return False
-    log.info("removed stale staged file %s", path)
+    log.info("removed staged file %s", path)
     return True
 
 
@@ -306,14 +308,5 @@ def clean_work_dir(exclusive: bool = False) -> None:
     if not config.WORK_DIR or not os.path.isdir(config.WORK_DIR):
         return
     for name in os.listdir(config.WORK_DIR):
-        if not is_staged_file(name):
-            continue
-        path = os.path.join(config.WORK_DIR, name)
-        if not exclusive:
-            drop_if_stale(path)
-            continue
-        try:
-            os.remove(path)
-            log.info("removed stale staged file %s", name)
-        except OSError as err:
-            log.warning("could not remove %s: %s", name, err)
+        if is_staged_file(name):
+            drop_staged(os.path.join(config.WORK_DIR, name), force=exclusive)

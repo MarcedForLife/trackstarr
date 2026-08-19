@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import fake_run
+from conftest import fake_run, needed_plan
 from trackstarr import config, executor
 from trackstarr.executor import Outcome, apply_plan, audio_codec_errors, work_dir_errors
 from trackstarr.planner import OutStream, Plan, SourceSignature
@@ -25,20 +25,59 @@ def _work_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "WORK_DIR", str(tmp_path / "work"))
 
 
-def test_rewrites_stage_in_the_work_dir(tmp_path, monkeypatch):
-    """Not in the library: the point of WORK_DIR is that a half-written
-    rewrite never appears beside the file it will replace."""
+def _no_ffmpeg(monkeypatch):
+    monkeypatch.setattr(
+        executor.subprocess, "run", lambda *a, **k: pytest.fail("ffmpeg must not run")
+    )
+
+
+def _capture_staged(monkeypatch) -> list[str]:
+    """Collect the temp path each rewrite hands ffmpeg, stopping it there."""
     staged: list[str] = []
 
     def capture(args, **kwargs):
+        # The last argument is the temp path ffmpeg was told to write.
         staged.append(args[-1])
         raise _StopError
 
     monkeypatch.setattr(executor.subprocess, "run", capture)
+    return staged
+
+
+def _unremovable(monkeypatch) -> None:
+    """A work dir gone read-only, or a file another worker still holds."""
+
+    def refuse(path):
+        raise PermissionError("read-only file system")
+
+    monkeypatch.setattr(executor.os, "remove", refuse)
+
+
+def _exdev(monkeypatch, staged) -> list[tuple[str, str]]:
+    """Make os.replace refuse to move ``staged``, as it does across
+    filesystems, while every other rename still works. Records the calls."""
+    real_replace = os.replace
+    calls: list[tuple[str, str]] = []
+
+    def replace_across_devices(src, dst, *args, **kwargs):
+        calls.append((str(src), str(dst)))
+        # Only the first hop, out of the "other filesystem", can't cross.
+        if str(src) == str(staged):
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        return real_replace(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(executor.os, "replace", replace_across_devices)
+    return calls
+
+
+def test_rewrites_stage_in_the_work_dir(tmp_path, monkeypatch):
+    """Not in the library: the point of WORK_DIR is that a half-written
+    rewrite never appears beside the file it will replace."""
+    staged = _capture_staged(monkeypatch)
     path = tmp_path / "f.mkv"
     path.write_bytes(b"content")
     with contextlib.suppress(_StopError):
-        apply_plan(Plan(path=str(path), reasons=["reorder streams"]))
+        apply_plan(needed_plan(str(path)))
 
     (entry,) = staged
     assert os.path.dirname(entry) == config.WORK_DIR
@@ -61,17 +100,7 @@ def test_publish_falls_back_to_a_copy_across_filesystems(tmp_path, monkeypatch):
     staged = tmp_path / "elsewhere.partial"
     staged.write_bytes(b"new content")
 
-    real_replace = os.replace
-    calls: list[tuple[str, str]] = []
-
-    def replace_across_devices(src, dst, *args, **kwargs):
-        calls.append((str(src), str(dst)))
-        # Only the first hop, out of the "other filesystem", can't cross.
-        if str(src) == str(staged):
-            raise OSError(errno.EXDEV, "Invalid cross-device link")
-        return real_replace(src, dst, *args, **kwargs)
-
-    monkeypatch.setattr(executor.os, "replace", replace_across_devices)
+    calls = _exdev(monkeypatch, staged)
     executor._publish(str(staged), str(target), source_stat)
 
     assert target.read_bytes() == b"new content"
@@ -102,17 +131,10 @@ def test_a_failed_landing_copy_leaves_the_original_alone(tmp_path, monkeypatch):
     staged = tmp_path / "staged.partial"
     staged.write_bytes(b"new content")
 
-    real_replace = os.replace
-
-    def replace(src, dst, *args, **kwargs):
-        if str(src) == str(staged):
-            raise OSError(errno.EXDEV, "Invalid cross-device link")
-        return real_replace(src, dst, *args, **kwargs)
-
     def full_disk(src, dst, **kwargs):
         raise OSError(errno.ENOSPC, "No space left on device")
 
-    monkeypatch.setattr(executor.os, "replace", replace)
+    _exdev(monkeypatch, staged)
     monkeypatch.setattr(executor.shutil, "copyfile", full_disk)
 
     with pytest.raises(OSError, match="No space"):
@@ -171,16 +193,10 @@ def test_stale_staged_files_are_dropped_but_live_ones_are_not(tmp_path, monkeypa
     old = time.time() - 7201
     os.utime(stale, (old, old))
 
-    assert executor.drop_if_stale(str(fresh)) is False
-    assert executor.drop_if_stale(str(stale)) is True
+    assert executor.drop_staged(str(fresh)) is False
+    assert executor.drop_staged(str(stale)) is True
     assert fresh.exists()
     assert not stale.exists()
-
-
-def _no_ffmpeg(monkeypatch):
-    monkeypatch.setattr(
-        executor.subprocess, "run", lambda *a, **k: pytest.fail("ffmpeg must not run")
-    )
 
 
 def test_concurrent_rewrites_get_their_own_temp_file(tmp_path, monkeypatch):
@@ -190,23 +206,11 @@ def test_concurrent_rewrites_get_their_own_temp_file(tmp_path, monkeypatch):
     wrote to it and whichever finished last was renamed over both sources.
     Invisible while rewrites were serialized, data loss once they aren't.
     """
-    staged: list[str] = []
-
-    def capture(args, **kwargs):
-        # The last argument is the temp path ffmpeg was told to write.
-        staged.append(args[-1])
-        raise _StopError
-
-    monkeypatch.setattr(executor.subprocess, "run", capture)
-
+    staged = _capture_staged(monkeypatch)
     for name in ("a.mkv", "b.mkv", "c.mkv"):
         path = tmp_path / name
         path.write_bytes(b"content")
-        plan = Plan(
-            path=str(path),
-            reasons=["reorder streams"],
-            src_signature=SourceSignature.of(os.stat(path)),
-        )
+        plan = needed_plan(str(path), src_signature=SourceSignature.of(os.stat(path)))
         with contextlib.suppress(_StopError):
             apply_plan(plan)
 
@@ -220,11 +224,7 @@ def test_stale_plan_is_deferred_before_ffmpeg(tmp_path, monkeypatch):
     _no_ffmpeg(monkeypatch)
     path = tmp_path / "f.mkv"
     path.write_bytes(b"planned content")
-    plan = Plan(
-        path=str(path),
-        reasons=["reorder streams"],
-        src_signature=SourceSignature.of(os.stat(path)),
-    )
+    plan = needed_plan(str(path), src_signature=SourceSignature.of(os.stat(path)))
     path.write_bytes(b"rewritten by someone else")
 
     outcome, detail = apply_plan(plan)
@@ -235,11 +235,7 @@ def test_stale_plan_is_deferred_before_ffmpeg(tmp_path, monkeypatch):
 def test_matching_source_passes_the_staleness_check(tmp_path, monkeypatch):
     path = tmp_path / "f.mkv"
     path.write_bytes(b"content")
-    plan = Plan(
-        path=str(path),
-        reasons=["reorder streams"],
-        src_signature=SourceSignature.of(os.stat(path)),
-    )
+    plan = needed_plan(str(path), src_signature=SourceSignature.of(os.stat(path)))
 
     ran = []
     fake = fake_run(returncode=1, stderr="boom")
@@ -259,24 +255,22 @@ def test_ffmpeg_stderr_in_the_detail_is_bounded(tmp_path, monkeypatch):
     fake = fake_run(returncode=1, stderr=noise)
     monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: fake)
 
-    outcome, detail = apply_plan(Plan(path=str(path), reasons=["reorder streams"]))
+    outcome, detail = apply_plan(needed_plan(str(path)))
     assert outcome is Outcome.FAILED
     assert "everything broke" in detail
     assert len(detail) < executor._STDERR_TAIL + 100
 
 
-def test_work_dir_on_the_same_filesystem_is_fine(tmp_path, monkeypatch):
-    root = tmp_path / "media"
-    root.mkdir()
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
+@pytest.mark.parametrize(
+    "elsewhere", [False, True], ids=["beside the library", "on another drive"]
+)
+def test_a_writable_work_dir_passes_wherever_it_lives(tmp_path, monkeypatch, elsewhere):
+    """Which filesystem it is on deliberately doesn't matter; the refusal
+    this replaced ruled out every multi-drive library."""
+    media = ["/mnt/disk1/movies", "/mnt/disk2/tv"] if elsewhere else [str(tmp_path)]
+    monkeypatch.setattr(config, "MEDIA_DIRS", media)
     assert work_dir_errors() == []
     assert os.path.isdir(config.WORK_DIR), "the check should create WORK_DIR"
-
-
-def test_a_work_dir_on_another_filesystem_is_allowed(tmp_path, monkeypatch):
-    """The refusal this replaced ruled out every multi-drive library."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", ["/mnt/disk1/movies", "/mnt/disk2/tv"])
-    assert work_dir_errors() == []
 
 
 def test_unusable_work_dir_is_an_error(tmp_path, monkeypatch):
@@ -303,26 +297,22 @@ def _fake_encoders(monkeypatch):
     monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: result)
 
 
-def test_a_known_audio_codec_passes(monkeypatch):
+@pytest.mark.parametrize("codec", ["aac", "ac3"], ids=["the default", "another encoder"])
+def test_an_audio_encoder_this_ffmpeg_has_passes(monkeypatch, codec):
     _fake_encoders(monkeypatch)
-    monkeypatch.setattr(config, "AUDIO_CODEC", "aac")
+    monkeypatch.setattr(config, "AUDIO_CODEC", codec)
     assert audio_codec_errors() == []
 
 
-def test_a_typoed_audio_codec_is_refused(monkeypatch):
+@pytest.mark.parametrize("codec", ["acc", "libx264"], ids=["a typo", "a video encoder"])
+def test_an_audio_codec_ffmpeg_cannot_encode_is_refused(monkeypatch, codec):
     """A bad codec must fail the restart that introduced it, not the first
     rewrite hours later."""
     _fake_encoders(monkeypatch)
-    monkeypatch.setattr(config, "AUDIO_CODEC", "acc")
+    monkeypatch.setattr(config, "AUDIO_CODEC", codec)
     errors = audio_codec_errors()
     assert len(errors) == 1
-    assert "'acc'" in errors[0]
-
-
-def test_a_video_codec_is_not_an_audio_encoder(monkeypatch):
-    _fake_encoders(monkeypatch)
-    monkeypatch.setattr(config, "AUDIO_CODEC", "libx264")
-    assert len(audio_codec_errors()) == 1
+    assert repr(codec) in errors[0]
 
 
 def test_missing_ffmpeg_is_not_this_checks_problem(monkeypatch):
@@ -340,18 +330,15 @@ def test_a_staged_file_that_cannot_be_removed_is_left_alone(tmp_path, monkeypatc
     staged = tmp_path / ".trackstarr-cccc.partial"
     staged.write_text("orphaned")
 
-    def refuse(path):
-        raise PermissionError("read-only file system")
-
-    monkeypatch.setattr(executor.os, "remove", refuse)
-    assert executor.drop_if_stale(str(staged)) is False
-    assert "could not remove stale staged file" in caplog.text
+    _unremovable(monkeypatch)
+    assert executor.drop_staged(str(staged)) is False
+    assert "could not remove staged file" in caplog.text
     assert staged.exists()
 
 
 def test_a_vanished_staged_file_is_not_an_error(tmp_path, monkeypatch):
     """Two workers can clean the same orphan; the loser sees it already gone."""
-    assert executor.drop_if_stale(str(tmp_path / "never-existed.partial")) is False
+    assert executor.drop_staged(str(tmp_path / "never-existed.partial")) is False
 
 
 def test_an_unreachable_work_dir_is_not_reported_as_remote(monkeypatch):
@@ -373,7 +360,7 @@ def test_a_work_dir_that_cannot_be_staged_in_fails_the_plan(tmp_path, monkeypatc
     source = tmp_path / "f.mkv"
     source.write_bytes(b"content")
 
-    outcome, detail = apply_plan(Plan(path=str(source), reasons=["reorder streams"]))
+    outcome, detail = apply_plan(needed_plan(str(source)))
     assert outcome is Outcome.FAILED
     assert config.WORK_DIR in detail
     assert "no space left on device" in detail
@@ -390,7 +377,7 @@ def test_an_ffmpeg_timeout_is_a_failure_naming_the_limit(tmp_path, monkeypatch):
     source = tmp_path / "f.mkv"
     source.write_bytes(b"content")
 
-    outcome, detail = apply_plan(Plan(path=str(source), reasons=["reorder streams"]))
+    outcome, detail = apply_plan(needed_plan(str(source)))
     assert outcome is Outcome.FAILED
     assert "timed out after 900s" in detail
     # The partial encode must not be left behind for the next sweep to find.
@@ -447,7 +434,7 @@ def test_a_result_that_fails_verification_is_discarded(tmp_path, monkeypatch):
     source = tmp_path / "f.mkv"
     source.write_bytes(b"original")
 
-    outcome, detail = apply_plan(Plan(path=str(source), reasons=["reorder streams"]))
+    outcome, detail = apply_plan(needed_plan(str(source)))
     assert outcome is Outcome.FAILED
     assert "result discarded" in detail
     assert source.read_bytes() == b"original"
@@ -484,7 +471,6 @@ def test_an_encoder_list_that_cannot_be_read_is_not_an_error(monkeypatch):
 
 
 def test_a_work_dir_beside_the_library_is_not_remote(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "WORK_DIR", str(tmp_path / "work"))
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
     os.makedirs(config.WORK_DIR, exist_ok=True)
     assert executor.work_dir_is_remote() is False
@@ -500,9 +486,6 @@ def test_an_exclusive_clean_warns_rather_than_stopping_startup(tmp_path, monkeyp
     monkeypatch.setattr(config, "WORK_DIR", str(tmp_path))
     (tmp_path / ".trackstarr-dddd.partial").write_text("orphaned")
 
-    def refuse(path):
-        raise PermissionError("read-only file system")
-
-    monkeypatch.setattr(executor.os, "remove", refuse)
+    _unremovable(monkeypatch)
     executor.clean_work_dir(exclusive=True)
     assert "could not remove" in caplog.text

@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 from . import config, events
-from .arr import Arr
+from .arr import Arr, LibraryItem
 from .executor import Outcome, apply_plan
 from .media import ProbeError
 from .media_server import refresh_servers
@@ -131,6 +131,18 @@ class Job:
     item_id: int | None = None
     arr: Arr | None = None
 
+    @classmethod
+    def from_match(cls, path: str, item: LibraryItem | None, lang: str | None = None) -> Job:
+        """A job for ``path``, carrying whatever its title was matched to.
+
+        ``lang`` wins over the matched language, for ``--original``. The item
+        is still worth having when it does: its id is what gets the *arr its
+        rescan after the rewrite.
+        """
+        if item is None:
+            return cls(path, lang)
+        return cls(path, lang or item.lang, item.item_id, item.arr)
+
 
 @dataclass(frozen=True)
 class ProcessResult:
@@ -153,6 +165,19 @@ def downmixed_names(plan: Plan) -> list[str]:
     return [stream.title for stream in plan.streams if stream.encode]
 
 
+def effective_dry_run(dry_run: bool) -> bool:
+    """Whether a run may rewrite, given what the caller asked and DRY_RUN.
+
+    The latch bottoms out in :func:`process`, so no new entry point can
+    rewrite a library its owner is still observing. It is a function rather
+    than an expression inline there because the sweep needs the answer
+    before it calls process() — to log it, to record it on the summary
+    event, and to decide whether a cached would-fix verdict still stands —
+    and must not have to restate how it is worked out.
+    """
+    return dry_run or config.DRY_RUN
+
+
 def process(
     job: Job, dry_run: bool, source: str = "webhook", run: str | None = None
 ) -> ProcessResult:
@@ -163,9 +188,7 @@ def process(
     failures leave no entry: they recur every sweep until the file is fixed,
     which would fill the history with repeats of one problem.
     """
-    # The DRY_RUN latch bottoms out here rather than in each caller, so no
-    # new entry point can rewrite a library its owner is still observing.
-    dry_run = dry_run or config.DRY_RUN
+    dry_run = effective_dry_run(dry_run)
     try:
         plan = build_plan(job.path, job.lang)
     except ProbeError as err:

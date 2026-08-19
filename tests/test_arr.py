@@ -1,10 +1,10 @@
 """Webhook registration against a faked *arr API. No network."""
 
 import urllib.error
-from dataclasses import replace
 
 import pytest
 
+from conftest import configured_arr
 from trackstarr import auth
 from trackstarr.arr import AUTH_HEADER, WEBHOOK_NAME, _sent_secret, radarr
 
@@ -23,7 +23,7 @@ def make_arr(
     existing: list[dict] | None = None, calls: list[tuple] | None = None, *, call=None
 ):
     """A Radarr client whose _call records requests and serves a canned notification list."""
-    arr = replace(radarr(), url="http://radarr:7878", key="key")
+    arr = configured_arr()
 
     def fake_call(path, payload=None, timeout=30, method=None):
         calls.append((method or ("POST" if payload is not None else "GET"), path, payload))
@@ -103,25 +103,20 @@ def test_updates_when_an_event_was_unticked():
     assert calls[-1][0] == "PUT"
 
 
-def test_replaces_a_secret_the_listener_would_reject():
-    """Someone edited the header in the *arr's UI. We cannot read our own
-    copy back to compare, so the check is against the digest, and anything
-    that fails it is replaced rather than left to 401 every callback."""
-    auth.mint("radarr")
+@pytest.mark.parametrize(
+    "we_hold_a_digest",
+    [True, False],
+    ids=["the header was edited in the arr's UI", "STATE_DIR was wiped"],
+)
+def test_replaces_a_secret_the_listener_would_reject(we_hold_a_digest):
+    """We cannot read our own copy back to compare, so the check is against
+    the digest, and anything failing it is replaced rather than left to 401
+    every callback. Either the *arr's copy was changed under us, or ours is
+    gone and its plaintext is unrecoverable; both end the same way."""
+    if we_hold_a_digest:
+        auth.mint("radarr")
     calls: list[tuple] = []
-    arr = make_arr([registration(secret="rotated-away")], calls)
-    assert arr.register_webhook(URL)
-
-    method, _, payload = calls[-1]
-    assert method == "PUT"
-    assert auth.authorized(_sent_secret(payload))
-
-
-def test_reprovisions_a_connection_after_a_wiped_state_dir():
-    """The *arr still holds a secret, we hold no digest for it. The plaintext
-    is unrecoverable, so the connection gets a freshly minted one."""
-    calls: list[tuple] = []
-    arr = make_arr([registration(secret="from-a-previous-install")], calls)
+    arr = make_arr([registration(secret="never-ours")], calls)
     assert arr.register_webhook(URL)
 
     method, _, payload = calls[-1]
@@ -161,8 +156,7 @@ def test_reports_failure_for_retry_when_the_secret_cannot_be_stored(monkeypatch)
 
 
 def test_disabled_arr_needs_no_registration():
-    arr = replace(radarr(), url="", key="")
-    assert arr.register_webhook(URL) is True
+    assert radarr().register_webhook(URL) is True
 
 
 @pytest.mark.parametrize(

@@ -15,10 +15,10 @@ from datetime import datetime
 
 from . import config, cron, events
 from .arr import LibraryItem, all_arrs, match_path, path_index
-from .executor import drop_if_stale, is_staged_file
+from .executor import drop_staged, is_staged_file
 from .planner import describe
 from .policy import Policy
-from .processing import Job, process
+from .processing import Job, effective_dry_run, process
 from .status import Status
 from .sweep_cache import FileKey, SweepCache, Verdict, cache_key
 
@@ -50,7 +50,7 @@ def walk_library(policy: Policy) -> list[str]:
                     # file being replaced, so a crash scatters these through
                     # the library rather than into one directory startup
                     # could clear. This walk is the only thing visiting them.
-                    drop_if_stale(os.path.join(dirpath, name))
+                    drop_staged(os.path.join(dirpath, name))
     return found
 
 
@@ -62,6 +62,12 @@ _CELL_MAX = 400
 #: budget is enforced separately by the slots in processing, so a budget of
 #: 1 must not force a cold report-only sweep to probe thousands of files one
 #: at a time. Kept modest because concurrent probes still share the disk.
+#:
+#: A fully cached sweep gives the pool nothing to overlap, so there it is
+#: pure overhead: measured at 135ms per 20,000 files, against the ~30
+#: minutes those files would cost to probe serially. Far too little to
+#: justify sending hits and misses down separate paths, so every file goes
+#: through the pool whether or not it ends up probing.
 _MIN_PROBE_WORKERS = 4
 
 #: Fewest seconds between mid-sweep cache checkpoints. Each checkpoint
@@ -90,7 +96,7 @@ class Judged:
 
 
 def _judge(
-    path: str, index: list[LibraryItem], cache: SweepCache, dry_run: bool, run: str
+    path: str, index: dict[str, LibraryItem], cache: SweepCache, dry_run: bool, run: str
 ) -> Judged:
     """Decide one file, on a worker thread.
 
@@ -99,8 +105,7 @@ def _judge(
     inside a pool, where an exception would abandon every file after it.
     """
     try:
-        matched = match_path(index, path)
-        job = Job(path, matched.lang, matched.item_id, matched.arr) if matched else Job(path)
+        job = Job.from_match(path, match_path(index, path))
         key = cache_key(path, job.lang)
         verdict = cache.lookup(path, key)
         # A cached would-fix only stands in for the probe while reporting; an
@@ -116,9 +121,10 @@ def _judge(
 
 
 def sweep(dry_run: bool) -> dict[Status, int]:
-    if config.DRY_RUN and not dry_run:
+    asked_for = dry_run
+    dry_run = effective_dry_run(dry_run)
+    if dry_run and not asked_for:
         log.info("DRY_RUN is set; the sweep reports only")
-        dry_run = True
     policy = Policy.from_config()
     index = path_index(all_arrs())
     files = walk_library(policy)
@@ -158,8 +164,11 @@ def sweep(dry_run: bool) -> dict[Status, int]:
             if judged.cached:
                 cached_hits += 1
             # Recording here rather than in the worker keeps the cache
-            # single-threaded, so it needs no lock of its own.
-            if judged.cached or judged.status in CACHEABLE_STATUSES:
+            # single-threaded, so it needs no lock of its own. A hit needs no
+            # case of its own: its verdict was stored under this same gate,
+            # so anything read back is cacheable by construction, and a
+            # hand-edited entry that isn't simply falls out on the next save.
+            if judged.status in CACHEABLE_STATUSES:
                 cache.record(
                     judged.job.path, judged.key, Verdict(judged.status, judged.reasons)
                 )

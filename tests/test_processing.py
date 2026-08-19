@@ -4,37 +4,31 @@ import fcntl
 import os
 import threading
 import time
-from dataclasses import replace
 
 import pytest
 
+from conftest import configured_arr, needed_plan
 from trackstarr import config, processing
-from trackstarr.arr import radarr
 from trackstarr.executor import Outcome
 from trackstarr.media import ProbeError
-from trackstarr.planner import Plan
 from trackstarr.processing import Job, process
 from trackstarr.status import Status
 
 
-def test_deferred_rewrite_is_not_a_failure(monkeypatch):
+def test_deferred_rewrite_is_not_a_failure(stub_rewrite):
     """A benign mid-rewrite race must not alert like a corruption."""
-    plan = Plan(path="/x.mkv", reasons=["reorder streams"])
-    monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
-    monkeypatch.setattr(
-        processing,
-        "apply_plan",
-        lambda plan: (Outcome.DEFERRED, "source changed during the rewrite"),
+    stub_rewrite(
+        needed_plan(),
+        Outcome.DEFERRED,
+        "source changed during the rewrite",
     )
     result = processing.process(Job("/x.mkv"), dry_run=False)
     assert result.status == "deferred"
     assert "source changed" in result.detail
 
 
-def test_fixed_file_notifies_media_servers(monkeypatch):
-    plan = Plan(path="/x.mkv", reasons=["reorder streams"])
-    monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
-    monkeypatch.setattr(processing, "apply_plan", lambda plan: (Outcome.APPLIED, ""))
+def test_fixed_file_notifies_media_servers(monkeypatch, stub_rewrite):
+    stub_rewrite(needed_plan())
     refreshed = []
     monkeypatch.setattr(processing, "refresh_servers", refreshed.append)
 
@@ -46,7 +40,7 @@ def test_fixed_file_notifies_media_servers(monkeypatch):
 def test_global_dry_run_bottoms_out_in_process(monkeypatch):
     """No caller can rewrite under DRY_RUN, whatever dry_run it passes."""
     monkeypatch.setattr(config, "DRY_RUN", True)
-    plan = Plan(path="/x.mkv", reasons=["reorder streams"])
+    plan = needed_plan()
     monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
     monkeypatch.setattr(
         processing, "apply_plan", lambda plan: pytest.fail("DRY_RUN must not rewrite")
@@ -55,26 +49,22 @@ def test_global_dry_run_bottoms_out_in_process(monkeypatch):
     assert result.status == "would-fix"
 
 
-def test_rewrites_hold_a_cross_process_file_lock():
-    """A sweep run via docker exec must queue behind serve's rewrites."""
-    lock_path = os.path.join(config.STATE_DIR, "rewrite.lock.0")
-    with (
-        processing._exclusive_rewrite(),
-        open(lock_path) as probe_file,
-        pytest.raises(BlockingIOError),
-    ):
-        fcntl.flock(probe_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    with open(lock_path) as probe_file:
-        fcntl.flock(probe_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-
-
 def _is_locked(name: str) -> bool:
+    """Whether another holder has the named STATE_DIR slot; closing the probe
+    handle releases whatever this took."""
     with open(os.path.join(config.STATE_DIR, name)) as probe_file:
         try:
             fcntl.flock(probe_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return True
     return False
+
+
+def test_rewrites_hold_a_cross_process_file_lock():
+    """A sweep run via docker exec must queue behind serve's rewrites."""
+    with processing._exclusive_rewrite():
+        assert _is_locked("rewrite.lock.0")
+    assert not _is_locked("rewrite.lock.0")
 
 
 def test_every_slot_gets_its_own_lock_file(monkeypatch):
@@ -134,15 +124,14 @@ def _peak_concurrency(jobs: int) -> int:
     return peak
 
 
-def test_one_is_still_one(monkeypatch):
-    """The default has to behave exactly as the old exclusive lock did."""
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
-    assert _peak_concurrency(4) == 1
-
-
-def test_budget_is_shared_and_bounded(monkeypatch):
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 3)
-    assert _peak_concurrency(8) == 3
+@pytest.mark.parametrize(
+    ("budget", "jobs"),
+    [(1, 4), (3, 8)],
+    ids=["the default is still exclusive", "a raised budget is shared"],
+)
+def test_the_budget_bounds_concurrent_rewrites(monkeypatch, budget, jobs):
+    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", budget)
+    assert _peak_concurrency(jobs) == budget
 
 
 def test_a_raising_rewrite_releases_its_slot(monkeypatch):
@@ -165,37 +154,31 @@ def test_a_probe_failure_during_a_rewrite_is_reported_not_raised(tmp_path, monke
         raise ProbeError("moov atom not found")
 
     monkeypatch.setattr(processing, "apply_plan", fail)
-    monkeypatch.setattr(
-        processing, "build_plan", lambda p, lang: Plan(path=str(path), reasons=["reorder"])
-    )
+    monkeypatch.setattr(processing, "build_plan", lambda p, lang: needed_plan(str(path)))
     result = process(Job(str(path)), dry_run=False)
     assert result.status is Status.FAILED
     assert "moov atom not found" in result.detail
 
 
-def test_a_fixed_file_asks_its_arr_to_rescan(tmp_path, monkeypatch):
+def test_a_fixed_file_asks_its_arr_to_rescan(tmp_path, monkeypatch, stub_rewrite):
     """Otherwise Radarr keeps reporting the old size and media info."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
     path = tmp_path / "f.mkv"
     path.write_bytes(b"x")
     rescanned: list[int] = []
 
-    arr = replace(radarr(), url="http://radarr:7878", key="key")
-    monkeypatch.setattr(type(arr), "rescan", lambda self, item_id: rescanned.append(item_id))
-    monkeypatch.setattr(
-        processing, "build_plan", lambda p, lang: Plan(path=str(path), reasons=["reorder"])
-    )
-    monkeypatch.setattr(processing, "apply_plan", lambda plan: (Outcome.APPLIED, ""))
+    arr = configured_arr()
+    arr.rescan = lambda item_id: rescanned.append(item_id)
+    stub_rewrite(needed_plan(str(path)))
 
     result = process(Job(str(path), "eng", 12, arr), dry_run=False)
     assert result.status is Status.FIXED
     assert rescanned == [12]
 
 
-def test_a_rewrite_waits_for_a_busy_slot_rather_than_failing(tmp_path, monkeypatch):
+def test_a_rewrite_waits_for_a_busy_slot_rather_than_failing(monkeypatch):
     """The budget is a queue, not a limit that rejects: a webhook import
     arriving mid-sweep waits its turn instead of being dropped."""
-    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path))
     monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
     held = processing._claim_slot()
     released: list[bool] = []

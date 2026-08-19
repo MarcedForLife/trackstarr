@@ -112,21 +112,20 @@ def test_checkpoints_come_from_time_not_file_count(monkeypatch, tmp_path):
     assert len(checkpoints) == 3
 
 
-def test_seconds_until_later_today():
-    now = time.mktime((2026, 8, 13, 1, 0, 0, 0, 0, -1))
-    assert seconds_until("0 4 * * *", now) == pytest.approx(3 * 3600)
-
-
-def test_seconds_until_rolls_to_tomorrow():
-    now = time.mktime((2026, 8, 13, 5, 0, 0, 0, 0, -1))
-    assert seconds_until("0 4 * * *", now) == pytest.approx(23 * 3600)
-
-
-def test_seconds_until_never_picks_the_slot_that_just_fired():
-    """Rescheduling seconds after the sweep fired must land on the next
-    run, not the one still on the clock's current minute."""
-    now = time.mktime((2026, 8, 13, 4, 0, 5, 0, 0, -1))
-    assert seconds_until("0 4 * * *", now) == pytest.approx(24 * 3600 - 5)
+@pytest.mark.parametrize(
+    ("hour", "second", "expected"),
+    [
+        (1, 0, 3 * 3600),
+        (5, 0, 23 * 3600),
+        # Rescheduling seconds after the sweep fired must land on the next
+        # run, not the one still on the clock's current minute.
+        (4, 5, 24 * 3600 - 5),
+    ],
+    ids=["later today", "rolls to tomorrow", "never the slot that just fired"],
+)
+def test_seconds_until_the_next_4am_sweep(hour, second, expected):
+    now = time.mktime((2026, 8, 13, hour, 0, second, 0, 0, -1))
+    assert seconds_until("0 4 * * *", now) == pytest.approx(expected)
 
 
 def test_seconds_until_rejects_garbage():
@@ -174,14 +173,13 @@ def test_hidden_directories_are_not_walked(tmp_path, monkeypatch):
     assert sweep_mod.walk_library(Policy.from_config()) == [str(tmp_path / "f.mkv")]
 
 
-def test_a_long_sweep_logs_progress_as_it_goes(monkeypatch, tmp_path, caplog):
+def test_a_long_sweep_logs_progress_as_it_goes(monkeypatch, caplog):
     """A library sweep runs for hours. Without a periodic line the log looks
     like it has hung, and there is nothing to judge the rate from."""
     caplog.set_level(logging.INFO, logger="trackstarr.sweep")
-    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
     walked = [f"/data/{i:04d}.mkv" for i in range(500)]
     monkeypatch.setattr("trackstarr.sweep.walk_library", lambda policy: walked)
-    monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: [])
+    monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: {})
     monkeypatch.setattr(
         "trackstarr.sweep._judge",
         lambda path, **kwargs: Judged(Job(path), None, Status.CONFORM),

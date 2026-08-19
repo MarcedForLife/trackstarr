@@ -5,8 +5,7 @@ import os
 import pytest
 
 from conftest import audio, probe_data, subtitle, video
-from trackstarr import config, policy
-from trackstarr.layouts import resolved_layouts
+from trackstarr import config
 from trackstarr.media import is_junk_title
 from trackstarr.planner import (
     OutStream,
@@ -27,6 +26,24 @@ def plan_for(*streams, original="eng", title="", path="/x/f.mkv"):
 
 def audio_out(plan):
     return [out for out in plan.streams if out.kind == "audio"]
+
+
+def args_for(*streams):
+    """The command a hand-built plan of these streams would run."""
+    plan = Plan(path="f.mkv")
+    plan.streams.extend(streams)
+    return ffmpeg_args(plan, "OUT.mkv")
+
+
+def other_stream(index: int, kind: str, codec: str) -> dict:
+    """A stream of a kind the planner has no rule for: data, attachment."""
+    return {
+        "index": index,
+        "codec_type": kind,
+        "codec_name": codec,
+        "tags": {},
+        "disposition": {},
+    }
 
 
 # Rule 2: the downmix guarantee
@@ -50,17 +67,26 @@ def test_commentary_stereo_does_not_satisfy_the_downmix_rule():
     assert generated[0].channels == 2
 
 
-def test_isolated_score_also_does_not_count():
-    plan = plan_for(video(0), audio(1, 6), audio(2, 2, title="Isolated Score"))
-    assert any("downmix" in reason for reason in plan.reasons)
+@pytest.mark.parametrize(
+    "marked",
+    [
+        {"tags": {"language": "eng", "title": "Isolated Score"}},
+        # ffprobe reports MP4 track titles under ``name``, not ``title``.
+        {"tags": {"language": "eng", "name": "Director's Commentary"}},
+        {"disposition": {"comment": 1}},
+        {"disposition": {"visual_impaired": 1}},
+        {"disposition": {"descriptions": 1}},
+    ],
+    ids=["isolated score", "mp4 name tag", "comment", "visual impaired", "descriptions"],
+)
+def test_commentary_is_recognised_however_it_is_marked(marked):
+    """Each of these has to keep the 2.0 from counting as the stereo track.
 
-
-@pytest.mark.parametrize("flag", ["comment", "visual_impaired", "descriptions"])
-def test_disposition_flags_mark_commentary(flag):
-    stream = audio(2, 2, title="Untitled")
-    stream["disposition"][flag] = 1
-    plan = plan_for(video(0), audio(1, 6), stream)
-    assert any("downmix" in reason for reason in plan.reasons)
+    The disposition flags are authoritative when a muxer set them; most rips
+    don't, so the title is the fallback.
+    """
+    plan = plan_for(video(0), audio(1, 6), audio(2, 2) | marked)
+    assert any("downmix from stream 1" in reason for reason in plan.reasons)
 
 
 def test_real_stereo_track_means_no_downmix():
@@ -95,14 +121,6 @@ def test_downmix_source_is_never_a_commentary_track():
     assert any("downmix from stream 2" in reason for reason in plan.reasons)
 
 
-def test_mp4_style_name_tag_counts_as_the_title():
-    """ffprobe reports MP4 track titles under ``name``, not ``title``."""
-    commentary = audio(2, 2)
-    commentary["tags"]["name"] = "Director's Commentary"
-    plan = plan_for(video(0), audio(1, 6), commentary)
-    assert any("downmix from stream 1" in reason for reason in plan.reasons)
-
-
 def test_seven_one_only_gains_both_stereo_and_five_one():
     """The default layouts are 2.0 and 5.1, both made from the same 7.1."""
     plan = plan_for(video(0), audio(1, 8))
@@ -127,23 +145,6 @@ def test_layouts_with_equal_channel_counts_generate_one_track(monkeypatch):
     monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"4.2", "5.1"})
     plan = plan_for(video(0), audio(1, 8))
     assert len([out for out in audio_out(plan) if out.encode]) == 1
-
-
-def test_duplicate_channel_counts_are_refused_at_startup(monkeypatch):
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"5.1", "5.1:640k"})
-    errors = policy.errors()
-    assert len(errors) == 1
-    assert "5.1, 5.1:640k" in errors[0]
-
-
-def test_invalid_layouts_catch_typos(monkeypatch):
-    monkeypatch.setattr(
-        config, "DOWNMIX_LAYOUTS", {"2.0", "surround", "5:1", "0.0", "5.1:640x"}
-    )
-    errors = policy.errors()
-    assert len(errors) == 1
-    assert all(bad in errors[0] for bad in ("surround", "5:1", "0.0", "5.1:640x"))
-    assert [(layout.name, layout.channels) for layout in resolved_layouts()] == [("2.0", 2)]
 
 
 # The regenerate opt-in (REGENERATE_DOWNMIXES)
@@ -179,9 +180,7 @@ def test_regeneration_is_off_by_default():
 
 def test_generated_mode_never_touches_untagged_tracks(monkeypatch):
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
-    weak = audio(1, 2)
-    weak["bit_rate"] = "96000"
-    plan = plan_for(video(0), weak, audio(2, 6))
+    plan = plan_for(video(0), audio(1, 2, bitrate="96000"), audio(2, 6))
     assert not plan.needed
 
 
@@ -193,24 +192,24 @@ def test_stale_downmix_kept_when_no_source_survives(monkeypatch):
     assert 1 in {out.src for out in plan.streams}
 
 
-def test_all_mode_replaces_weak_stereo(monkeypatch):
+@pytest.mark.parametrize(
+    ("bitrate", "extra_tags"),
+    [
+        ("96000", {}),
+        # Matroska rarely reports bit_rate, but mkvmerge writes BPS.
+        (None, {"BPS-eng": "96000"}),
+    ],
+    ids=["mp4 bit_rate", "mkvmerge BPS tag"],
+)
+def test_all_mode_replaces_weak_stereo(monkeypatch, bitrate, extra_tags):
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
     monkeypatch.setattr(config, "AUDIO_BITRATE", "320k")
-    weak = audio(1, 2)
-    weak["bit_rate"] = "96000"
+    weak = audio(1, 2, bitrate=bitrate)
+    weak["tags"].update(extra_tags)
     plan = plan_for(video(0), weak, audio(2, 6))
     assert any("replace weak 2.0 track 1 (96k)" in reason for reason in plan.reasons)
     assert any("add 2.0 downmix from stream 2" in reason for reason in plan.reasons)
     assert 1 not in {out.src for out in plan.streams}
-
-
-def test_all_mode_reads_mkvmerge_bps_tags(monkeypatch):
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "320k")
-    weak = audio(1, 2)
-    weak["tags"]["BPS-eng"] = "96000"
-    plan = plan_for(video(0), weak, audio(2, 6))
-    assert any("replace weak" in reason for reason in plan.reasons)
 
 
 def test_all_mode_leaves_unknown_bitrates_alone(monkeypatch):
@@ -220,16 +219,13 @@ def test_all_mode_leaves_unknown_bitrates_alone(monkeypatch):
 
 
 def test_all_mode_only_replaces_clearly_weak_tracks(monkeypatch):
-    """Encoders emit what the content needs, not the nominal request, and
-    codecs differ in efficiency, so only a track under half the layout's
-    rate reads as weak. A decent 640k AC3 5.1 survives a 960k AAC target."""
+    """A decent 640k AC3 5.1 survives a 960k AAC target; see
+    planner._WEAK_BITRATE_RATIO for why the margin is that wide."""
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
     monkeypatch.setattr(config, "AUDIO_BITRATE", "320k")
-    stereo = audio(1, 2)
-    stereo["bit_rate"] = "300000"
-    surround = audio(2, 6)
-    surround["bit_rate"] = "640000"
-    plan = plan_for(video(0), stereo, surround, audio(3, 8))
+    plan = plan_for(
+        video(0), audio(1, 2, bitrate="300000"), audio(2, 6, bitrate="640000"), audio(3, 8)
+    )
     assert not plan.needed
 
 
@@ -237,9 +233,7 @@ def test_regeneration_is_matroska_only(monkeypatch):
     """MP4 drops the identifying tag, where regeneration deleted commentary
     and re-encoded its own tracks every sweep; it must drop nothing there."""
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
-    weak = audio(1, 2)
-    weak["bit_rate"] = "96000"
-    plan = plan_for(video(0), weak, audio(2, 6), path="/x/f.mp4")
+    plan = plan_for(video(0), audio(1, 2, bitrate="96000"), audio(2, 6), path="/x/f.mp4")
     assert not plan.needed
 
 
@@ -257,9 +251,7 @@ def test_duplicate_layouts_regenerate_toward_one_target(monkeypatch):
 
 def test_all_mode_never_replaces_commentary(monkeypatch):
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
-    weak = audio(1, 2, title="Commentary")
-    weak["bit_rate"] = "96000"
-    plan = plan_for(video(0), weak, audio(2, 6))
+    plan = plan_for(video(0), audio(1, 2, title="Commentary", bitrate="96000"), audio(2, 6))
     # The commentary survives; the missing real stereo is downmixed anyway.
     assert 1 in {out.src for out in plan.streams}
     assert any("add 2.0 downmix" in reason for reason in plan.reasons)
@@ -268,24 +260,22 @@ def test_all_mode_never_replaces_commentary(monkeypatch):
 # The remux opt-in (REMUX_TO_MKV)
 
 
-def test_remux_triggers_for_mp4(monkeypatch):
-    monkeypatch.setattr(config, "REMUX_TO_MKV", True)
-    plan = plan_for(video(0), audio(1, 2), audio(2, 6), path="/x/f.mp4")
-    assert plan.reasons == ["remux to mkv (REMUX_TO_MKV)"]
-    assert plan.out_path == "/x/f.mkv"
-
-
-def test_remux_leaves_matroska_alone(monkeypatch):
-    monkeypatch.setattr(config, "REMUX_TO_MKV", True)
-    plan = plan_for(video(0), audio(1, 2), audio(2, 6))
-    assert not plan.needed
-    assert plan.out_path == plan.path
-
-
-def test_remux_is_off_by_default():
-    plan = plan_for(video(0), audio(1, 2), audio(2, 6), path="/x/f.mp4")
-    assert not plan.needed
-    assert plan.out_path == plan.path
+@pytest.mark.parametrize(
+    ("remux", "path", "reasons", "out_path"),
+    [
+        (True, "/x/f.mp4", ["remux to mkv (REMUX_TO_MKV)"], "/x/f.mkv"),
+        (True, "/x/f.mkv", [], "/x/f.mkv"),
+        (False, "/x/f.mp4", [], "/x/f.mp4"),
+    ],
+    ids=["mp4 converts", "matroska is left alone", "off by default"],
+)
+def test_remux_converts_only_mp4_and_only_when_asked(
+    monkeypatch, remux, path, reasons, out_path
+):
+    monkeypatch.setattr(config, "REMUX_TO_MKV", remux)
+    plan = plan_for(video(0), audio(1, 2), audio(2, 6), path=path)
+    assert plan.reasons == reasons
+    assert plan.out_path == out_path
 
 
 def test_remux_converts_mov_text_subtitles(monkeypatch):
@@ -348,16 +338,16 @@ def test_commentary_in_a_foreign_language_is_dropped_by_the_language_rule():
 # Rule 3: cover art
 
 
-def test_cover_art_is_dropped():
-    plan = plan_for(video(0), video(1, codec="png", attached_pic=1), audio(2, 2))
+@pytest.mark.parametrize(
+    ("codec", "attached_pic"),
+    [("png", 1), ("mjpeg", 0)],
+    ids=["disposition flag", "image codec alone"],
+)
+def test_cover_art_is_dropped(codec, attached_pic):
+    plan = plan_for(video(0), video(1, codec=codec, attached_pic=attached_pic), audio(2, 2))
     assert plan.needed
     assert any("cover art" in reason for reason in plan.reasons)
     assert {out.src for out in plan.streams} == {0, 2}
-
-
-def test_image_codec_without_the_flag_is_still_cover_art():
-    plan = plan_for(video(0), video(1, codec="mjpeg"), audio(2, 2))
-    assert any("cover art" in reason for reason in plan.reasons)
 
 
 # Rule 4: ordering
@@ -390,8 +380,7 @@ def test_generated_downmix_sorts_ahead_of_a_commentary_stereo_track():
 
 
 def test_channel_rank_ordering():
-    """Ascending by count so generated 4.0 or 6.1 tracks slot in correctly;
-    mono and unknown sort last, never becoming the first-track fallback."""
+    """The order channel_rank documents: ascending, mono and unknown last."""
     ranks = [channel_rank(n) for n in (2, 4, 6, 7, 8, None, 1)]
     assert ranks == sorted(ranks)
 
@@ -401,41 +390,30 @@ def test_channel_rank_ordering():
 
 def test_data_stream_alone_does_not_trigger_a_rewrite():
     """Rewriting a 60GB remux to drop a timecode track is not worth it."""
-    data = {
-        "index": 2,
-        "codec_type": "data",
-        "codec_name": "bin_data",
-        "tags": {},
-        "disposition": {},
-    }
-    plan = plan_for(video(0), audio(1, 2), data)
+    plan = plan_for(video(0), audio(1, 2), other_stream(2, "data", "bin_data"))
     assert not plan.needed
     assert plan.incidental == ["drop data stream 2"]
 
 
 def test_data_stream_rides_along_when_something_else_triggers():
-    data = {
-        "index": 3,
-        "codec_type": "data",
-        "codec_name": "bin_data",
-        "tags": {},
-        "disposition": {},
-    }
-    plan = plan_for(video(0), audio(1, 2, lang="eng"), audio(2, 2, lang="ger"), data)
+    plan = plan_for(
+        video(0),
+        audio(1, 2, lang="eng"),
+        audio(2, 2, lang="ger"),
+        other_stream(3, "data", "bin_data"),
+    )
     assert plan.needed
     assert 3 not in {out.src for out in plan.streams}
 
 
 def test_attachments_are_always_carried_over():
     """Fonts, without which styled ASS subtitles render wrong."""
-    font = {
-        "index": 3,
-        "codec_type": "attachment",
-        "codec_name": "ttf",
-        "tags": {"filename": "x.ttf"},
-        "disposition": {},
-    }
-    plan = plan_for(video(0), audio(1, 2, lang="eng"), audio(2, 2, lang="ger"), font)
+    plan = plan_for(
+        video(0),
+        audio(1, 2, lang="eng"),
+        audio(2, 2, lang="ger"),
+        other_stream(3, "attachment", "ttf"),
+    )
     assert 3 in {out.src for out in plan.streams}
 
 
@@ -504,26 +482,21 @@ def test_commentary_is_kept_by_default():
 # SDH subtitles (ride along with a rewrite, never trigger one)
 
 
-def test_sdh_dropped_when_a_full_subtitle_remains():
+@pytest.mark.parametrize(
+    ("title", "hearing_impaired"),
+    [("English (SDH)", 0), ("", 1)],
+    ids=["title", "disposition flag"],
+)
+def test_sdh_dropped_when_a_full_subtitle_remains(title, hearing_impaired):
     plan = plan_for(
         video(0),
         audio(1, 2),
         subtitle(2, "eng"),
-        subtitle(3, "eng", title="English (SDH)"),
+        subtitle(3, "eng", title=title, hearing_impaired=hearing_impaired),
     )
     assert 3 not in {out.src for out in plan.streams}
     assert any("SDH subtitle 3" in note for note in plan.incidental)
     assert not plan.needed
-
-
-def test_sdh_disposition_flag_counts():
-    plan = plan_for(
-        video(0),
-        audio(1, 2),
-        subtitle(2, "eng"),
-        subtitle(3, "eng", hearing_impaired=1),
-    )
-    assert 3 not in {out.src for out in plan.streams}
 
 
 def test_lone_sdh_subtitle_is_kept():
@@ -720,8 +693,7 @@ def test_per_layout_bitrate_overrides_the_scaled_default(monkeypatch):
 
 
 def test_an_unrelated_language_sorts_behind_english():
-    """First track is what disposition-blind players pick, so the order is
-    original, then English, then everything else."""
+    """The order _downmix_rank documents: original, English, then the rest."""
     original = audio(1, 6, lang="jpn")
     english = audio(2, 6, lang="eng")
     other = audio(3, 6, lang="fre")
@@ -732,70 +704,46 @@ def test_an_unrelated_language_sorts_behind_english():
 def test_a_kept_subtitle_title_is_reasserted_in_the_command():
     """MP4 drops track names on a plain copy, so every kept title is written
     again explicitly rather than relied upon to survive."""
-    plan = Plan(path="f.mkv")
-    plan.streams.extend(
-        [
-            OutStream(src=0, kind="video"),
-            OutStream(src=1, kind="subtitle", title="Forced (English)"),
-        ]
+    args = args_for(
+        OutStream(src=0, kind="video"),
+        OutStream(src=1, kind="subtitle", title="Forced (English)"),
     )
-    args = ffmpeg_args(plan, "OUT.mkv")
     assert "title=Forced (English)" in args
 
 
 def test_a_copied_audio_track_keeps_its_own_title():
     """Between a generated downmix and a track whose junk title is stripped
     sits the ordinary case: copied through, title re-asserted as it was."""
-    plan = Plan(path="f.mkv")
-    plan.streams.extend(
-        [
-            OutStream(src=0, kind="video"),
-            OutStream(src=1, kind="audio", title="Surround 5.1"),
-            OutStream(src=2, kind="audio", title="Commentary"),
-        ]
+    args = args_for(
+        OutStream(src=0, kind="video"),
+        OutStream(src=1, kind="audio", title="Surround 5.1"),
+        OutStream(src=2, kind="audio", title="Commentary"),
     )
-    args = ffmpeg_args(plan, "OUT.mkv")
     assert "title=Surround 5.1" in args
     assert "title=Commentary" in args
 
 
-def test_a_generated_downmix_is_not_the_last_word_on_the_audio():
-    """The downmix sorts ahead of the track it came from, so its language tag
-    is written mid-list and the copied original still follows it."""
-    plan = Plan(path="f.mkv")
-    plan.streams.extend(
-        [
-            OutStream(src=0, kind="video"),
-            OutStream(
-                src=1,
-                kind="audio",
-                encode=True,
-                channels=2,
-                lang="jpn",
-                title="2.0",
-                bitrate="192k",
-            ),
-            OutStream(src=1, kind="audio", title="Surround 5.1"),
-        ]
+@pytest.mark.parametrize("lang", ["jpn", None], ids=["tagged source", "untagged source"])
+def test_a_downmix_asserts_only_the_language_its_source_had(lang):
+    """Plenty of files carry audio with no language tag; the downmix inherits
+    that and must not be given a language the source never claimed. Either
+    way it sorts ahead of the track it came from, so its metadata is written
+    mid-list and the copied original still follows it.
+    """
+    args = args_for(
+        OutStream(src=0, kind="video"),
+        OutStream(
+            src=1,
+            kind="audio",
+            encode=True,
+            channels=2,
+            lang=lang,
+            title="2.0",
+            bitrate="192k",
+        ),
+        OutStream(src=1, kind="audio", title="Surround 5.1"),
     )
-    args = ffmpeg_args(plan, "OUT.mkv")
-    assert "language=jpn" in args
-    assert "title=Surround 5.1" in args
-
-
-def test_a_downmix_from_an_untagged_source_asserts_no_language():
-    """Plenty of files carry audio with no language tag. The downmix inherits
-    that, and must not be given a language the source never claimed."""
-    plan = Plan(path="f.mkv")
-    plan.streams.extend(
-        [
-            OutStream(src=0, kind="video"),
-            OutStream(
-                src=1, kind="audio", encode=True, channels=2, title="2.0", bitrate="192k"
-            ),
-            OutStream(src=1, kind="audio", title="Surround 5.1"),
-        ]
+    assert [arg for arg in args if arg.startswith("language=")] == (
+        [f"language={lang}"] if lang else []
     )
-    args = ffmpeg_args(plan, "OUT.mkv")
-    assert not any(arg.startswith("language=") for arg in args)
     assert "title=Surround 5.1" in args

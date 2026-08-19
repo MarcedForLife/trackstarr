@@ -65,7 +65,6 @@ def test_unknown_code_passes_through():
     it has to stay distinguishable.
     """
     assert norm_lang("xyz") == "xyz"
-    assert norm_lang("xyz") is not None
 
 
 def test_norm_lang_is_idempotent():

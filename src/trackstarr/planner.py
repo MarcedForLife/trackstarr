@@ -14,7 +14,7 @@ import os
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
-from .layouts import ResolvedLayout, bitrate_bps, encode_settings
+from .layouts import Layout, bitrate_bps, encode_settings
 from .media import (
     GENERATED_TAG,
     ProbeError,
@@ -168,7 +168,10 @@ def plan_from_probe(plan: Plan, info: dict) -> Plan:
         plan.skip = "no video stream"
         return plan
 
-    if plan.out_path != plan.path:
+    # out_path is derived from the path and the policy, neither of which
+    # changes from here, so the subtitle codec below reads the same answer.
+    converting = plan.out_path != plan.path
+    if converting:
         plan.reasons.append("remux to mkv (REMUX_TO_MKV)")
 
     def keep_track(stream: dict, what: str) -> bool:
@@ -224,7 +227,6 @@ def plan_from_probe(plan: Plan, info: dict) -> Plan:
 
     ordered = [OutStream(src=stream["index"], kind="video") for stream in video]
     ordered += audio_out
-    converting = plan.out_path != plan.path
     ordered += [
         OutStream(
             src=stream["index"],
@@ -391,20 +393,17 @@ def _drop_stale_downmixes(plan: Plan, kept_audio: list[dict]) -> list[dict]:
         return kept_audio
     # The same first-wins choice _choose_downmixes makes, so a track is
     # always judged against the layout it would be rebuilt with.
-    layouts: dict[int | None, ResolvedLayout] = {}
+    layouts: dict[int | None, Layout] = {}
     for layout in plan.policy.downmix_layouts:
         layouts.setdefault(layout.channels, layout)
     keep: list[dict] = []
     for stream in kept_audio:
-        # Named apart from the loop variable above: this is the one layout
-        # this stream would be rebuilt as, and it may not exist.
         rebuilt_as = layouts.get(stream.get("channels"))
-        if rebuilt_as is None:
-            keep.append(stream)
-            continue
-        why = _stale_reason(plan, stream, rebuilt_as)
-        if why and _downmix_sources(
-            kept_audio, rebuilt_as.channels, plan.policy, exclude=stream
+        why = _stale_reason(plan, stream, rebuilt_as) if rebuilt_as else None
+        if (
+            rebuilt_as
+            and why
+            and _downmix_sources(kept_audio, rebuilt_as.channels, plan.policy, exclude=stream)
         ):
             plan.reasons.append(why)
         else:
@@ -420,7 +419,7 @@ def _drop_stale_downmixes(plan: Plan, kept_audio: list[dict]) -> list[dict]:
 _WEAK_BITRATE_RATIO = 0.5
 
 
-def _stale_reason(plan: Plan, stream: dict, layout: ResolvedLayout) -> str | None:
+def _stale_reason(plan: Plan, stream: dict, layout: Layout) -> str | None:
     """Why a layout-sized track should be rebuilt, or None to keep it.
 
     A track carrying GENERATED_TAG is ours: rebuilt when its recorded
@@ -450,7 +449,7 @@ def _stale_reason(plan: Plan, stream: dict, layout: ResolvedLayout) -> str | Non
     )
 
 
-def _choose_downmixes(plan: Plan, kept_audio: list[dict]) -> list[tuple[ResolvedLayout, dict]]:
+def _choose_downmixes(plan: Plan, kept_audio: list[dict]) -> list[tuple[Layout, dict]]:
     """One ``(layout, source)`` per configured layout the file misses.
 
     A layout is missed when no real (non-commentary) track has its channel
@@ -463,7 +462,7 @@ def _choose_downmixes(plan: Plan, kept_audio: list[dict]) -> list[tuple[Resolved
     # Two layout names with the same channel count ("4.2" and "5.1") would
     # generate identical tracks, so a satisfied count also satisfies the rest.
     satisfied = {stream.get("channels") for stream in real}
-    chosen: list[tuple[ResolvedLayout, dict]] = []
+    chosen: list[tuple[Layout, dict]] = []
     for layout in plan.policy.downmix_layouts:
         if layout.channels in satisfied:
             continue

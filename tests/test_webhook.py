@@ -6,17 +6,27 @@ import http.client
 import json
 import os
 import threading
-from dataclasses import replace
 from http.server import ThreadingHTTPServer
 
 import pytest
 
+from conftest import configured_arr, needed_plan
 from trackstarr import auth, config, events, processing, webhook
-from trackstarr.arr import AUTH_HEADER, original_of, radarr
-from trackstarr.planner import Plan
+from trackstarr.arr import AUTH_HEADER
 from trackstarr.processing import Job, ProcessResult
 from trackstarr.status import Status
 from trackstarr.webhook import _resolve_lang, jobs_from_hook
+
+
+@pytest.fixture(autouse=True)
+def _drain_queue():
+    """The work queue and the in-flight set are module state, so a test that
+    queues a job must not leave it for the next one to trip over."""
+    yield
+    with webhook._inflight_lock:
+        webhook._inflight.clear()
+    while not webhook._work_q.empty():
+        webhook._work_q.get_nowait()
 
 
 def test_radarr_import_webhook():
@@ -101,14 +111,14 @@ def test_missing_relative_path_yields_no_path():
 
 
 def test_worker_resolves_missing_language_from_the_arr():
-    arr = replace(radarr(), url="http://radarr:7878", key="key")
+    arr = configured_arr()
     arr.item = lambda item_id: {"originalLanguage": {"name": "Korean"}}
     job = _resolve_lang(Job("/x.mkv", None, 5, arr))
     assert job.lang == "kor"
 
 
 def test_worker_keeps_a_language_the_webhook_already_carried():
-    arr = replace(radarr(), url="http://radarr:7878", key="key")
+    arr = configured_arr()
     arr.item = lambda item_id: pytest.fail("the API must not be queried")
     job = _resolve_lang(Job("/x.mkv", "eng", 5, arr))
     assert job.lang == "eng"
@@ -118,7 +128,7 @@ def test_dry_run_never_rewrites_a_webhook_import(monkeypatch):
     """The DRY_RUN latch lives inside process(), so the handler's plain
     dry_run=False must still end as a would-fix, never a rewrite."""
     monkeypatch.setattr(config, "DRY_RUN", True)
-    plan = Plan(path="/x.mkv", reasons=["reorder streams"])
+    plan = needed_plan()
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: plan)
     monkeypatch.setattr(
         processing, "apply_plan", lambda plan: pytest.fail("DRY_RUN must not rewrite")
@@ -130,14 +140,12 @@ def test_dry_run_never_rewrites_a_webhook_import(monkeypatch):
 
 @pytest.fixture
 def listener():
-    """A live Handler on a loopback socket, cleaned up with the in-flight set."""
+    """A live Handler on a loopback socket."""
     server = ThreadingHTTPServer(("127.0.0.1", 0), webhook.Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     yield server
     server.shutdown()
     server.server_close()
-    with webhook._inflight_lock:
-        webhook._inflight.clear()
 
 
 def request(server, method: str, path: str, body: bytes | None = None, headers=None):
@@ -155,6 +163,20 @@ def post(server, body: dict, headers: dict | None = None) -> tuple[int, str]:
     """POST a webhook body, returning (status code, answer)."""
     status, answer = request(server, "POST", "/", json.dumps(body).encode(), headers)
     return status, answer["status"]
+
+
+def post_headers_only(server, headers: dict) -> int:
+    """Announce a POST and send no body, so the listener has to answer on the
+    headers alone. Returns the status code."""
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+    try:
+        conn.putrequest("POST", "/")
+        for key, value in headers.items():
+            conn.putheader(key, value)
+        conn.endheaders()
+        return conn.getresponse().status
+    finally:
+        conn.close()
 
 
 def movie_body(path: str, folder: str) -> dict:
@@ -189,13 +211,12 @@ def test_post_queues_only_existing_paths(listener, media_root):
 
 def test_unauthenticated_posts_never_reach_the_queue(listener, media_root):
     auth.mint("radarr")  # provisioned, but not what these requests send
-    queued_before = webhook._work_q.qsize()
 
     body = movie_body(str(media_root / "f.mkv"), str(media_root))
     assert post(listener, body)[0] == 401
     assert post(listener, body, {AUTH_HEADER: "guessed-wrong"})[0] == 401
     assert post(listener, {"eventType": "Test"})[0] == 401
-    assert webhook._work_q.qsize() == queued_before
+    assert webhook._work_q.qsize() == 0
 
 
 def test_health_needs_no_secret(listener):
@@ -212,19 +233,11 @@ def test_an_unknown_path_is_a_404(listener):
     assert request(listener, "GET", "/admin")[0] == 404
 
 
-def test_a_body_too_large_is_refused_unread(listener, media_root):
+def test_a_body_too_large_is_refused_unread(listener):
     """A batch import body is a few KB. Anything vastly bigger is a mistake
     or an attack, and must not be read into memory to find out."""
     headers = {AUTH_HEADER: auth.mint("radarr"), "Content-Length": str(webhook._MAX_BODY + 1)}
-    conn = http.client.HTTPConnection("127.0.0.1", listener.server_address[1])
-    try:
-        conn.putrequest("POST", "/")
-        for key, value in headers.items():
-            conn.putheader(key, value)
-        conn.endheaders()
-        assert conn.getresponse().status == 413
-    finally:
-        conn.close()
+    assert post_headers_only(listener, headers) == 413
 
 
 def test_a_body_that_is_not_json_is_a_400(listener):
@@ -237,45 +250,24 @@ def test_a_bad_content_length_is_a_400_not_a_crash(listener):
     """A bad Content-Length and unparseable JSON are both ValueErrors, and
     both have to answer rather than drop the connection."""
     headers = {AUTH_HEADER: auth.mint("radarr"), "Content-Length": "not-a-number"}
-    conn = http.client.HTTPConnection("127.0.0.1", listener.server_address[1])
-    try:
-        conn.putrequest("POST", "/")
-        for key, value in headers.items():
-            conn.putheader(key, value)
-        conn.endheaders()
-        assert conn.getresponse().status == 400
-    finally:
-        conn.close()
+    assert post_headers_only(listener, headers) == 400
 
 
 def test_the_arrs_test_button_is_answered_without_queueing(listener):
     """Saving the connection fires this; a 200 is what makes the *arr accept
     the credential it just sent."""
     headers = {AUTH_HEADER: auth.mint("radarr")}
-    queued_before = webhook._work_q.qsize()
     assert post(listener, {"eventType": "Test"}, headers) == (200, "test ok")
-    assert webhook._work_q.qsize() == queued_before
+    assert webhook._work_q.qsize() == 0
 
 
 def test_a_path_already_in_flight_is_not_queued_twice(media_root):
     """A sweep and a webhook can name the same file; the second must not
     queue a rewrite behind the first for a file that is already correct."""
     job = Job(str(media_root / "f.mkv"))
-    try:
-        assert webhook.enqueue(job) is True
-        assert webhook.enqueue(job) is False
-        assert webhook._work_q.qsize() == 1
-    finally:
-        with webhook._inflight_lock:
-            webhook._inflight.clear()
-        webhook._work_q.get_nowait()
-
-
-def test_original_of_handles_missing_fields():
-    assert original_of(None) is None
-    assert original_of({}) is None
-    assert original_of({"originalLanguage": {}}) is None
-    assert original_of({"originalLanguage": {"name": "Unknown"}}) is None
+    assert webhook.enqueue(job) is True
+    assert webhook.enqueue(job) is False
+    assert webhook._work_q.qsize() == 1
 
 
 @pytest.fixture
@@ -348,13 +340,8 @@ def test_a_post_for_a_file_already_in_flight_queues_nothing(listener, media_root
     path = str(media_root / "f.mkv")
     with webhook._inflight_lock:
         webhook._inflight.add(path)
-    try:
-        headers = {AUTH_HEADER: auth.mint("radarr")}
-        body = movie_body(path, str(media_root))
-        assert post(listener, body, headers) == (200, "queued 0")
-    finally:
-        with webhook._inflight_lock:
-            webhook._inflight.discard(path)
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    assert post(listener, movie_body(path, str(media_root)), headers) == (200, "queued 0")
 
 
 def test_a_released_file_already_in_flight_is_not_queued_twice(parked, seeded_file, tmp_path):
@@ -363,11 +350,7 @@ def test_a_released_file_already_in_flight_is_not_queued_twice(parked, seeded_fi
     os.remove(tmp_path / "seed.mkv")
     with webhook._inflight_lock:
         webhook._inflight.add(seeded_file)
-    try:
-        before = webhook._work_q.qsize()
-        webhook._recheck_parked()
-        assert webhook._work_q.qsize() == before
-        assert seeded_file not in webhook._parked
-    finally:
-        with webhook._inflight_lock:
-            webhook._inflight.discard(seeded_file)
+
+    webhook._recheck_parked()
+    assert webhook._work_q.qsize() == 0
+    assert seeded_file not in webhook._parked

@@ -1,8 +1,12 @@
-"""Environment parsing: malformed values must reach errors(), never raise."""
+"""Environment parsing: malformed values must reach errors(), never raise.
+
+The checks that need the rule and layout vocabulary live beside it, in
+test_policy.py.
+"""
 
 import pytest
 
-from trackstarr import config, policy
+from trackstarr import config
 
 
 @pytest.fixture(autouse=True)
@@ -113,20 +117,6 @@ def test_an_empty_credential_file_is_refused(monkeypatch, tmp_path):
     errors = config.errors()
     assert len(errors) == 1
     assert "is empty" in errors[0]
-
-
-def test_unknown_rule_names_are_refused(monkeypatch):
-    monkeypatch.setattr(config, "DISABLED_RULES", {"languages", "subtitles"})
-    errors = policy.errors()
-    assert len(errors) == 1
-    assert "subtitles" in errors[0]
-
-
-def test_unknown_regenerate_mode_is_refused(monkeypatch):
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "everything")
-    errors = policy.errors()
-    assert len(errors) == 1
-    assert "REGENERATE_DOWNMIXES" in errors[0]
 
 
 @pytest.mark.parametrize("value", ["04:00", "0 4 * *", "60 4 * * *", "0 4 * * mon"])

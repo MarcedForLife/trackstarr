@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass, fields
 
 from . import __version__, config
-from .layouts import Layout, ResolvedLayout, parse_layout, resolved_layouts
+from .layouts import Layout, parse_layout, resolved_layouts
 
 #: The rules, keyed by the name DISABLED_RULES uses to switch each off.
 #: Single source for the CLI help text.
@@ -82,9 +82,8 @@ class Policy:
     drop_commentary: bool
     regenerate_downmixes: str
     remux_to_mkv: bool
-    #: The layouts the downmix rule guarantees, resolved (every bitrate
-    #: filled in) and smallest first.
-    downmix_layouts: tuple[ResolvedLayout, ...]
+    #: The layouts the downmix rule guarantees, smallest first.
+    downmix_layouts: tuple[Layout, ...]
     audio_codec: str
     skip_hardlinks: bool
     commentary_re: re.Pattern[str]
@@ -168,14 +167,15 @@ def errors() -> list[str]:
             f"DISABLED_RULES contains unknown rules: {', '.join(sorted(unknown))} "
             f"(valid: {', '.join(RULES)})"
         )
-    if invalid := {entry for entry in config.DOWNMIX_LAYOUTS if parse_layout(entry) is None}:
+    layouts = {entry: parse_layout(entry) for entry in config.DOWNMIX_LAYOUTS}
+    if invalid := {entry for entry, layout in layouts.items() if layout is None}:
         problems.append(
             f"DOWNMIX_LAYOUTS contains unrecognised layouts: {', '.join(sorted(invalid))} "
             "(use forms like 2.0, 5.1:640k)"
         )
     by_channels: dict[int, list[str]] = {}
-    for entry in config.DOWNMIX_LAYOUTS:
-        if layout := parse_layout(entry):
+    for entry, layout in layouts.items():
+        if layout:
             by_channels.setdefault(layout.channels, []).append(entry)
     for channels, entries in sorted(by_channels.items()):
         # Two entries for one channel count would generate identical tracks

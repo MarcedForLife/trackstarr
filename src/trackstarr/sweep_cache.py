@@ -8,8 +8,8 @@ reasons they were judged with, and the whole cache is dropped when
 :meth:`trackstarr.policy.Policy.fingerprint` changes. Deleting the cache file
 forces a full re-probe.
 
-Only verdicts that leave the file untouched are cached: a rewrite changes the
-file (its next probe is a fresh judgement), and failures may be transient.
+Which verdicts are safe to cache is the sweep's call rather than this
+module's; see :data:`trackstarr.sweep.CACHEABLE_STATUSES`.
 """
 
 import json
@@ -103,8 +103,7 @@ class SweepCache:
         if not asdict(key).items() <= entry.items():
             return None
         try:
-            # "" for a missing status, which Status rejects exactly as a
-            # damaged one, so both land in the ValueError below.
+            # "" so a missing status is as invalid as a damaged one.
             return Verdict(Status(entry.get("status", "")), entry.get("reasons") or "")
         except ValueError:
             # A hand-edited or damaged entry; treat it as a miss.

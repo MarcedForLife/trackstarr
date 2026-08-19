@@ -16,9 +16,9 @@ import urllib.parse
 
 from . import config
 from .client import request
-from .paths import path_within
 
 log = logging.getLogger(__name__)
+
 
 #: Generous for a LAN nudge nothing waits on; a hung (not refusing) server
 #: costs this per attempt until muting kicks in.
@@ -58,6 +58,17 @@ def _plex_locations() -> list[tuple[str, str]]:
         locations.sort(key=lambda entry: -len(entry[0]))
         _plex_sections[cache_key] = locations
     return _plex_sections[cache_key]
+
+
+def path_within(path: str, base: str) -> bool:
+    """True when path is base itself or inside it, on directory boundaries.
+
+    A purely lexical test, right because Plex reports these locations and
+    they need not exist here; callers must hand in bases with no trailing
+    slash. The trailing-slash join is what keeps /data/media from matching
+    /data/media2.
+    """
+    return path == base or path.startswith(base + "/")
 
 
 def _plex_refresh(path: str) -> None:

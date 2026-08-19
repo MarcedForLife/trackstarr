@@ -11,10 +11,14 @@ import shutil
 import subprocess
 import tempfile
 import types
+from dataclasses import replace
 
 import pytest
 
-from trackstarr import config
+from trackstarr import config, processing
+from trackstarr.arr import Arr, radarr, sonarr
+from trackstarr.executor import Outcome
+from trackstarr.planner import Plan
 
 
 def _mp4_titles_round_trip() -> bool:
@@ -74,7 +78,7 @@ def _mp4_titles_round_trip() -> bool:
     return "Commentary" in (tags.get("name", ""), tags.get("title", ""))
 
 
-def pytest_configure(config):
+def pytest_configure() -> None:
     """Refuse to run at all without the ffmpeg the tests are written against.
 
     trackstarr is an ffmpeg wrapper, so a development environment without one
@@ -119,6 +123,47 @@ def fake_run(returncode: int = 0, stdout: str = "", stderr: str = ""):
     return types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
 
 
+#: Where each *arr really listens, so a test url reads like a real one.
+_ARR_URLS = {"radarr": "http://radarr:7878", "sonarr": "http://sonarr:8989"}
+
+
+def configured_arr(name: str = "radarr", key: str = "key") -> Arr:
+    """A reachable-looking *arr, for the code paths gated on ``Arr.enabled``.
+
+    One with no url or key is switched off and returns before it touches the
+    network, so anything exercising a real call has to start here.
+    """
+    arr = sonarr() if name == "sonarr" else radarr()
+    return replace(arr, url=_ARR_URLS[name], key=key)
+
+
+def needed_plan(path: str = "/x.mkv", **overrides) -> Plan:
+    """A plan with work to do, since ``Plan.needed`` is having a reason.
+
+    The reason is a placeholder: most tests want *a* plan that would be
+    rewritten, not a particular one. Pass ``reasons`` yourself where what it
+    says is the thing under test.
+    """
+    return Plan(path=path, reasons=["reorder streams"], **overrides)
+
+
+@pytest.fixture
+def stub_rewrite(monkeypatch):
+    """Give process() a prepared plan and a canned apply_plan result.
+
+    The outcome handling, its events and its notifications are what these
+    tests are about, so the probe and the ffmpeg run are both stubbed out.
+    Call it as ``stub_rewrite(plan)`` for the applied case, or pass an
+    ``outcome`` and ``detail`` for the others.
+    """
+
+    def _stub(plan: Plan, outcome: Outcome = Outcome.APPLIED, detail: str = "") -> None:
+        monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
+        monkeypatch.setattr(processing, "apply_plan", lambda plan: (outcome, detail))
+
+    return _stub
+
+
 def _tags(lang: str | None, title: str) -> dict:
     tags = {}
     if lang:
@@ -135,9 +180,15 @@ def audio(
     title: str = "",
     default: int = 0,
     comment: int = 0,
+    bitrate: str | None = None,
 ) -> dict:
-    """An ffprobe-shaped audio stream."""
-    return {
+    """An ffprobe-shaped audio stream.
+
+    ``bitrate`` is the per-stream ``bit_rate`` MP4 reports and Matroska
+    usually omits; left off entirely rather than set to a placeholder, since
+    "the container doesn't say" is a case the rules treat differently.
+    """
+    stream = {
         "index": index,
         "codec_type": "audio",
         "codec_name": "ac3",
@@ -145,6 +196,9 @@ def audio(
         "tags": _tags(lang, title),
         "disposition": {"default": default, "comment": comment},
     }
+    if bitrate is not None:
+        stream["bit_rate"] = bitrate
+    return stream
 
 
 def video(index: int = 0, codec: str = "h264", attached_pic: int = 0) -> dict:
