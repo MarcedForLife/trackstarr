@@ -54,13 +54,11 @@ class Arr:
         return request(f"{self.url}{path}", {"X-Api-Key": self.key}, payload, timeout, method)
 
     def all_items(self) -> list[dict]:
+        """The whole movie/series list. Raises API_ERRORS when the *arr
+        cannot answer, so a caller can tell an outage from an empty library."""
         if not self.enabled:
             return []
-        try:
-            return self._call(self.item_ep, timeout=120) or []
-        except API_ERRORS as err:
-            log.warning("%s: could not fetch library (%s)", self.name, err)
-            return []
+        return self._call(self.item_ep, timeout=120) or []
 
     def item(self, item_id: int) -> dict | None:
         if not self.enabled:
@@ -248,25 +246,47 @@ class LibraryItem:
     arr: Arr
 
 
-def path_index(arrs: list[Arr]) -> dict[str, LibraryItem]:
+@dataclass(frozen=True)
+class LibraryIndex:
+    """Every title the *arrs answered for, and whether they all answered.
+
+    ``complete`` False means unmatched files may only look unmatched because
+    an outage hid their titles, so their original language is not "none",
+    it is unknown. Anything that rewrites has to treat the two differently.
+    """
+
+    items: dict[str, LibraryItem]
+    complete: bool
+
+
+def path_index(arrs: list[Arr]) -> LibraryIndex:
     """Library titles with their original language, keyed by their folder.
 
     Built once per sweep and asked about every file in the library, so a
-    mapping rather than a list. See :func:`match_path`.
+    mapping rather than a list. See :func:`match_path`. An *arr that fails
+    to answer is logged and marks the index incomplete; the others' titles
+    still match.
     """
-    index: dict[str, LibraryItem] = {}
+    items: dict[str, LibraryItem] = {}
+    complete = True
     for arr in arrs:
-        for item in arr.all_items():
+        try:
+            fetched = arr.all_items()
+        except API_ERRORS as err:
+            log.warning("%s: could not fetch library (%s)", arr.name, err)
+            complete = False
+            continue
+        for item in fetched:
             # A folder that normalises to nothing is the filesystem root,
             # which would claim every file in the library.
             if base := (item.get("path") or "").rstrip("/"):
                 # First wins, which is the order the list this replaced kept.
-                index.setdefault(base, LibraryItem(original_of(item), item["id"], arr))
-    log.info("indexed %d titles from the *arrs", len(index))
-    return index
+                items.setdefault(base, LibraryItem(original_of(item), item["id"], arr))
+    log.info("indexed %d titles from the *arrs", len(items))
+    return LibraryIndex(items, complete)
 
 
-def match_path(index: dict[str, LibraryItem], path: str) -> LibraryItem | None:
+def match_path(index: LibraryIndex, path: str) -> LibraryItem | None:
     """The innermost indexed title containing ``path``, or None.
 
     Walks the file's folders outwards, so a title nested inside another's
@@ -274,7 +294,7 @@ def match_path(index: dict[str, LibraryItem], path: str) -> LibraryItem | None:
     lexical: the *arrs report these folders, which need not exist here.
     """
     while True:
-        if found := index.get(path):
+        if found := index.items.get(path):
             return found
         parent = os.path.dirname(path)
         # dirname of a root is itself, so this terminates.

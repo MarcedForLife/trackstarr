@@ -15,6 +15,7 @@ import logging
 import os
 from dataclasses import asdict, dataclass
 
+from .state import write_json
 from .status import Status
 
 log = logging.getLogger(__name__)
@@ -120,10 +121,7 @@ class SweepCache:
         self._write(self._next)
 
     def _write(self, entries: dict[str, dict]) -> None:
-        tmp = f"{self.path}.tmp"
         try:
-            with open(tmp, "w") as cache_file:
-                json.dump({"config": self.fingerprint, "files": entries}, cache_file)
-            os.replace(tmp, self.path)
+            write_json(self.path, {"config": self.fingerprint, "files": entries})
         except OSError as err:
             log.warning("could not write sweep cache %s: %s", self.path, err)

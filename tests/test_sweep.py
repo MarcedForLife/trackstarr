@@ -12,6 +12,7 @@ import pytest
 from conftest import read_events
 from trackstarr import config
 from trackstarr import sweep as sweep_mod
+from trackstarr.arr import LibraryIndex
 from trackstarr.policy import Policy
 from trackstarr.processing import Job, ProcessResult
 from trackstarr.status import Status
@@ -100,6 +101,26 @@ def test_probing_is_not_serialized_by_the_rewrite_budget(monkeypatch, tmp_path, 
     monkeypatch.setattr("trackstarr.sweep.ThreadPoolExecutor", spying_pool)
     sweep(dry_run=True)
     assert captured["workers"] == max(_MIN_PROBE_WORKERS, budget)
+
+
+def test_an_arr_outage_downgrades_an_applying_sweep(monkeypatch, tmp_path, caplog):
+    """With original languages unknown, the languages rule would read a foreign
+    film's own track as junk to drop. Report-only until the *arr answers."""
+    _library(tmp_path, monkeypatch, 1)
+    monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, False))
+    judged_dry = []
+
+    def spy(job, dry_run, source="sweep", run=None):
+        judged_dry.append(dry_run)
+        return ProcessResult(Status.CONFORM)
+
+    monkeypatch.setattr("trackstarr.sweep.process", spy)
+
+    sweep(dry_run=False)
+    assert judged_dry == [True]
+    assert "report-only" in caplog.text
+    (entry,) = read_events()
+    assert entry["dry_run"] is True
 
 
 def test_dry_run_overrides_an_applying_sweep(monkeypatch, tmp_path):
@@ -196,7 +217,7 @@ def test_a_long_sweep_logs_progress_as_it_goes(monkeypatch, caplog):
     caplog.set_level(logging.INFO, logger="trackstarr.sweep")
     walked = [f"/data/{i:04d}.mkv" for i in range(500)]
     monkeypatch.setattr("trackstarr.sweep.walk_library", lambda policy: walked)
-    monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: {})
+    monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, True))
     monkeypatch.setattr(
         "trackstarr.sweep._judge",
         lambda path, **kwargs: Judged(Job(path), None, Status.CONFORM),

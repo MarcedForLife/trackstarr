@@ -41,10 +41,12 @@ def test_a_disabled_arr_is_never_called(off, monkeypatch):
     off.rescan(1)
 
 
-def test_a_library_fetch_that_fails_yields_no_items(down):
-    """Empty, not an exception: the sweep still has files to judge, it just cannot
-    ask what language they were released in."""
-    assert down.all_items() == []
+def test_a_library_fetch_that_fails_raises_for_the_caller(down):
+    """Raised, not swallowed into an empty list: path_index is what degrades
+    it, and it has to tell an outage from an empty library, or an applying
+    sweep would read every original language as unknown and rewrite anyway."""
+    with pytest.raises(API_ERRORS):
+        down.all_items()
 
 
 def test_an_item_lookup_that_fails_yields_none(down):

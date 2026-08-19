@@ -106,7 +106,8 @@ Nothing needs configuring in Radarr or Sonarr, trackstarr registers its own
 webhook connections at startup, each with a generated secret the listener
 requires on every call (the custom-headers field carrying it needs Sonarr
 v4 / Radarr 4.3 or newer). Set `WEBHOOK_URL` if the *arrs reach the
-container by some name other than `trackstarr`.
+container by some name other than `trackstarr`; it is the base URL, the
+`/webhook` path is appended at registration.
 
 The port mapping is optional, `GET /health` is all an unauthenticated
 caller can reach. 5120 is the two layouts the downmix rule guarantees,
@@ -141,9 +142,14 @@ A few behaviours worth knowing:
   `/config/webhook-secrets`, verified and re-provisioned at startup, so a
   wiped `/config` heals itself and a copied one leaks nothing. Delete a
   digest to lock that caller out.
-- An authenticated caller can queue any path the container can reach, the
-  mounts are the boundary. A path that doesn't exist here is logged and
-  dropped, usually the *arr and trackstarr spelling the library differently.
+- An authenticated caller can POST a webhook-shaped body to `/webhook`
+  naming any path the container can reach, the mounts are the boundary. A
+  path that doesn't exist here is logged and dropped, usually the *arr and
+  trackstarr spelling the library differently.
+- An applying sweep downgrades itself to report-only when an enabled *arr
+  can't be listed: with original languages unknown, a foreign film's own
+  track would read as junk to drop. `fix` refuses the same way unless
+  `--original` supplies the language.
 - A file the download client still hard-links is left alone and re-checked
   every `HARDLINK_RECHECK` seconds, so it is rewritten minutes after seeding
   ends. Rewriting one is safe for the seed, which keeps the old inode, but it

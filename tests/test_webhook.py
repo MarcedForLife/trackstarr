@@ -165,7 +165,9 @@ def request(server, method: str, path: str, body: bytes | None = None, headers=N
 
 def post(server, body: dict, headers: dict | None = None) -> tuple[int, str]:
     """POST a webhook body, returning (status code, answer)."""
-    status, answer = request(server, "POST", "/", json.dumps(body).encode(), headers)
+    status, answer = request(
+        server, "POST", webhook.WEBHOOK_PATH, json.dumps(body).encode(), headers
+    )
     return status, answer["status"]
 
 
@@ -174,7 +176,7 @@ def post_headers_only(server, headers: dict) -> int:
     headers alone. Returns the status code."""
     conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
     try:
-        conn.putrequest("POST", "/")
+        conn.putrequest("POST", webhook.WEBHOOK_PATH)
         for key, value in headers.items():
             conn.putheader(key, value)
         conn.endheaders()
@@ -232,6 +234,23 @@ def test_an_unknown_path_is_a_404(listener):
     assert request(listener, "GET", "/admin")[0] == 404
 
 
+def test_a_post_anywhere_but_the_webhook_path_is_a_404(listener, media_root):
+    """POST is /webhook only, so the rest of the namespace stays free for a
+    future API instead of every path being the webhook forever."""
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    body = json.dumps(movie_body(str(media_root / "f.mkv"), str(media_root))).encode()
+    for path in ("/", "/api/v1/queue"):
+        assert request(listener, "POST", path, body, headers)[0] == 404
+    assert webhook._work_q.qsize() == 0
+
+
+def test_registration_points_the_arrs_at_the_webhook_path(monkeypatch):
+    """The base URL is the setting; the path is this listener's own contract,
+    appended here so both ends always agree."""
+    monkeypatch.setattr(config, "WEBHOOK_URL", "http://trackstarr:5120")
+    assert webhook.webhook_url() == "http://trackstarr:5120/webhook"
+
+
 def test_a_silent_connection_is_dropped_rather_than_held(listener, monkeypatch):
     """Python leaves BaseHTTPRequestHandler.timeout unset, so a peer that
     connects and says nothing holds a server thread indefinitely, without
@@ -258,7 +277,7 @@ def test_a_body_too_large_is_refused_unread(listener):
 
 def test_a_body_that_is_not_json_is_a_400(listener):
     headers = {AUTH_HEADER: auth.mint("radarr")}
-    status, _ = request(listener, "POST", "/", b"{not json", headers)
+    status, _ = request(listener, "POST", webhook.WEBHOOK_PATH, b"{not json", headers)
     assert status == 400
 
 

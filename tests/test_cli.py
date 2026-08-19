@@ -10,7 +10,7 @@ import pytest
 
 from conftest import needed_plan
 from trackstarr import auth, config
-from trackstarr.arr import LibraryItem, radarr
+from trackstarr.arr import LibraryIndex, LibraryItem, radarr
 from trackstarr.cli import handle_sigterm, main
 from trackstarr.media import ProbeError
 from trackstarr.planner import OutStream, Plan
@@ -153,7 +153,7 @@ def test_fix_rewrites_files_and_reports_failures(startup_ok, monkeypatch, capsys
 def test_fix_still_matches_arr_items_when_original_is_given(startup_ok, monkeypatch):
     """--original overrides the language only. The item match has to survive, or
     the *arr never gets its rescan."""
-    index = {"/lib/Movie": LibraryItem("kor", 7, radarr())}
+    index = LibraryIndex({"/lib/Movie": LibraryItem("kor", 7, radarr())}, complete=True)
     monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: index)
     jobs = []
     monkeypatch.setattr(
@@ -164,6 +164,31 @@ def test_fix_still_matches_arr_items_when_original_is_given(startup_ok, monkeypa
     assert main(["fix", "--original", "ja", "/lib/Movie/Movie.mkv"]) == 0
     (job,) = jobs
     assert (job.lang, job.item_id, job.arr.name) == ("jpn", 7, "radarr")
+
+
+def test_fix_refuses_when_an_arr_cannot_answer(startup_ok, monkeypatch, caplog):
+    """lang=None would judge against ALWAYS_KEEP_LANGS alone and drop a foreign
+    film's own track. A one-shot command can wait, or be told the language."""
+    monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: LibraryIndex({}, False))
+    monkeypatch.setattr(
+        "trackstarr.cli.process",
+        lambda job, dry_run, source: pytest.fail("nothing may be rewritten"),
+    )
+    assert main(["fix", "/lib/a.mkv"]) == 1
+    assert "could not be listed" in caplog.text
+
+
+def test_fix_with_original_proceeds_through_an_arr_outage(startup_ok, monkeypatch):
+    """The flag supplies what the outage withheld, so only the rescan is lost."""
+    monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: LibraryIndex({}, False))
+    jobs = []
+    monkeypatch.setattr(
+        "trackstarr.cli.process",
+        lambda job, dry_run, source: jobs.append(job) or ProcessResult(Status.CONFORM),
+    )
+    assert main(["fix", "--original", "ja", "/lib/a.mkv"]) == 0
+    (job,) = jobs
+    assert job.lang == "jpn"
 
 
 def test_fix_exit_code_flags_a_deferral_alone(startup_ok, monkeypatch):
@@ -261,7 +286,7 @@ def test_plan_prints_the_reasons_and_the_command(startup_ok, monkeypatch, capsys
     assert main(["plan", "f.mkv"]) == 0
     out = capsys.readouterr().out
     assert "- drop audio jpn" in out
-    assert "rides along, never triggers on its own" in out
+    assert "strip junk title (rides along)" in out
     # The real command, not a summary of it: the stream map is the part a user
     # would copy out to run by hand.
     assert "ffmpeg -hide_banner -nostdin -y -loglevel error -i f.mkv -map 0:0" in out

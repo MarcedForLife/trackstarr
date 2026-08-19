@@ -252,7 +252,8 @@ LISTEN_PORT = _int("LISTEN_PORT", "5120")
 
 #: Advertised when registering the webhook, so it has to be reachable from
 #: the *arrs' containers. The default is the README's compose service name.
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", f"http://trackstarr:{LISTEN_PORT}")
+#: Base URL only; registration appends the webhook path itself.
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", f"http://trackstarr:{LISTEN_PORT}").rstrip("/")
 
 FFMPEG_TIMEOUT = _int("FFMPEG_TIMEOUT", "7200")
 PROBE_TIMEOUT = _int("PROBE_TIMEOUT", "180")

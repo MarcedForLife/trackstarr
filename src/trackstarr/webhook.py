@@ -19,9 +19,20 @@ from http.server import BaseHTTPRequestHandler
 from . import auth, config, events
 from .arr import AUTH_HEADER, all_arrs, original_of
 from .processing import Job, downmixed_names, process
+from .state import write_json
 from .status import Status
 
 log = logging.getLogger(__name__)
+
+#: The one path POSTs are accepted on. Everything else 404s, so the rest of
+#: the namespace stays free for a future API instead of every path being the
+#: webhook forever.
+WEBHOOK_PATH = "/webhook"
+
+
+def webhook_url() -> str:
+    """The URL the *arrs are registered to call: WEBHOOK_URL plus the path."""
+    return config.WEBHOOK_URL + WEBHOOK_PATH
 
 
 def hardlinked(path: str) -> bool:
@@ -75,12 +86,9 @@ def _save_parked() -> None:
             }
             for job in _parked.values()
         ]
-        partial = _parked_path() + ".tmp"
         try:
             os.makedirs(config.STATE_DIR, exist_ok=True)
-            with open(partial, "w") as parked_file:
-                json.dump(records, parked_file)
-            os.replace(partial, _parked_path())
+            write_json(_parked_path(), records)
         except OSError as err:
             log.warning("could not persist the parked set: %s", err)
 
@@ -287,6 +295,9 @@ class Handler(BaseHTTPRequestHandler):
             log.warning("rejecting POST without a valid shared secret")
             self._reply(401, "unauthorized")
             return
+        if urllib.parse.urlparse(self.path).path != WEBHOOK_PATH:
+            self._reply(404, "not found")
+            return
         try:
             length = int(self.headers.get("Content-Length") or 0)
             if length > _MAX_BODY:
@@ -319,16 +330,22 @@ class Handler(BaseHTTPRequestHandler):
         log.debug("http %s", fmt % args)
 
 
+#: Registration retry delays: the containers usually start together, so the
+#: first attempts land before Radarr or Sonarr is answering. Short early
+#: retries catch them coming up seconds later; the cap keeps an absent one
+#: from being polled hard for ever.
+_REGISTER_RETRY_START = 15
+_REGISTER_RETRY_CAP = 300
+
+
 # No cover: retries until every *arr answers, sleeping between rounds.
 # Arr.register_webhook does the work and is covered directly.
 def register_webhooks() -> None:  # pragma: no cover
-    """Keep at it until every enabled *arr has the connection.
-
-    The containers usually start together, so the first attempts land before
-    Radarr or Sonarr is answering.
-    """
+    """Keep at it until every enabled *arr has the connection."""
     pending = [arr for arr in all_arrs() if arr.enabled]
+    delay = _REGISTER_RETRY_START
     while pending:
-        pending = [arr for arr in pending if not arr.register_webhook(config.WEBHOOK_URL)]
+        pending = [arr for arr in pending if not arr.register_webhook(webhook_url())]
         if pending:
-            time.sleep(300)
+            time.sleep(delay)
+            delay = min(delay * 2, _REGISTER_RETRY_CAP)

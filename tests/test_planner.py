@@ -377,6 +377,24 @@ def test_reorder_alone_triggers_a_rewrite():
     assert plan.reasons == ["reorder streams"]
 
 
+def test_a_reorder_forced_by_another_rule_rides_along():
+    """The streams come out reordered either way, so the history has to say
+    so, as the ride-along it was rather than the trigger it wasn't."""
+    plan = plan_for(video(0), audio(1, 6), audio(2, 2), audio(3, 2, lang="ger"))
+    assert any("drop audio" in reason for reason in plan.reasons)
+    assert "order" not in plan.rules
+    assert plan.incidental == ["reorder streams"]
+    assert plan.incidental_rules == {"order"}
+
+
+def test_a_downmix_insertion_alone_is_not_a_reorder():
+    """A generated track is an insertion, not a move: the copied streams kept
+    their relative order, so nothing is recorded against the order rule."""
+    plan = plan_for(video(0), audio(1, 6))
+    assert plan.rules == {"downmix"}
+    assert "order" not in plan.incidental_rules
+
+
 def test_generated_downmix_sorts_ahead_of_a_commentary_stereo_track():
     plan = plan_for(video(0), audio(1, 6), audio(2, 2, title="Commentary"))
     order = audio_out(plan)

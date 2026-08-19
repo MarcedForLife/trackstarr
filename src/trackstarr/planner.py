@@ -262,12 +262,20 @@ def plan_from_probe(plan: Plan, info: dict) -> Plan:
         plan.clear_container_title = True
 
     if policy.rule_enabled("order"):
-        # Worth a rewrite alone, but only against the streams we are keeping:
-        # every input stream would make any drop look like a reorder.
-        kept_src = {out.src for out in ordered}
+        # Judged against the copied streams only: every input stream would
+        # make any drop look like a reorder, and a generated downmix is an
+        # insertion, not a move.
+        copied = [out.src for out in ordered if not out.encode]
+        kept_src = set(copied)
         current = [stream["index"] for stream in streams if stream["index"] in kept_src]
-        if not plan.reasons and [out.src for out in ordered] != current:
-            _because(plan, "order", "reorder streams")
+        if copied != current:
+            if plan.reasons:
+                # The streams come out reordered either way; recorded so the
+                # history doesn't undercount what the rewrite did.
+                _alongside(plan, "order", "reorder streams")
+            else:
+                # Worth a rewrite alone.
+                _because(plan, "order", "reorder streams")
     else:
         # A rewrite the other rules trigger still has to preserve the input
         # order; a generated downmix rides after its source track.

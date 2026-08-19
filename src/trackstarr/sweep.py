@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from . import config, cron, events
-from .arr import LibraryItem, all_arrs, match_path, path_index
+from .arr import LibraryIndex, all_arrs, match_path, path_index
 from .executor import drop_staged, is_staged_file
 from .planner import describe
 from .policy import Policy
@@ -89,7 +89,7 @@ class Judged:
 
 
 def _judge(
-    path: str, index: dict[str, LibraryItem], cache: SweepCache, dry_run: bool, run: str
+    path: str, index: LibraryIndex, cache: SweepCache, dry_run: bool, run: str
 ) -> Judged:
     """Decide one file, on a worker thread.
 
@@ -120,6 +120,12 @@ def sweep(dry_run: bool) -> dict[Status, int]:
         log.info("DRY_RUN is set; the sweep reports only")
     policy = Policy.from_config()
     index = path_index(all_arrs())
+    if not index.complete and not dry_run:
+        # With original languages unknown, the languages rule would read a
+        # foreign film's own track as junk to drop. Report-only is the only
+        # sweep safe to run until the *arr answers again.
+        log.error("a *arr library could not be listed; sweeping report-only, nothing rewritten")
+        dry_run = True
     files = walk_library(policy)
     log.info("sweep starting: %d files, dry_run=%s", len(files), dry_run)
 

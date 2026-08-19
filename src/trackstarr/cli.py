@@ -11,7 +11,7 @@ from types import FrameType
 
 from . import __version__, auth, config, policy
 from .app import serve
-from .arr import all_arrs, match_path, path_index
+from .arr import LibraryIndex, all_arrs, match_path, path_index
 from .command import ffmpeg_args
 from .executor import audio_codec_errors, work_dir_errors
 from .langs import norm_lang
@@ -86,8 +86,9 @@ def _add_files_arguments(cmd: argparse.ArgumentParser) -> None:
 
 def _resolve_jobs(
     files: list[str], original: str | None, match_items: bool = False
-) -> list[Job]:
-    """One Job per file, its language from the flag or the *arrs' index.
+) -> tuple[list[Job], bool]:
+    """One Job per file, its language from the flag or the *arrs' index,
+    plus whether every enabled *arr answered the index fetch.
 
     The flag is normalised like every stream tag, or ``--original ja`` would sit
     in keep_langs while the tracks all say jpn.
@@ -97,13 +98,19 @@ def _resolve_jobs(
     and so runs with no *arr up.
     """
     original = norm_lang(original)
-    index = path_index(all_arrs()) if match_items or not original else {}
-    return [Job.from_match(path, match_path(index, path), original) for path in files]
+    if match_items or not original:
+        index = path_index(all_arrs())
+    else:
+        index = LibraryIndex({}, complete=True)
+    return [Job.from_match(path, match_path(index, path), original) for path in files], (
+        index.complete
+    )
 
 
 def cmd_plan(files: list[str], original: str | None) -> int:
     failed = False
-    for job in _resolve_jobs(files, original):
+    jobs, _ = _resolve_jobs(files, original)
+    for job in jobs:
         path = job.path
         try:
             plan = build_plan(path, job.lang)
@@ -141,7 +148,7 @@ def cmd_plan(files: list[str], original: str | None) -> int:
         for reason in plan.reasons:
             print(f"  - {reason}")
         for reason in plan.incidental:
-            print(f"  - {reason} (rides along, never triggers on its own)")
+            print(f"  - {reason} (rides along)")
         dest = "OUT" + os.path.splitext(plan.out_path)[1]
         print("  ffmpeg " + " ".join(ffmpeg_args(plan, dest)[1:]))
     return 1 if failed else 0
@@ -157,8 +164,17 @@ def cmd_fix(files: list[str], original: str | None) -> int:
     """
     if config.DRY_RUN:
         print("DRY_RUN is set, planning only, nothing will be rewritten")
+    jobs, arrs_answered = _resolve_jobs(files, original, match_items=True)
+    if not arrs_answered and not original:
+        # lang=None would judge every file against ALWAYS_KEEP_LANGS alone
+        # and read a foreign film's own track as junk to drop.
+        log.error(
+            "a *arr library could not be listed, so original languages are unknown; "
+            "pass --original or retry once it answers"
+        )
+        return 1
     failed = False
-    for job in _resolve_jobs(files, original, match_items=True):
+    for job in jobs:
         result = process(job, dry_run=False, source="cli")
         print(f"{result.status}  {job.path}")
         # A deferred plan is stale by definition, so its reasons would read
