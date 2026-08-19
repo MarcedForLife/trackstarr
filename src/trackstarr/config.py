@@ -30,8 +30,36 @@ def _set(name: str, default: str) -> set[str]:
     return {part.strip().lower() for part in parts if part.strip()}
 
 
+def _rules(name: str, default: str) -> set[str]:
+    """A set of rule names, with dashes read as underscores.
+
+    "cover_art" is the one rule name carrying a separator, so it is the one
+    anybody has to guess at; refusing to start over "cover-art" is an
+    unhelpful way to learn which way round it went. Validation against
+    policy.RULES still happens at startup, so a real typo is still refused.
+    """
+    return {rule.replace("-", "_") for rule in _set(name, default)}
+
+
 def _bool(name: str, default: str = "false") -> bool:
     return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+#: What a setting whose off state is "unset" may say instead. A variable
+#: offering named modes invites a value, and there is no reading of "off"
+#: that means "on", so refusing to start over one only teaches that unset
+#: was the spelling wanted.
+_OFF = frozenset({"", "off", "none", "false", "no", "0"})
+
+
+def _mode(name: str) -> str:
+    """A named-mode setting, with every spelling of off reduced to unset.
+
+    The value itself is not checked here; the modes live beside the rules
+    they belong to, and :func:`trackstarr.policy.errors` refuses the rest.
+    """
+    value = os.environ.get(name, "").strip().lower()
+    return "" if value in _OFF else value
 
 
 def _int(name: str, default: str) -> int:
@@ -138,7 +166,7 @@ ALWAYS_KEEP = _langs("ALWAYS_KEEP_LANGS", "eng")
 
 #: Rules to switch off, for setups where another service owns part of the
 #: job. Valid names are the keys of policy.RULES; startup refuses others.
-DISABLED_RULES = _set("DISABLED_RULES", "")
+DISABLED_RULES = _rules("DISABLED_RULES", "")
 
 #: Drop commentary, described-audio and isolated-score tracks outright
 #: instead of only excluding them from the downmix rule. Off by default:
@@ -149,16 +177,49 @@ DROP_COMMENTARY = _bool("DROP_COMMENTARY")
 #: Channel layouts the downmix rule guarantees, comma-separated. A layout a
 #: file misses is downmixed from the best surviving bigger track; a layout
 #: with nothing bigger to make it from is skipped, nothing is ever upmixed.
-#: Valid names are digit forms like 2.0, 5.1, 7.1; startup refuses others.
+#: Valid names are digit forms like 2.0, 5.1, 7.1; startup refuses others,
+#: and refuses one that no AUDIO_BITRATE_ variable gives a rate.
 DOWNMIX_LAYOUTS = _set("DOWNMIX_LAYOUTS", "2.0,5.1")
 
 AUDIO_CODEC = os.environ.get("AUDIO_CODEC", "aac")
 
-#: Bitrate for a generated stereo track, set past transparency for ffmpeg's
-#: native AAC encoder, the weakest of the mainstream ones. Bigger layouts
-#: scale it by channel count, so the default 320k stereo becomes 960k for
-#: a 5.1.
-AUDIO_BITRATE = os.environ.get("AUDIO_BITRATE", "320k")
+#: The rate each layout the tool ships with is generated at, so a fresh
+#: install starts without naming one. Set past transparency for ffmpeg's
+#: native AAC encoder, the weakest of the mainstream ones, and 640k for 5.1
+#: because that is the rate AC3 5.1 ships at. Any other layout states its
+#: own; errors() refuses one that doesn't.
+_DEFAULT_BITRATES = {"2.0": "320k", "5.1": "640k"}
+
+#: What names a layout's rate: AUDIO_BITRATE_5_1 sets 5.1's, dots written as
+#: underscores because a dot is not allowed in an environment variable name.
+_BITRATE_PREFIX = "AUDIO_BITRATE_"
+
+
+def bitrate_variable(name: str) -> str:
+    """Which variable states a layout's rate, for the startup report."""
+    return _BITRATE_PREFIX + name.replace(".", "_")
+
+
+def _bitrates() -> dict[str, str]:
+    """Layout name -> the rate it is generated at.
+
+    The environment is scanned rather than asked once per configured layout,
+    so a rate set for a layout DOWNMIX_LAYOUTS never asks for is visible to
+    warnings() as the half-finished edit it usually is, rather than doing
+    nothing at all.
+    """
+    rates = dict(_DEFAULT_BITRATES)
+    for variable, value in os.environ.items():
+        if variable.startswith(_BITRATE_PREFIX) and (rate := value.strip()):
+            rates[variable.removeprefix(_BITRATE_PREFIX).replace("_", ".").lower()] = rate
+    return rates
+
+
+#: Every layout's rate, its own AUDIO_BITRATE_ variable each. Nothing is
+#: derived: a single rate scaled per channel read as one decision but was
+#: really one per layout, and the ones nobody had thought about were the
+#: ones that shipped.
+AUDIO_BITRATES = _bitrates()
 
 #: Rewrite MP4 and M4V files into Matroska, the one container that carries
 #: the stream tags regeneration depends on. Off by default: MP4 direct-plays
@@ -171,8 +232,8 @@ REMUX_TO_MKV = _bool("REMUX_TO_MKV")
 #: no longer match config; "all" additionally replaces a real track reported
 #: well below its layout's rate. Unset (the default) does neither: either
 #: value queues rewrites across the library after a settings change.
-#: Startup refuses anything else.
-REGENERATE_DOWNMIXES = os.environ.get("REGENERATE_DOWNMIXES", "").strip().lower()
+#: Startup refuses anything that is neither a mode nor a spelling of off.
+REGENERATE_DOWNMIXES = _mode("REGENERATE_DOWNMIXES")
 
 #: Containers we will rewrite. AVI and MPG are deliberately excluded: they
 #: predate most of what these rules assume, and a stream copy into them with a
@@ -282,4 +343,35 @@ def errors() -> list[str]:
             cron.parse(SWEEP_AT)
         except ValueError as err:
             problems.append(f"SWEEP_AT={SWEEP_AT!r}: {err}")
+    return problems
+
+
+def warnings() -> list[str]:
+    """Configuration that is probably a mistake but must not refuse startup.
+
+    A MEDIA_DIRS entry that isn't there is the quiet one. The sweep says so
+    as it walks, but that is hours later at whatever SWEEP_AT names, and
+    with no schedule set nothing ever says it at all — while the mistake
+    itself, a path that doesn't match the mount, is the easy one to make.
+    Not fatal: a library mounted after us, and an install driven only by
+    webhooks, are both legitimate.
+
+    A rate set for a layout nothing asks for is the other one. Usually half
+    of an edit — the variable added, the layout not — and silent, since a
+    rate nothing reads changes nothing.
+    """
+    problems = [
+        f"MEDIA_DIRS entry {media_dir} does not exist; the sweep will find nothing there"
+        for media_dir in MEDIA_DIRS
+        if not os.path.isdir(media_dir)
+    ]
+    problems += [
+        f"{bitrate_variable(name)} is set but DOWNMIX_LAYOUTS does not ask for {name}, "
+        "so nothing reads it"
+        for name in sorted(AUDIO_BITRATES)
+        # The variable itself, not just the entry: 2.0 and 5.1 are always
+        # present as defaults, and dropping one from DOWNMIX_LAYOUTS is a
+        # normal thing to do, not a leftover to report.
+        if name not in DOWNMIX_LAYOUTS and bitrate_variable(name) in os.environ
+    ]
     return problems

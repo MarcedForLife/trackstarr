@@ -77,6 +77,13 @@ _MIN_PROBE_WORKERS = 4
 _CHECKPOINT_SECONDS = 60
 
 
+#: What would break a pending.tsv row, mapped to a space. All three are legal
+#: in a filename, so the path column has to be defended like the free-text
+#: ones — but by substitution rather than _cell, since a path cut at
+#: _CELL_MAX is worse than a long row.
+_ROW_BREAKERS = str.maketrans({"\t": " ", "\n": " ", "\r": " "})
+
+
 def _cell(text: str) -> str:
     """One pending.tsv cell: tabs and newlines collapsed, bounded."""
     return " ".join(text.split())[:_CELL_MAX]
@@ -176,7 +183,8 @@ def sweep(dry_run: bool) -> dict[Status, int]:
             counts[judged.status] += 1
             if judged.status in REPORTED_STATUSES:
                 report_file.write(
-                    f"{judged.status}\t{judged.job.lang or '-'}\t{judged.job.path}\t"
+                    f"{judged.status}\t{judged.job.lang or '-'}\t"
+                    f"{judged.job.path.translate(_ROW_BREAKERS)}\t"
                     f"{_cell(judged.reasons)}\t{_cell(judged.detail)}\n"
                 )
                 report_file.flush()

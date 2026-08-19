@@ -19,7 +19,10 @@ tracks.
    Each missing layout is downmixed from the best surviving bigger track,
    nothing is upmixed. Commentary, isolated scores and audio description
    never count toward a layout, whether flagged in the container's
-   disposition bits or only named in the track title.
+   disposition bits or only named in the track title. Each layout is
+   encoded at the rate its own `AUDIO_BITRATE_` variable states, 320k for
+   2.0 and 640k for 5.1 out of the box; added tracks cost what they weigh,
+   so a two-hour film gaining both grows by roughly 860MB.
 3. **Cover art.** Drop embedded artwork, which players otherwise read as a
    second video track.
 4. **Order.** Video, then audio by ascending channel count (2.0, 5.1, 7.1),
@@ -38,7 +41,7 @@ Rules you don't want switch off by name (`DISABLED_RULES=languages,sdh`), and
 
 Generated tracks carry a tag recording the codec and bitrate they were made
 with. `REGENERATE_DOWNMIXES=generated` rebuilds any whose settings no longer
-match, fresh from their original source, so changing `AUDIO_BITRATE`
+match, fresh from their original source, so changing a layout's rate
 propagates without generation loss. `all` also replaces a real track
 reported below half its layout's configured rate, only ever with a fresh
 downmix from a bigger track, never by re-encoding in place, and a track
@@ -85,9 +88,10 @@ services:
 
 `MEDIA_DIRS` is where the sweep walks, in the container's paths, so it has
 to match your own layout under the mount above. It is spelled out here
-rather than left to its default because a wrong one is quiet: the sweep logs
-that the directory doesn't exist and finds nothing. Webhook imports still
-work, they carry their own paths.
+rather than left to its default because a wrong one otherwise costs you a
+night: `serve` and `sweep` warn at startup about an entry that isn't there,
+and the sweep says so again as it walks, but nothing fails. Webhook imports
+keep working either way, they carry their own paths.
 
 `user:` takes PUID and PGID from your `.env` when they're defined. The image
 itself defaults to `1000:1000`, so nothing here runs as root whether or not
@@ -125,9 +129,9 @@ A few behaviours worth knowing:
 - The sweep remembers its verdicts in `sweep-cache.json`. A file that hasn't
   changed isn't probed again, so after the first night a sweep costs stats,
   not ffprobe runs. Changing any rule setting drops the cache by itself.
-- Every rewrite, failure and sweep appends a JSON line to `events.jsonl`,
-  the history a future stats view will aggregate, kept from day one because
-  it cannot be backfilled.
+- Every rewrite, failure, deferral and sweep appends a JSON line to
+  `events.jsonl`, the history a future stats view will aggregate, kept from
+  day one because it cannot be backfilled.
 - Webhook secrets are stored only as SHA-256 digests in
   `/config/webhook-secrets`, verified and re-provisioned at startup, so a
   wiped `/config` heals itself and a copied one leaks nothing. Delete a
@@ -172,7 +176,7 @@ $ trackstarr plan --original eng "Tears of Steel (2012).mkv"
 Tears of Steel (2012).mkv
   original language : eng
   keeping languages : eng
-  downmix layouts   : 2.0 (320k), 5.1 (960k)
+  downmix layouts   : 2.0 (320k), 5.1 (640k)
   - add 2.0 downmix from stream 3 (6ch eng)
   ffmpeg -i ... -map 0:0 -map 0:3 -map 0:1 -map 0:2 -map 0:3 ...
 ```
@@ -183,20 +187,20 @@ Tears of Steel (2012).mkv
 | ----------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
 | `MEDIA_DIRS`                        | `/data/media/movies:/data/media/tv` | colon-separated; where the sweep walks                                                    |
 | `WORK_DIR`                          | `/data/trackstarr-work`             | any filesystem; a cross-filesystem one costs a copy per rewrite                           |
-| `STATE_DIR`                         | `/config`                           | pending.tsv, the sweep cache, the event history and webhook secrets live here             |
+| `STATE_DIR`                         | `/config`                           | pending.tsv, the sweep cache, the event history, webhook secrets and `locks/` live here   |
 | `RADARR_URL` / `RADARR_API_KEY`     | (unset)                             | omit to disable; the key also takes `_FILE` / `FILE__`                                    |
 | `SONARR_URL` / `SONARR_API_KEY`     | (unset)                             | omit to disable; the key also takes `_FILE` / `FILE__`                                    |
 | `PLEX_URL` / `PLEX_TOKEN`           | (unset)                             | refresh after rewrites; omit to disable; token also takes `_FILE` / `FILE__`              |
 | `JELLYFIN_URL` / `JELLYFIN_API_KEY` | (unset)                             | same, and the same API fits Emby                                                          |
 | `ALWAYS_KEEP_LANGS`                 | `eng`                               | comma-separated; codes or names (`en`, `eng`, `English`) all work                         |
-| `DISABLED_RULES`                    | (unset)                             | any of `languages,downmix,cover_art,order,sdh`                                            |
+| `DISABLED_RULES`                    | (unset)                             | any of `languages,downmix,cover_art,order,sdh`; dashes read as underscores                |
 | `DROP_COMMENTARY`                   | `false`                             | remove commentary tracks instead of protecting them                                       |
-| `DOWNMIX_LAYOUTS`                   | `2.0,5.1`                           | layouts guaranteed to exist; own rate as `5.1:640k`                                       |
+| `DOWNMIX_LAYOUTS`                   | `2.0,5.1`                           | layouts guaranteed to exist; each needs an `AUDIO_BITRATE_` below                         |
 | `SKIP_HARDLINKS`                    | `true`                              | leave files the download client still links alone, until it lets go                       |
 | `HARDLINK_RECHECK`                  | `900`                               | seconds between re-checks; 0 leaves them to the sweep                                     |
 | `ALLOWED_EXTS`                      | `.mkv,.mp4,.m4v`                    | containers that will be rewritten                                                         |
 | `AUDIO_CODEC`                       | `aac`                               | downmix encoder; `libfdk_aac` if your ffmpeg carries it                                   |
-| `AUDIO_BITRATE`                     | `320k`                              | stereo rate; layouts without their own rate scale it per channel                          |
+| `AUDIO_BITRATE_2_0` / `_5_1`        | `320k` / `640k`                     | one per layout, dots as underscores; `AUDIO_BITRATE_7_1` for a 7.1                        |
 | `REGENERATE_DOWNMIXES`              | (unset)                             | `generated` rebuilds this tool's tracks on settings change; `all` also upgrades weak ones |
 | `REMUX_TO_MKV`                      | `false`                             | convert mp4/m4v to mkv, where every feature works                                         |
 | `COMMENTARY_PATTERN`                | see `config.py`                     | regex; likewise `SDH_PATTERN`, `FORCED_PATTERN`, `JUNK_TITLE_PATTERN`                     |

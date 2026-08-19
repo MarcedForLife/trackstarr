@@ -135,6 +135,87 @@ def test_a_valid_sweep_schedule_passes(monkeypatch, value):
     assert config.errors() == []
 
 
+@pytest.mark.parametrize(
+    "raw",
+    ["cover_art", "cover-art", "Cover-Art", " cover-art , sdh "],
+    ids=["underscore", "dash", "mixed case", "spaced list"],
+)
+def test_a_rule_can_be_named_with_either_separator(monkeypatch, raw):
+    """cover_art is the one rule name with a separator in it, so it is the
+    one anybody has to guess at, and guessing wrong refuses to start."""
+    monkeypatch.setenv("DISABLED_RULES", raw)
+    assert "cover_art" in config._rules("DISABLED_RULES", "")
+    # Still only a spelling: policy.errors() is what refuses a real typo,
+    # and test_policy.py covers that.
+
+
+@pytest.mark.parametrize("value", ["off", "none", "false", "no", "0", "", "  OFF  "])
+def test_every_spelling_of_off_reads_as_unset(monkeypatch, value):
+    """A setting offering named modes invites a value, and startup refuses
+    anything that is neither a mode nor off, so guessing one would otherwise
+    be a failed boot rather than the default."""
+    monkeypatch.setenv("REGENERATE_DOWNMIXES", value)
+    assert config._mode("REGENERATE_DOWNMIXES") == ""
+
+
+@pytest.mark.parametrize("value", ["generated", "ALL", " all "])
+def test_a_named_mode_survives_normalisation(monkeypatch, value):
+    """Only the case and spacing are this function's business; whether the
+    name means anything is policy.errors()'."""
+    monkeypatch.setenv("REGENERATE_DOWNMIXES", value)
+    assert config._mode("REGENERATE_DOWNMIXES") == value.strip().lower()
+
+
+def test_a_missing_media_dir_is_a_warning_not_an_error(monkeypatch, tmp_path):
+    """Quiet otherwise: the sweep says so as it walks, but that is hours
+    later, and an install with no SWEEP_AT never walks at all."""
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path), str(tmp_path / "absent")])
+    warnings = config.warnings()
+    assert len(warnings) == 1
+    assert str(tmp_path / "absent") in warnings[0]
+    # A library mounted late, or a webhook-only install, must still start.
+    assert config.errors() == []
+
+
+def test_a_rate_for_a_layout_nobody_asked_for_is_a_warning(monkeypatch, tmp_path):
+    """Half of an edit: the variable added, the layout not. Silent otherwise,
+    since a rate nothing reads changes nothing."""
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "7.1": "1280k"})
+    monkeypatch.setenv("AUDIO_BITRATE_7_1", "1280k")
+    warnings = config.warnings()
+    assert len(warnings) == 1
+    assert "AUDIO_BITRATE_7_1" in warnings[0]
+
+
+def test_dropping_a_default_layout_is_not_a_leftover(monkeypatch, tmp_path):
+    """2.0 and 5.1 always carry a rate, so running only one of them would
+    otherwise report the other's default as an orphan every startup."""
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
+    monkeypatch.delenv("AUDIO_BITRATE_5_1", raising=False)
+    assert config.warnings() == []
+
+
+@pytest.mark.parametrize(
+    ("variable", "name"),
+    [("AUDIO_BITRATE_2_0", "2.0"), ("AUDIO_BITRATE_7_1", "7.1")],
+)
+def test_a_layout_rate_is_read_from_its_own_variable(monkeypatch, variable, name):
+    """A dot is not allowed in an environment variable name, so the layout
+    is spelled with underscores and mapped back here."""
+    monkeypatch.setenv(variable, "448k")
+    assert config.bitrate_variable(name) == variable
+    assert config._bitrates()[name] == "448k"
+
+
+def test_the_shipped_rates_apply_when_nothing_states_one(monkeypatch):
+    monkeypatch.delenv("AUDIO_BITRATE_2_0", raising=False)
+    monkeypatch.delenv("AUDIO_BITRATE_5_1", raising=False)
+    assert config._bitrates() == {"2.0": "320k", "5.1": "640k"}
+
+
 @pytest.mark.parametrize("value", [0, -1])
 def test_a_rewrite_budget_below_one_is_refused(monkeypatch, value):
     """Zero leaves the pool with no workers, so the sweep would hang rather

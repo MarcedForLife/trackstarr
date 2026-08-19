@@ -48,11 +48,22 @@ def _budget():
 
 _SLOT_PREFIX = "rewrite.lock."
 
+#: Slot locks get a directory of their own. STATE_DIR is a volume people open
+#: to read pending.tsv and the event history, and a pool of empty lock files
+#: sitting beside those reads as state rather than the runtime scratch it is
+#: — the more so because lowering MAX_CONCURRENT_REWRITES strands every slot
+#: past the new limit, where they stay until someone deletes them.
+_LOCK_DIRNAME = "locks"
+
+
+def _lock_dir() -> str:
+    return os.path.join(config.STATE_DIR, _LOCK_DIRNAME)
+
 
 def _try_lock(name: str):
-    """Flock a STATE_DIR lock file and return the open handle, or None when
-    another holder has it. The handle *is* the lock; closing it releases."""
-    lock_file = open(os.path.join(config.STATE_DIR, name), "w")  # noqa: SIM115
+    """Flock a slot file and return the open handle, or None when another
+    holder has it. The handle *is* the lock; closing it releases."""
+    lock_file = open(os.path.join(_lock_dir(), name), "w")  # noqa: SIM115
     try:
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -69,7 +80,7 @@ def _claim_slot():
     every process competes for. Blocks until one frees: rewrites are a queue
     by design.
     """
-    os.makedirs(config.STATE_DIR, exist_ok=True)
+    os.makedirs(_lock_dir(), exist_ok=True)
     while True:
         for slot in range(config.MAX_CONCURRENT_REWRITES):
             if lock_file := _try_lock(f"{_SLOT_PREFIX}{slot}"):
@@ -80,17 +91,18 @@ def _claim_slot():
 def state_dir_errors() -> list[str]:
     """Whether STATE_DIR can hold what a rewrite needs, as ready-to-log messages.
 
-    Creates it when missing, then takes a slot lock, which is the same open
-    :func:`_claim_slot` does and the first thing to fail on a ``/config`` the
-    container cannot write — a bind mount Docker created root-owned, which the
-    README warns about because it is the mistake to make. That failure lands
+    Creates it and its lock directory when missing, then takes a slot lock,
+    which is the same open :func:`_claim_slot` does and the first thing to
+    fail on a ``/config`` the container cannot write — a bind mount Docker
+    created root-owned, which the README warns about because it is the
+    mistake to make. That failure lands
     in :func:`trackstarr.app.serve` before the listener binds, so without this
     it surfaces as a traceback from a restart loop rather than a line in the
     startup report. A slot another process is holding is not a problem here:
     the open succeeded, which is the whole question.
     """
     try:
-        os.makedirs(config.STATE_DIR, exist_ok=True)
+        os.makedirs(_lock_dir(), exist_ok=True)
         if lock_file := _try_lock(f"{_SLOT_PREFIX}0"):
             lock_file.close()
     except OSError as err:
@@ -107,13 +119,11 @@ def all_slots_held() -> Iterator[bool]:
     this. Never waits: when any slot is taken (a sweep in another process,
     mid-rewrite), everything is released and False yielded immediately.
     """
-    os.makedirs(config.STATE_DIR, exist_ok=True)
+    os.makedirs(_lock_dir(), exist_ok=True)
     wanted = {f"{_SLOT_PREFIX}{slot}" for slot in range(config.MAX_CONCURRENT_REWRITES)}
     # A process given a bigger budget can hold slots past our range, but a
     # held slot's file always exists, so the union covers every rewrite.
-    wanted.update(
-        name for name in os.listdir(config.STATE_DIR) if name.startswith(_SLOT_PREFIX)
-    )
+    wanted.update(name for name in os.listdir(_lock_dir()) if name.startswith(_SLOT_PREFIX))
     held: list = []
     try:
         for name in sorted(wanted):
@@ -245,6 +255,10 @@ def process(
             run=run,
             source=source,
             path=plan.out_path,
+            # Only when a remux published under a new extension, since None
+            # is dropped: without it the history says an .mkv was fixed and
+            # nothing records the .mp4 it used to be.
+            from_path=plan.path if plan.out_path != plan.path else None,
             reasons=plan.reasons,
             incidental=plan.incidental,
             downmixed=downmixed_names(plan) or None,
@@ -259,6 +273,19 @@ def process(
         return ProcessResult(Status.FIXED, plan)
     if outcome is Outcome.DEFERRED:
         log.info("deferred %s: %s", job.path, detail)
+        # Recorded even though one deferral is benign and retried: a file
+        # that defers on every pass — an upgrade that keeps landing
+        # mid-rewrite, a plan that keeps going stale — leaves no other trace,
+        # and the counts on the sweep summary cannot say which file it was.
+        events.record(
+            "deferred",
+            run=run,
+            source=source,
+            path=job.path,
+            reasons=plan.reasons,
+            detail=detail,
+            seconds=seconds,
+        )
         return ProcessResult(Status.DEFERRED, plan, detail)
     log.warning("rewrite of %s failed: %s", job.path, detail)
     events.record(

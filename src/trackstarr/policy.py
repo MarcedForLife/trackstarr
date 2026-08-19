@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass, fields
 
 from . import __version__, config
-from .layouts import Layout, parse_layout, resolved_layouts
+from .layouts import Layout, bitrate_bps, layout_bitrate, parse_channels, resolved_layouts
 
 #: The rules, keyed by the name DISABLED_RULES uses to switch each off.
 #: Single source for the CLI help text.
@@ -167,16 +167,26 @@ def errors() -> list[str]:
             f"DISABLED_RULES contains unknown rules: {', '.join(sorted(unknown))} "
             f"(valid: {', '.join(RULES)})"
         )
-    layouts = {entry: parse_layout(entry) for entry in config.DOWNMIX_LAYOUTS}
-    if invalid := {entry for entry, layout in layouts.items() if layout is None}:
+    layouts = {entry: parse_channels(entry) for entry in config.DOWNMIX_LAYOUTS}
+    if invalid := {entry for entry, channels in layouts.items() if channels is None}:
         problems.append(
             f"DOWNMIX_LAYOUTS contains unrecognised layouts: {', '.join(sorted(invalid))} "
-            "(use forms like 2.0, 5.1:640k)"
+            "(use forms like 2.0, 5.1)"
         )
+    # Asked separately from the name so the report says which half is wrong:
+    # a layout nothing gives a rate is a different mistake from a typo, and
+    # the fix is a variable rather than an edit to this list.
+    for entry in sorted(entry for entry, channels in layouts.items() if channels):
+        variable = config.bitrate_variable(entry)
+        rate = layout_bitrate(entry)
+        if not rate:
+            problems.append(f"DOWNMIX_LAYOUTS contains {entry} with no rate; set {variable}")
+        elif bitrate_bps(rate) is None:
+            problems.append(f"{variable}={rate!r} is not a bitrate (use forms like 640k)")
     by_channels: dict[int, list[str]] = {}
-    for entry, layout in layouts.items():
-        if layout:
-            by_channels.setdefault(layout.channels, []).append(entry)
+    for entry, channels in layouts.items():
+        if channels:
+            by_channels.setdefault(channels, []).append(entry)
     for channels, entries in sorted(by_channels.items()):
         # Two entries for one channel count would generate identical tracks
         # and leave the rules judging against an arbitrary one of the rates.

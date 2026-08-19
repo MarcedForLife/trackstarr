@@ -1,5 +1,6 @@
 """Command line startup checks. No media, no network."""
 
+import logging
 import os
 import signal
 import time
@@ -75,6 +76,29 @@ def test_an_unusable_state_dir_stops_a_rewriting_command(
     assert main(["fix", "--original", "eng", "/lib/a.mkv"]) == 1
     assert "STATE_DIR" in caplog.text
     assert "not usable" in caplog.text
+
+
+def test_a_missing_media_dir_is_reported_at_startup(startup_ok, monkeypatch, tmp_path, caplog):
+    """The mistake the README singles out, and the quiet one: walk_library
+    says so as it walks, which under serve is whenever SWEEP_AT next fires,
+    and with no schedule set is never. Startup is where it can still be
+    acted on."""
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "wrong-mount")])
+    monkeypatch.setattr("trackstarr.cli.sweep", lambda dry_run: dict.fromkeys(Status, 0))
+    with caplog.at_level(logging.WARNING):
+        assert main(["sweep"]) == 0
+    assert "wrong-mount" in caplog.text
+
+
+def test_a_command_handed_its_files_says_nothing_about_media_dirs(
+    startup_ok, monkeypatch, tmp_path, caplog
+):
+    """plan is the quiet one, run against a single file wherever it lives;
+    MEDIA_DIRS has nothing to do with it and must not be mentioned."""
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "wrong-mount")])
+    with caplog.at_level(logging.WARNING):
+        main(["plan", "--original", "eng", "/nowhere/missing.mkv"])
+    assert "wrong-mount" not in caplog.text
 
 
 def test_plan_fails_when_a_file_cannot_be_read(startup_ok, capsys):

@@ -73,7 +73,7 @@ def test_regenerate_downmix_end_to_end(make_file, monkeypatch):
     path = make_file("f.mkv", COMMENTARY_CASE)
     assert rewrite(build_plan(path, "eng")) is Outcome.APPLIED
 
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "128k")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "128k", "5.1": "640k"})
     assert not build_plan(path, "eng").needed
 
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")

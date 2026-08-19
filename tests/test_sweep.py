@@ -49,6 +49,24 @@ def test_concurrent_sweep_reports_in_walk_order(monkeypatch, tmp_path):
     assert [row.split("\t")[2] for row in rows] == walked
 
 
+def test_a_path_cannot_break_its_own_report_row(monkeypatch, tmp_path):
+    """Tabs and newlines are legal in filenames and would shift every column
+    after the path, so a report row would parse as a different verdict about
+    a different file. The reasons and detail cells go through _cell; this is
+    the column that cannot be truncated to be made safe."""
+    awkward = str(tmp_path / "lib" / "two\tcolumns\nand a row.mkv")
+    monkeypatch.setattr("trackstarr.sweep.walk_library", lambda policy: [awkward])
+    monkeypatch.setattr(
+        "trackstarr.sweep._judge",
+        lambda path, **kwargs: Judged(Job(path), None, Status.WOULD_FIX, "reorder streams"),
+    )
+    sweep(dry_run=True)
+
+    rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
+    assert len(rows) == 1
+    assert rows[0].split("\t")[2] == awkward.replace("\t", " ").replace("\n", " ")
+
+
 def test_a_worker_raising_does_not_abandon_the_sweep(monkeypatch, tmp_path):
     """One unforeseen error must not cost every file queued behind it."""
     monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 3)

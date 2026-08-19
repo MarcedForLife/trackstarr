@@ -414,8 +414,8 @@ def _drop_stale_downmixes(plan: Plan, kept_audio: list[dict]) -> list[dict]:
 #: How far below its layout's rate a track must report before "all" replaces
 #: it: not even half. Deliberately far from 1.0: encoders emit what the
 #: content needs rather than the nominal request, and codecs differ in
-#: efficiency, so a decent 640k AC3 5.1 must not read as weak against a
-#: 960k AAC target.
+#: efficiency, so a decent 448k AC3 5.1 must not read as weak against a
+#: 640k AAC target.
 _WEAK_BITRATE_RATIO = 0.5
 
 

@@ -50,9 +50,9 @@ def test_global_dry_run_bottoms_out_in_process(monkeypatch):
 
 
 def _is_locked(name: str) -> bool:
-    """Whether another holder has the named STATE_DIR slot; closing the probe
-    handle releases whatever this took."""
-    with open(os.path.join(config.STATE_DIR, name)) as probe_file:
+    """Whether another holder has the named slot; closing the probe handle
+    releases whatever this took."""
+    with open(os.path.join(processing._lock_dir(), name)) as probe_file:
         try:
             fcntl.flock(probe_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -74,7 +74,7 @@ def test_every_slot_gets_its_own_lock_file(monkeypatch):
     with processing._exclusive_rewrite(), processing._exclusive_rewrite():
         held = sorted(
             name
-            for name in os.listdir(config.STATE_DIR)
+            for name in os.listdir(processing._lock_dir())
             if name.startswith("rewrite.lock.") and _is_locked(name)
         )
     assert held == ["rewrite.lock.0", "rewrite.lock.1"]
@@ -119,8 +119,8 @@ def test_all_slots_held_sees_slots_beyond_our_budget(monkeypatch):
     """A process started with a bigger budget can hold a slot past our range;
     its lock file exists on disk, so it must be checked too."""
     monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
-    os.makedirs(config.STATE_DIR, exist_ok=True)
-    with open(os.path.join(config.STATE_DIR, "rewrite.lock.7"), "w") as foreign:
+    os.makedirs(processing._lock_dir(), exist_ok=True)
+    with open(os.path.join(processing._lock_dir(), "rewrite.lock.7"), "w") as foreign:
         fcntl.flock(foreign, fcntl.LOCK_EX)
         with processing.all_slots_held() as held:
             assert held is False

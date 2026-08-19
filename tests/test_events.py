@@ -84,6 +84,8 @@ def test_fixed_file_leaves_an_event(tmp_path, stub_rewrite):
     assert entry["seconds"] >= 0
     # A plan with no encode streams downmixes nothing; the field is absent.
     assert "downmixed" not in entry
+    # Likewise from_path: the rewrite landed on the file it started from.
+    assert "from_path" not in entry
 
 
 def test_fixed_event_names_the_downmixes_created(tmp_path, stub_rewrite):
@@ -120,14 +122,44 @@ def test_failed_rewrite_leaves_an_event(stub_rewrite):
     assert entry["reasons"] == ["reorder streams"]
 
 
-def test_sweep_dry_runs_and_deferrals_leave_no_events(stub_rewrite):
+def test_a_dry_sweep_leaves_no_per_file_events(stub_rewrite):
     """A dry sweep re-derives the same verdicts nightly; recording them per
     file would drown the history in repeats. pending.tsv holds them."""
-    stub_rewrite(make_plan("/x.mkv"), Outcome.DEFERRED, "source changed")
+    stub_rewrite(make_plan("/x.mkv"))
     processing.process(Job("/x.mkv"), dry_run=True, source="sweep")
-    processing.process(Job("/x.mkv"), dry_run=False)
 
     assert read_events() == []
+
+
+def test_deferred_rewrite_leaves_an_event(stub_rewrite):
+    """One deferral is a benign race the next pass retries, but a file that
+    defers on every pass has nothing else to show for it: the sweep summary
+    counts a deferral without naming the file it happened to."""
+    stub_rewrite(make_plan("/x.mkv"), Outcome.DEFERRED, "source changed")
+
+    processing.process(Job("/x.mkv"), dry_run=False, source="sweep")
+
+    (entry,) = read_events()
+    assert entry["event"] == "deferred"
+    assert entry["path"] == "/x.mkv"
+    assert entry["detail"] == "source changed"
+    # What it was going to do, so a file stuck deferring can be judged.
+    assert entry["reasons"] == ["reorder streams"]
+
+
+def test_a_remux_event_names_the_file_it_replaced(tmp_path, monkeypatch, stub_rewrite):
+    """A remux publishes an .mkv and deletes the source, so without this the
+    history says an .mkv was fixed and nothing records the .mp4 it was."""
+    monkeypatch.setattr(config, "REMUX_TO_MKV", True)
+    source = tmp_path / "f.mp4"
+    source.write_bytes(b"x")
+    stub_rewrite(make_plan(str(source)))
+
+    processing.process(Job(str(source)), dry_run=False)
+
+    (entry,) = read_events()
+    assert entry["path"] == str(tmp_path / "f.mkv")
+    assert entry["from_path"] == str(source)
 
 
 def test_dry_webhook_import_records_a_would_fix_event(monkeypatch):

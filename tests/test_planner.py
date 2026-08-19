@@ -159,7 +159,7 @@ def tagged_downmix(index, channels, settings, title="2.0"):
 
 def test_generated_mode_rebuilds_stale_downmixes(monkeypatch):
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "320k")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
     plan = plan_for(video(0), tagged_downmix(1, 2, "aac 192k"), audio(2, 6))
     assert any(reason.startswith("regenerate 2.0 downmix") for reason in plan.reasons)
     assert 1 not in {out.src for out in plan.streams}
@@ -168,7 +168,18 @@ def test_generated_mode_rebuilds_stale_downmixes(monkeypatch):
 
 def test_generated_mode_leaves_matching_downmixes(monkeypatch):
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "320k")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
+    plan = plan_for(video(0), tagged_downmix(1, 2, "aac 320k"), audio(2, 6))
+    assert not plan.needed
+
+
+@pytest.mark.parametrize("rate", ["320k", "320000", "320K"])
+def test_respelling_a_rate_is_not_a_settings_change(monkeypatch, rate):
+    """The tag written into the file is compared for equality, so without one
+    canonical spelling per rate, editing AUDIO_BITRATE_2_0 from 320k to
+    320000 — the same rate — would re-encode every track we have made."""
+    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": rate, "5.1": "640k"})
     plan = plan_for(video(0), tagged_downmix(1, 2, "aac 320k"), audio(2, 6))
     assert not plan.needed
 
@@ -203,7 +214,7 @@ def test_stale_downmix_kept_when_no_source_survives(monkeypatch):
 )
 def test_all_mode_replaces_weak_stereo(monkeypatch, bitrate, extra_tags):
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "320k")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
     weak = audio(1, 2, bitrate=bitrate)
     weak["tags"].update(extra_tags)
     plan = plan_for(video(0), weak, audio(2, 6))
@@ -219,12 +230,12 @@ def test_all_mode_leaves_unknown_bitrates_alone(monkeypatch):
 
 
 def test_all_mode_only_replaces_clearly_weak_tracks(monkeypatch):
-    """A decent 640k AC3 5.1 survives a 960k AAC target; see
+    """A decent 448k AC3 5.1 survives a 640k AAC target; see
     planner._WEAK_BITRATE_RATIO for why the margin is that wide."""
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "320k")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
     plan = plan_for(
-        video(0), audio(1, 2, bitrate="300000"), audio(2, 6, bitrate="640000"), audio(3, 8)
+        video(0), audio(1, 2, bitrate="300000"), audio(2, 6, bitrate="448000"), audio(3, 8)
     )
     assert not plan.needed
 
@@ -238,11 +249,14 @@ def test_regeneration_is_matroska_only(monkeypatch):
 
 
 def test_duplicate_layouts_regenerate_toward_one_target(monkeypatch):
-    """The drop side must judge against the same layout the rebuild uses,
-    or a 5.1,5.1:640k config regenerates forever."""
+    """The drop side must judge against the same layout the rebuild uses, or
+    two names for one channel count regenerate forever, each rewrite making
+    a track the other reads as stale. Startup refuses the pair, so this is
+    the belt to that braces."""
     monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "320k")
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"5.1", "5.1:640k"})
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"4.2", "5.1"})
+    # Both 6 channels; 4.2 sorts first, so its rate is the one target.
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"4.2": "640k", "5.1": "320k"})
     plan = plan_for(video(0), tagged_downmix(1, 6, "aac 128k", title="5.1"), audio(2, 8))
     generated = [out for out in audio_out(plan) if out.encode]
     assert [out.bitrate for out in generated] == ["640k"]
@@ -656,40 +670,26 @@ def test_command_tags_the_downmix_with_its_source_language():
     assert "title=2.0" in args
 
 
-@pytest.mark.parametrize(
-    ("rate", "stereo", "surround"),
-    [
-        ("192k", "192k", "576k"),
-        # Uppercase and plain forms must scale too: 320K once resolved to an
-        # unparseable 960K, silently disabling the weak-track comparison.
-        ("320K", "320K", "960k"),
-        ("192000", "192000", "576k"),
-    ],
-)
-def test_bitrate_scales_with_the_generated_layout(monkeypatch, rate, stereo, surround):
-    """AUDIO_BITRATE names the stereo rate, so the 5.1 downmix gets triple."""
-    monkeypatch.setattr(config, "AUDIO_BITRATE", rate)
-    plan = plan_for(video(0), audio(1, 8))
-    args = ffmpeg_args(plan, "/tmp/out.mkv")
-    assert args[args.index("-b:a:0") + 1] == stereo
-    assert args[args.index("-b:a:1") + 1] == surround
+def test_each_layout_is_encoded_at_its_own_rate(monkeypatch):
+    """Nothing is derived from anything else: a downmix is made at the rate
+    its own variable states, whatever the other layouts are set to."""
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0", "5.1"})
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "192k", "5.1": "448k"})
+    args = ffmpeg_args(plan_for(video(0), audio(1, 8)), "/tmp/out.mkv")
+    assert args[args.index("-b:a:0") + 1] == "192k"
+    assert args[args.index("-b:a:1") + 1] == "448k"
     assert "title=5.1" in args
 
 
-def test_unparseable_bitrate_is_passed_through(monkeypatch):
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "0.2M")
-    plan = plan_for(video(0), audio(1, 8))
-    args = ffmpeg_args(plan, "/tmp/out.mkv")
-    assert args[args.index("-b:a:1") + 1] == "0.2M"
-
-
-def test_per_layout_bitrate_overrides_the_scaled_default(monkeypatch):
-    monkeypatch.setattr(config, "AUDIO_BITRATE", "320k")
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0", "5.1:640k"})
-    plan = plan_for(video(0), audio(1, 8))
-    args = ffmpeg_args(plan, "/tmp/out.mkv")
+@pytest.mark.parametrize("rate", ["320K", "320000"])
+def test_a_rate_reaches_ffmpeg_in_its_one_spelling(monkeypatch, rate):
+    """The command and the tag agree whatever the variable said, because a
+    320K left as 320K once made the weak-track comparison unparseable."""
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": rate})
+    args = ffmpeg_args(plan_for(video(0), audio(1, 8)), "/tmp/out.mkv")
     assert args[args.index("-b:a:0") + 1] == "320k"
-    assert args[args.index("-b:a:1") + 1] == "640k"
+    assert "TRACKSTARR=aac 320k" in args
 
 
 def test_an_unrelated_language_sorts_behind_english():

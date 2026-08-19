@@ -233,6 +233,12 @@ COMMANDS = {
 }
 
 
+#: The commands that walk MEDIA_DIRS, and so want config.warnings() said out
+#: loud. plan and fix are handed their files, wherever those happen to live,
+#: so a MEDIA_DIRS that has nothing to do with them is not worth a line.
+LIBRARY_COMMANDS = frozenset({"serve", "sweep"})
+
+
 def _on_sigterm(signum: int, frame: FrameType | None) -> None:
     raise SystemExit(128 + signum)
 
@@ -280,6 +286,10 @@ def main(argv: list[str] | None = None) -> int:
         for message in problems:
             log.error("%s", message)
         return 1
+    # Only once nothing is fatal, and only where it applies.
+    if args.cmd in LIBRARY_COMMANDS:
+        for message in config.warnings():
+            log.warning("%s", message)
     return handler(args)
 
 
