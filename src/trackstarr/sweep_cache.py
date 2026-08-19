@@ -5,7 +5,7 @@ to re-derive the same verdicts, at 50-200ms of ffprobe each. A size and mtime
 signature is enough to skip that: a rewrite, an *arr upgrade or a manual
 replacement all change both. Entries carry the original language and report
 reasons they were judged with, and the whole cache is dropped when
-:func:`trackstarr.planner.rules_fingerprint` changes. Deleting the cache file
+:meth:`trackstarr.policy.Policy.fingerprint` changes. Deleting the cache file
 forces a full re-probe.
 
 Only verdicts that leave the file untouched are cached: a rewrite changes the
@@ -17,40 +17,46 @@ from __future__ import annotations
 import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
-from .planner import rules_fingerprint
+from .status import Status
 
 log = logging.getLogger(__name__)
 
-#: Fields record() appends to a cache entry after the key: status, reasons.
-_VERDICT_FIELDS = 2
+
+@dataclass(frozen=True)
+class FileKey:
+    """Everything file-side a verdict depends on.
+
+    Taken before the file is probed, so a change landing mid-sweep leaves the
+    cached entry stale rather than caching the new file under the old
+    verdict. The hard-link count is included because SKIP_HARDLINKS verdicts
+    change when a seeding download client lets go of a file, which alters
+    neither size nor mtime.
+    """
+
+    size: int
+    mtime_ns: int
+    nlink: int
+    lang: str | None
 
 
 @dataclass(frozen=True)
 class Verdict:
     """What a sweep concluded about a file, minus anything transient."""
 
-    status: str
+    status: Status
     reasons: str = ""
 
 
-def cache_key(path: str, lang: str | None) -> list | None:
-    """``[size, mtime_ns, nlink, lang]``: everything file-side a verdict
-    depends on.
-
-    Taken before the file is probed, so a change landing mid-sweep leaves the
-    cached entry stale rather than caching the new file under the old
-    verdict. The hard-link count is included because SKIP_HARDLINKS verdicts
-    change when a seeding download client lets go of a file, which alters
-    neither size nor mtime. None when the file is unreadable; None is never
-    cached.
-    """
+def cache_key(path: str, lang: str | None) -> FileKey | None:
+    """The file's current FileKey, or None when it is unreadable; None is
+    never cached."""
     try:
-        st = os.stat(path)
+        stat_result = os.stat(path)
     except OSError:
         return None
-    return [st.st_size, st.st_mtime_ns, st.st_nlink, lang]
+    return FileKey(stat_result.st_size, stat_result.st_mtime_ns, stat_result.st_nlink, lang)
 
 
 class SweepCache:
@@ -59,17 +65,23 @@ class SweepCache:
     ``lookup`` hits carried forward by ``record`` build the next sweep's
     contents, so entries for files a sweep never visits (deleted or moved)
     fall away on ``save``; ``checkpoint`` persists mid-sweep without that
-    pruning.
+    pruning. Each persisted entry is a flat dict of the FileKey fields plus
+    ``status`` and ``reasons``.
+
+    ``fingerprint`` is the policy the verdicts were judged under
+    (:meth:`trackstarr.policy.Policy.fingerprint`); a mismatch on load
+    drops the cache.
     """
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, fingerprint: dict):
         self.path = path
-        self._previous: dict[str, list] = {}
-        self._next: dict[str, list] = {}
+        self.fingerprint = fingerprint
+        self._previous: dict[str, dict] = {}
+        self._next: dict[str, dict] = {}
 
     @classmethod
-    def load(cls, path: str) -> SweepCache:
-        cache = cls(path)
+    def load(cls, path: str, fingerprint: dict) -> SweepCache:
+        cache = cls(path, fingerprint)
         try:
             with open(path) as cache_file:
                 data = json.load(cache_file)
@@ -78,7 +90,7 @@ class SweepCache:
         except (OSError, json.JSONDecodeError) as err:
             log.warning("ignoring unreadable sweep cache %s: %s", path, err)
             return cache
-        if data.get("config") != rules_fingerprint():
+        if data.get("config") != fingerprint:
             log.info("rule configuration changed, dropping the sweep cache")
             return cache
         entries = data.get("files")
@@ -86,18 +98,26 @@ class SweepCache:
             cache._previous = entries
         return cache
 
-    def lookup(self, path: str, key: list | None) -> Verdict | None:
+    def lookup(self, path: str, key: FileKey | None) -> Verdict | None:
         entry = self._previous.get(path)
-        if key is None or not isinstance(entry, list):
+        if key is None or not isinstance(entry, dict):
             return None
-        if len(entry) != len(key) + _VERDICT_FIELDS or entry[: len(key)] != key:
+        if not asdict(key).items() <= entry.items():
             return None
-        return Verdict(entry[-2], entry[-1])
+        try:
+            return Verdict(Status(entry.get("status")), entry.get("reasons") or "")
+        except ValueError:
+            # A hand-edited or damaged entry; treat it as a miss.
+            return None
 
-    def record(self, path: str, key: list | None, verdict: Verdict) -> None:
+    def record(self, path: str, key: FileKey | None, verdict: Verdict) -> None:
         if key is None:
             return
-        self._next[path] = [*key, verdict.status, verdict.reasons]
+        self._next[path] = {
+            **asdict(key),
+            "status": str(verdict.status),
+            "reasons": verdict.reasons,
+        }
 
     def checkpoint(self) -> None:
         """Persist mid-sweep, so an interrupted sweep keeps what it learned."""
@@ -106,11 +126,11 @@ class SweepCache:
     def save(self) -> None:
         self._write(self._next)
 
-    def _write(self, entries: dict[str, list]) -> None:
+    def _write(self, entries: dict[str, dict]) -> None:
         tmp = f"{self.path}.tmp"
         try:
             with open(tmp, "w") as cache_file:
-                json.dump({"config": rules_fingerprint(), "files": entries}, cache_file)
+                json.dump({"config": self.fingerprint, "files": entries}, cache_file)
             os.replace(tmp, self.path)
         except OSError as err:
             log.warning("could not write sweep cache %s: %s", self.path, err)

@@ -7,8 +7,11 @@ skipped when ffmpeg is unavailable.
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
+import tempfile
 
 import pytest
 
@@ -17,6 +20,82 @@ from trackstarr import config
 HAVE_FFMPEG = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
 
 requires_ffmpeg = pytest.mark.skipif(not HAVE_FFMPEG, reason="ffmpeg and ffprobe not on PATH")
+
+
+def _mp4_titles_round_trip() -> bool:
+    """Whether this ffmpeg can store a per-stream title in MP4.
+
+    It writes one as the ``name`` atom, which the mov muxer only learned in
+    ffmpeg 7; 6.x accepts the option and silently drops it. Two tests turn on
+    that, and so do the MP4 fixtures they build.
+
+    Detected rather than compared against a version string, because
+    distributions backport and rebuild: what matters is what this binary
+    does, and asking costs one sub-second encode at collection time.
+    """
+    if not HAVE_FFMPEG:
+        return False
+    with tempfile.TemporaryDirectory() as work:
+        sample = os.path.join(work, "probe.mp4")
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-v",
+                    "error",
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=d=0.1",
+                    "-c:a",
+                    "aac",
+                    "-metadata:s:a:0",
+                    "title=Commentary",
+                    sample,
+                ],
+                check=True,
+                capture_output=True,
+                timeout=60,
+            )
+            probed = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "stream_tags",
+                    "-of",
+                    "json",
+                    sample,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (subprocess.SubprocessError, OSError):
+            return False
+    tags = (json.loads(probed.stdout).get("streams") or [{}])[0].get("tags", {})
+    return "Commentary" in (tags.get("name", ""), tags.get("title", ""))
+
+
+MP4_TITLES_ROUND_TRIP = _mp4_titles_round_trip()
+
+#: MP4 per-stream titles need ffmpeg 7 or newer. The shipped image has one;
+#: ubuntu-latest, and so the CI test matrix, does not — which is why the
+#: Docker job runs this suite inside the image too.
+requires_mp4_titles = pytest.mark.skipif(
+    not MP4_TITLES_ROUND_TRIP,
+    reason="this ffmpeg drops per-stream titles in MP4 (needs 7+)",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_state(monkeypatch, tmp_path):
+    """Point STATE_DIR at the test's tmp dir; process() appends event history
+    there, so no test may reach a real /config."""
+    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
 
 
 @pytest.fixture(autouse=True)

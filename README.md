@@ -91,16 +91,44 @@ trackstarr registers its own webhook connection with them, firing on import
 and upgrade. If they reach the container by some name other than
 `trackstarr`, set `WEBHOOK_URL`.
 
-`WORK_DIR` must be on the same filesystem as the media. Rewrites are staged
-there and renamed over the original only after their duration and stream
-count verify, so an interrupted job leaves the library untouched, but that
-rename is only atomic within one filesystem.
+A rewrite is staged in `WORK_DIR` as a hidden `.partial` file and published
+over the original only once its duration and stream count verify, so an
+interrupted job leaves the library untouched.
+
+`WORK_DIR` can be on any filesystem, including a different drive from the
+media. Publishing renames when it can and copies when it can't: `rename` is
+atomic within a filesystem and fails with `EXDEV` across one, so trackstarr
+tries it, and on `EXDEV` copies the finished file onto the target's own
+filesystem under a hidden name and renames *that* into place. Either way
+readers see the old file or the new one, never a partial write, and multi-
+drive layouts — mergerfs, unRAID, SnapRAID, or just movies and TV on
+separate mounts — need no configuration.
+
+It tries rather than predicts on purpose. A union filesystem reports one
+device for the whole pool while its branches really are separate
+filesystems, so comparing `st_dev` would claim a rename is safe when it
+isn't. Asking the kernel is always right.
+
+The cost of a cross-filesystem `WORK_DIR` is that every rewrite is written
+twice, once by ffmpeg and once by the copy. Startup says so when it detects
+it. Whether that matters depends on where the bottleneck is: these rewrites
+are usually limited by single-threaded audio encoding rather than disk, in
+which case the extra copy disappears into the noise.
 
 A few behaviors worth knowing:
 
 - The sweep remembers its verdicts in `sweep-cache.json`. A file that hasn't
   changed isn't probed again, so after the first night a sweep costs stats,
   not ffprobe runs. Changing any rule setting drops the cache by itself.
+- Every rewrite, rewrite failure and sweep appends a JSON line to
+  `events.jsonl`, recording what changed, sizes before and after, how long
+  it took, and the version and settings responsible. Sweep summaries carry
+  the library's total size and a run id their rewrites share, so one
+  night's work groups together and growth can be plotted. Nothing consumes
+  it yet, it is the history a stats view will aggregate, kept from day one
+  because it cannot be backfilled. Readers take any `events*.jsonl` sibling
+  too, so if it ever grows unwieldy, move a chunk to `events-2026.jsonl`
+  and history stays whole.
 - With `SKIP_HARDLINKS` set, a file the download client still hard-links is
   left alone. Webhook imports wait in memory and are re-checked every
   `HARDLINK_RECHECK` seconds; the sweep picks up anything a restart forgets.
@@ -138,13 +166,13 @@ Star Wars (1977).mkv
 | Variable | Default | |
 |---|---|---|
 | `MEDIA_ROOTS` | `/data/media/movies:/data/media/tv` | colon-separated |
-| `WORK_DIR` | `/data/trackstarr-work` | must share a filesystem with the media |
-| `STATE_DIR` | `/config` | pending.tsv and the sweep cache live here |
+| `WORK_DIR` | `/data/trackstarr-work` | any filesystem; a cross-filesystem one costs a copy per rewrite |
+| `STATE_DIR` | `/config` | pending.tsv, the sweep cache and the event history live here |
 | `RADARR_URL` / `RADARR_API_KEY` | (unset) | omit to disable |
 | `SONARR_URL` / `SONARR_API_KEY` | (unset) | omit to disable |
 | `PLEX_URL` / `PLEX_TOKEN` | (unset) | refresh after rewrites; omit to disable |
 | `JELLYFIN_URL` / `JELLYFIN_API_KEY` | (unset) | same, and the same API fits Emby |
-| `ALWAYS_KEEP_LANGS` | `eng` | ISO 639-2/B, comma-separated |
+| `ALWAYS_KEEP_LANGS` | `eng` | comma-separated; codes or names (`en`, `eng`, `English`) all work |
 | `DISABLED_RULES` | (unset) | any of `languages,downmix,cover_art,order,sdh` |
 | `DROP_COMMENTARY` | `false` | remove commentary tracks instead of protecting them |
 | `DOWNMIX_LAYOUTS` | `2.0,5.1` | layouts guaranteed to exist; own rate as `5.1:640k` |
@@ -160,11 +188,32 @@ Star Wars (1977).mkv
 | `WEBHOOK_URL` | `http://trackstarr:8080` | how the *arrs reach the listener |
 | `SWEEP_AT` | (unset) | `HH:MM` local; empty disables |
 | `SWEEP_APPLY` | `false` | the sweep reports until this is true |
+| `DRY_RUN` | `false` | plan and record everywhere, rewrite nothing; overrides `SWEEP_APPLY` and `--apply` |
+| `MAX_CONCURRENT_REWRITES` | `1` | rewrites at once, across webhooks, sweeps and processes |
 | `FFMPEG_TIMEOUT` / `PROBE_TIMEOUT` | `7200` / `180` | seconds |
 | `LOG_LEVEL` | `INFO` | |
 
+`MAX_CONCURRENT_REWRITES` is worth raising if a backfill is going to take
+days. A rewrite is a stream copy plus a few audio encodes, and ffmpeg's
+audio encoders are single-threaded, so one rewrite is usually one busy core
+and some idle disk. The default is 1 because the safe assumption is spinning
+disks, where parallel rewrites fight over the heads.
+
+Measure rather than guess. Time a sweep at 1 and at 3; if the wall time
+barely moves, your storage is the bottleneck and the extra workers only cost
+memory. If it drops close to linearly, you were leaving cores idle. The
+budget is shared, so webhook imports arriving mid-sweep queue against the
+same limit rather than doubling the load, and it holds across processes too:
+a `docker exec trackstarr sweep --apply` beside a running `serve` competes
+for the same slots.
+
 Start with `SWEEP_APPLY=false` and read `/config/pending.tsv` before letting
-it loose on an existing library.
+it loose on an existing library. Note that `SWEEP_APPLY` only gates the
+sweep: files arriving through a webhook are rewritten as they land, which is
+the tool's job for new imports. To observe everything without touching
+anything, set `DRY_RUN=true`: webhooks and sweeps still plan against the
+live *arrs, and each webhook import records a would-fix event saying what
+would have happened, but nothing is rewritten, not even by `sweep --apply`.
 
 ## Development
 
@@ -175,9 +224,9 @@ ruff check .
 ruff format .
 ```
 
-The rules live in `planner.py` and are pure functions of ffprobe output, so
-`tests/test_planner.py` covers them with hand-built stream dicts and no media
-at all. `tests/test_integration.py` generates real files with ffmpeg and is
+The rules live in `planner.py` and are pure functions of ffprobe output and
+a `Policy` snapshot (`policy.py`), so `tests/test_planner.py` covers them
+with hand-built stream dicts and no media at all. `tests/test_integration.py` generates real files with ffmpeg and is
 skipped automatically when ffmpeg is missing.
 
 ## Licence

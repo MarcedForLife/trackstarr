@@ -1,0 +1,70 @@
+"""The Policy snapshot and its fingerprint. No media, no network."""
+
+from __future__ import annotations
+
+import dataclasses
+import json
+import re
+
+import pytest
+
+from trackstarr import config
+from trackstarr.policy import Policy
+
+
+def test_fingerprint_covers_every_field():
+    """Derived from the fields, so a setting added to Policy can never be
+    forgotten by the sweep cache the way a hand-maintained list could."""
+    fingerprint = Policy.from_config().fingerprint()
+    field_names = {field.name for field in dataclasses.fields(Policy)}
+    assert set(fingerprint) == {"version", *field_names}
+
+
+#: A config change per Policy field, for the variance test below. A new
+#: field needs an entry here (the parametrize fails loudly without one),
+#: which is the moment to make sure from_config actually populates it.
+_FIELD_CHANGES = {
+    "always_keep": ("ALWAYS_KEEP", {"eng", "fre"}),
+    "allowed_exts": ("ALLOWED_EXTS", {".mkv"}),
+    "disabled_rules": ("DISABLED_RULES", {"sdh"}),
+    "drop_commentary": ("DROP_COMMENTARY", True),
+    "regenerate_downmixes": ("REGENERATE_DOWNMIXES", "generated"),
+    "remux_to_mkv": ("REMUX_TO_MKV", True),
+    "downmix_layouts": ("DOWNMIX_LAYOUTS", {"2.0", "7.1"}),
+    "audio_codec": ("AUDIO_CODEC", "libfdk_aac"),
+    "skip_hardlinks": ("SKIP_HARDLINKS", True),
+    "commentary_re": ("COMMENTARY_RE", re.compile("changed", re.IGNORECASE)),
+    "sdh_re": ("SDH_RE", re.compile("changed", re.IGNORECASE)),
+    "forced_re": ("FORCED_RE", re.compile("changed", re.IGNORECASE)),
+    "junk_title_re": ("JUNK_TITLE_RE", re.compile("changed", re.IGNORECASE)),
+}
+
+#: Not config-driven: a code constant, covered by the version field.
+_CONSTANT_FIELDS = {"image_codecs"}
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [field.name for field in dataclasses.fields(Policy) if field.name not in _CONSTANT_FIELDS],
+)
+def test_every_field_varies_with_its_setting(monkeypatch, field_name):
+    """from_config must populate every field from config. A field with a
+    forgotten mapping would fingerprint as a constant and never invalidate
+    the cache, the exact failure the hand-maintained list had."""
+    before = Policy.from_config().fingerprint()
+    setting, changed = _FIELD_CHANGES[field_name]
+    monkeypatch.setattr(config, setting, changed)
+    after = Policy.from_config().fingerprint()
+    assert after[field_name] != before[field_name]
+
+
+def test_fingerprint_is_json_serialisable():
+    json.dumps(Policy.from_config().fingerprint())
+
+
+def test_fingerprint_tracks_the_bitrate_through_resolved_layouts(monkeypatch):
+    """AUDIO_BITRATE is not a field of its own; it reaches the fingerprint
+    through the resolved layout rates, and must still invalidate on change."""
+    before = Policy.from_config().fingerprint()
+    monkeypatch.setattr(config, "AUDIO_BITRATE", "128k")
+    assert Policy.from_config().fingerprint() != before

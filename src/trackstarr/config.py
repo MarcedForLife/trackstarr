@@ -3,12 +3,23 @@
 Values are read once at import. Other modules reference them as
 ``config.NAME`` rather than importing the names directly, so tests can
 monkeypatch a single attribute without reloading anything.
+
+A malformed value never raises here: import must succeed so the CLI can
+report every problem at once through :func:`errors`. The checks that need
+the rule and layout vocabulary live in :func:`trackstarr.policy.errors`;
+startup exits on anything either returns.
 """
 
 from __future__ import annotations
 
 import os
 import re
+
+from .langs import norm_lang
+
+#: Problems found while parsing the environment, reported via errors().
+#: The malformed setting keeps its default so import always succeeds.
+_LOAD_ERRORS: list[str] = []
 
 
 def _list(name: str, default: str) -> list[str]:
@@ -24,11 +35,41 @@ def _bool(name: str, default: str = "false") -> bool:
     return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _int(name: str, default: str) -> int:
+    raw = os.environ.get(name, default).strip()
+    try:
+        return int(raw)
+    except ValueError:
+        _LOAD_ERRORS.append(f"{name}={raw!r} is not a whole number")
+        return int(default)
+
+
+def _regex(name: str, default: str) -> re.Pattern[str]:
+    raw = os.environ.get(name, default)
+    try:
+        return re.compile(raw, re.IGNORECASE)
+    except re.error as err:
+        _LOAD_ERRORS.append(f"{name}={raw!r} is not a valid regex ({err})")
+        return re.compile(default, re.IGNORECASE)
+
+
+def _langs(name: str, default: str) -> set[str]:
+    """A language set normalised to ISO 639-2/B like every track tag, so
+    "en", "English" and "eng" all mean the same thing (norm_lang's lookup
+    covers the *arr names too). An entry nothing recognises passes through
+    unchanged; it matches no track and shows up verbatim in the startup
+    summary rather than silently disappearing."""
+    return {code for entry in _set(name, default) if (code := norm_lang(entry))}
+
+
 MEDIA_ROOTS = _list("MEDIA_ROOTS", "/data/media/movies:/data/media/tv")
 
-#: Rewrites are staged here and renamed over the original. Must be on the same
-#: filesystem as the media, or the rename stops being atomic and turns into a
-#: copy that readers can observe half-finished.
+#: Where a rewrite is staged while ffmpeg writes it, before it replaces the
+#: original. Anywhere is fine, including a different drive from the media:
+#: publishing falls back to a copy onto the target's filesystem when the
+#: rename can't cross, so atomicity holds either way. Somewhere with room
+#: for the largest file in the library, and fast, since every byte of every
+#: rewrite is written here.
 WORK_DIR = os.environ.get("WORK_DIR", "/data/trackstarr-work")
 
 STATE_DIR = os.environ.get("STATE_DIR", "/config")
@@ -47,10 +88,10 @@ JELLYFIN_URL = os.environ.get("JELLYFIN_URL", "").rstrip("/")
 JELLYFIN_API_KEY = os.environ.get("JELLYFIN_API_KEY", "")
 
 #: Languages kept regardless of the title's original language.
-ALWAYS_KEEP = _set("ALWAYS_KEEP_LANGS", "eng")
+ALWAYS_KEEP = _langs("ALWAYS_KEEP_LANGS", "eng")
 
 #: Rules to switch off, for setups where another service owns part of the
-#: job. Valid names are the keys of planner.RULES; startup refuses others.
+#: job. Valid names are the keys of policy.RULES; startup refuses others.
 DISABLED_RULES = _set("DISABLED_RULES", "")
 
 #: Drop commentary, described-audio and isolated-score tracks outright
@@ -102,61 +143,86 @@ SKIP_HARDLINKS = _bool("SKIP_HARDLINKS")
 #: How often (seconds) to re-stat webhook files parked by SKIP_HARDLINKS,
 #: so they are processed minutes after seeding ends instead of at the next
 #: sweep. 0 parks nothing and leaves skipped imports to the sweep alone.
-HARDLINK_RECHECK = int(os.environ.get("HARDLINK_RECHECK", "900"))
-
-IMAGE_CODECS = {"mjpeg", "png", "gif", "bmp", "webp", "tiff"}
+HARDLINK_RECHECK = _int("HARDLINK_RECHECK", "900")
 
 #: Matched against the track title when the muxer left the disposition flags
 #: unset, which most rips do.
-COMMENTARY_RE = re.compile(
-    os.environ.get(
-        "COMMENTARY_PATTERN",
-        r"comment|descriptive|described\s*video|audio\s*description|"
-        r"isolated\s*score|director'?s?\s*track|interview|behind\s*the\s*scenes",
-    ),
-    re.IGNORECASE,
+COMMENTARY_RE = _regex(
+    "COMMENTARY_PATTERN",
+    r"comment|descriptive|described\s*video|audio\s*description|"
+    r"isolated\s*score|director'?s?\s*track|interview|behind\s*the\s*scenes",
 )
 
 #: Matched against a subtitle title to spot SDH (deaf and hard-of-hearing)
 #: tracks when the muxer left the hearing_impaired disposition unset.
-SDH_RE = re.compile(
-    os.environ.get("SDH_PATTERN", r"\bsdh\b|\bcc\b|hearing[\s._-]*impaired"),
-    re.IGNORECASE,
-)
+SDH_RE = _regex("SDH_PATTERN", r"\bsdh\b|\bcc\b|hearing[\s._-]*impaired")
 
 #: Matched against a subtitle title to spot forced tracks when the muxer
 #: left the forced disposition unset.
-FORCED_RE = re.compile(os.environ.get("FORCED_PATTERN", r"\bforced\b"), re.IGNORECASE)
+FORCED_RE = _regex("FORCED_PATTERN", r"\bforced\b")
 
 #: Track and container titles that are release junk rather than information:
 #: bitrates, resolutions, source tags, video codec names. Cleared during a
 #: rewrite that happens anyway; never worth a rewrite on their own. The
 #: default is deliberately conservative: a bare audio codec title ("AC3
 #: 5.1") is left alone, extend the pattern to catch those too.
-JUNK_TITLE_RE = re.compile(
-    os.environ.get(
-        "JUNK_TITLE_PATTERN",
-        r"\d+\s*k?bps"
-        r"|\bx?26[45]\b|\bhevc\b|\bavc\b"
-        r"|\b(?:480|576|720|1080|2160)[pi]\b"
-        r"|\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\b",
-    ),
-    re.IGNORECASE,
+JUNK_TITLE_RE = _regex(
+    "JUNK_TITLE_PATTERN",
+    r"\d+\s*k?bps"
+    r"|\bx?26[45]\b|\bhevc\b|\bavc\b"
+    r"|\b(?:480|576|720|1080|2160)[pi]\b"
+    r"|\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\b",
 )
 
 LISTEN_ADDR = os.environ.get("LISTEN_ADDR", "0.0.0.0")
-LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8080"))
+LISTEN_PORT = _int("LISTEN_PORT", "8080")
 
 #: Advertised to Radarr and Sonarr when registering the webhook connection,
 #: so it must be reachable from their containers. The default matches the
 #: documented compose service name.
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", f"http://trackstarr:{LISTEN_PORT}")
 
-FFMPEG_TIMEOUT = int(os.environ.get("FFMPEG_TIMEOUT", "7200"))
-PROBE_TIMEOUT = int(os.environ.get("PROBE_TIMEOUT", "180"))
+FFMPEG_TIMEOUT = _int("FFMPEG_TIMEOUT", "7200")
+PROBE_TIMEOUT = _int("PROBE_TIMEOUT", "180")
+
+#: Rewrites allowed to run at once, counted across the webhook workers, the
+#: sweep, and any other process sharing STATE_DIR.
+#:
+#: One by default because the safe assumption is spinning disks, where
+#: parallel rewrites fight over the heads. That assumption is often wrong: a
+#: rewrite is a stream copy plus a few audio encodes, the encodes are
+#: single-threaded, and on storage that isn't the bottleneck the whole job
+#: is one busy core while the rest idle. Measure before raising it — time a
+#: sweep at 1, then at 3, and keep 1 if they match, because concurrency buys
+#: nothing once the disk is saturated.
+MAX_CONCURRENT_REWRITES = _int("MAX_CONCURRENT_REWRITES", "1")
 
 #: Nightly sweep as HH:MM local time; empty disables it. The sweep exists to
 #: catch files that arrived without a webhook, so it reports by default and
 #: only rewrites when SWEEP_APPLY is set.
 SWEEP_AT = os.environ.get("SWEEP_AT", "").strip()
 SWEEP_APPLY = _bool("SWEEP_APPLY")
+
+#: Plan and report everywhere but rewrite nothing, overriding SWEEP_APPLY
+#: and ``sweep --apply``. The *arrs are still queried for metadata and a
+#: webhook import records a would-fix event instead of applying, so a new
+#: install can watch a real week of traffic before being let loose.
+DRY_RUN = _bool("DRY_RUN")
+
+
+def errors() -> list[str]:
+    """Startup-fatal configuration problems, as ready-to-log messages.
+
+    Parse failures collected at import, plus the operational checks. The
+    checks needing the rule and layout vocabulary live in
+    :func:`trackstarr.policy.errors`, beside that vocabulary.
+    """
+    problems = list(_LOAD_ERRORS)
+    if MAX_CONCURRENT_REWRITES < 1:
+        problems.append(f"MAX_CONCURRENT_REWRITES={MAX_CONCURRENT_REWRITES} must be at least 1")
+    if SWEEP_AT and not re.fullmatch(r"(?:[01]?\d|2[0-3]):[0-5]\d", SWEEP_AT):
+        # Left to the scheduler, garbage kills only its thread (serve keeps
+        # running, sweeps never) and mktime quietly normalises out-of-range
+        # times, so "24:30" would sweep at 00:30 without a word.
+        problems.append(f"SWEEP_AT={SWEEP_AT!r} is not a valid HH:MM time")
+    return problems

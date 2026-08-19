@@ -4,18 +4,88 @@ from __future__ import annotations
 
 import contextlib
 import enum
+import errno
 import logging
 import os
+import shutil
 import subprocess
+import tempfile
 import time
 
 from . import config
 from .media import duration, probe
-from .planner import Plan, ffmpeg_args
+from .planner import Plan, SourceSignature, ffmpeg_args
 
 log = logging.getLogger(__name__)
 
+#: Staged rewrites are dotfiles so Plex, Radarr and Sonarr skip them, and
+#: carry no media extension so nothing mistakes one for an import even if it
+#: does look. The muxer is passed to ffmpeg explicitly instead.
 TEMP_PREFIX = ".trackstarr-"
+TEMP_SUFFIX = ".partial"
+
+
+def _new_temp(directory: str) -> str:
+    """An empty staging file in ``directory``, and its path.
+
+    mkstemp, not a name built from the pid and the clock: two rewrites
+    starting within the same second would share that name, both ffmpegs
+    would write to it, and whichever finished last would be renamed over
+    both sources.
+    """
+    os.makedirs(directory, exist_ok=True)
+    handle, path = tempfile.mkstemp(prefix=TEMP_PREFIX, suffix=TEMP_SUFFIX, dir=directory)
+    os.close(handle)
+    return path
+
+
+def _adopt(path: str, source: os.stat_result) -> None:
+    """Give a staged file the mode and ownership of the file it replaces."""
+    os.chmod(path, source.st_mode & 0o7777)
+    # Already correct when running as the media owner, which is the normal
+    # case; only root can chown to a different uid.
+    with contextlib.suppress(PermissionError):
+        os.chown(path, source.st_uid, source.st_gid)
+
+
+def _publish(tmp: str, out_path: str, source: os.stat_result) -> None:
+    """Move the finished rewrite into place, atomically, from anywhere.
+
+    os.replace is atomic within a filesystem and raises EXDEV across one, so
+    the free path is tried first and the copy only happens when it must.
+    Trying beats predicting: a union filesystem like mergerfs reports one
+    st_dev for the whole pool while its branches really are separate
+    filesystems, so an st_dev comparison would say a rename is safe when it
+    isn't. Asking the kernel is always right.
+
+    The cross-device path copies onto the target's own filesystem under a
+    name library scanners ignore, then publishes it with the same atomic
+    rename. Readers still see the old file or the new one, never a partial.
+    """
+    _adopt(tmp, source)
+    try:
+        os.replace(tmp, out_path)
+        return
+    except OSError as err:
+        if err.errno != errno.EXDEV:
+            raise
+
+    landing = _new_temp(os.path.dirname(out_path))
+    try:
+        shutil.copyfile(tmp, landing)
+        _adopt(landing, source)
+        # Durability, not visibility: the rename below is atomic either way,
+        # but without this a crash just after it can leave the final name
+        # pointing at a partially written file.
+        with open(landing, "rb+") as handle:
+            os.fsync(handle.fileno())
+        os.replace(landing, out_path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.remove(landing)
+        raise
+    with contextlib.suppress(OSError):
+        os.remove(tmp)
 
 
 class Outcome(enum.StrEnum):
@@ -34,6 +104,11 @@ class Outcome(enum.StrEnum):
 DURATION_DRIFT_RATIO = 0.005
 DURATION_DRIFT_FLOOR = 1.0
 
+#: How much of ffmpeg's stderr a failure detail keeps. The tail, because the
+#: fatal message comes last, after however much per-packet noise a damaged
+#: file produced; the detail lands whole in events.jsonl and the logs.
+_STDERR_TAIL = 500
+
 
 def _verify(plan: Plan, out_info: dict) -> str | None:
     """What is wrong with the rewrite, or None when it checks out.
@@ -46,9 +121,9 @@ def _verify(plan: Plan, out_info: dict) -> str | None:
     drift_allowed = max(DURATION_DRIFT_FLOOR, src_dur * DURATION_DRIFT_RATIO)
     if src_dur and abs(out_dur - src_dur) > drift_allowed:
         return f"duration mismatch: {src_dur:.1f}s -> {out_dur:.1f}s"
-    n_out = len(out_info.get("streams") or [])
-    if n_out != len(plan.streams):
-        return f"stream count mismatch: expected {len(plan.streams)}, got {n_out}"
+    out_streams = len(out_info.get("streams") or [])
+    if out_streams != len(plan.streams):
+        return f"stream count mismatch: expected {len(plan.streams)}, got {out_streams}"
     return None
 
 
@@ -58,16 +133,26 @@ def apply_plan(plan: Plan) -> tuple[Outcome, str]:
     The detail string says what went wrong when nothing was replaced. No
     failure is logged here; the caller reports the returned detail.
     """
-    os.makedirs(config.WORK_DIR, exist_ok=True)
-    ext = os.path.splitext(plan.out_path)[1]
-    tmp = os.path.join(config.WORK_DIR, f"{TEMP_PREFIX}{os.getpid()}-{int(time.time())}{ext}")
-
     if plan.out_path != plan.path and os.path.exists(plan.out_path):
         # A remux lands beside the source under a new name; an .mkv sibling
         # already sitting there is not ours to overwrite.
         return Outcome.FAILED, f"remux target already exists: {plan.out_path}"
 
     src_before = os.stat(plan.path)
+    # A plan goes stale waiting on the rewrite lock: another thread may have
+    # rewritten the file since it was planned, and a stale plan's stream maps
+    # can mangle the new file in ways _verify cannot see. Defer; the next
+    # webhook or sweep plans the file as it now is.
+    if plan.src_signature and SourceSignature.of(src_before) != plan.src_signature:
+        return Outcome.DEFERRED, "source changed since it was planned, nothing rewritten"
+
+    # Staged only once the pre-flight checks pass: the returns above happen
+    # before the finally that cleans it up, so creating it earlier left an
+    # empty temp file behind every time one of them fired.
+    try:
+        tmp = _new_temp(config.WORK_DIR)
+    except OSError as err:
+        return Outcome.FAILED, f"could not stage the rewrite in {config.WORK_DIR}: {err}"
 
     args = ffmpeg_args(plan, tmp)
     log.info("ffmpeg %s", " ".join(args[1:]))
@@ -76,32 +161,22 @@ def apply_plan(plan: Plan) -> tuple[Outcome, str]:
             args, capture_output=True, text=True, timeout=config.FFMPEG_TIMEOUT
         )
         if res.returncode != 0:
-            return Outcome.FAILED, f"ffmpeg failed ({res.returncode}): {res.stderr.strip()}"
+            stderr_tail = res.stderr.strip()[-_STDERR_TAIL:]
+            return Outcome.FAILED, f"ffmpeg failed ({res.returncode}): {stderr_tail}"
 
         problem = _verify(plan, probe(tmp))
         if problem:
             return Outcome.FAILED, f"{problem}, result discarded"
-
-        os.chmod(tmp, src_before.st_mode & 0o7777)
-        # Already correct when running as the media owner, which is the normal
-        # case; only root can chown to a different uid.
-        with contextlib.suppress(PermissionError):
-            os.chown(tmp, src_before.st_uid, src_before.st_gid)
 
         # An *arr upgrade can land while ffmpeg is still reading the old
         # inode. Renaming over it now would silently revert the upgrade, so a
         # source that changed since the pre-flight stat is left alone; the
         # upgrade's own webhook or the next sweep deals with the new file.
         src_after = os.stat(plan.path)
-        if (src_after.st_size, src_after.st_mtime_ns) != (
-            src_before.st_size,
-            src_before.st_mtime_ns,
-        ):
+        if SourceSignature.of(src_after) != SourceSignature.of(src_before):
             return Outcome.DEFERRED, "source changed during the rewrite, result discarded"
 
-        # Same filesystem as the library, so this is atomic: readers see either
-        # the old file or the new one, never a partial write.
-        os.replace(tmp, plan.out_path)
+        _publish(tmp, plan.out_path, src_before)
         if plan.out_path != plan.path:
             # The converted file is already published; a leftover source is
             # rediscovered by the next sweep, so failing to remove it must
@@ -120,19 +195,90 @@ def apply_plan(plan: Plan) -> tuple[Outcome, str]:
                 os.remove(tmp)
 
 
-def clean_work_dir() -> None:
-    """Drop temp files orphaned by a restart mid-rewrite.
+def work_dir_errors() -> list[str]:
+    """Whether WORK_DIR is usable, as ready-to-log messages.
 
-    Safe unconditionally: a temp file is only ever renamed into the library
-    after it verifies, so anything still sitting here is a failed attempt.
+    Creates it when missing, so a fresh install starts clean, and writes a
+    byte to prove the mount is writable rather than discovering it after the
+    first ffmpeg run.
+
+    It deliberately does not care which filesystem WORK_DIR is on. Publishing
+    falls back to a copy when the rename can't cross, so a scratch disk, a
+    different array or a tmpfs are all valid; see :func:`_publish`.
     """
-    if not os.path.isdir(config.WORK_DIR):
+    try:
+        os.makedirs(config.WORK_DIR, exist_ok=True)
+        probe_path = _new_temp(config.WORK_DIR)
+        os.remove(probe_path)
+    except OSError as err:
+        return [f"WORK_DIR {config.WORK_DIR} is not usable: {err}"]
+    return []
+
+
+def work_dir_is_remote() -> bool:
+    """Whether publishing will have to copy rather than rename.
+
+    Best effort and only used to say so at startup: a union filesystem
+    reports one st_dev for branches that are really separate, so this can
+    say no and _publish still meet EXDEV. It never gates anything.
+    """
+    try:
+        work_dev = os.stat(config.WORK_DIR).st_dev
+    except OSError:
+        return False
+    return any(
+        os.stat(root).st_dev != work_dev for root in config.MEDIA_ROOTS if os.path.isdir(root)
+    )
+
+
+def is_staged_file(name: str) -> bool:
+    return name.startswith(TEMP_PREFIX) and name.endswith(TEMP_SUFFIX)
+
+
+def drop_if_stale(path: str) -> bool:
+    """Remove a staged file left behind by a crash, if it can't be in use.
+
+    Age is the only safe test: with rewrites running concurrently, and
+    possibly in another process, a staged file younger than the ffmpeg
+    timeout may still be being written. Anything older than that has
+    outlived the longest run its writer was allowed.
+    """
+    try:
+        if time.time() - os.stat(path).st_mtime <= config.FFMPEG_TIMEOUT:
+            return False
+        os.remove(path)
+    except OSError as err:
+        log.warning("could not remove stale staged file %s: %s", path, err)
+        return False
+    log.info("removed stale staged file %s", path)
+    return True
+
+
+def clean_work_dir(exclusive: bool = False) -> None:
+    """Drop staged files orphaned by a restart mid-rewrite.
+
+    ``exclusive`` says the caller holds every rewrite slot (see
+    :func:`trackstarr.processing.all_slots_held`), which proves no staged
+    file here can still be written, so even fresh orphans go. Without it a
+    file may be another process's live rewrite — serve restarting while a
+    ``sweep --apply`` runs beside it — and only age is safe.
+
+    Only covers WORK_DIR. Cross-filesystem publishing stages its landing
+    copy beside the file it replaces, so those orphans scatter across the
+    library and the sweep clears them as it walks — see
+    :func:`trackstarr.sweep.walk_library`.
+    """
+    if not config.WORK_DIR or not os.path.isdir(config.WORK_DIR):
         return
     for name in os.listdir(config.WORK_DIR):
-        if not name.startswith(TEMP_PREFIX):
+        if not is_staged_file(name):
+            continue
+        path = os.path.join(config.WORK_DIR, name)
+        if not exclusive:
+            drop_if_stale(path)
             continue
         try:
-            os.remove(os.path.join(config.WORK_DIR, name))
-            log.info("removed stale temp file %s", name)
+            os.remove(path)
+            log.info("removed stale staged file %s", name)
         except OSError as err:
             log.warning("could not remove %s: %s", name, err)

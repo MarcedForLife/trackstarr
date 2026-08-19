@@ -7,6 +7,7 @@ import subprocess
 
 from . import config
 from .langs import norm_lang
+from .policy import Policy
 
 #: Stream tag recording the settings a generated downmix was encoded with,
 #: written at encode time so a later pass can recognise our own tracks. MP4
@@ -113,7 +114,7 @@ def has_disposition(stream: dict, *flags: str) -> bool:
     return any(disposition.get(flag) for flag in flags)
 
 
-def is_commentary(stream: dict) -> bool:
+def is_commentary(stream: dict, policy: Policy) -> bool:
     """Commentary, audio description and interview tracks.
 
     The disposition flags are authoritative when a muxer bothered to set
@@ -122,44 +123,44 @@ def is_commentary(stream: dict) -> bool:
     not count as the stereo track a player can fall back to.
     """
     return has_disposition(stream, "comment", "visual_impaired", "descriptions") or bool(
-        config.COMMENTARY_RE.search(stream_title(stream))
+        policy.commentary_re.search(stream_title(stream))
     )
 
 
-def is_forced(stream: dict) -> bool:
+def is_forced(stream: dict, policy: Policy) -> bool:
     """Forced subtitles display even with subtitles off (foreign dialogue,
     signs), so they are always kept and never make another track redundant."""
     return has_disposition(stream, "forced") or bool(
-        config.FORCED_RE.search(stream_title(stream))
+        policy.forced_re.search(stream_title(stream))
     )
 
 
-def is_sdh(stream: dict) -> bool:
+def is_sdh(stream: dict, policy: Policy) -> bool:
     """Subtitles for the deaf and hard-of-hearing: full dialogue plus
     speaker labels and sound cues."""
     return has_disposition(stream, "hearing_impaired") or bool(
-        config.SDH_RE.search(stream_title(stream))
+        policy.sdh_re.search(stream_title(stream))
     )
 
 
-def is_cover_art(stream: dict) -> bool:
+def is_cover_art(stream: dict, policy: Policy) -> bool:
     """Embedded artwork, which players otherwise read as a second video track."""
     return has_disposition(stream, "attached_pic") or (
-        stream.get("codec_name") in config.IMAGE_CODECS
+        stream.get("codec_name") in policy.image_codecs
     )
 
 
-def title_is_load_bearing(stream: dict) -> bool:
+def title_is_load_bearing(stream: dict, policy: Policy) -> bool:
     """Titles the planner's own decisions read, so a rewrite must not clear
     them: the next plan would classify the track differently, breaking
     idempotence."""
-    return is_commentary(stream) or is_sdh(stream) or is_forced(stream)
+    return is_commentary(stream, policy) or is_sdh(stream, policy) or is_forced(stream, policy)
 
 
-def is_junk_title(title: str) -> bool:
+def is_junk_title(title: str, policy: Policy) -> bool:
     """Release junk (bitrates, resolutions, source tags) rather than meaning.
 
     A pure pattern test; callers clearing stream titles must guard them with
     title_is_load_bearing first.
     """
-    return bool(title) and bool(config.JUNK_TITLE_RE.search(title))
+    return bool(title) and bool(policy.junk_title_re.search(title))

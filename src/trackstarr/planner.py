@@ -2,22 +2,24 @@
 
 Everything here is pure given ffprobe output, which is what makes the rules
 testable without media. :func:`build_plan` is the only entry point that reads
-from disk: a stat for the hardlink check, then :func:`trackstarr.media.probe`.
+from disk: a stat for the staleness signature and hardlink check, then
+:func:`trackstarr.media.probe`.
 
-The rules are listed in :data:`RULES`. Every rule is idempotent: applying the
-result and re-planning yields an empty plan, so the sweep is safe to run as
-often as you like.
+The rules are named in :data:`trackstarr.policy.RULES`. Every rule is
+idempotent: applying the result and re-planning yields an empty plan, so the
+sweep is safe to run as often as you like.
 """
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from typing import NamedTuple
 
-from . import __version__, config
-from .layouts import Layout, bitrate_bps, encode_settings, parse_layout, resolved_layouts
+from .layouts import Layout, bitrate_bps, encode_settings
 from .media import (
     GENERATED_TAG,
+    ProbeError,
     container_title,
     duration,
     generated_settings,
@@ -32,104 +34,7 @@ from .media import (
     stream_title,
     title_is_load_bearing,
 )
-
-#: The rules, keyed by the name DISABLED_RULES uses to switch each off.
-#: Single source for the module docstring above and the CLI help text.
-RULES = {
-    "languages": "Keep audio and subtitle tracks whose language is English, the "
-    "title's original language, or untagged. Drop the rest.",
-    "downmix": "Guarantee a non-commentary track for each channel layout in "
-    "DOWNMIX_LAYOUTS (2.0 and 5.1 by default), downmixed from the best "
-    "surviving bigger track. Nothing is upmixed.",
-    "cover_art": "Drop embedded cover art.",
-    "order": "Order streams video, audio by ascending channel count, subtitles.",
-    "sdh": "Drop SDH subtitles whose language also keeps a full subtitle, when "
-    "rewriting anyway. Forced subtitles are always kept.",
-}
-
-#: Behaviours that are off by default, with the setting that turns each on.
-#: Named beside RULES so the CLI help stays the one place the tool describes
-#: itself.
-OPT_IN_RULES = {
-    "commentary": "Drop commentary, described-audio and isolated-score tracks "
-    "outright (set DROP_COMMENTARY).",
-    "regenerate": "Rebuild this tool's own downmixes when their recorded "
-    "codec or bitrate no longer matches config (REGENERATE_DOWNMIXES="
-    "generated), or additionally replace any layout-sized track reported "
-    "well below the layout's rate (REGENERATE_DOWNMIXES=all). Always fresh "
-    "from the best surviving bigger track, never a re-encode in place.",
-    "remux": "Rewrite MP4/M4V into Matroska, the container every feature "
-    "works in (set REMUX_TO_MKV). Text subtitles convert to SRT; nothing "
-    "else is re-encoded beyond the usual downmixes.",
-}
-
-
-#: Valid REGENERATE_DOWNMIXES values besides unset.
-REGENERATE_MODES = ("generated", "all")
-
-
-def config_errors() -> list[str]:
-    """Startup-fatal configuration problems, as ready-to-log messages.
-
-    Each would otherwise fail silently: a typo leaves a rule on, drops a
-    layout, or regenerates nothing.
-    """
-    errors = []
-    if unknown := set(config.DISABLED_RULES) - RULES.keys():
-        errors.append(
-            f"DISABLED_RULES contains unknown rules: {', '.join(sorted(unknown))} "
-            f"(valid: {', '.join(RULES)})"
-        )
-    if invalid := {entry for entry in config.DOWNMIX_LAYOUTS if parse_layout(entry) is None}:
-        errors.append(
-            f"DOWNMIX_LAYOUTS contains unrecognised layouts: {', '.join(sorted(invalid))} "
-            "(use forms like 2.0, 5.1:640k)"
-        )
-    by_channels: dict[int, list[str]] = {}
-    for entry in config.DOWNMIX_LAYOUTS:
-        if layout := parse_layout(entry):
-            by_channels.setdefault(layout.channels, []).append(entry)
-    for channels, entries in sorted(by_channels.items()):
-        # Two entries for one channel count would generate identical tracks
-        # and leave the rules judging against an arbitrary one of the rates.
-        if len(entries) > 1:
-            errors.append(
-                f"DOWNMIX_LAYOUTS entries {', '.join(sorted(entries))} are all "
-                f"{channels} channels; keep one"
-            )
-    if config.REGENERATE_DOWNMIXES not in ("", *REGENERATE_MODES):
-        errors.append(
-            f"REGENERATE_DOWNMIXES={config.REGENERATE_DOWNMIXES!r} is not one of: "
-            + ", ".join(REGENERATE_MODES)
-        )
-    return errors
-
-
-def rules_fingerprint() -> dict:
-    """Everything a cached plan verdict depends on besides the file itself.
-
-    The config values the rules read, plus the package version so rule
-    changes shipped in code invalidate cached verdicts too.
-    """
-    return {
-        "version": __version__,
-        "always_keep": sorted(config.ALWAYS_KEEP),
-        "commentary_pattern": config.COMMENTARY_RE.pattern,
-        "image_codecs": sorted(config.IMAGE_CODECS),
-        "skip_hardlinks": config.SKIP_HARDLINKS,
-        "disabled_rules": sorted(config.DISABLED_RULES),
-        "downmix_layouts": sorted(config.DOWNMIX_LAYOUTS),
-        # These decide verdicts only under REGENERATE_DOWNMIXES, but always
-        # fingerprinting them just means a codec tweak re-probes once.
-        "audio_codec": config.AUDIO_CODEC,
-        "audio_bitrate": config.AUDIO_BITRATE,
-        "regenerate_downmixes": config.REGENERATE_DOWNMIXES,
-        "remux_to_mkv": config.REMUX_TO_MKV,
-        "drop_commentary": config.DROP_COMMENTARY,
-        "junk_title_pattern": config.JUNK_TITLE_RE.pattern,
-        "sdh_pattern": config.SDH_RE.pattern,
-        "forced_pattern": config.FORCED_RE.pattern,
-    }
+from .policy import MUXERS, TAG_PRESERVING_EXTS, Policy
 
 
 def channel_rank(channels: int | None) -> tuple[bool, int]:
@@ -142,37 +47,15 @@ def channel_rank(channels: int | None) -> tuple[bool, int]:
     return (not channels or channels < 2, channels or 0)
 
 
-def keep_langs(original_lang: str | None) -> set[str]:
-    """The languages rule 1 keeps for a title."""
-    keep = set(config.ALWAYS_KEEP)
-    if original_lang:
-        keep.add(original_lang)
-    return keep
+class SourceSignature(NamedTuple):
+    """Size and mtime of a source file, compared by the staleness checks."""
 
+    size: int
+    mtime_ns: int
 
-def allowed_container(path: str) -> bool:
-    """Whether the file is of a type the rules are willing to rewrite."""
-    return os.path.splitext(path)[1].lower() in config.ALLOWED_EXTS
-
-
-#: Containers that preserve custom stream tags. Regeneration depends on the
-#: tag to recognise its own tracks, so it never drops anything elsewhere: on
-#: MP4 it would re-encode its own unrecognisable tracks every sweep, and
-#: judge commentary (whose title-based protection is also container-fragile)
-#: as a weak track to delete.
-TAG_PRESERVING_EXTS = {".mkv", ".webm"}
-
-
-def hardlinked(path: str) -> bool:
-    """More than one directory entry shares the file's inode.
-
-    In an *arr setup that means the download client is still seeding it. An
-    unreadable file counts as not hardlinked; the probe will report it.
-    """
-    try:
-        return os.stat(path).st_nlink > 1
-    except OSError:
-        return False
+    @classmethod
+    def of(cls, st: os.stat_result) -> SourceSignature:
+        return cls(st.st_size, st.st_mtime_ns)
 
 
 @dataclass
@@ -199,6 +82,10 @@ class OutStream:
 @dataclass
 class Plan:
     path: str
+    #: The policy the file was judged under, resolved from config at build
+    #: time, so the plan carries what it was judged with and the CLI can
+    #: show it.
+    policy: Policy = field(default_factory=Policy.from_config)
     streams: list[OutStream] = field(default_factory=list)
     #: Changes that justify a rewrite on their own.
     reasons: list[str] = field(default_factory=list)
@@ -208,23 +95,16 @@ class Plan:
     incidental: list[str] = field(default_factory=list)
     original_lang: str | None = None
     keep_langs: set[str] = field(default_factory=set)
-    #: Rule keys switched off for this plan, resolved from config at build
-    #: time like keep_langs, so the plan carries the policy it was judged
-    #: under and the CLI can show it.
-    disabled_rules: set[str] = field(default_factory=set)
-    #: The DROP_COMMENTARY opt-in, resolved the same way.
-    drop_commentary: bool = False
-    #: The REGENERATE_DOWNMIXES mode ("", "generated" or "all"), resolved
-    #: the same way.
-    regenerate_downmixes: str = ""
-    #: The REMUX_TO_MKV opt-in, resolved the same way.
-    remux_to_mkv: bool = False
-    #: The layouts the downmix rule guarantees, smallest first, resolved
-    #: from config the same way.
-    downmix_layouts: list[Layout] = field(default_factory=list)
     #: Source duration at plan time, checked against the rewrite result
     #: before anything is overwritten. Zero when the probe did not carry one.
     src_duration: float = 0.0
+    #: Source size and mtime at plan time. A plan can go stale waiting on the
+    #: rewrite lock (a sweep and a webhook can plan the same file, and the
+    #: loser waits out a whole rewrite), and applying a stale plan maps
+    #: streams by indices the file no longer has. apply_plan refuses to start
+    #: unless the file still matches. None when the plan was built straight
+    #: from probe data, as tests do.
+    src_signature: SourceSignature | None = None
     #: Strip a junk container title while rewriting anyway.
     clear_container_title: bool = False
     #: Set when the file cannot or need not be touched at all.
@@ -239,12 +119,9 @@ class Plan:
         """Where the rewrite lands: the source path, or its .mkv sibling
         when REMUX_TO_MKV converts the container."""
         base, ext = os.path.splitext(self.path)
-        if self.remux_to_mkv and ext.lower() not in TAG_PRESERVING_EXTS:
+        if self.policy.remux_to_mkv and ext.lower() not in TAG_PRESERVING_EXTS:
             return base + ".mkv"
         return self.path
-
-    def rule_enabled(self, rule: str) -> bool:
-        return rule not in self.disabled_rules
 
 
 def describe(plan: Plan) -> str:
@@ -255,25 +132,28 @@ def describe(plan: Plan) -> str:
 
 def new_plan(path: str, original_lang: str | None) -> Plan:
     """A Plan carrying the policy resolved from config at build time."""
+    policy = Policy.from_config()
     return Plan(
         path=path,
+        policy=policy,
         original_lang=original_lang,
-        keep_langs=keep_langs(original_lang),
-        disabled_rules=set(config.DISABLED_RULES),
-        drop_commentary=config.DROP_COMMENTARY,
-        regenerate_downmixes=config.REGENERATE_DOWNMIXES,
-        remux_to_mkv=config.REMUX_TO_MKV,
-        downmix_layouts=resolved_layouts(),
+        keep_langs=policy.keep_langs(original_lang),
     )
 
 
 def build_plan(path: str, original_lang: str | None) -> Plan:
     plan = new_plan(path, original_lang)
-    if not allowed_container(path):
+    if not plan.policy.allowed_container(path):
         ext = os.path.splitext(path)[1].lower()
         plan.skip = f"container {ext or '(none)'} not in ALLOWED_EXTS"
         return plan
-    if config.SKIP_HARDLINKS and hardlinked(path):
+    try:
+        src = os.stat(path)
+    except OSError as err:
+        # The probe would fail on the same unreadable file; same outcome.
+        raise ProbeError(f"cannot stat: {err}") from err
+    plan.src_signature = SourceSignature.of(src)
+    if plan.policy.skip_hardlinks and src.st_nlink > 1:
         plan.skip = "hardlinked, left for the download client (SKIP_HARDLINKS)"
         return plan
     return plan_from_probe(plan, probe(path))
@@ -281,6 +161,7 @@ def build_plan(path: str, original_lang: str | None) -> Plan:
 
 def plan_from_probe(plan: Plan, info: dict) -> Plan:
     """The rules themselves, split out so tests can feed synthetic probe data."""
+    policy = plan.policy
     streams = info.get("streams") or []
     plan.src_duration = duration(info)
 
@@ -293,7 +174,7 @@ def plan_from_probe(plan: Plan, info: dict) -> Plan:
         plan.reasons.append("remux to mkv (REMUX_TO_MKV)")
 
     def keep_track(stream: dict, what: str) -> bool:
-        if not plan.rule_enabled("languages"):
+        if not policy.rule_enabled("languages"):
             return True
         lang = stream_lang(stream)
         if lang is None or lang in plan.keep_langs:
@@ -362,11 +243,11 @@ def plan_from_probe(plan: Plan, info: dict) -> Plan:
     ordered += [OutStream(src=stream["index"], kind="attachment") for stream in attachments]
 
     file_title = container_title(info)
-    if is_junk_title(file_title):
+    if is_junk_title(file_title, policy):
         plan.incidental.append(f"clear junk container title ({file_title!r})")
         plan.clear_container_title = True
 
-    if plan.rule_enabled("order"):
+    if policy.rule_enabled("order"):
         # Rule 4 is worth a rewrite on its own, but only when the order of the
         # streams we are keeping actually differs — comparing against every
         # input stream would make any dropped stream look like a reordering.
@@ -394,7 +275,7 @@ def _split_streams(
     for stream in streams:
         kind = stream.get("codec_type")
         if kind == "video":
-            if plan.rule_enabled("cover_art") and is_cover_art(stream):
+            if plan.policy.rule_enabled("cover_art") and is_cover_art(stream, plan.policy):
                 plan.reasons.append(
                     f"drop cover art (stream {stream['index']}, {stream.get('codec_name')})"
                 )
@@ -424,7 +305,7 @@ def _stream_label(stream: dict, detail: str = "") -> str:
 def _flag_junk_title(plan: Plan, stream: dict) -> bool:
     """Record a junk title for clearing. Rides along, never triggers."""
     title = stream_title(stream)
-    if not is_junk_title(title) or title_is_load_bearing(stream):
+    if not is_junk_title(title, plan.policy) or title_is_load_bearing(stream, plan.policy):
         return False
     plan.incidental.append(
         f"clear junk title on {stream.get('codec_type')} {stream['index']} ({title!r})"
@@ -440,14 +321,14 @@ def _drop_redundant_sdh(plan: Plan, kept_subs: list[dict]) -> list[dict]:
     Forced subtitles are never candidates in either direction: they are
     always kept, and never make an SDH track redundant.
     """
-    if not plan.rule_enabled("sdh"):
+    if not plan.policy.rule_enabled("sdh"):
         return kept_subs
     sdh: list[dict] = []
     full_langs: set[str | None] = set()
     for stream in kept_subs:
-        if is_forced(stream):
+        if is_forced(stream, plan.policy):
             continue
-        if is_sdh(stream):
+        if is_sdh(stream, plan.policy):
             sdh.append(stream)
         else:
             full_langs.add(stream_lang(stream))
@@ -465,12 +346,12 @@ def _drop_commentary(plan: Plan, kept_audio: list[dict]) -> list[dict]:
     Declines entirely when every surviving track is commentary: the other
     rules still apply, but the file is never left silent.
     """
-    if not plan.drop_commentary:
+    if not plan.policy.drop_commentary:
         return kept_audio
     keep: list[dict] = []
     dropped: list[dict] = []
     for stream in kept_audio:
-        if is_commentary(stream):
+        if is_commentary(stream, plan.policy):
             dropped.append(stream)
         else:
             keep.append(stream)
@@ -482,7 +363,7 @@ def _drop_commentary(plan: Plan, kept_audio: list[dict]) -> list[dict]:
 
 
 def _downmix_sources(
-    streams: list[dict], channels: int, exclude: dict | None = None
+    streams: list[dict], channels: int, policy: Policy, exclude: dict | None = None
 ) -> list[dict]:
     """Non-commentary tracks bigger than ``channels``: the pool a downmix
     for that layout is made from.
@@ -495,7 +376,7 @@ def _downmix_sources(
         for stream in streams
         if stream is not exclude
         and (stream.get("channels") or 0) > channels
-        and not is_commentary(stream)
+        and not is_commentary(stream, policy)
     ]
 
 
@@ -507,20 +388,20 @@ def _drop_stale_downmixes(plan: Plan, kept_audio: list[dict]) -> list[dict]:
     layout from survives, so a file never loses a layout it had, and only
     tag-preserving containers are touched at all.
     """
-    if not plan.regenerate_downmixes or not plan.rule_enabled("downmix"):
+    if not plan.policy.regenerate_downmixes or not plan.policy.rule_enabled("downmix"):
         return kept_audio
     if os.path.splitext(plan.path)[1].lower() not in TAG_PRESERVING_EXTS:
         return kept_audio
     # The same first-wins choice _choose_downmixes makes, so a track is
     # always judged against the layout it would be rebuilt with.
     layouts: dict[int | None, Layout] = {}
-    for layout in plan.downmix_layouts:
+    for layout in plan.policy.downmix_layouts:
         layouts.setdefault(layout.channels, layout)
     keep: list[dict] = []
     for stream in kept_audio:
         layout = layouts.get(stream.get("channels"))
         why = _stale_reason(plan, stream, layout) if layout else None
-        if why and _downmix_sources(kept_audio, layout.channels, exclude=stream):
+        if why and _downmix_sources(kept_audio, layout.channels, plan.policy, exclude=stream):
             plan.reasons.append(why)
         else:
             keep.append(stream)
@@ -546,14 +427,14 @@ def _stale_reason(plan: Plan, stream: dict, layout: Layout) -> str | None:
     fresh downmix from a bigger track.
     """
     recorded = generated_settings(stream)
-    desired = encode_settings(layout.bitrate)
+    desired = encode_settings(plan.policy.audio_codec, layout.bitrate)
     if recorded is not None:
         if recorded == desired:
             return None
         return (
             f"regenerate {layout.name} downmix {_stream_label(stream, recorded)} as {desired}"
         )
-    if plan.regenerate_downmixes != "all" or is_commentary(stream):
+    if plan.policy.regenerate_downmixes != "all" or is_commentary(stream, plan.policy):
         return None
     reported = stream_bitrate(stream)
     target = bitrate_bps(layout.bitrate) or 0
@@ -572,17 +453,17 @@ def _choose_downmixes(plan: Plan, kept_audio: list[dict]) -> list[tuple[Layout, 
     count. Each is downmixed from the best surviving bigger track; a layout
     with nothing bigger to make it from is skipped, nothing is upmixed.
     """
-    if not plan.rule_enabled("downmix"):
+    if not plan.policy.rule_enabled("downmix"):
         return []
-    real = [stream for stream in kept_audio if not is_commentary(stream)]
+    real = [stream for stream in kept_audio if not is_commentary(stream, plan.policy)]
     # Two layout names with the same channel count ("4.2" and "5.1") would
     # generate identical tracks, so a satisfied count also satisfies the rest.
     satisfied = {stream.get("channels") for stream in real}
     chosen: list[tuple[Layout, dict]] = []
-    for layout in plan.downmix_layouts:
+    for layout in plan.policy.downmix_layouts:
         if layout.channels in satisfied:
             continue
-        candidates = _downmix_sources(kept_audio, layout.channels)
+        candidates = _downmix_sources(kept_audio, layout.channels, plan.policy)
         if not candidates:
             continue
         src = min(candidates, key=lambda stream: _downmix_rank(stream, plan.original_lang))
@@ -628,7 +509,7 @@ def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
         if out.encode:
             args += [
                 f"-c:a:{idx}",
-                config.AUDIO_CODEC,
+                plan.policy.audio_codec,
                 f"-ac:a:{idx}",
                 str(out.channels),
                 f"-b:a:{idx}",
@@ -638,7 +519,7 @@ def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
                 # Recorded so REGENERATE_DOWNMIXES can recognise this track
                 # and its settings on a later pass.
                 f"-metadata:s:a:{idx}",
-                f"{GENERATED_TAG}={encode_settings(out.bitrate)}",
+                f"{GENERATED_TAG}={encode_settings(plan.policy.audio_codec, out.bitrate)}",
                 # Dispositions are copied from the source stream, so without
                 # this the downmix inherits `default` from the track it came
                 # from and the file ends up with two default audio tracks.
@@ -668,5 +549,9 @@ def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
     if plan.clear_container_title:
         args += ["-metadata", "title="]
 
+    # Rewrites stage under a .partial name so library scanners ignore the
+    # half-written file, which leaves ffmpeg unable to infer the muxer from
+    # the extension. Name it from the container the plan actually writes.
+    args += ["-f", MUXERS[os.path.splitext(plan.out_path)[1].lower()]]
     args += ["-max_muxing_queue_size", "9999", dest]
     return args

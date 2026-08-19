@@ -8,11 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from conftest import requires_ffmpeg
-from trackstarr import app, config, executor, planner
-from trackstarr.executor import Outcome, apply_plan, clean_work_dir
+from conftest import requires_ffmpeg, requires_mp4_titles
+from trackstarr import config, executor, planner
+from trackstarr.executor import Outcome, apply_plan
 from trackstarr.media import ProbeError, duration, probe, stream_title
 from trackstarr.planner import build_plan
+from trackstarr.sweep import sweep
 
 pytestmark = [requires_ffmpeg, pytest.mark.ffmpeg]
 
@@ -87,6 +88,7 @@ def test_regenerate_downmix_end_to_end(make_file, monkeypatch):
     assert len(streams_of(path, "audio")) == 3
 
 
+@requires_mp4_titles
 def test_mp4_commentary_titles_are_read_and_survive(make_file):
     """MP4 reports track titles as ``name``, and a plain copy drops them;
     commentary must be caught before the rewrite and still be labelled
@@ -99,6 +101,7 @@ def test_mp4_commentary_titles_are_read_and_survive(make_file):
     assert not build_plan(path, "eng").needed
 
 
+@requires_mp4_titles
 def test_remux_to_mkv_end_to_end(make_file, monkeypatch):
     """An MP4 converts to its .mkv sibling: subtitles become SRT, the
     generated downmix carries its settings tag, and the original is gone."""
@@ -287,10 +290,10 @@ def test_second_sweep_skips_probing_unchanged_files(make_file, swept_library):
     """The sweep cache: an unchanged library costs stats, not probes."""
     make_file("f.mkv", [(2, "eng", ""), (6, "eng", "")])
 
-    assert app.sweep(dry_run=True)["conform"] == 1
+    assert sweep(dry_run=True)["conform"] == 1
     assert len(swept_library) == 1
 
-    assert app.sweep(dry_run=True)["conform"] == 1
+    assert sweep(dry_run=True)["conform"] == 1
     assert len(swept_library) == 1
 
 
@@ -351,12 +354,12 @@ def test_seed_release_invalidates_cached_hardlink_skip(
     seed = tmp_path / "seed.mkv"
     os.link(path, seed)
 
-    assert app.sweep(dry_run=True)["skip"] == 1
-    assert app.sweep(dry_run=True)["skip"] == 1
+    assert sweep(dry_run=True)["skip"] == 1
+    assert sweep(dry_run=True)["skip"] == 1
     assert len(swept_library) == 0
 
     seed.unlink()
-    assert app.sweep(dry_run=True)["would-fix"] == 1
+    assert sweep(dry_run=True)["would-fix"] == 1
     assert len(swept_library) == 1
 
 
@@ -365,20 +368,12 @@ def test_report_only_sweep_reuses_would_fix_verdicts(make_file, swept_library, t
     an applying sweep must not trust a cached would-fix verdict."""
     make_file("f.mkv", COMMENTARY_CASE)
 
-    assert app.sweep(dry_run=True)["would-fix"] == 1
-    assert app.sweep(dry_run=True)["would-fix"] == 1
+    assert sweep(dry_run=True)["would-fix"] == 1
+    assert sweep(dry_run=True)["would-fix"] == 1
     assert len(swept_library) == 1
     report = (tmp_path / "state" / "pending.tsv").read_text()
     assert "would-fix" in report
 
-    counts = app.sweep(dry_run=False)
+    counts = sweep(dry_run=False)
     assert counts["fixed"] == 1
     assert len(swept_library) == 2
-
-
-def test_clean_work_dir_removes_only_our_temp_files(tmp_path):
-    (tmp_path / ".trackstarr-123-456.mkv").write_text("stale")
-    (tmp_path / "keep-me.mkv").write_text("not ours")
-    clean_work_dir()
-    assert not (tmp_path / ".trackstarr-123-456.mkv").exists()
-    assert (tmp_path / "keep-me.mkv").exists()

@@ -3,7 +3,7 @@
 Parsing, validation and resolution into the concrete settings an encode
 uses. Pure string-and-config work: nothing here knows about plans, streams
 or probe output. Startup refuses invalid entries via
-:func:`trackstarr.planner.config_errors`.
+:func:`trackstarr.config.errors`.
 """
 
 from __future__ import annotations
@@ -76,6 +76,6 @@ def resolved_layouts() -> list[Layout]:
     return sorted(filled, key=lambda layout: (layout.channels, layout.name, layout.bitrate))
 
 
-def encode_settings(bitrate: str) -> str:
+def encode_settings(codec: str, bitrate: str) -> str:
     """What media.GENERATED_TAG records about an encode: its codec and rate."""
-    return f"{config.AUDIO_CODEC} {bitrate}"
+    return f"{codec} {bitrate}"

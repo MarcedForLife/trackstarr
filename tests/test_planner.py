@@ -7,17 +7,17 @@ import os
 import pytest
 
 from conftest import audio, probe_data, subtitle, video
-from trackstarr import config
+from trackstarr import config, policy
 from trackstarr.layouts import resolved_layouts
 from trackstarr.media import is_junk_title
 from trackstarr.planner import (
     build_plan,
     channel_rank,
-    config_errors,
     ffmpeg_args,
     new_plan,
     plan_from_probe,
 )
+from trackstarr.policy import Policy
 
 
 def plan_for(*streams, original="eng", title="", path="/x/f.mkv"):
@@ -130,7 +130,7 @@ def test_layouts_with_equal_channel_counts_generate_one_track(monkeypatch):
 
 def test_duplicate_channel_counts_are_refused_at_startup(monkeypatch):
     monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"5.1", "5.1:640k"})
-    errors = config_errors()
+    errors = policy.errors()
     assert len(errors) == 1
     assert "5.1, 5.1:640k" in errors[0]
 
@@ -139,7 +139,7 @@ def test_invalid_layouts_catch_typos(monkeypatch):
     monkeypatch.setattr(
         config, "DOWNMIX_LAYOUTS", {"2.0", "surround", "5:1", "0.0", "5.1:640x"}
     )
-    errors = config_errors()
+    errors = policy.errors()
     assert len(errors) == 1
     assert all(bad in errors[0] for bad in ("surround", "5:1", "0.0", "5.1:640x"))
     assert [(layout.name, layout.channels) for layout in resolved_layouts()] == [("2.0", 2)]
@@ -571,7 +571,7 @@ def test_sdh_rule_can_be_disabled(monkeypatch):
     ],
 )
 def test_is_junk_title(title, junk):
-    assert is_junk_title(title) is junk
+    assert is_junk_title(title, Policy.from_config()) is junk
 
 
 def test_load_bearing_titles_are_never_cleared():

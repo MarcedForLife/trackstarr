@@ -1,18 +1,18 @@
-"""Webhook parsing, parking, and scheduling. No media, no network."""
+"""Webhook parsing and hardlink parking. No media, no network."""
 
 from __future__ import annotations
 
 import os
-import time
 from dataclasses import replace
 
 import pytest
 
-from trackstarr import app, config
-from trackstarr.app import Job, _resolve_lang, jobs_from_hook, seconds_until
+from trackstarr import config, events, processing, webhook
 from trackstarr.arr import original_of, radarr
-from trackstarr.executor import Outcome
 from trackstarr.planner import Plan
+from trackstarr.processing import Job, ProcessResult
+from trackstarr.status import Status
+from trackstarr.webhook import _resolve_lang, jobs_from_hook
 
 
 def test_radarr_import_webhook():
@@ -110,13 +110,34 @@ def test_worker_keeps_a_language_the_webhook_already_carried():
     assert job.lang == "eng"
 
 
+def test_dry_run_never_rewrites_a_webhook_import(monkeypatch):
+    """The DRY_RUN latch lives inside process(), so the handler's plain
+    dry_run=False must still end as a would-fix, never a rewrite."""
+    monkeypatch.setattr(config, "DRY_RUN", True)
+    plan = Plan(path="/x.mkv", reasons=["reorder streams"])
+    monkeypatch.setattr(processing, "build_plan", lambda p, lang: plan)
+    monkeypatch.setattr(
+        processing, "apply_plan", lambda plan: pytest.fail("DRY_RUN must not rewrite")
+    )
+    webhook._handle(Job("/x.mkv"))
+    (entry,) = list(events.read())
+    assert entry["event"] == "would-fix"
+
+
+def test_original_of_handles_missing_fields():
+    assert original_of(None) is None
+    assert original_of({}) is None
+    assert original_of({"originalLanguage": {}}) is None
+    assert original_of({"originalLanguage": {"name": "Unknown"}}) is None
+
+
 @pytest.fixture
 def parked(monkeypatch):
     """SKIP_HARDLINKS on, with a clean parked set before and after."""
     monkeypatch.setattr(config, "SKIP_HARDLINKS", True)
-    app._parked.clear()
-    yield app._parked
-    app._parked.clear()
+    webhook._parked.clear()
+    yield webhook._parked
+    webhook._parked.clear()
 
 
 @pytest.fixture
@@ -130,8 +151,8 @@ def seeded_file(tmp_path) -> str:
 
 def test_seeded_import_is_parked_not_processed(parked, seeded_file, monkeypatch):
     processed = []
-    monkeypatch.setattr(app, "process", lambda job, dry_run: processed.append(job))
-    app._handle(Job(seeded_file))
+    monkeypatch.setattr(webhook, "process", lambda job, dry_run: processed.append(job))
+    webhook._handle(Job(seeded_file))
     assert seeded_file in parked
     assert processed == []
 
@@ -139,78 +160,36 @@ def test_seeded_import_is_parked_not_processed(parked, seeded_file, monkeypatch)
 def test_parking_requires_the_option(parked, seeded_file, monkeypatch):
     monkeypatch.setattr(config, "SKIP_HARDLINKS", False)
     processed = []
-    monkeypatch.setattr(app, "process", lambda job, dry_run: processed.append(job))
-    app._handle(Job(seeded_file))
+    monkeypatch.setattr(
+        webhook,
+        "process",
+        lambda job, dry_run: processed.append(job) or ProcessResult(Status.CONFORM),
+    )
+    webhook._handle(Job(seeded_file))
     assert parked == {}
     assert [job.path for job in processed] == [seeded_file]
 
 
 def test_release_queues_the_parked_job(parked, seeded_file, tmp_path, monkeypatch):
     queued = []
-    monkeypatch.setattr(app, "enqueue", lambda job: queued.append(job) is None)
-    app._park(Job(seeded_file))
+    monkeypatch.setattr(webhook, "enqueue", lambda job: queued.append(job) is None)
+    webhook._park(Job(seeded_file))
 
-    app._recheck_parked()
+    webhook._recheck_parked()
     assert seeded_file in parked
     assert queued == []
 
     os.unlink(tmp_path / "seed.mkv")
-    app._recheck_parked()
+    webhook._recheck_parked()
     assert parked == {}
     assert [job.path for job in queued] == [seeded_file]
 
 
 def test_vanished_parked_file_is_dropped(parked, monkeypatch):
     queued = []
-    monkeypatch.setattr(app, "enqueue", lambda job: queued.append(job) is None)
-    app._park(Job("/nowhere/f.mkv"))
+    monkeypatch.setattr(webhook, "enqueue", lambda job: queued.append(job) is None)
+    webhook._park(Job("/nowhere/f.mkv"))
 
-    app._recheck_parked()
+    webhook._recheck_parked()
     assert parked == {}
     assert queued == []
-
-
-def test_deferred_rewrite_is_not_a_failure(monkeypatch):
-    """A benign mid-rewrite race must not alert like a corruption."""
-    plan = Plan(path="/x.mkv", reasons=["reorder streams"])
-    monkeypatch.setattr(app, "build_plan", lambda path, lang: plan)
-    monkeypatch.setattr(
-        app, "apply_plan", lambda plan: (Outcome.DEFERRED, "source changed during the rewrite")
-    )
-    result = app.process(Job("/x.mkv"), dry_run=False)
-    assert result.status == "deferred"
-    assert "source changed" in result.detail
-
-
-def test_fixed_file_notifies_media_servers(monkeypatch):
-    plan = Plan(path="/x.mkv", reasons=["reorder streams"])
-    monkeypatch.setattr(app, "build_plan", lambda path, lang: plan)
-    monkeypatch.setattr(app, "apply_plan", lambda plan: (Outcome.APPLIED, ""))
-    refreshed = []
-    monkeypatch.setattr(app, "refresh_servers", refreshed.append)
-
-    result = app.process(Job("/x.mkv"), dry_run=False)
-    assert result.status == "fixed"
-    assert refreshed == ["/x.mkv"]
-
-
-def test_original_of_handles_missing_fields():
-    assert original_of(None) is None
-    assert original_of({}) is None
-    assert original_of({"originalLanguage": {}}) is None
-    assert original_of({"originalLanguage": {"name": "Unknown"}}) is None
-
-
-def test_seconds_until_later_today():
-    now = time.mktime((2026, 8, 13, 1, 0, 0, 0, 0, -1))
-    assert seconds_until("04:00", now) == pytest.approx(3 * 3600)
-
-
-def test_seconds_until_rolls_to_tomorrow():
-    now = time.mktime((2026, 8, 13, 5, 0, 0, 0, 0, -1))
-    assert seconds_until("04:00", now) == pytest.approx(23 * 3600)
-
-
-def test_seconds_until_rejects_garbage():
-    with pytest.raises(ValueError):
-        seconds_until("not-a-time")

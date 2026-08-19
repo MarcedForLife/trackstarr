@@ -89,7 +89,9 @@ class Arr:
         }
         try:
             existing = self._call("/api/v3/notification") or []
-            ours = next((n for n in existing if n.get("name") == WEBHOOK_NAME), None)
+            ours = next(
+                (entry for entry in existing if entry.get("name") == WEBHOOK_NAME), None
+            )
             if ours and _webhook_current(ours, payload):
                 return True
             # Saving makes the *arr fire a test event at the url, so the
@@ -199,16 +201,16 @@ def path_index(arrs: list[Arr]) -> list[LibraryItem]:
     Built once per sweep. Sorting by length means the first prefix match is
     always the most specific one.
     """
-    idx = [
+    index = [
         LibraryItem(item["path"].rstrip("/"), original_of(item), item["id"], arr)
         for arr in arrs
         for item in arr.all_items()
         if item.get("path")
     ]
-    idx.sort(key=lambda entry: -len(entry.base))
-    log.info("indexed %d titles from the *arrs", len(idx))
-    return idx
+    index.sort(key=lambda entry: -len(entry.base))
+    log.info("indexed %d titles from the *arrs", len(index))
+    return index
 
 
-def match_path(idx: list[LibraryItem], path: str) -> LibraryItem | None:
-    return next((entry for entry in idx if path_within(path, entry.base)), None)
+def match_path(index: list[LibraryItem], path: str) -> LibraryItem | None:
+    return next((entry for entry in index if path_within(path, entry.base)), None)

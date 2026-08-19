@@ -73,3 +73,27 @@ jobs:
         run: |
           docker run --rm trackstarr:ci --version
           docker run --rm trackstarr:ci plan --help
+
+      # The matrix above runs against ubuntu-latest's ffmpeg, which is older
+      # than the one we ship and silently drops per-stream MP4 titles, so the
+      # tests needing them skip there. This is what actually exercises them,
+      # against the exact ffmpeg and Python that users get. -rs reports the
+      # skips so a capability quietly disappearing is visible in the log.
+      - name: Test inside the image
+        run: |
+          docker run --rm --entrypoint sh \
+            -v "$PWD/tests:/w/tests:ro" \
+            -v "$PWD/pyproject.toml:/w/pyproject.toml:ro" \
+            -w /w trackstarr:ci -c '
+              apk add --no-cache py3-pytest >/dev/null
+              pytest -q -p no:cacheprovider -rs
+            ' 2>&1 | tee image-tests.log
+
+      - name: Fail if the image cannot round-trip MP4 titles
+        run: |
+          # A skip here means the shipped ffmpeg regressed, which the matrix
+          # cannot see: it skips these for its own reasons and stays green.
+          if grep -q "drops per-stream titles in MP4" image-tests.log; then
+            echo "::error::the shipped image skipped the MP4 title tests"
+            exit 1
+          fi
