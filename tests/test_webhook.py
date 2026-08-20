@@ -90,6 +90,20 @@ def test_sonarr_multi_file_webhook():
     ]
 
 
+def test_jobs_share_the_run_the_delivery_was_stamped_with():
+    """A season import is one POST with many files; its rewrites group in the
+    history the way one sweep's do."""
+    jobs = jobs_from_hook(
+        {
+            "eventType": "Download",
+            "series": {"id": 7, "path": "/data/media/tv/Show"},
+            "episodeFiles": [{"relativePath": "a.mkv"}, {"relativePath": "b.mkv"}],
+        },
+        "2026-08-20T03:00:00+12:00#abcd",
+    )
+    assert {job.run for job in jobs} == {"2026-08-20T03:00:00+12:00#abcd"}
+
+
 @pytest.mark.parametrize(
     "event", ["Grab", "Test", "HealthIssue", "ApplicationUpdate", "Rename"]
 )
@@ -140,6 +154,16 @@ def test_dry_run_never_rewrites_a_webhook_import(monkeypatch):
     webhook._handle(Job("/x.mkv"))
     (entry,) = read_events()
     assert entry["event"] == "would-fix"
+
+
+def test_the_worker_labels_history_with_the_delivery_run(monkeypatch):
+    """Under DRY_RUN the would-fix entry is the webhook's only record, so it
+    has to carry the run the delivery minted."""
+    monkeypatch.setattr(config, "DRY_RUN", True)
+    monkeypatch.setattr(processing, "build_plan", lambda p, lang: needed_plan())
+    webhook._handle(Job("/x.mkv", run="r#1"))
+    (entry,) = read_events()
+    assert entry["run"] == "r#1"
 
 
 @pytest.fixture
@@ -213,6 +237,27 @@ def test_post_queues_only_existing_paths(listener, media_root):
     assert post(listener, body, headers) == (200, "queued 1")
     # No worker threads run here, so the accepted job is still queued.
     assert webhook._work_q.get_nowait().path == str(media_root / "f.mkv")
+
+
+def test_a_queued_post_records_the_delivery(listener, media_root):
+    """The run exists in the history before its rewrites do, so a runs view
+    can show work still queued."""
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    post(listener, movie_body(str(media_root / "f.mkv"), str(media_root)), headers)
+    (entry,) = read_events()
+    assert entry["event"] == "webhook"
+    assert entry["arr"] == "radarr"
+    assert entry["files"] == 1
+    assert entry["run"] == webhook._work_q.get_nowait().run
+
+
+def test_a_post_that_queues_nothing_records_nothing(listener, media_root):
+    """Test buttons and mount mismatches are not runs; recording them would
+    fill the history with entries no rewrite ever joins."""
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    post(listener, movie_body(str(media_root / "missing.mkv"), str(media_root)), headers)
+    post(listener, {"eventType": "Test"}, headers)
+    assert read_events() == []
 
 
 def test_unauthenticated_posts_never_reach_the_queue(listener, media_root):
@@ -382,7 +427,7 @@ def test_a_post_for_a_file_already_in_flight_queues_nothing(listener, media_root
 def test_parking_survives_a_restart(parked, seeded_file):
     """Nothing re-fires an import and SWEEP_AT is unset by default, so a set
     lost to a restart is a file nothing comes back to."""
-    webhook._park(Job(seeded_file, "kor", 12, configured_arr("sonarr")))
+    webhook._park(Job(seeded_file, "kor", 12, configured_arr("sonarr"), "r#1"))
 
     parked.clear()  # stand in for the process going away
     webhook.load_parked()
@@ -394,6 +439,9 @@ def test_parking_survives_a_restart(parked, seeded_file):
     # Stored by name and rebuilt from current config, so a job restored after
     # its *arr was reconfigured carries the new settings, not the old ones.
     assert job.arr.name == "sonarr"
+    # The delivery's run rides along, so a rewrite finished days after its
+    # import still groups with it.
+    assert job.run == "r#1"
 
 
 def test_a_parked_job_with_no_arr_round_trips(parked, seeded_file):

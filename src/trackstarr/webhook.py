@@ -1,8 +1,8 @@
 """The webhook side: the listener, the work queue, and hardlink parking.
 
-Radarr and Sonarr fire once per imported file. The handler parses and
-queues, nothing more; worker threads do the probing and rewriting, so a slow
-*arr can never stall the response. Caller credentials live in
+Radarr and Sonarr fire once per imported file. The handler parses, queues
+and notes the delivery in the history; worker threads do the probing and
+rewriting, so a slow *arr can never stall the response. Caller credentials live in
 :mod:`trackstarr.auth`.
 """
 
@@ -83,6 +83,7 @@ def _save_parked() -> None:
                 "lang": job.lang,
                 "item_id": job.item_id,
                 "arr": job.arr.name if job.arr else None,
+                "run": job.run,
             }
             for job in _parked.values()
         ]
@@ -116,6 +117,7 @@ def load_parked() -> None:
             record.get("item_id"),
             # "" for a job that was matched to no *arr, which no name is.
             arrs.get(record.get("arr") or ""),
+            record.get("run"),
         )
         for record in (records if isinstance(records, list) else [])
         if isinstance(record, dict) and record.get("path")
@@ -161,6 +163,7 @@ def _handle(job: Job) -> None:
         # pending.tsv row here, so the history is the only record.
         events.record(
             "would-fix",
+            run=job.run,
             source="webhook",
             config_id=result.plan.policy.digest(),
             path=job.path,
@@ -233,8 +236,12 @@ def parked_recheck_loop() -> None:  # pragma: no cover
 _ACTIONABLE_EVENTS = frozenset({"Download", "MovieFileImported"})
 
 
-def jobs_from_hook(body: dict) -> list[Job]:
-    """Pull the files to process out of a webhook body."""
+def jobs_from_hook(body: dict, run: str | None = None) -> list[Job]:
+    """Pull the files to process out of a webhook body.
+
+    Every job carries ``run``, so a season import's rewrites group in the
+    history the way one sweep's do.
+    """
     if body.get("eventType") not in _ACTIONABLE_EVENTS:
         return []
     for arr in all_arrs():
@@ -244,7 +251,7 @@ def jobs_from_hook(body: dict) -> list[Job]:
         lang = original_of(item)
         folder = item.get(arr.folder_key) or ""
         files = [body[arr.file_key]] if arr.file_key in body else body.get(arr.files_key, [])
-        return [Job(path, lang, item.get("id"), arr) for path in _paths(files, folder)]
+        return [Job(path, lang, item.get("id"), arr, run) for path in _paths(files, folder)]
     return []
 
 
@@ -284,6 +291,10 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def _authorized(self) -> bool:
+        """The caller-secret check, for POSTs today and /api requests later."""
+        return auth.authorized(self.headers.get(AUTH_HEADER) or "")
+
     def do_GET(self) -> None:
         if urllib.parse.urlparse(self.path).path == "/health":
             self._reply(200, "healthy")
@@ -291,7 +302,7 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(404, "not found")
 
     def do_POST(self) -> None:
-        if not auth.authorized(self.headers.get(AUTH_HEADER) or ""):
+        if not self._authorized():
             log.warning("rejecting POST without a valid shared secret")
             self._reply(401, "unauthorized")
             return
@@ -315,7 +326,9 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         queued = 0
-        for job in jobs_from_hook(body):
+        run = events.run_id()
+        jobs = jobs_from_hook(body, run)
+        for job in jobs:
             # Usually a mount mismatch: the *arr and this container spell
             # the library differently.
             if not os.path.exists(job.path):
@@ -324,6 +337,15 @@ class Handler(BaseHTTPRequestHandler):
             if enqueue(job):
                 queued += 1
                 log.info("queued %s (original=%s)", job.path, job.lang or "unknown")
+        if queued:
+            # The delivery itself, so the run exists in the history before
+            # its rewrites do and a runs view can show work still queued.
+            events.record(
+                "webhook",
+                run=run,
+                arr=jobs[0].arr.name if jobs[0].arr else None,
+                files=queued,
+            )
         self._reply(200, f"queued {queued}")
 
     def log_message(self, fmt: str, *args) -> None:

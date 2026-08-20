@@ -9,7 +9,7 @@ import sys
 import textwrap
 from types import FrameType
 
-from . import __version__, auth, config, policy
+from . import __version__, auth, config, events, policy
 from .app import serve
 from .arr import LibraryIndex, all_arrs, match_path, path_index
 from .command import ffmpeg_args
@@ -85,7 +85,7 @@ def _add_files_arguments(cmd: argparse.ArgumentParser) -> None:
 
 
 def _resolve_jobs(
-    files: list[str], original: str | None, match_items: bool = False
+    files: list[str], original: str | None, match_items: bool = False, run: str | None = None
 ) -> tuple[list[Job], bool]:
     """One Job per file, its language from the flag or the *arrs' index,
     plus whether every enabled *arr answered the index fetch.
@@ -102,7 +102,7 @@ def _resolve_jobs(
         index = path_index(all_arrs())
     else:
         index = LibraryIndex({}, complete=True)
-    return [Job.from_match(path, match_path(index, path), original) for path in files], (
+    return [Job.from_match(path, match_path(index, path), original, run) for path in files], (
         index.complete
     )
 
@@ -164,7 +164,8 @@ def cmd_fix(files: list[str], original: str | None) -> int:
     """
     if config.DRY_RUN:
         print("DRY_RUN is set, planning only, nothing will be rewritten")
-    jobs, arrs_answered = _resolve_jobs(files, original, match_items=True)
+    # One run for the invocation, so a multi-file fix groups in the history.
+    jobs, arrs_answered = _resolve_jobs(files, original, match_items=True, run=events.run_id())
     if not arrs_answered and not original:
         # lang=None would judge every file against ALWAYS_KEEP_LANGS alone
         # and read a foreign film's own track as junk to drop.

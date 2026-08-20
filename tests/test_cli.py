@@ -130,9 +130,11 @@ def test_fix_rewrites_files_and_reports_failures(startup_ok, monkeypatch, capsys
         "/lib/c.mkv": ProcessResult(Status.DEFERRED, detail="source changed"),
     }
     calls = []
+    runs = []
 
     def fake_process(job, dry_run, source):
         calls.append((job.path, job.lang, dry_run, source))
+        runs.append(job.run)
         return results[job.path]
 
     monkeypatch.setattr("trackstarr.cli.process", fake_process)
@@ -148,6 +150,8 @@ def test_fix_rewrites_files_and_reports_failures(startup_ok, monkeypatch, capsys
         ("/lib/b.mkv", "eng", False, "cli"),
         ("/lib/c.mkv", "eng", False, "cli"),
     ]
+    # One invocation, one run, so the three files group in the history.
+    assert runs[0] and len(set(runs)) == 1
 
 
 def test_fix_still_matches_arr_items_when_original_is_given(startup_ok, monkeypatch):
@@ -334,7 +338,8 @@ def test_fix_says_so_when_dry_run_is_set(startup_ok, monkeypatch, capsys):
     reports "conforms" for files it never touched."""
     monkeypatch.setattr(config, "DRY_RUN", True)
     monkeypatch.setattr(
-        "trackstarr.cli.process", lambda job, dry_run, source: ProcessResult(Status.CONFORM)
+        "trackstarr.cli.process",
+        lambda job, dry_run, source: ProcessResult(Status.CONFORM),
     )
     main(["fix", "f.mkv"])
     assert "DRY_RUN is set" in capsys.readouterr().out

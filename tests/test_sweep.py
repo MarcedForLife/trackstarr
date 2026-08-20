@@ -17,6 +17,7 @@ from trackstarr.policy import Policy
 from trackstarr.processing import Job, ProcessResult
 from trackstarr.status import Status
 from trackstarr.sweep import _MIN_PROBE_WORKERS, Judged, seconds_until, sweep
+from trackstarr.sweep_cache import Verdict
 
 
 def _library(tmp_path, monkeypatch, count: int) -> list[str]:
@@ -42,7 +43,7 @@ def test_concurrent_sweep_reports_in_walk_order(monkeypatch, tmp_path):
     # files would all land after the even ones.
     def slow_judge(path, **kwargs):
         time.sleep(0.02 if int(os.path.basename(path)[:3]) % 2 else 0.001)
-        return Judged(Job(path), None, Status.WOULD_FIX, reasons="reorder streams")
+        return Judged(Job(path), None, Verdict(Status.WOULD_FIX, "reorder streams"))
 
     monkeypatch.setattr("trackstarr.sweep._judge", slow_judge)
     sweep(dry_run=True)
@@ -59,7 +60,9 @@ def test_a_path_cannot_break_its_own_report_row(monkeypatch, tmp_path):
     monkeypatch.setattr("trackstarr.sweep.walk_library", lambda policy: [awkward])
     monkeypatch.setattr(
         "trackstarr.sweep._judge",
-        lambda path, **kwargs: Judged(Job(path), None, Status.WOULD_FIX, "reorder streams"),
+        lambda path, **kwargs: Judged(
+            Job(path), None, Verdict(Status.WOULD_FIX, "reorder streams")
+        ),
     )
     sweep(dry_run=True)
 
@@ -73,7 +76,7 @@ def test_a_worker_raising_does_not_abandon_the_sweep(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 3)
     _library(tmp_path, monkeypatch, 10)
 
-    def explode(job, dry_run, source="webhook", run=None):
+    def explode(job, dry_run, source="webhook"):
         if job.path.endswith("004.mkv"):
             raise RuntimeError("something nobody predicted")
         return ProcessResult(Status.CONFORM)
@@ -110,7 +113,7 @@ def test_an_arr_outage_downgrades_an_applying_sweep(monkeypatch, tmp_path, caplo
     monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, False))
     judged_dry = []
 
-    def spy(job, dry_run, source="sweep", run=None):
+    def spy(job, dry_run, source="sweep"):
         judged_dry.append(dry_run)
         return ProcessResult(Status.CONFORM)
 
@@ -220,7 +223,7 @@ def test_a_long_sweep_logs_progress_as_it_goes(monkeypatch, caplog):
     monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, True))
     monkeypatch.setattr(
         "trackstarr.sweep._judge",
-        lambda path, **kwargs: Judged(Job(path), None, Status.CONFORM),
+        lambda path, **kwargs: Judged(Job(path), None, Verdict(Status.CONFORM)),
     )
 
     sweep(dry_run=True)

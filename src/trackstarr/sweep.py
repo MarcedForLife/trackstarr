@@ -81,8 +81,7 @@ class Judged:
 
     job: Job
     key: FileKey | None
-    status: Status
-    reasons: str = ""
+    verdict: Verdict
     detail: str = ""
     #: The verdict came from the cache, so the file was never probed.
     cached: bool = False
@@ -98,19 +97,20 @@ def _judge(
     file after it.
     """
     try:
-        job = Job.from_match(path, match_path(index, path))
+        job = Job.from_match(path, match_path(index, path), run=run)
         key = cache_key(path, job.lang)
         verdict = cache.lookup(path, key)
         # A cached would-fix stands in for the probe only while reporting;
         # an applying sweep has to rewrite the file.
         if verdict and (dry_run or verdict.status is not Status.WOULD_FIX):
-            return Judged(job, key, verdict.status, verdict.reasons, cached=True)
-        result = process(job, dry_run, source="sweep", run=run)
+            return Judged(job, key, verdict, cached=True)
+        result = process(job, dry_run, source="sweep")
         reasons = describe(result.plan) if result.plan else ""
-        return Judged(job, key, result.status, reasons, result.detail)
+        tracks = result.plan.tracks if result.plan else []
+        return Judged(job, key, Verdict(result.status, reasons, tracks), result.detail)
     except Exception as err:
         log.exception("unhandled error judging %s", path)
-        return Judged(Job(path), None, Status.FAILED, detail=str(err))
+        return Judged(Job(path), None, Verdict(Status.FAILED), detail=str(err))
 
 
 def sweep(dry_run: bool) -> dict[Status, int]:
@@ -131,9 +131,9 @@ def sweep(dry_run: bool) -> dict[Status, int]:
 
     started = time.monotonic()
     last_checkpoint = started
-    # Every event this sweep writes carries its start time as the run id, so
-    # a night's work groups without window arithmetic.
-    run = events.timestamp()
+    # Every event this sweep writes carries one run id, minted at its start,
+    # so a night's work groups without window arithmetic.
+    run = events.run_id()
     counts = dict.fromkeys(Status, 0)
     cached_hits = 0
     library_bytes = 0
@@ -161,17 +161,17 @@ def sweep(dry_run: bool) -> dict[Status, int]:
                 cached_hits += 1
             # Here rather than in the worker, which keeps the cache
             # single-threaded and needing no lock of its own.
-            if judged.status in CACHEABLE_STATUSES:
-                cache.record(
-                    judged.job.path, judged.key, Verdict(judged.status, judged.reasons)
-                )
+            if judged.cached:
+                cache.carry(judged.job.path)
+            elif judged.verdict.status in CACHEABLE_STATUSES:
+                cache.record(judged.job.path, judged.key, judged.verdict)
 
-            counts[judged.status] += 1
-            if judged.status in REPORTED_STATUSES:
+            counts[judged.verdict.status] += 1
+            if judged.verdict.status in REPORTED_STATUSES:
                 report_file.write(
-                    f"{judged.status}\t{judged.job.lang or '-'}\t"
+                    f"{judged.verdict.status}\t{judged.job.lang or '-'}\t"
                     f"{judged.job.path.translate(_ROW_BREAKERS)}\t"
-                    f"{_cell(judged.reasons)}\t{_cell(judged.detail)}\n"
+                    f"{_cell(judged.verdict.reasons)}\t{_cell(judged.detail)}\n"
                 )
                 report_file.flush()
             if i % 500 == 0:

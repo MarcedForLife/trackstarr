@@ -113,23 +113,34 @@ def all_slots_held() -> Iterator[bool]:
 
 @dataclass(frozen=True)
 class Job:
-    """One file to process, with what the *arrs know about it."""
+    """One file to process, with what the *arrs know about it.
+
+    ``run`` groups the jobs one delivery, sweep or fix invocation queued
+    together; see :func:`trackstarr.events.run_id`.
+    """
 
     path: str
     lang: str | None = None
     item_id: int | None = None
     arr: Arr | None = None
+    run: str | None = None
 
     @classmethod
-    def from_match(cls, path: str, item: LibraryItem | None, lang: str | None = None) -> Job:
+    def from_match(
+        cls,
+        path: str,
+        item: LibraryItem | None,
+        lang: str | None = None,
+        run: str | None = None,
+    ) -> Job:
         """A job for ``path``, carrying whatever its title was matched to.
 
         ``lang`` beats the matched language, for ``--original``. The item is
         still worth having: its id is what gets the *arr its rescan.
         """
         if item is None:
-            return cls(path, lang)
-        return cls(path, lang or item.lang, item.item_id, item.arr)
+            return cls(path, lang, run=run)
+        return cls(path, lang or item.lang, item.item_id, item.arr, run)
 
 
 @dataclass(frozen=True)
@@ -163,15 +174,13 @@ def effective_dry_run(dry_run: bool) -> bool:
     return dry_run or config.DRY_RUN
 
 
-def process(
-    job: Job, dry_run: bool, source: str = "webhook", run: str | None = None
-) -> ProcessResult:
+def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
     """Plan one file and, unless dry_run, rewrite it.
 
-    ``source`` and ``run`` label the history entry a rewrite attempt leaves,
-    and ``run`` ties a sweep's rewrites to its summary. Probe failures leave
-    no entry: they recur every sweep until the file is fixed, filling the
-    history with one repeated problem.
+    ``source`` labels the history entry a rewrite attempt leaves, and
+    ``job.run`` ties it to the sweep or delivery that queued it. Probe
+    failures leave no entry: they recur every sweep until the file is fixed,
+    filling the history with one repeated problem.
     """
     dry_run = effective_dry_run(dry_run)
     try:
@@ -203,7 +212,7 @@ def process(
     except (ProbeError, OSError) as err:
         outcome, detail = Outcome.FAILED, str(err)
     event_fields = {
-        "run": run,
+        "run": job.run,
         "source": source,
         "config_id": plan.policy.digest(),
         "reasons": plan.reasons,

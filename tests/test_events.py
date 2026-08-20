@@ -1,6 +1,7 @@
 """The append-only event history. No media, no network."""
 
 import os
+from datetime import datetime
 
 from conftest import audio, needed_plan, probe_data, read_events, subtitle, video
 from trackstarr import __version__, config, events, policy, processing, webhook
@@ -25,6 +26,14 @@ def test_record_appends_json_lines():
     assert "bytes_after" not in read_events()[-1]
     # ISO 8601 with an offset, so history survives timezone changes.
     assert "T" in entries[0]["ts"] and len(entries[0]["ts"]) > len("2026-01-01T00:00:00")
+
+
+def test_a_run_id_is_a_timestamp_made_unique():
+    """Webhook deliveries land within a second of each other, so uniqueness
+    has to come from more than the clock; the timestamp keeps runs sortable."""
+    first, second = events.run_id(), events.run_id()
+    assert first != second
+    assert datetime.fromisoformat(first.partition("#")[0])
 
 
 def test_record_never_raises(monkeypatch, tmp_path):

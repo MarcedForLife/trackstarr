@@ -13,6 +13,7 @@ force, which ``serve`` and every sweep also record in full.
 import json
 import logging
 import os
+import secrets
 import threading
 from datetime import datetime
 
@@ -32,6 +33,16 @@ def path() -> str:
 def timestamp() -> str:
     """Local time with offset, the format every ``ts`` carries."""
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def run_id() -> str:
+    """A run label: when it started, made unique.
+
+    Sweeps, webhook deliveries and fix commands can all start within a second
+    of each other, so the suffix does the distinguishing; the timestamp
+    prefix keeps runs sortable by when they began.
+    """
+    return f"{timestamp()}#{secrets.token_hex(2)}"
 
 
 def record(event: str, **fields) -> None:
