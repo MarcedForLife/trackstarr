@@ -1,12 +1,16 @@
-"""Runtime configuration, all of it from the environment.
+"""Runtime configuration, from the environment and STATE_DIR/settings.json.
 
-Values are read once at import. Other modules say ``config.NAME`` rather than
-importing the names, so a test can monkeypatch one attribute.
+Both sources hold the same names. The file exists so a future settings API
+can write configuration; the environment wins when both name a setting, so a
+compose file stays the deploy's word. Values are read once at import. Other
+modules say ``config.NAME`` rather than importing the names, so a test can
+monkeypatch one attribute.
 
 Nothing here raises. Import has to succeed so the CLI can report every
 problem at once through :func:`errors`.
 """
 
+import json
 import os
 import re
 
@@ -16,13 +20,117 @@ from .langs import norm_lang
 #: Parse failures, reported by errors(). The bad setting keeps its default.
 _LOAD_ERRORS: list[str] = []
 
+SETTINGS_FILE = "settings.json"
+
+#: A .env in the working directory, loaded before the reads below so a source
+#: checkout can set WORK_DIR and the rest the way a compose file does. Dev
+#: convenience only: the image ships no .env and sets everything through the
+#: environment, so a missing file is the normal case.
+ENV_FILE = ".env"
+
+
+def _load_dotenv(path: str = ENV_FILE) -> None:
+    """Copy NAME=VALUE lines from a .env file into the environment.
+
+    A blank line or one starting with # is skipped; any other line without an
+    = is a typo that reaches errors() rather than passing unseen. Surrounding
+    quotes on a value are dropped. An existing variable is never overwritten,
+    so a hand-exported value, or a test's monkeypatch, stays the last word and
+    the environment keeps being the deploy's.
+    """
+    try:
+        with open(path) as env_file:
+            lines = env_file.read().splitlines()
+    except FileNotFoundError:
+        return
+    except OSError as err:
+        _LOAD_ERRORS.append(f"{ENV_FILE} could not be read ({err})")
+        return
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, sep, value = line.partition("=")
+        if not sep:
+            _LOAD_ERRORS.append(f"{ENV_FILE} line is not NAME=VALUE: {raw_line!r}")
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        os.environ.setdefault(name.strip(), value)
+
+
+_load_dotenv()
+
+#: Environment only: it says where the settings file lives.
+STATE_DIR = os.environ.get("STATE_DIR", "/config")
+
+
+def _settings_path() -> str:
+    return os.path.join(STATE_DIR, SETTINGS_FILE)
+
+
+def _load_settings() -> dict[str, str]:
+    """STATE_DIR/settings.json as name -> raw string, {} when there is none.
+
+    Each value is the string the same-named variable would hold, so the
+    parsers treat both sources alike; JSON numbers and booleans read as their
+    literals ("true", "5120"). Anything else is refused per key: a dropped
+    setting must reach errors(), never quietly mean its default.
+    """
+    try:
+        with open(_settings_path()) as settings_file:
+            data = json.load(settings_file)
+    except FileNotFoundError:
+        return {}
+    except (OSError, json.JSONDecodeError) as err:
+        _LOAD_ERRORS.append(f"{SETTINGS_FILE} could not be read ({err})")
+        return {}
+    if not isinstance(data, dict):
+        _LOAD_ERRORS.append(f"{SETTINGS_FILE} must hold one JSON object of settings")
+        return {}
+    values: dict[str, str] = {}
+    for name, value in data.items():
+        if isinstance(value, str):
+            values[name] = value
+        elif isinstance(value, bool | int | float):
+            # json.dumps spells these the way the parsers read them: true, 5120.
+            values[name] = json.dumps(value)
+        else:
+            _LOAD_ERRORS.append(
+                f"{SETTINGS_FILE} value for {name} must be a string, number or boolean"
+            )
+    return values
+
+
+_SETTINGS = _load_settings()
+
+#: Every name a parser asked for, filled as this module loads, so warnings()
+#: can report settings-file keys nothing reads. The environment gets no such
+#: check; it is full of other programs' variables.
+_READ_NAMES: set[str] = set()
+
+
+def _raw(name: str, default: str) -> str:
+    """One setting's raw value: the environment, then the settings file, then
+    the default. A blank environment value is a leftover (``DRY_RUN:
+    ${DRY_RUN}`` expands to empty), not a choice, so a real settings-file
+    entry beats it; with no entry it keeps meaning what it does today."""
+    _READ_NAMES.add(name)
+    value = os.environ.get(name)
+    if value is not None and value.strip():
+        return value
+    if (from_file := _SETTINGS.get(name)) is not None:
+        return from_file
+    return default if value is None else value
+
 
 def _list(name: str, default: str) -> list[str]:
-    return [part for part in os.environ.get(name, default).split(":") if part]
+    return [part for part in _raw(name, default).split(":") if part]
 
 
 def _set(name: str, default: str) -> set[str]:
-    parts = os.environ.get(name, default).split(",")
+    parts = _raw(name, default).split(",")
     return {part.strip().lower() for part in parts if part.strip()}
 
 
@@ -40,7 +148,7 @@ _FALSE = frozenset({"0", "false", "no", "off"})
 
 
 def _bool(name: str, default: str = "false") -> bool:
-    raw = os.environ.get(name, default).strip()
+    raw = _raw(name, default).strip()
     value = raw.lower() or default
     if value not in _TRUE and value not in _FALSE:
         _LOAD_ERRORS.append(f"{name}={raw!r} is neither true nor false")
@@ -55,12 +163,12 @@ _OFF = frozenset({"", "off", "none", "false", "no", "0"})
 def _mode(name: str) -> str:
     """A named-mode setting, with every spelling of off reduced to unset.
     The value itself is checked by :func:`trackstarr.policy.errors`."""
-    value = os.environ.get(name, "").strip().lower()
+    value = _raw(name, "").strip().lower()
     return "" if value in _OFF else value
 
 
 def _int(name: str, default: str) -> int:
-    raw = os.environ.get(name, default).strip()
+    raw = _raw(name, default).strip()
     try:
         return int(raw)
     except ValueError:
@@ -69,7 +177,7 @@ def _int(name: str, default: str) -> int:
 
 
 def _regex(name: str, default: str) -> re.Pattern[str]:
-    raw = os.environ.get(name, default)
+    raw = _raw(name, default)
     try:
         return re.compile(raw, re.IGNORECASE)
     except re.error as err:
@@ -84,8 +192,13 @@ def _secret(name: str) -> str:
 
     Naming one credential two ways is refused; which won would be invisible.
     Whitespace-only counts as unset; a leftover ``RADARR_API_KEY:
-    ${RADARR_API_KEY}`` expands to empty.
+    ${RADARR_API_KEY}`` expands to empty. The settings file may hold the
+    plain name too; any environment form beats it, and the indirect forms
+    mean nothing there, a file needs no pointer to a file.
     """
+    # Registered here too: when an indirect form wins, _raw is never
+    # consulted and the file's plain entry would read as a typo.
+    _READ_NAMES.add(name)
     named = [
         (variable, value)
         for variable in (f"{name}_FILE", f"FILE__{name}", name)
@@ -97,7 +210,9 @@ def _secret(name: str) -> str:
         )
         return ""
     if not named:
-        return ""
+        # No environment form is set, which is exactly the case _raw's
+        # precedence covers: the file entry, or blank.
+        return _raw(name, "").strip()
     variable, value = named[0]
     if variable == name:
         return value
@@ -127,22 +242,20 @@ MEDIA_DIRS = _list("MEDIA_DIRS", "/data/media/movies:/data/media/tv")
 #: Where a rewrite is staged before it replaces the original. Any filesystem
 #: works; executor._publish is atomic either way. Wants room for the biggest
 #: file in the library, and speed.
-WORK_DIR = os.environ.get("WORK_DIR", "/data/trackstarr-work")
-
-STATE_DIR = os.environ.get("STATE_DIR", "/config")
+WORK_DIR = _raw("WORK_DIR", "/data/trackstarr-work")
 
 #: Every credential also takes RADARR_API_KEY_FILE or FILE__RADARR_API_KEY
 #: naming a file to read it from; see _secret.
-RADARR_URL = os.environ.get("RADARR_URL", "").rstrip("/")
+RADARR_URL = _raw("RADARR_URL", "").rstrip("/")
 RADARR_API_KEY = _secret("RADARR_API_KEY")
-SONARR_URL = os.environ.get("SONARR_URL", "").rstrip("/")
+SONARR_URL = _raw("SONARR_URL", "").rstrip("/")
 SONARR_API_KEY = _secret("SONARR_API_KEY")
 
 #: Media servers to nudge after a rewrite, since their own watchers see
 #: nothing on a network mount. Jellyfin's settings fit Emby too.
-PLEX_URL = os.environ.get("PLEX_URL", "").rstrip("/")
+PLEX_URL = _raw("PLEX_URL", "").rstrip("/")
 PLEX_TOKEN = _secret("PLEX_TOKEN")
-JELLYFIN_URL = os.environ.get("JELLYFIN_URL", "").rstrip("/")
+JELLYFIN_URL = _raw("JELLYFIN_URL", "").rstrip("/")
 JELLYFIN_API_KEY = _secret("JELLYFIN_API_KEY")
 
 #: Languages kept regardless of the title's original language.
@@ -162,7 +275,7 @@ DROP_COMMENTARY = _bool("DROP_COMMENTARY")
 #: Startup refuses a name that isn't a digit form, or one with no rate.
 DOWNMIX_LAYOUTS = _set("DOWNMIX_LAYOUTS", "2.0,5.1")
 
-AUDIO_CODEC = os.environ.get("AUDIO_CODEC", "aac")
+AUDIO_CODEC = _raw("AUDIO_CODEC", "aac")
 
 #: Rates for the two layouts we ship, so a fresh install names none. 320k is
 #: past transparency for ffmpeg's native AAC; 640k is what AC3 5.1 ships at.
@@ -181,15 +294,22 @@ def bitrate_variable(name: str) -> str:
 def _bitrates() -> dict[str, str]:
     """Layout name -> the rate it is generated at.
 
-    Scans the environment instead of asking once per configured layout, so a
+    Scans both sources instead of asking once per configured layout, so a
     rate set for a layout nothing asks for reaches warnings() as the
-    half-finished edit it usually is.
+    half-finished edit it usually is. The environment scans second, so its
+    rate wins for a layout both name.
     """
     rates = dict(_DEFAULT_BITRATES)
-    for variable, value in os.environ.items():
-        if variable.startswith(_BITRATE_PREFIX) and (rate := value.strip()):
-            rates[variable.removeprefix(_BITRATE_PREFIX).replace("_", ".").lower()] = rate
+    for source in (_SETTINGS, os.environ):
+        for variable, value in source.items():
+            if variable.startswith(_BITRATE_PREFIX) and (rate := value.strip()):
+                rates[variable.removeprefix(_BITRATE_PREFIX).replace("_", ".").lower()] = rate
     return rates
+
+
+def _stated(variable: str) -> bool:
+    """Whether either source names the variable, for the half-edit check."""
+    return variable in os.environ or variable in _SETTINGS
 
 
 #: One AUDIO_BITRATE_ variable per layout, nothing derived; layouts.py says why.
@@ -245,7 +365,7 @@ JUNK_TITLE_RE = _regex(
     r"|\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\b",
 )
 
-LISTEN_ADDR = os.environ.get("LISTEN_ADDR", "0.0.0.0")
+LISTEN_ADDR = _raw("LISTEN_ADDR", "0.0.0.0")
 #: 5120 spells 5.1 and 2.0, the layouts the downmix rule guarantees. Mostly
 #: it is just free: 8080 is qBittorrent's and SABnzbd's.
 LISTEN_PORT = _int("LISTEN_PORT", "5120")
@@ -253,7 +373,7 @@ LISTEN_PORT = _int("LISTEN_PORT", "5120")
 #: Advertised when registering the webhook, so it has to be reachable from
 #: the *arrs' containers. The default is the README's compose service name.
 #: Base URL only; registration appends the webhook path itself.
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", f"http://trackstarr:{LISTEN_PORT}").rstrip("/")
+WEBHOOK_URL = _raw("WEBHOOK_URL", f"http://trackstarr:{LISTEN_PORT}").rstrip("/")
 
 FFMPEG_TIMEOUT = _int("FFMPEG_TIMEOUT", "7200")
 PROBE_TIMEOUT = _int("PROBE_TIMEOUT", "180")
@@ -266,7 +386,7 @@ MAX_CONCURRENT_REWRITES = _int("MAX_CONCURRENT_REWRITES", "1")
 
 #: When the sweep runs, as a five-field cron schedule in local time; empty
 #: disables it. It reports by default and rewrites only under SWEEP_APPLY.
-SWEEP_AT = os.environ.get("SWEEP_AT", "").strip()
+SWEEP_AT = _raw("SWEEP_AT", "").strip()
 SWEEP_APPLY = _bool("SWEEP_APPLY")
 
 #: Plan and report everywhere, rewrite nothing, overriding SWEEP_APPLY and
@@ -281,6 +401,16 @@ def errors() -> list[str]:
     the rule and layout vocabulary live in :func:`trackstarr.policy.errors`.
     """
     problems = list(_LOAD_ERRORS)
+    # Unlike the environment's, the file's names are a closed set, so an
+    # unread key is a typo silently meaning its default. Refused like a
+    # DISABLED_RULES typo, and here rather than warnings() so plan and fix,
+    # which read the same file, report it too.
+    if ignored := sorted(
+        name
+        for name in _SETTINGS
+        if name not in _READ_NAMES and not name.startswith(_BITRATE_PREFIX)
+    ):
+        problems.append(f"{SETTINGS_FILE} names settings nothing reads: {', '.join(ignored)}")
     # A budget below one hangs the slot pool; a timeout below one fails
     # every ffmpeg and ffprobe run as "timed out".
     for name, value in (
@@ -319,6 +449,6 @@ def warnings() -> list[str]:
         for name in sorted(AUDIO_BITRATES)
         # The variable, not just the entry: 2.0 and 5.1 are always present as
         # defaults, and dropping one from DOWNMIX_LAYOUTS is normal.
-        if name not in DOWNMIX_LAYOUTS and bitrate_variable(name) in os.environ
+        if name not in DOWNMIX_LAYOUTS and _stated(bitrate_variable(name))
     ]
     return problems

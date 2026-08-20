@@ -10,3 +10,8 @@ venv/
 .coverage
 htmlcov/
 pending.tsv
+
+# Local development: the .env loaded at startup and the dirs it points at.
+.env
+!.env.example
+dev/

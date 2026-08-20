@@ -197,6 +197,12 @@ Tears of Steel (2012).mkv
 
 ## Configuration
 
+Every variable below can also live in `/config/settings.json` as one JSON
+object of the same names (`{"DROP_COMMENTARY": true, "SWEEP_AT": "0 4 * * *"}`),
+the file a future settings UI will write. The environment wins where both
+name a setting, `STATE_DIR` is environment-only since it says where the file
+is, and a key nothing reads refuses startup as the typo it usually is.
+
 | Variable                            | Default                             |                                                                                           |
 | ----------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
 | `MEDIA_DIRS`                        | `/data/media/movies:/data/media/tv` | colon-separated; where the sweep walks                                                    |
@@ -247,12 +253,17 @@ by `sweep --apply`.
 
 ```bash
 uv sync                 # the dev group in pyproject, at the versions CI uses
+cp .env.example .env    # local WORK_DIR/STATE_DIR etc, loaded at startup
 uv run pytest           # needs ffmpeg 8.1+ on PATH; refuses to start without it
 uv run pytest --cov     # what CI measures; fails under the floor in pyproject
 uv run ruff check
 uv run ruff format
 uv run mypy             # src only, settings in pyproject
 ```
+
+`.env` is gitignored and read once at startup; anything already in the
+environment wins, so it never masks the compose file a deploy uses. The image
+ships no `.env` and sets the same names directly.
 
 `uv.lock` is committed so lint and tests mean the same thing here as on CI;
 after editing dependencies in `pyproject.toml`, run `uv lock` and commit the

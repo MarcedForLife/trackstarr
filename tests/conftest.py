@@ -94,8 +94,9 @@ def pytest_configure() -> None:
 @pytest.fixture(autouse=True)
 def _isolated_state(monkeypatch, tmp_path):
     """Point STATE_DIR at the test's tmp dir, so nothing reaches a real
-    /config."""
+    /config, and drop whatever settings file a real one held at import."""
     monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setattr(config, "_SETTINGS", {})
 
 
 @pytest.fixture(autouse=True)

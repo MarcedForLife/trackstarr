@@ -4,6 +4,8 @@ The checks that need the rule and layout vocabulary live beside it, in
 test_policy.py.
 """
 
+import os
+
 import pytest
 
 from trackstarr import config
@@ -249,6 +251,185 @@ def test_the_shipped_rates_apply_when_nothing_states_one(monkeypatch):
     monkeypatch.delenv("AUDIO_BITRATE_2_0", raising=False)
     monkeypatch.delenv("AUDIO_BITRATE_5_1", raising=False)
     assert config._bitrates() == {"2.0": "320k", "5.1": "640k"}
+
+
+def _write_settings(tmp_path, monkeypatch, text: str) -> None:
+    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path))
+    (tmp_path / config.SETTINGS_FILE).write_text(text)
+
+
+def test_a_settings_file_value_is_read_when_the_environment_is_silent(monkeypatch):
+    monkeypatch.delenv("HARDLINK_RECHECK", raising=False)
+    monkeypatch.setattr(config, "_SETTINGS", {"HARDLINK_RECHECK": "600"})
+    assert config._int("HARDLINK_RECHECK", "900") == 600
+    assert config.errors() == []
+
+
+def test_the_environment_beats_the_settings_file(monkeypatch):
+    monkeypatch.setenv("HARDLINK_RECHECK", "300")
+    monkeypatch.setattr(config, "_SETTINGS", {"HARDLINK_RECHECK": "600"})
+    assert config._int("HARDLINK_RECHECK", "900") == 300
+
+
+def test_a_blank_environment_value_yields_to_the_settings_file(monkeypatch):
+    """A leftover ``DRY_RUN: ${DRY_RUN}`` expands to empty, which is a
+    leftover, not a choice, and must not mask a setting the file states."""
+    monkeypatch.setenv("DRY_RUN", "")
+    monkeypatch.setattr(config, "_SETTINGS", {"DRY_RUN": "true"})
+    assert config._bool("DRY_RUN") is True
+
+
+def test_an_empty_media_dirs_still_means_no_dirs(monkeypatch):
+    """MEDIA_DIRS="" is a webhook-only install's choice. With no settings-file
+    entry behind it, it must keep meaning "walk nothing", never the shipped
+    defaults."""
+    monkeypatch.setenv("MEDIA_DIRS", "")
+    assert config._list("MEDIA_DIRS", "/data/media/movies:/data/media/tv") == []
+
+
+def test_settings_numbers_and_booleans_read_as_their_literals(tmp_path, monkeypatch):
+    """A hand-written file naturally says 5120 and true; they arrive spelled
+    the way the same-named variable would hold them."""
+    _write_settings(tmp_path, monkeypatch, '{"LISTEN_PORT": 5120, "DRY_RUN": true}')
+    assert config._load_settings() == {"LISTEN_PORT": "5120", "DRY_RUN": "true"}
+    assert config.errors() == []
+
+
+def test_a_structured_settings_value_is_refused(tmp_path, monkeypatch):
+    """A dropped setting has to reach errors(), never quietly mean its
+    default; the rest of the file still loads."""
+    _write_settings(tmp_path, monkeypatch, '{"MEDIA_DIRS": ["/a"], "DRY_RUN": "true"}')
+    assert config._load_settings() == {"DRY_RUN": "true"}
+    errors = config.errors()
+    assert len(errors) == 1
+    assert "MEDIA_DIRS" in errors[0]
+
+
+def test_an_unreadable_settings_file_is_refused(tmp_path, monkeypatch):
+    """Silently ignored, a damaged file would run the library on defaults its
+    owner did not choose."""
+    _write_settings(tmp_path, monkeypatch, "{not json")
+    assert config._load_settings() == {}
+    errors = config.errors()
+    assert len(errors) == 1
+    assert config.SETTINGS_FILE in errors[0]
+
+
+def test_a_settings_file_must_hold_one_object(tmp_path, monkeypatch):
+    _write_settings(tmp_path, monkeypatch, '["DRY_RUN"]')
+    assert config._load_settings() == {}
+    assert len(config.errors()) == 1
+
+
+def test_a_missing_settings_file_is_silent(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path))
+    assert config._load_settings() == {}
+    assert config.errors() == []
+
+
+def _write_env(tmp_path, text: str) -> str:
+    path = tmp_path / config.ENV_FILE
+    path.write_text(text)
+    return str(path)
+
+
+def test_a_dotenv_value_fills_an_unset_variable(tmp_path, monkeypatch):
+    monkeypatch.delenv("WORK_DIR", raising=False)
+    config._load_dotenv(_write_env(tmp_path, "WORK_DIR=./dev/data\n"))
+    assert os.environ["WORK_DIR"] == "./dev/data"
+    assert config.errors() == []
+
+
+def test_a_dotenv_value_never_overwrites_the_environment(tmp_path, monkeypatch):
+    """The environment is the deploy's word; a checkout's .env must not take it
+    back, the same precedence _raw gives it over the settings file."""
+    monkeypatch.setenv("WORK_DIR", "/data/trackstarr-work")
+    config._load_dotenv(_write_env(tmp_path, "WORK_DIR=./dev/data\n"))
+    assert os.environ["WORK_DIR"] == "/data/trackstarr-work"
+
+
+def test_dotenv_skips_blanks_and_comments_and_strips_quotes(tmp_path, monkeypatch):
+    monkeypatch.delenv("WORK_DIR", raising=False)
+    monkeypatch.delenv("STATE_DIR", raising=False)
+    config._load_dotenv(
+        _write_env(tmp_path, '\n# a comment\nWORK_DIR="./dev/data"\nSTATE_DIR=./dev/config\n')
+    )
+    assert os.environ["WORK_DIR"] == "./dev/data"
+    assert os.environ["STATE_DIR"] == "./dev/config"
+    assert config.errors() == []
+
+
+def test_a_dotenv_line_without_an_equals_is_refused(tmp_path):
+    """A typo has to reach errors(), never pass unseen, the same as a
+    settings-file one."""
+    config._load_dotenv(_write_env(tmp_path, "WORK_DIR\n"))
+    errors = config.errors()
+    assert len(errors) == 1
+    assert "NAME=VALUE" in errors[0]
+
+
+def test_a_missing_dotenv_is_silent(tmp_path):
+    config._load_dotenv(str(tmp_path / "nope.env"))
+    assert config.errors() == []
+
+
+def test_an_unreadable_dotenv_is_refused(tmp_path):
+    """A directory where the file should be raises OSError, not
+    FileNotFoundError, and must be reported rather than crash import."""
+    (tmp_path / config.ENV_FILE).mkdir()
+    config._load_dotenv(str(tmp_path / config.ENV_FILE))
+    errors = config.errors()
+    assert len(errors) == 1
+    assert config.ENV_FILE in errors[0]
+
+
+def test_a_settings_key_nothing_reads_refuses_startup(monkeypatch):
+    """Unlike the environment, the file's names are a closed set, so an
+    unread key is a typo silently meaning its default. Refused like a
+    DISABLED_RULES typo, and by errors() rather than warnings() so plan and
+    fix, which read the same file, report it too."""
+    monkeypatch.setattr(config, "_SETTINGS", {"MEDIA_DIRZ": "/data"})
+    errors = config.errors()
+    assert len(errors) == 1
+    assert "MEDIA_DIRZ" in errors[0]
+
+
+def test_a_settings_file_bitrate_is_read_and_not_flagged_unread(monkeypatch):
+    """AUDIO_BITRATE_ names are read by prefix scan rather than by asking, so
+    the unread-key check has to know they count as read."""
+    monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_BITRATE_7_1": "1280k"})
+    assert config._bitrates()["7.1"] == "1280k"
+    assert config.errors() == []
+
+
+def test_an_environment_bitrate_beats_the_settings_file(monkeypatch):
+    monkeypatch.setenv("AUDIO_BITRATE_5_1", "448k")
+    monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_BITRATE_5_1": "768k"})
+    assert config._bitrates()["5.1"] == "448k"
+
+
+def test_a_file_rate_for_a_layout_nobody_asked_for_is_a_warning(monkeypatch, tmp_path):
+    """The same half-edit the environment check catches, stated in the file."""
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "7.1": "1280k"})
+    monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_BITRATE_7_1": "1280k"})
+    warnings = config.warnings()
+    assert len(warnings) == 1
+    assert "AUDIO_BITRATE_7_1" in warnings[0]
+
+
+def test_a_secret_can_come_from_the_settings_file(monkeypatch):
+    monkeypatch.delenv("RADARR_API_KEY", raising=False)
+    monkeypatch.setattr(config, "_SETTINGS", {"RADARR_API_KEY": " abc123 "})
+    assert config._secret("RADARR_API_KEY") == "abc123"
+    assert config.errors() == []
+
+
+def test_an_environment_secret_beats_the_settings_file(monkeypatch):
+    monkeypatch.setenv("RADARR_API_KEY", "from-the-environment")
+    monkeypatch.setattr(config, "_SETTINGS", {"RADARR_API_KEY": "from-the-file"})
+    assert config._secret("RADARR_API_KEY") == "from-the-environment"
 
 
 @pytest.mark.parametrize("value", [0, -1])
