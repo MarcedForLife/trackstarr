@@ -130,6 +130,8 @@ A few behaviours worth knowing:
 - The sweep remembers its verdicts in `sweep-cache.json`. A file that hasn't
   changed isn't probed again, so after the first night a sweep costs stats,
   not ffprobe runs. Changing any rule setting drops the cache by itself.
+  Each verdict carries the file's track summaries, so the cache doubles as
+  the library index a media view can read.
 - Every rewrite, failure, deferral and sweep appends a JSON line to
   `events.jsonl`, the history a future stats view will aggregate, kept from
   day one because it cannot be backfilled. Each line says what changed twice:

@@ -31,6 +31,7 @@ from .media import (
     stream_lang,
     stream_title,
     title_is_load_bearing,
+    track_summary,
 )
 from .policy import TAG_PRESERVING_EXTS, Policy
 
@@ -94,6 +95,10 @@ class Plan:
     incidental_rules: set[str] = field(default_factory=set)
     original_lang: str | None = None
     keep_langs: set[str] = field(default_factory=set)
+    #: Every input stream as a :func:`trackstarr.media.track_summary`, drops
+    #: included, so the sweep cache can double as a library index. Empty when
+    #: the file was never probed.
+    tracks: list[dict] = field(default_factory=list)
     #: Source duration at plan time, checked against the rewrite result
     #: before anything is overwritten. Zero when the probe did not carry one.
     src_duration: float = 0.0
@@ -174,6 +179,7 @@ def plan_from_probe(plan: Plan, info: dict) -> Plan:
     policy = plan.policy
     streams = info.get("streams") or []
     plan.src_duration = duration(info)
+    plan.tracks = [track_summary(stream, policy) for stream in streams]
 
     video, audio, subs, attachments = _split_streams(plan, streams)
     if not video:

@@ -51,6 +51,52 @@ def test_would_fix_verdict_round_trips(cache_path, media):
     assert cache.lookup(media, key) == verdict
 
 
+def test_tracks_are_stored_and_carried_without_decoding(cache_path, media):
+    """The cache doubles as the library index, so what the probe saw has to
+    survive the round trip. A hit's tracks are never read back into a
+    Verdict; carry() moves the stored entry forward whole."""
+    key = cache_key(media, "eng")
+    tracks = [{"index": 0, "kind": "video", "codec": "h264"}]
+    cache = saved_cache(cache_path, (media, key, Verdict(Status.CONFORM, "", tracks)))
+    assert cache.lookup(media, key) == Verdict(Status.CONFORM)
+
+    cache.carry(media)
+    cache.save()
+    stored = json.loads(Path(cache_path).read_text())
+    assert stored["files"][media]["tracks"] == tracks
+
+
+def test_carrying_a_path_the_cache_never_saw_is_a_no_op(cache_path, media):
+    """A miss has nothing to bring forward, so carry() must leave the next
+    cache empty rather than invent an entry for it."""
+    cache = SweepCache.load(cache_path, fingerprint())
+    cache.carry(media)
+    cache.save()
+    stored = json.loads(Path(cache_path).read_text())
+    assert stored["files"] == {}
+
+
+def test_a_checkpoint_with_nothing_fresh_writes_nothing(cache_path, media):
+    """Carried entries are already on disk, and entries now hold track
+    summaries, so a warm sweep must not rewrite the whole cache unchanged
+    every interval."""
+    key = cache_key(media, "eng")
+    cache = saved_cache(cache_path, (media, key, CONFORM))
+    Path(cache_path).unlink()
+
+    cache.carry(media)
+    cache.checkpoint()
+    assert not Path(cache_path).exists()
+
+    cache.record(media, key, CONFORM)
+    cache.checkpoint()
+    assert Path(cache_path).exists()
+    # Written once; the next checkpoint has nothing fresh again.
+    Path(cache_path).unlink()
+    cache.checkpoint()
+    assert not Path(cache_path).exists()
+
+
 def test_changed_file_misses(cache_path, media):
     cache = saved_cache(cache_path, (media, cache_key(media, "eng"), CONFORM))
     Path(media).write_bytes(b"y" * 20)

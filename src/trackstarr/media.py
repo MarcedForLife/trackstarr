@@ -159,3 +159,38 @@ def is_junk_title(title: str, policy: Policy) -> bool:
     title_is_load_bearing first.
     """
     return bool(title) and bool(policy.junk_title_re.search(title))
+
+
+def track_summary(stream: dict, policy: Policy) -> dict:
+    """One stream distilled to what a library view needs without re-probing.
+
+    The flags are this module's classifications, not the raw dispositions,
+    so a view reads "commentary" the same way the rules do. Empty and
+    None-valued fields are dropped; absence means unknown or not applicable.
+    """
+    kind = stream.get("codec_type")
+    flags = [
+        name
+        for name, present in (
+            ("default", has_disposition(stream, "default")),
+            ("commentary", kind == "audio" and is_commentary(stream, policy)),
+            ("forced", kind == "subtitle" and is_forced(stream, policy)),
+            ("sdh", kind == "subtitle" and is_sdh(stream, policy)),
+            ("cover_art", kind == "video" and is_cover_art(stream)),
+            # Only audio tracks are ever generated, and the tag scan walks
+            # every tag key, so the other kinds skip it.
+            ("generated", kind == "audio" and generated_settings(stream) is not None),
+        )
+        if present
+    ]
+    summary = {
+        "index": stream.get("index"),
+        "kind": kind,
+        "codec": stream.get("codec_name"),
+        "channels": stream.get("channels"),
+        "lang": stream_lang(stream),
+        "title": stream_title(stream),
+        "bitrate": stream_bitrate(stream),
+        "flags": flags,
+    }
+    return {name: value for name, value in summary.items() if value not in (None, "", [])}

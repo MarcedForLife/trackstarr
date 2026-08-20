@@ -10,9 +10,10 @@ import subprocess
 
 import pytest
 
-from conftest import audio, fake_run
+from conftest import audio, fake_run, subtitle, video
 from trackstarr import config, media
 from trackstarr.media import ProbeError, duration, probe, stream_bitrate
+from trackstarr.policy import Policy
 
 
 def test_probe_returns_the_parsed_json(monkeypatch):
@@ -99,3 +100,34 @@ def test_generated_settings_only_reads_our_own_tag():
     assert media.generated_settings({"tags": {media.GENERATED_TAG: "aac 192k"}}) == "aac 192k"
     assert media.generated_settings({"tags": {"title": "aac 192k"}}) is None
     assert media.generated_settings({}) is None
+
+
+def test_track_summary_distils_a_stream():
+    stream = audio(2, 6, title="Director's Commentary", default=1, bitrate="640000")
+    assert media.track_summary(stream, Policy.from_config()) == {
+        "index": 2,
+        "kind": "audio",
+        "codec": "ac3",
+        "channels": 6,
+        "lang": "eng",
+        "title": "Director's Commentary",
+        "bitrate": 640000,
+        "flags": ["default", "commentary"],
+    }
+
+
+def test_track_summary_drops_what_it_does_not_know():
+    """Absence means unknown, the same contract the history's fields use."""
+    assert media.track_summary(video(), Policy.from_config()) == {
+        "index": 0,
+        "kind": "video",
+        "codec": "h264",
+    }
+
+
+def test_track_summary_flags_subtitles_the_way_the_rules_do():
+    """The flags are the classifications, not the raw dispositions, so a view
+    reads "sdh" for a title-only SDH track exactly as the rules would."""
+    policy = Policy.from_config()
+    assert media.track_summary(subtitle(3, title="English SDH"), policy)["flags"] == ["sdh"]
+    assert media.track_summary(subtitle(4, forced=1), policy)["flags"] == ["forced"]

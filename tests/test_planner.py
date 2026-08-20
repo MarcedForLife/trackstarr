@@ -750,3 +750,11 @@ def test_a_downmix_asserts_only_the_language_its_source_had(lang):
         [f"language={lang}"] if lang else []
     )
     assert "title=Surround 5.1" in args
+
+
+def test_a_plan_records_every_input_track():
+    """Drops included: the summaries are what is in the file, so the sweep
+    cache can serve as a library index, not what survives the rules."""
+    plan = plan_for(video(), audio(1, 6), audio(2, 2, lang="kor"), subtitle(3))
+    assert [track["index"] for track in plan.tracks] == [0, 1, 2, 3]
+    assert plan.tracks[2]["lang"] == "kor"

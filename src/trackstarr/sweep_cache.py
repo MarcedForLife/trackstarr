@@ -6,6 +6,10 @@ mtime are enough to skip that. The whole cache is dropped when
 :meth:`trackstarr.policy.Policy.fingerprint` changes, and deleting the file
 forces a full re-probe.
 
+Verdicts carry the probed track summaries too, so the cache doubles as the
+library index a media view can read; a dropped cache just means the next
+sweep rebuilds it.
+
 Which verdicts are safe to cache is the sweep's call; see
 :data:`trackstarr.sweep.CACHEABLE_STATUSES`.
 """
@@ -13,7 +17,7 @@ Which verdicts are safe to cache is the sweep's call; see
 import json
 import logging
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 from .state import write_json
 from .status import Status
@@ -39,10 +43,15 @@ class FileKey:
 
 @dataclass(frozen=True)
 class Verdict:
-    """What a sweep concluded about a file, minus anything transient."""
+    """What a sweep concluded about a file, minus anything transient.
+
+    ``tracks`` is what the probe saw, as :func:`trackstarr.media.track_summary`
+    dicts; empty when the file was never probed (a pre-probe skip).
+    """
 
     status: Status
     reasons: str = ""
+    tracks: list[dict] = field(default_factory=list)
 
 
 def cache_key(path: str, lang: str | None) -> FileKey | None:
@@ -58,9 +67,10 @@ def cache_key(path: str, lang: str | None) -> FileKey | None:
 class SweepCache:
     """Verdicts from previous sweeps, keyed by path.
 
-    ``lookup`` hits carried forward by ``record`` build the next sweep's
-    contents, so entries for files a sweep never visits fall away on ``save``.
-    ``checkpoint`` persists mid-sweep without that pruning.
+    ``lookup`` hits carried forward by ``carry`` and fresh verdicts booked by
+    ``record`` build the next sweep's contents, so entries for files a sweep
+    never visits fall away on ``save``. ``checkpoint`` persists mid-sweep
+    without that pruning.
 
     ``fingerprint`` is the policy the verdicts were judged under; a mismatch on
     load drops the cache.
@@ -71,6 +81,8 @@ class SweepCache:
         self.fingerprint = fingerprint
         self._previous: dict[str, dict] = {}
         self._next: dict[str, dict] = {}
+        #: Whether anything fresh landed since the last write; see checkpoint.
+        self._dirty = False
 
     @classmethod
     def load(cls, path: str, fingerprint: dict) -> SweepCache:
@@ -92,6 +104,11 @@ class SweepCache:
         return cache
 
     def lookup(self, path: str, key: FileKey | None) -> Verdict | None:
+        """The stored verdict for an unchanged file, or None.
+
+        Stored track summaries are not decoded here; nothing reads a hit's
+        tracks, so ``carry`` moves the whole entry forward instead.
+        """
         entry = self._previous.get(path)
         if key is None or not isinstance(entry, dict):
             return None
@@ -107,15 +124,37 @@ class SweepCache:
     def record(self, path: str, key: FileKey | None, verdict: Verdict) -> None:
         if key is None:
             return
-        self._next[path] = {
+        entry = {
             **asdict(key),
             "status": str(verdict.status),
             "reasons": verdict.reasons,
         }
+        if verdict.tracks:
+            entry["tracks"] = verdict.tracks
+        self._next[path] = entry
+        self._dirty = True
+
+    def carry(self, path: str) -> None:
+        """Bring a hit's stored entry forward untouched, tracks and all.
+
+        The entry is already on disk exactly as it stands, so this neither
+        re-encodes it nor marks the cache dirty.
+        """
+        if entry := self._previous.get(path):
+            self._next[path] = entry
 
     def checkpoint(self) -> None:
-        """Persist mid-sweep, so an interrupted sweep keeps what it learned."""
+        """Persist mid-sweep, so an interrupted sweep keeps what it learned.
+
+        Skipped while nothing fresh has been recorded: carried entries are
+        already on disk, and now that entries hold track summaries a warm
+        sweep would otherwise rewrite the whole cache unchanged, every
+        interval.
+        """
+        if not self._dirty:
+            return
         self._write({**self._previous, **self._next})
+        self._dirty = False
 
     def save(self) -> None:
         self._write(self._next)
