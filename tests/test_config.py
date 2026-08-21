@@ -287,6 +287,33 @@ def test_an_empty_media_dirs_still_means_no_dirs(monkeypatch):
     assert config._list("MEDIA_DIRS", "/data/media/movies:/data/media/tv") == []
 
 
+def test_a_path_map_reads_longest_prefix_first(monkeypatch):
+    """Order is the whole contract: /data/media/tv has to win over /data/media
+    or every episode would be mapped to the movies mount."""
+    monkeypatch.setenv(
+        "PLEX_PATH_MAP", "/data/media=/mnt/content/media, /data/media/tv/=/mnt/tv/"
+    )
+    assert config._path_map("PLEX_PATH_MAP") == [
+        ("/data/media/tv", "/mnt/tv"),
+        ("/data/media", "/mnt/content/media"),
+    ]
+    assert config.errors() == []
+
+
+def test_a_half_written_path_map_entry_is_refused(monkeypatch):
+    """Refreshes are best effort, so a pair missing its remote half would
+    otherwise be a silent no-op for that library."""
+    monkeypatch.setenv("PLEX_PATH_MAP", "/data/media,/data/tv=/mnt/tv")
+    assert config._path_map("PLEX_PATH_MAP") == [("/data/tv", "/mnt/tv")]
+    assert any("PLEX_PATH_MAP" in problem for problem in config.errors())
+
+
+def test_no_path_map_is_no_mapping(monkeypatch):
+    monkeypatch.delenv("PLEX_PATH_MAP", raising=False)
+    assert config._path_map("PLEX_PATH_MAP") == []
+    assert config.errors() == []
+
+
 def test_settings_numbers_and_booleans_read_as_their_literals(tmp_path, monkeypatch):
     """A hand-written file naturally says 5120 and true; they arrive spelled
     the way the same-named variable would hold them."""

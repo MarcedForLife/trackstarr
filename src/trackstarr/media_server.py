@@ -26,6 +26,10 @@ _TIMEOUT = 10
 _MUTE_AFTER = 3
 _failures: dict[str, int] = {}
 
+#: Servers already told that our paths land outside everything they index, so
+#: a sweep full of misses costs one line rather than one per file.
+_unmapped: set[str] = set()
+
 
 def _plex_enabled() -> bool:
     return bool(config.PLEX_URL and config.PLEX_TOKEN)
@@ -68,18 +72,55 @@ def path_within(path: str, base: str) -> bool:
     return path == base or path.startswith(base + "/")
 
 
+def map_path(path: str, mapping: list[tuple[str, str]]) -> str:
+    """``path`` as the server spells it, per the longest matching prefix.
+
+    An empty mapping, or a path under none of its pairs, is passed through:
+    the usual case is mounts that already agree.
+    """
+    for local, remote in mapping:
+        if path_within(path, local):
+            return remote + path[len(local) :]
+    return path
+
+
+def _warn_unmapped(server: str, folder: str, known: list[str], setting: str) -> None:
+    """Say once that this server indexes nothing we send it.
+
+    The mismatch is otherwise invisible: refreshes are best effort, so a
+    library the server spells differently just never updates, and the file
+    that looks wrong in the app looks right on disk.
+    """
+    if server in _unmapped:
+        log.debug("%s: nothing indexes %s", server, folder)
+        return
+    _unmapped.add(server)
+    # A ready-to-paste pair when both halves are known, since the fix is
+    # otherwise three facts the reader has to assemble.
+    both_halves_known = config.MEDIA_DIRS and known
+    example = f"{config.MEDIA_DIRS[0]}={known[0]}" if both_halves_known else "LOCAL=REMOTE"
+    log.warning(
+        "%s: %s is outside everything it indexes (%s), so refreshes are being skipped; "
+        "mount the library where it sees it, or set %s=%s",
+        server,
+        folder,
+        ", ".join(known) or "nothing",
+        setting,
+        example,
+    )
+
+
 def _plex_refresh(path: str) -> None:
     """Partial-scan the innermost library section holding the file.
 
     Plex has no "this one file changed" endpoint. The closest is a
     path-scoped refresh of the owning section.
     """
-    folder = os.path.dirname(path)
-    section = next(
-        (key for location, key in _plex_locations() if path_within(folder, location)), None
-    )
+    folder = map_path(os.path.dirname(path), config.PLEX_PATH_MAP)
+    locations = _plex_locations()
+    section = next((key for location, key in locations if path_within(folder, location)), None)
     if section is None:
-        log.debug("plex: no library section contains %s", path)
+        _warn_unmapped("plex", folder, [location for location, _ in locations], "PLEX_PATH_MAP")
         return
     query = urllib.parse.urlencode({"path": folder})
     request(
@@ -95,14 +136,19 @@ def _jellyfin_enabled() -> bool:
 
 
 def _jellyfin_refresh(path: str) -> None:
-    """Tell Jellyfin (or Emby, same API) exactly which file changed."""
+    """Tell Jellyfin (or Emby, same API) exactly which file changed.
+
+    Nothing comes back saying whether it knew the path, so a mapping is the
+    only thing standing between a different mount and a silent no-op.
+    """
+    mapped = map_path(path, config.JELLYFIN_PATH_MAP)
     request(
         f"{config.JELLYFIN_URL}/Library/Media/Updated",
         {"X-Emby-Token": config.JELLYFIN_API_KEY},
-        payload={"Updates": [{"Path": path, "UpdateType": "Modified"}]},
+        payload={"Updates": [{"Path": mapped, "UpdateType": "Modified"}]},
         timeout=_TIMEOUT,
     )
-    log.info("jellyfin: notified about %s", path)
+    log.info("jellyfin: notified about %s", mapped)
 
 
 #: name -> (configured?, refresh). A new server is one line here.

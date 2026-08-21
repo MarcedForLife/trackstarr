@@ -163,6 +163,14 @@ A few behaviours worth knowing:
   sweep, and `SWEEP_AT` is unset by default.
 - Configure Plex or Jellyfin below and each rewrite nudges the server, so
   track lists stay correct even on network mounts its own watcher can't see.
+  The nudge names a path, so the server has to know the library by the same
+  one: a Plex that indexes `/mnt/content/media/tv` matches nothing sent as
+  `/data/media/tv`. Either mount the library where the server sees it, or map
+  the difference with `PLEX_PATH_MAP=/data/media=/mnt/content/media` (one
+  comma-separated `LOCAL=REMOTE` pair per library that differs, and
+  `JELLYFIN_PATH_MAP` likewise). Plex says so in the log the first time a
+  refresh lands outside every section it indexes; Jellyfin's API reports
+  nothing either way, so check the paths there yourself.
 - A file that changes mid-rewrite (an upgrade landing) is deferred, the
   result is discarded and the next webhook or sweep retries.
 
@@ -214,6 +222,7 @@ is, and a key nothing reads refuses startup as the typo it usually is.
 | `SONARR_URL` / `SONARR_API_KEY`     | (unset)                             | omit to disable; the key also takes `_FILE` / `FILE__`                                    |
 | `PLEX_URL` / `PLEX_TOKEN`           | (unset)                             | refresh after rewrites; omit to disable; token also takes `_FILE` / `FILE__`              |
 | `JELLYFIN_URL` / `JELLYFIN_API_KEY` | (unset)                             | same, and the same API fits Emby                                                          |
+| `PLEX_PATH_MAP` / `JELLYFIN_PATH_MAP` | (unset)                           | `LOCAL=REMOTE` pairs, comma-separated, when the server mounts the library elsewhere       |
 | `ALWAYS_KEEP_LANGS`                 | `eng`                               | comma-separated; codes or names (`en`, `eng`, `English`) all work                         |
 | `DISABLED_RULES`                    | (unset)                             | any of `languages,downmix,cover_art,order,sdh`; dashes read as underscores                |
 | `DROP_COMMENTARY`                   | `false`                             | remove commentary tracks instead of protecting them                                       |

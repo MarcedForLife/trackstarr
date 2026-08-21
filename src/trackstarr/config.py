@@ -229,6 +229,34 @@ def _secret(name: str) -> str:
     return content
 
 
+def _path_map(name: str) -> list[tuple[str, str]]:
+    """``LOCAL=REMOTE`` prefix pairs, longest local first.
+
+    A media server indexes the library through its own mount, which need not
+    be ours: Plex reporting ``/mnt/content/media`` while the container walks
+    ``/data/media`` matches nothing, and every refresh is silently skipped.
+    One pair per library where they differ, comma-separated. ``=`` rather than
+    ``:`` separates the sides, since MEDIA_DIRS already spends the colon and a
+    server on Windows spells its half ``D:\\Media``.
+    """
+    pairs: list[tuple[str, str]] = []
+    for entry in _raw(name, "").split(","):
+        if not entry.strip():
+            continue
+        local, sep, remote = entry.partition("=")
+        # Trailing slashes off both sides: the prefix test joins its own, and
+        # a stray one would make /data/media/ match nothing.
+        local, remote = local.strip().rstrip("/"), remote.strip().rstrip("/")
+        if not sep or not local or not remote:
+            _LOAD_ERRORS.append(f"{name} entry {entry.strip()!r} is not LOCAL=REMOTE")
+            continue
+        pairs.append((local, remote))
+    # Longest first, so the first prefix match is the most specific, the way
+    # media_server sorts the sections it maps onto.
+    pairs.sort(key=lambda pair: -len(pair[0]))
+    return pairs
+
+
 def _langs(name: str, default: str) -> set[str]:
     """Languages normalised to ISO 639-2/B like every track tag, so "en",
     "English" and "eng" all mean the same thing. Anything unrecognised passes
@@ -257,6 +285,12 @@ PLEX_URL = _raw("PLEX_URL", "").rstrip("/")
 PLEX_TOKEN = _secret("PLEX_TOKEN")
 JELLYFIN_URL = _raw("JELLYFIN_URL", "").rstrip("/")
 JELLYFIN_API_KEY = _secret("JELLYFIN_API_KEY")
+
+#: How each server spells the library, when it isn't how we do. Only the
+#: parent path ever differs, so one ``LOCAL=REMOTE`` pair per library is
+#: enough; unset means the mounts already match. See _path_map.
+PLEX_PATH_MAP = _path_map("PLEX_PATH_MAP")
+JELLYFIN_PATH_MAP = _path_map("JELLYFIN_PATH_MAP")
 
 #: Languages kept regardless of the title's original language.
 ALWAYS_KEEP_LANGS = _langs("ALWAYS_KEEP_LANGS", "eng")

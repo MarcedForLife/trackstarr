@@ -22,9 +22,11 @@ def _fresh_state():
     """Module-level caches must not leak between tests."""
     media_server._plex_sections.clear()
     media_server._failures.clear()
+    media_server._unmapped.clear()
     yield
     media_server._plex_sections.clear()
     media_server._failures.clear()
+    media_server._unmapped.clear()
 
 
 @pytest.fixture
@@ -87,6 +89,38 @@ def test_plex_section_list_is_fetched_once(plex, requests):
 def test_plex_outside_any_section_does_nothing(plex, requests):
     refresh_servers("/elsewhere/f.mkv")
     assert [url for url, *_ in requests] == ["http://plex:32400/library/sections"]
+
+
+def test_plex_maps_our_paths_to_the_ones_it_indexes(plex, requests, monkeypatch):
+    """The server mounts the library somewhere else, which is the usual case
+    once trackstarr runs in a container and Plex doesn't."""
+    monkeypatch.setattr(config, "PLEX_PATH_MAP", [("/library", "/data/media")])
+    refresh_servers("/library/movies/A/A.mkv")
+
+    url, *_ = requests[-1]
+    assert url.startswith("http://plex:32400/library/sections/2/refresh?")
+    assert "path=%2Fdata%2Fmedia%2Fmovies%2FA" in url
+
+
+def test_jellyfin_maps_our_paths_too(jellyfin, requests, monkeypatch):
+    monkeypatch.setattr(config, "JELLYFIN_PATH_MAP", [("/library", "/media")])
+    refresh_servers("/library/movies/A/A.mkv")
+
+    *_, payload = requests[-1]
+    assert payload["Updates"] == [{"Path": "/media/movies/A/A.mkv", "UpdateType": "Modified"}]
+
+
+def test_plex_says_once_that_it_indexes_none_of_our_paths(plex, requests, caplog):
+    """The mismatch is otherwise invisible: refreshes are best effort, so the
+    library just never updates. Once, though, not once per file in a sweep."""
+    for name in "ABC":
+        refresh_servers(f"/elsewhere/{name}/{name}.mkv")
+
+    warnings = [record for record in caplog.records if record.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "PLEX_PATH_MAP" in warnings[0].getMessage()
+    # The locations it does index, so the reader can write the mapping.
+    assert "/data/media" in warnings[0].getMessage()
 
 
 def test_unconfigured_servers_make_no_calls(requests):
