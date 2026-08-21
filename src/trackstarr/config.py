@@ -233,7 +233,7 @@ def _path_map(name: str) -> list[tuple[str, str]]:
     """``LOCAL=REMOTE`` prefix pairs, longest local first.
 
     A media server indexes the library through its own mount, which need not
-    be ours: Plex reporting ``/mnt/content/media`` while the container walks
+    be ours: Plex reporting ``/srv/media`` while the container walks
     ``/data/media`` matches nothing, and every refresh is silently skipped.
     One pair per library where they differ, comma-separated. ``=`` rather than
     ``:`` separates the sides, since MEDIA_DIRS already spends the colon and a
@@ -401,7 +401,7 @@ JUNK_TITLE_RE = _regex(
 
 LISTEN_ADDR = _raw("LISTEN_ADDR", "0.0.0.0")
 #: 5120 spells 5.1 and 2.0, the layouts the downmix rule guarantees. Mostly
-#: it is just free: 8080 is qBittorrent's and SABnzbd's.
+#: it is just free, well clear of the range the rest of the stack claims.
 LISTEN_PORT = _int("LISTEN_PORT", "5120")
 
 #: Advertised when registering the webhook, so it has to be reachable from

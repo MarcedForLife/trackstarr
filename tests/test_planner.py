@@ -14,6 +14,7 @@ from trackstarr.planner import (
     _downmix_rank,
     build_plan,
     channel_rank,
+    describe,
     new_plan,
     plan_from_probe,
 )
@@ -332,6 +333,22 @@ def test_file_is_skipped_rather_than_left_silent():
     plan = plan_for(video(0), audio(1, 6, lang="ger"), audio(2, 2, lang="fre"))
     assert plan.skip == "would remove every audio track"
     assert not plan.needed
+
+
+def test_a_skip_describes_itself_before_what_the_rules_wanted():
+    """pending.tsv and the sweep cache both carry describe(). A row reading
+    "drop audio 1 (ger)" for a file nothing touches reads as a rewrite that
+    never comes; the wanted drops still follow, since they name the tracks."""
+    plan = plan_for(video(0), audio(1, 6, lang="ger"), audio(2, 2, lang="fre"))
+    assert describe(plan) == (
+        "would remove every audio track: drop audio 1 (ger); drop audio 2 (fre)"
+    )
+
+
+def test_a_skip_with_nothing_to_say_still_says_why():
+    """The video-only file every library has: no rule fires, so the reason
+    cell used to be blank and the verdict unexplainable."""
+    assert describe(plan_for(video(0))) == "no audio streams"
 
 
 def test_commentary_in_a_foreign_language_is_dropped_by_the_language_rule():

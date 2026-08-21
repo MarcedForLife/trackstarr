@@ -126,8 +126,18 @@ class Plan:
 
 
 def describe(plan: Plan) -> str:
+    """What the plan does, or why it does nothing.
+
+    A skipped plan leads with the skip: its reasons are what the rules wanted,
+    not what happens, so a pending.tsv row reading "drop audio 1 (dan)" for a
+    file nothing will touch reads as a rewrite that never comes. They still
+    follow, because "would remove every audio track" is only actionable once
+    you know which track it means.
+    """
     parts = list(plan.reasons)
     parts += [f"(also {item})" for item in plan.incidental]
+    if plan.skip:
+        return f"{plan.skip}: {'; '.join(parts)}" if parts else plan.skip
     return "; ".join(parts)
 
 

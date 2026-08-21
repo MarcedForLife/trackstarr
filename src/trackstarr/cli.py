@@ -183,7 +183,7 @@ def cmd_fix(files: list[str], original: str | None) -> int:
         if (
             result.plan
             and result.status is not Status.DEFERRED
-            and (note := result.plan.skip or describe(result.plan))
+            and (note := describe(result.plan))
         ):
             print(f"  {note}")
         if result.detail:

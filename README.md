@@ -1,12 +1,15 @@
 # Trackstarr
 
-Keeps a media library's audio and subtitle tracks tidy, driven by Radarr and
-Sonarr webhooks. Stream copy only, no video transcoding, no GPU.
+[![CI](https://github.com/MarcedForLife/trackstarr/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcedForLife/trackstarr/actions/workflows/ci.yml)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![Image: ghcr.io](https://img.shields.io/badge/ghcr.io-trackstarr-blue.svg)](https://github.com/MarcedForLife/trackstarr/pkgs/container/trackstarr)
 
-Built to replace a Tdarr plugin stack that was doing nothing but track
-selection, and to fix the one thing that stack kept getting wrong, a 2.0
-commentary track is not a stereo track. Hence the name, it excels at
-tracks.
+Trackstarr keeps a media library's audio and subtitle tracks tidy, driven by
+Radarr and Sonarr webhooks. Stream copy only: no video transcoding, no GPU.
+
+It replaces a Tdarr plugin stack that did nothing but track selection, and
+fixes the one thing that stack kept getting wrong: a 2.0 commentary track is
+not a stereo track.
 
 ## The rules
 
@@ -74,10 +77,10 @@ services:
     ports:
       - "5120:5120"
     volumes:
-      - /mnt/content:/data
-      - /mnt/config/trackstarr:/config
+      - /srv/media:/data
+      - /srv/config/trackstarr:/config
     environment:
-      TZ: Pacific/Auckland
+      TZ: Etc/UTC
       MEDIA_DIRS: /data/media/movies:/data/media/tv
       RADARR_URL: http://radarr:7878
       RADARR_API_KEY: ${RADARR_API_KEY}
@@ -88,35 +91,38 @@ services:
 
 `MEDIA_DIRS` is where the sweep walks, in the container's paths, so it has
 to match your own layout under the mount above. It is spelled out here
-rather than left to its default because a wrong one otherwise costs you a
-night: `serve` and `sweep` warn at startup about an entry that isn't there,
-and the sweep says so again as it walks, but nothing fails. Webhook imports
-keep working either way, they carry their own paths.
+rather than left to its default because a wrong one fails quietly: `serve`
+and `sweep` warn at startup about an entry that isn't there, and the sweep
+says so again as it walks, but neither exits non-zero, so a scheduled sweep
+walks nothing and finds nothing to fix. Webhook imports keep working either
+way, since they carry their own paths.
 
 `user:` takes PUID and PGID from your `.env` when they're defined. The image
 itself defaults to `1000:1000`, so nothing here runs as root whether or not
 you set it, and trackstarr therefore can't fix `/config` ownership for you.
-Create it before first start, Docker would create it root-owned:
+Create it before first start; Docker would otherwise make it root-owned and
+every write would fail:
 
 ```sh
-install -d -o 1000 -g 1000 /mnt/config/trackstarr   # or mkdir + chown
+install -d -o 1000 -g 1000 /srv/config/trackstarr   # or mkdir + chown
 ```
 
-Nothing needs configuring in Radarr or Sonarr, trackstarr registers its own
+Nothing needs configuring in Radarr or Sonarr: trackstarr registers its own
 webhook connections at startup, each with a generated secret the listener
 requires on every call (the custom-headers field carrying it needs Sonarr
 v4 / Radarr 4.3 or newer). Set `WEBHOOK_URL` if the *arrs reach the
-container by some name other than `trackstarr`; it is the base URL, the
+container by some name other than `trackstarr`; it is the base URL, and the
 `/webhook` path is appended at registration.
 
-The port mapping is optional, `GET /health` is all an unauthenticated
-caller can reach. 5120 is the two layouts the downmix rule guarantees,
-picked mainly because 8080 is already qBittorrent's.
+The port mapping is optional: `GET /health` is all an unauthenticated caller
+can reach. 5120 spells the two layouts the downmix rule guarantees, and sits
+clear of the ports the rest of a self-hosted stack usually claims.
 
-Every API key and token can also be read from a file, `RADARR_API_KEY_FILE`
+Every API key and token can also be read from a file: `RADARR_API_KEY_FILE`
 and `FILE__RADARR_API_KEY` both work, keeping keys out of the compose file
 and `docker inspect`. Naming the same credential both ways is refused at
-startup rather than resolved by precedence.
+startup rather than resolved by precedence, since a silent winner between
+the two spellings would let a stale key survive a rotation.
 
 A rewrite is staged in `WORK_DIR` as a hidden `.partial` file and published
 over the original only once its duration and stream count verify, so an
@@ -134,9 +140,10 @@ A few behaviours worth knowing:
   the library index a media view can read.
 - Every rewrite, failure, deferral and sweep appends a JSON line to
   `events.jsonl`, the history a future stats view will aggregate, kept from
-  day one because it cannot be backfilled. Each line says what changed twice:
-  `reasons` in prose, and `rules` in fixed names (`downmix`, `languages`,
-  `sdh`) so aggregating never means parsing English that will be reworded.
+  day one because it cannot be backfilled. Each line records what changed in
+  two forms: `reasons` in prose, and `rules` in fixed names (`downmix`,
+  `languages`, `sdh`) so aggregating never means parsing English that will be
+  reworded.
   Each also carries a `config_id`, the digest of the settings it was judged
   under; startup and every sweep record the full settings beside theirs, so
   a rewrite years old still resolves to the rules that ordered it.
@@ -145,7 +152,7 @@ A few behaviours worth knowing:
   wiped `/config` heals itself and a copied one leaks nothing. Delete a
   digest to lock that caller out.
 - An authenticated caller can POST a webhook-shaped body to `/webhook`
-  naming any path the container can reach, the mounts are the boundary. A
+  naming any path the container can reach; the mounts are the boundary. A
   path that doesn't exist here is logged and dropped, usually the *arr and
   trackstarr spelling the library differently.
 - An applying sweep downgrades itself to report-only when an enabled *arr
@@ -164,14 +171,14 @@ A few behaviours worth knowing:
 - Configure Plex or Jellyfin below and each rewrite nudges the server, so
   track lists stay correct even on network mounts its own watcher can't see.
   The nudge names a path, so the server has to know the library by the same
-  one: a Plex that indexes `/mnt/content/media/tv` matches nothing sent as
+  one: a Plex that indexes `/srv/media/tv` matches nothing sent as
   `/data/media/tv`. Either mount the library where the server sees it, or map
-  the difference with `PLEX_PATH_MAP=/data/media=/mnt/content/media` (one
+  the difference with `PLEX_PATH_MAP=/data/media=/srv/media` (one
   comma-separated `LOCAL=REMOTE` pair per library that differs, and
   `JELLYFIN_PATH_MAP` likewise). Plex says so in the log the first time a
   refresh lands outside every section it indexes; Jellyfin's API reports
   nothing either way, so check the paths there yourself.
-- A file that changes mid-rewrite (an upgrade landing) is deferred, the
+- A file that changes mid-rewrite (an upgrade landing) is deferred: the
   result is discarded and the next webhook or sweep retries.
 
 ## Commands
@@ -185,7 +192,7 @@ trackstarr plan FILE...       # explain the decision, print the ffmpeg command
 trackstarr secret NAME        # mint NAME's webhook secret and print it once
 ```
 
-`plan` is the one to reach for when a file did something surprising, it
+`plan` is the one to reach for when a file did something surprising: it
 prints the language decision and the exact ffmpeg command without running
 it. `fix` is the same decision applied on the spot, wherever the file
 lives. Both take `--original` when the file isn't in a *arr library.
@@ -210,53 +217,54 @@ Tears of Steel (2012).mkv
 Every variable below can also live in `/config/settings.json` as one JSON
 object of the same names (`{"DROP_COMMENTARY": true, "SWEEP_AT": "0 4 * * *"}`),
 the file a future settings UI will write. The environment wins where both
-name a setting, `STATE_DIR` is environment-only since it says where the file
+name a setting; `STATE_DIR` is environment-only since it says where the file
 is, and a key nothing reads refuses startup as the typo it usually is.
 
-| Variable                            | Default                             |                                                                                           |
-| ----------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
-| `MEDIA_DIRS`                        | `/data/media/movies:/data/media/tv` | colon-separated; where the sweep walks                                                    |
-| `WORK_DIR`                          | `/data/trackstarr-work`             | any filesystem; a cross-filesystem one costs a copy per rewrite                           |
-| `STATE_DIR`                         | `/config`                           | pending.tsv, the sweep cache, the event history, the parked set, webhook secrets and `locks/` live here |
-| `RADARR_URL` / `RADARR_API_KEY`     | (unset)                             | omit to disable; the key also takes `_FILE` / `FILE__`                                    |
-| `SONARR_URL` / `SONARR_API_KEY`     | (unset)                             | omit to disable; the key also takes `_FILE` / `FILE__`                                    |
-| `PLEX_URL` / `PLEX_TOKEN`           | (unset)                             | refresh after rewrites; omit to disable; token also takes `_FILE` / `FILE__`              |
-| `JELLYFIN_URL` / `JELLYFIN_API_KEY` | (unset)                             | same, and the same API fits Emby                                                          |
-| `PLEX_PATH_MAP` / `JELLYFIN_PATH_MAP` | (unset)                           | `LOCAL=REMOTE` pairs, comma-separated, when the server mounts the library elsewhere       |
-| `ALWAYS_KEEP_LANGS`                 | `eng`                               | comma-separated; codes or names (`en`, `eng`, `English`) all work                         |
-| `DISABLED_RULES`                    | (unset)                             | any of `languages,downmix,cover_art,order,sdh`; dashes read as underscores                |
-| `DROP_COMMENTARY`                   | `false`                             | remove commentary tracks instead of protecting them                                       |
-| `DOWNMIX_LAYOUTS`                   | `2.0,5.1`                           | layouts guaranteed to exist; each needs an `AUDIO_BITRATE_` below                         |
-| `SKIP_HARDLINKS`                    | `true`                              | leave files the download client still links alone, until it lets go                       |
-| `HARDLINK_RECHECK`                  | `900`                               | seconds between re-checks; 0 leaves them to the sweep                                     |
-| `ALLOWED_EXTS`                      | `.mkv,.mp4,.m4v`                    | containers that will be rewritten                                                         |
-| `AUDIO_CODEC`                       | `aac`                               | downmix encoder; `libfdk_aac` if your ffmpeg carries it                                   |
-| `AUDIO_BITRATE_2_0` / `_5_1`        | `320k` / `640k`                     | one per layout, dots as underscores; `AUDIO_BITRATE_7_1` for a 7.1                        |
-| `REGENERATE_DOWNMIXES`              | (unset)                             | `generated` rebuilds this tool's tracks on settings change; `all` also upgrades weak ones |
-| `REMUX_TO_MKV`                      | `false`                             | convert mp4/m4v to mkv, where every feature works                                         |
-| `COMMENTARY_PATTERN`                | see `config.py`                     | regex; likewise `SDH_PATTERN`, `FORCED_PATTERN`, `JUNK_TITLE_PATTERN`                     |
-| `LISTEN_ADDR` / `LISTEN_PORT`       | `0.0.0.0` / `5120`                  |                                                                                           |
-| `WEBHOOK_URL`                       | `http://trackstarr:5120`            | how the *arrs reach the listener                                                          |
-| `SWEEP_AT`                          | (unset)                             | cron schedule, local time (`0 4 * * *`); empty disables                                   |
-| `SWEEP_APPLY`                       | `false`                             | the sweep reports until this is true                                                      |
-| `DRY_RUN`                           | `false`                             | plan and record everywhere, rewrite nothing; overrides `SWEEP_APPLY` and `--apply`        |
-| `MAX_CONCURRENT_REWRITES`           | `1`                                 | rewrites at once, across webhooks, sweeps and processes                                   |
-| `FFMPEG_TIMEOUT` / `PROBE_TIMEOUT`  | `7200` / `180`                      | seconds                                                                                   |
-| `LOG_LEVEL`                         | `INFO`                              |                                                                                           |
+| Variable                              | Default                             |                                                                                                         |
+| ------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `MEDIA_DIRS`                          | `/data/media/movies:/data/media/tv` | colon-separated; where the sweep walks                                                                  |
+| `WORK_DIR`                            | `/data/trackstarr-work`             | any filesystem; a cross-filesystem one costs a copy per rewrite                                         |
+| `STATE_DIR`                           | `/config`                           | pending.tsv, the sweep cache, the event history, the parked set, webhook secrets and `locks/` live here |
+| `RADARR_URL` / `RADARR_API_KEY`       | (unset)                             | omit to disable; the key also takes `_FILE` / `FILE__`                                                  |
+| `SONARR_URL` / `SONARR_API_KEY`       | (unset)                             | omit to disable; the key also takes `_FILE` / `FILE__`                                                  |
+| `PLEX_URL` / `PLEX_TOKEN`             | (unset)                             | refresh after rewrites; omit to disable; token also takes `_FILE` / `FILE__`                            |
+| `JELLYFIN_URL` / `JELLYFIN_API_KEY`   | (unset)                             | same, and the same API fits Emby                                                                        |
+| `PLEX_PATH_MAP` / `JELLYFIN_PATH_MAP` | (unset)                             | `LOCAL=REMOTE` pairs, comma-separated, when the server mounts the library elsewhere                     |
+| `ALWAYS_KEEP_LANGS`                   | `eng`                               | comma-separated; codes or names (`en`, `eng`, `English`) all work                                       |
+| `DISABLED_RULES`                      | (unset)                             | any of `languages,downmix,cover_art,order,sdh`; dashes read as underscores                              |
+| `DROP_COMMENTARY`                     | `false`                             | remove commentary tracks instead of protecting them                                                     |
+| `DOWNMIX_LAYOUTS`                     | `2.0,5.1`                           | layouts guaranteed to exist; each needs an `AUDIO_BITRATE_` below                                       |
+| `SKIP_HARDLINKS`                      | `true`                              | leave files the download client still links alone, until it lets go                                     |
+| `HARDLINK_RECHECK`                    | `900`                               | seconds between re-checks; 0 leaves them to the sweep                                                   |
+| `ALLOWED_EXTS`                        | `.mkv,.mp4,.m4v`                    | containers that will be rewritten                                                                       |
+| `AUDIO_CODEC`                         | `aac`                               | downmix encoder; `libfdk_aac` if your ffmpeg carries it                                                 |
+| `AUDIO_BITRATE_2_0` / `_5_1`          | `320k` / `640k`                     | one per layout, dots as underscores; `AUDIO_BITRATE_7_1` for a 7.1                                      |
+| `REGENERATE_DOWNMIXES`                | (unset)                             | `generated` rebuilds this tool's tracks on settings change; `all` also upgrades weak ones               |
+| `REMUX_TO_MKV`                        | `false`                             | convert mp4/m4v to mkv, where every feature works                                                       |
+| `COMMENTARY_PATTERN`                  | see `config.py`                     | regex; likewise `SDH_PATTERN`, `FORCED_PATTERN`, `JUNK_TITLE_PATTERN`                                   |
+| `LISTEN_ADDR` / `LISTEN_PORT`         | `0.0.0.0` / `5120`                  |                                                                                                         |
+| `WEBHOOK_URL`                         | `http://trackstarr:5120`            | how the *arrs reach the listener                                                                        |
+| `SWEEP_AT`                            | (unset)                             | cron schedule, local time (`0 4 * * *`); empty disables                                                 |
+| `SWEEP_APPLY`                         | `false`                             | the sweep reports until this is true                                                                    |
+| `DRY_RUN`                             | `false`                             | plan and record everywhere, rewrite nothing; overrides `SWEEP_APPLY` and `--apply`                      |
+| `MAX_CONCURRENT_REWRITES`             | `1`                                 | rewrites at once, across webhooks, sweeps and processes                                                 |
+| `FFMPEG_TIMEOUT` / `PROBE_TIMEOUT`    | `7200` / `180`                      | seconds                                                                                                 |
+| `LOG_LEVEL`                           | `INFO`                              |                                                                                                         |
 
-`MAX_CONCURRENT_REWRITES` is worth raising if a backfill is going to take
-days. ffmpeg's audio encoders are single-threaded, so one rewrite is usually
+`MAX_CONCURRENT_REWRITES` is worth raising if a backfill will take days.
+ffmpeg's audio encoders are single-threaded, so one rewrite is usually
 one busy core and some idle disk, and the default of 1 assumes spinning
 disks, where parallel rewrites fight over the heads. Measure rather than
-guess, time a sweep at 1 and at 3, if the wall time barely moves storage is
-the bottleneck. The budget is shared, webhook imports arriving mid-sweep
-queue against the same limit, and a `docker exec trackstarr sweep --apply`
-beside a running `serve` competes for the same slots.
+guess: time a sweep at 1 and at 3, and if the wall time barely moves,
+storage is the bottleneck rather than the CPU. The budget is shared, so
+webhook imports arriving mid-sweep queue against the same limit, and a
+`docker exec trackstarr sweep --apply` beside a running `serve` competes for
+the same slots.
 
 Start with `SWEEP_APPLY=false` and read `/config/pending.tsv` before letting
-it loose on an existing library. It only gates the sweep, webhook imports
-are rewritten as they land, that is the tool's job. To observe everything
-without touching anything set `DRY_RUN=true`, plans still run against the
+it loose on an existing library. It only gates the sweep; webhook imports
+are rewritten as they land, which is the tool's job. To observe everything
+without touching anything, set `DRY_RUN=true`: plans still run against the
 live *arrs and record would-fix events, but nothing is rewritten, not even
 by `sweep --apply`.
 
@@ -286,10 +294,9 @@ a `Policy` snapshot (`policy.py`), so `tests/test_planner.py` covers them
 with hand-built stream dicts and no media at all. Deciding stops there:
 `command.py` turns a plan into an ffmpeg argument list and `executor.py`
 runs it, which is what lets `plan` print the exact command without going
-near a rewrite. `tests/test_integration.py`
-generates real files with ffmpeg, and the suite refuses to start without one
-new enough to round-trip per-stream MP4 titles, rather than skipping a third
-of itself where nobody would notice.
+near a rewrite. `tests/test_integration.py` generates real files with ffmpeg,
+and the suite refuses to start without one new enough to round-trip per-stream
+MP4 titles, rather than skipping a third of itself where nobody would notice.
 
 ## Licence
 

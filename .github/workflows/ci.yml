@@ -89,7 +89,7 @@ jobs:
   # become :latest for arm64 users.
   #
   # Native runners rather than QEMU, because this runs the whole suite and the
-  # integration tests encode real video — the CPU-bound work emulation is
+  # integration tests encode real video, the CPU-bound work emulation is
   # worst at. Should ubuntu-24.04-arm ever be unavailable, the fallback is
   # setup-qemu-action on ubuntu-latest.
   docker:
@@ -108,7 +108,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
 
-      # Build only — publishing is publish.yml's job. This exists so a broken
+      # Build only: publishing is publish.yml's job. This exists so a broken
       # Dockerfile fails the PR rather than the release.
       - uses: docker/build-push-action@v7
         with:
@@ -128,7 +128,7 @@ jobs:
           docker run --rm trackstarr:ci plan --help
 
       # The suite again, but against Alpine's own build of ffmpeg, inside the
-      # image that ships, on both architectures — where a packaging difference
+      # image that ships, on both architectures, where a packaging difference
       # would show up rather than in the test job's downloaded build. An image
       # that lost ffmpeg, or its MP4 title support, fails here at startup
       # rather than going quietly green on a third of the suite.
