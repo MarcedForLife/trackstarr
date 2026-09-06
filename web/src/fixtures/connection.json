@@ -1,0 +1,6 @@
+{
+	"ok": true,
+	"detail": "Radarr 5.14.0.9383, 312 films",
+	"hint": "Map /data to /media in PLEX_PATH_MAP so Plex finds the rewrites.",
+	"webhook": "connected"
+}

@@ -160,3 +160,13 @@ def test_server_status_reports_each_server_for_the_startup_summary(monkeypatch):
     monkeypatch.setattr(config, "JELLYFIN_URL", "")
     monkeypatch.setattr(config, "JELLYFIN_API_KEY", "")
     assert server_status() == {"plex": True, "jellyfin": False}
+
+
+def test_map_path_takes_the_first_pair_that_matches():
+    """The pairs are sorted longest-local-first, so walking past one that
+    doesn't match is the normal case for a library of more than one mount."""
+    mapping = [("/data/media/tv", "/srv/tv"), ("/data/media", "/srv/media")]
+    movie = media_server.map_path("/data/media/movies/A.mkv", mapping)
+    assert movie == "/srv/media/movies/A.mkv"
+    assert media_server.map_path("/data/media/tv/S/E.mkv", mapping) == "/srv/tv/S/E.mkv"
+    assert media_server.map_path("/elsewhere/A.mkv", mapping) == "/elsewhere/A.mkv"

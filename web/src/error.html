@@ -1,0 +1,25 @@
+<!-- The error the app cannot draw itself: the root layout's load failed, so
+     there is no layout for +error.svelte. Plain HTML; the stylesheet and the
+     pre-paint theme script have run by now, so the tokens hold, with fallbacks
+     for when even those did not arrive. No status: SvelteKit's is 500 whatever
+     happened, and hooks.client.ts has already put the useful half into words. -->
+<div
+	data-fallback
+	style="
+		display: flex;
+		min-height: 100dvh;
+		max-width: 24rem;
+		margin: 0 auto;
+		flex-direction: column;
+		justify-content: center;
+		gap: 1.5rem;
+		padding: 1.5rem;
+		color: var(--fg, #eaeaea);
+		font-family: var(--font-sans, system-ui, sans-serif);
+	"
+>
+	<p style="margin: 0; font-size: 1rem">%sveltekit.error.message%</p>
+	<a href="/" style="color: var(--dim, #9a9a9a); font-size: 0.875rem; text-decoration: underline"
+		>back to trackstarr</a
+	>
+</div>

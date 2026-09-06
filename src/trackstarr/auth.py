@@ -1,12 +1,9 @@
-"""Per-caller credentials for the webhook listener.
+"""Per-caller secrets for the webhook listener.
 
 One file per caller under ``STATE_DIR/webhook-secrets``, holding a SHA-256
-digest rather than the secret. Nothing ever reads a secret back, so a copy
-of the config volume yields nothing replayable.
-
-A bare digest, not a password hash: these are 256-bit ``token_urlsafe``
-values, so there is no dictionary to salt against. Save the KDF for
-credentials a human chose.
+digest, so a copy of the volume yields nothing replayable. A bare digest, not
+a password hash: these are 256-bit random tokens with no dictionary to salt
+against.
 """
 
 import hashlib
@@ -17,8 +14,8 @@ import secrets
 
 from . import config
 
-#: A bare filename, so a name can never reach outside the secrets directory.
-#: Reads trust the same shape, so dotfiles in there are never credentials.
+#: A bare filename, so a name cannot reach outside the directory and a dotfile
+#: is never read as a credential.
 _NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
@@ -35,12 +32,8 @@ def _digest(secret: str) -> str:
 
 
 def _write(name: str, stored: str) -> None:
-    """Replace one secret file atomically.
-
-    A reader authorising a request at that moment sees the old digest or the
-    new one, never half a line. The staging name is a dotfile, which _NAME_RE
-    rejects, so one left by a crash is never read back as a caller.
-    """
+    """Replace one secret file atomically. The staging name is a dotfile, so
+    one left by a crash is never read as a caller."""
     os.makedirs(_secrets_dir(), exist_ok=True)
     partial = _path(f".{name}.{os.getpid()}.partial")
     descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -70,13 +63,10 @@ def names() -> list[str]:
 
 def mint(name: str) -> str:
     """A fresh secret for ``name``, stored as a digest and returned once.
+    Minting again replaces the old one.
 
-    This return value is the only copy, so whatever asked for it has to deliver
-    it now. Minting again replaces the old secret immediately.
-
-    Raises ValueError for a name that isn't a bare filename, and OSError when
-    STATE_DIR cannot hold the file: a secret we could not check later would be
-    handed out and never accepted.
+    Raises ValueError for a name that is not a bare filename, and OSError when
+    the file cannot be written.
     """
     if not _NAME_RE.fullmatch(name):
         raise ValueError(
@@ -88,16 +78,13 @@ def mint(name: str) -> str:
 
 
 def exists(name: str) -> bool:
-    """Whether ``name`` has a secret, without saying anything about it."""
+    """Whether ``name`` has a secret."""
     return bool(_stored(name))
 
 
 def matches(name: str, given: str) -> bool:
-    """Whether ``given`` is the secret held for ``name``.
-
-    Compared as bytes: compare_digest refuses a str with non-ASCII in it,
-    which a hand-written file could have.
-    """
+    """Whether ``given`` is the secret held for ``name``. Compared as bytes,
+    since compare_digest refuses non-ASCII str."""
     stored = _stored(name)
     if not (given and stored):
         return False

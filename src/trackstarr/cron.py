@@ -1,18 +1,14 @@
 """A five-field cron schedule: minute, hour, day of month, month, day of week.
 
 Standard syntax: ``*``, numbers, ranges (``1-5``), steps (``*/15``,
-``2-10/2``), comma lists, and 0 or 7 for Sunday. The day rule is cron's own:
-with day of month and day of week both restricted, a date matches when
-either does.
-
-Hand-rolled because the project has no runtime dependencies on purpose.
-Times are wall-clock local.
+``2-10/2``), comma lists, and 0 or 7 for Sunday. As in cron, with both day
+fields restricted a date matches when either does. Times are wall-clock local.
 """
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-#: label and allowed range per field, in expression order.
+#: Label and allowed range per field, in expression order.
 _FIELDS = (
     ("minute", 0, 59),
     ("hour", 0, 23),
@@ -21,8 +17,8 @@ _FIELDS = (
     ("day of week", 0, 7),
 )
 
-#: How far next_run() searches before calling a schedule impossible. The
-#: rarest real one, a Feb 29 date-and-weekday pair, can sit 8 years apart.
+#: How far next_run() searches before calling a schedule impossible. A Feb 29
+#: date-and-weekday pair can sit 8 years apart.
 _HORIZON = timedelta(days=366 * 9)
 
 
@@ -59,11 +55,8 @@ def parse(expr: str) -> Cron:
 
 
 def next_run(cron: Cron, after: datetime) -> datetime:
-    """The first matching minute strictly after ``after``.
-
-    Walks the calendar a day, then an hour, then a minute at a time. Worst
-    case is a few thousand set lookups, once per scheduling.
-    """
+    """The first matching minute strictly after ``after``. Walks the calendar
+    a day, then an hour, then a minute at a time."""
     candidate = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
     limit = candidate + _HORIZON
     while candidate < limit:

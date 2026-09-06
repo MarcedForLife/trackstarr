@@ -1,10 +1,6 @@
-"""ISO 639 normalisation.
-
-Track tags are ISO 639-2/B, which is what Matroska and ffmpeg write. The
-*arrs report an original language as an English name, and rips in the wild
-carry 639-1 and 639-2/T codes too. Everything is normalised to 639-2/B
-before any comparison.
-"""
+"""ISO 639 normalisation. Track tags are 639-2/B, which Matroska and ffmpeg
+write; the *arrs report English names, and rips carry 639-1 and 639-2/T too.
+Everything is normalised to 639-2/B before comparison."""
 
 #: Every language Radarr and Sonarr can report, mapped to ISO 639-2/B.
 #: Sourced from their ``/api/v3/language`` endpoint.
@@ -67,6 +63,17 @@ LANG_NAMES: dict[str, str] = {
     "urdu": "urd",
     "vietnamese": "vie",
 }
+
+#: One display name per code, in name order, for the language picker. Built
+#: from the reversed table so the earlier of two names sharing a code wins:
+#: "Dutch" over "Flemish". Deduplicated before sorting for the same reason.
+LANG_LABELS: dict[str, str] = dict(
+    sorted(
+        {code: name.title() for name, code in reversed(LANG_NAMES.items())}.items(),
+        key=lambda entry: entry[1],
+    )
+)
+
 
 LANG_ALIASES: dict[str, str] = {
     # ISO 639-1
@@ -168,28 +175,24 @@ LANG_ALIASES: dict[str, str] = {
     "zhs": "chi",
 }
 
-#: The tables above merged for lookup, 639-2/B codes mapping to themselves.
-#: Separate up there because they document different things.
+#: The tables above merged for lookup, with 639-2/B codes mapping to themselves.
 _LOOKUP: dict[str, str] = (
     LANG_NAMES | LANG_ALIASES | {code: code for code in LANG_NAMES.values()}
 )
 
-#: Tags that mean "no language", as opposed to a missing one. Both become
-#: None, and an untagged track is always kept.
+#: Tags that mean "no language". These and a missing tag become None, and an
+#: untagged track is always kept.
 _UNDEFINED = {"", "und", "unknown", "zxx", "mis", "mul", "none", "null"}
 
-#: Names the *arrs report that aren't languages. Shared with
-#: arr.original_of, which warns about unmapped names but not these.
+#: Names the *arrs report that are not languages. arr.original_of warns about
+#: unmapped names but not these.
 ARR_NON_LANGUAGES = frozenset({"unknown", "original", "any"})
 
 
 def norm_lang(tag: str | None) -> str | None:
-    """Normalise a language tag to ISO 639-2/B.
-
-    None for anything meaning "undefined". An unrecognised code comes back
-    unchanged, so it fails the keep test and shows up in the logs by name
-    instead of passing as undefined and being kept.
-    """
+    """Normalise a language tag to ISO 639-2/B, or None for "undefined". An
+    unrecognised code comes back unchanged, so it fails the keep test and is
+    logged by name."""
     if not tag:
         return None
     code = tag.strip().lower().replace("_", "-")

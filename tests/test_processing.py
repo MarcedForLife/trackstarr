@@ -12,8 +12,33 @@ from conftest import configured_arr, needed_plan
 from trackstarr import config, processing
 from trackstarr.executor import Outcome
 from trackstarr.media import ProbeError
+from trackstarr.planner import OutStream, Plan
 from trackstarr.processing import Job, process
 from trackstarr.status import Status
+
+
+def stereo_from(*, generated: bool) -> Plan:
+    """A plan over one 5.1 track, either copied or downmixed beside."""
+    tracks = [{"index": 0, "kind": "audio", "codec": "eac3", "channels": 6}]
+    streams = [OutStream(src=0, kind="audio")]
+    if generated:
+        streams.append(OutStream(src=0, kind="audio", encode=True, channels=2))
+    return needed_plan(tracks=tracks, streams=streams)
+
+
+def test_a_rewrite_that_moved_no_track_records_nothing_to_compare():
+    """A remux or a cleared title leaves the same streams in the same order, so
+    a before-and-after is one list twice, on the verdict and on every line of
+    the history."""
+    assert processing._before(stereo_from(generated=False)) == {}
+
+
+def test_a_rewrite_records_the_tracks_it_started_from():
+    """The file itself is the after and the plan is gone by the time anything
+    reads this, so the before is the one thing nothing else could recover."""
+    told = processing._before(stereo_from(generated=True))
+    assert [track["index"] for track in told["was"]] == [0]
+    assert told["added"] == [1]
 
 
 def test_deferred_rewrite_is_not_a_failure(stub_rewrite):
@@ -38,13 +63,34 @@ def test_fixed_file_notifies_media_servers(monkeypatch, stub_rewrite):
     assert refreshed == ["/x.mkv"]
 
 
-def test_global_dry_run_bottoms_out_in_process(monkeypatch):
-    """No caller can rewrite under DRY_RUN, whatever dry_run it passes."""
-    monkeypatch.setattr(config, "DRY_RUN", True)
+def test_a_video_in_a_container_we_never_write_is_its_own_verdict(tmp_path):
+    """Skipped put an AVI in with the hardlinked and the silent, which are both
+    about the moment. This one is about the file, and the reason travels with
+    it."""
+    stale = tmp_path / "old.avi"
+    stale.write_bytes(b"not really an avi")
+    result = process(Job(str(stale)), dry_run=True)
+    assert result.status is Status.UNSUPPORTED
+    assert result.plan is not None
+    assert result.plan.skip == "container .avi not in ALLOWED_EXTS"
+
+
+def test_a_file_that_is_not_a_video_at_all_is_still_only_skipped(tmp_path):
+    """Nothing walks these, but `trackstarr fix` takes a path by hand, and
+    "Unsupported" for a text file promises a container that could be added."""
+    named = tmp_path / "notes.txt"
+    named.write_text("not a film")
+    assert process(Job(str(named)), dry_run=True).status is Status.SKIP
+
+
+def test_report_mode_bottoms_out_in_process(monkeypatch):
+    """No caller can rewrite on REWRITE_MODE's bottom rung, whatever dry_run it
+    passes."""
+    monkeypatch.setattr(config, "REWRITE_MODE", "report")
     plan = needed_plan()
     monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
     monkeypatch.setattr(
-        processing, "apply_plan", lambda plan: pytest.fail("DRY_RUN must not rewrite")
+        processing, "apply_plan", lambda plan: pytest.fail("report mode must not rewrite")
     )
     result = processing.process(Job("/x.mkv"), dry_run=False)
     assert result.status == "would-fix"
@@ -102,10 +148,8 @@ def test_a_writable_state_dir_passes_and_is_created():
 
 
 def test_an_unusable_state_dir_is_an_error(tmp_path, monkeypatch):
-    """A STATE_DIR serve cannot use, which it would otherwise meet as an
-    uncaught OSError before binding the listener. In the field that is a
-    root-owned /config; here it is a blocker file, since mode bits mean
-    nothing to the root the in-image CI suite runs as."""
+    """A STATE_DIR serve cannot use. A blocker file rather than mode bits, which
+    mean nothing to the root the in-image suite runs as."""
     blocker = tmp_path / "not-a-dir"
     blocker.write_bytes(b"")
     monkeypatch.setattr(config, "STATE_DIR", str(blocker))
@@ -133,11 +177,8 @@ def test_all_slots_held_sees_slots_beyond_our_budget(monkeypatch):
 
 
 def _peak_concurrency(monkeypatch, jobs: int) -> int:
-    """Most rewrite slots held at once across ``jobs`` racing threads.
-
-    The poll interval is shortened because waiters block on the flock pool
-    alone; at the real one-second interval this would mostly be asleep.
-    """
+    """Most rewrite slots held at once across ``jobs`` racing threads, with the
+    poll interval shortened."""
     monkeypatch.setattr(processing, "_SLOT_POLL_SECONDS", 0.005)
     running = 0
     peak = 0
@@ -186,7 +227,7 @@ def test_a_probe_failure_during_a_rewrite_is_reported_not_raised(tmp_path, monke
     path = tmp_path / "f.mkv"
     path.write_bytes(b"x")
 
-    def fail(plan):
+    def fail(plan, on_progress=None, on_encoded=None):
         raise ProbeError("moov atom not found")
 
     monkeypatch.setattr(processing, "apply_plan", fail)

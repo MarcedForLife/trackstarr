@@ -1,6 +1,7 @@
 """Command line entry point."""
 
 import argparse
+import getpass
 import logging
 import os
 import shutil
@@ -9,7 +10,7 @@ import sys
 import textwrap
 from types import FrameType
 
-from . import __version__, auth, config, events, policy
+from . import __version__, auth, config, events, policy, runs, sessions, users
 from .app import serve
 from .arr import LibraryIndex, all_arrs, match_path, path_index
 from .command import ffmpeg_args
@@ -19,20 +20,24 @@ from .media import ProbeError
 from .planner import build_plan, describe
 from .processing import Job, process, state_dir_errors
 from .status import Status
-from .sweep import sweep
+from .sweep import remember, sweep
+from .sweep_cache import cache_key
 
 log = logging.getLogger("trackstarr")
 
 DESCRIPTION = (
     "Keep library audio and subtitle tracks tidy.\n\n"
+    "Each rule runs never, alongside a rewrite another rule ordered, or always.\n"
+    "Set one with RULE_LANGUAGES, RULE_COVER_ART and so on; the default is in\n"
+    "brackets.\n\n"
     + "\n".join(
-        textwrap.fill(f"{i}. {rule}", width=74, initial_indent="  ", subsequent_indent="     ")
-        for i, rule in enumerate(policy.RULES.values(), 1)
-    )
-    + "\n\nOff by default:\n"
-    + "\n".join(
-        textwrap.fill(f"- {rule}", width=74, initial_indent="  ", subsequent_indent="    ")
-        for rule in policy.OPT_IN_RULES.values()
+        textwrap.fill(
+            f"{name} [{rule.default}] {rule.summary}",
+            width=74,
+            initial_indent="  ",
+            subsequent_indent="    ",
+        )
+        for name, rule in policy.RULES.items()
     )
 )
 
@@ -44,7 +49,12 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"trackstarr {__version__}")
-    parser.add_argument("--log-level", default=os.environ.get("LOG_LEVEL", "INFO"))
+    # Checked in main() so a lowercase --log-level debug still works.
+    parser.add_argument(
+        "--log-level",
+        default=config.LOG_LEVEL,
+        help=f"one of {', '.join(config.LOG_LEVELS)} (default: %(default)s)",
+    )
 
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("serve", help="run the webhook listener")
@@ -71,6 +81,30 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="replace an existing secret; the old one stops working immediately",
     )
+
+    user_cmd = sub.add_parser("user", help="manage the web UI's accounts")
+    user_sub = user_cmd.add_subparsers(dest="action", required=True)
+    add_cmd = user_sub.add_parser("add", help="create an account")
+    add_cmd.add_argument("name")
+    add_cmd.add_argument(
+        "--role",
+        choices=users.ROLES,
+        default="viewer",
+        help="admins change things, viewers only read (default: viewer)",
+    )
+    passwd_cmd = user_sub.add_parser(
+        "passwd", help="reset an account's password and sign it out everywhere"
+    )
+    passwd_cmd.add_argument("name")
+    for cmd in (add_cmd, passwd_cmd):
+        cmd.add_argument(
+            "--password",
+            default=None,
+            help="for scripts and docker exec; omit to be prompted without echo",
+        )
+    rm_cmd = user_sub.add_parser("rm", help="delete an account and sign it out everywhere")
+    rm_cmd.add_argument("name")
+    user_sub.add_parser("list", help="show every account and its role")
     return parser
 
 
@@ -87,15 +121,11 @@ def _add_files_arguments(cmd: argparse.ArgumentParser) -> None:
 def _resolve_jobs(
     files: list[str], original: str | None, match_items: bool = False, run: str | None = None
 ) -> tuple[list[Job], bool]:
-    """One Job per file, its language from the flag or the *arrs' index,
-    plus whether every enabled *arr answered the index fetch.
+    """One Job per file, plus whether every enabled *arr answered.
 
-    The flag is normalised like every stream tag, or ``--original ja`` would sit
-    in keep_langs while the tracks all say jpn.
-
-    ``match_items`` builds the index even when the flag supplies the language,
-    because fix needs the item id for its rescan; plan skips the round trip
-    and so runs with no *arr up.
+    The flag is normalised like every stream tag, or ``--original ja`` would
+    never match jpn. ``match_items`` builds the *arr index even when the flag
+    supplies the language: fix needs the item id for its rescan, plan does not.
     """
     original = norm_lang(original)
     if match_items or not original:
@@ -119,22 +149,23 @@ def cmd_plan(files: list[str], original: str | None) -> int:
             failed = True
             continue
         print(f"\n{path}")
-        # One row per policy fact, blank values omitted. A new Policy field
-        # joins the summary by adding a row.
+        # One row per policy fact, blank values omitted.
         rows = [
             ("original language", plan.original_lang or "unknown"),
             ("keeping languages", ", ".join(sorted(plan.keep_langs)) or "(none)"),
             (
                 "downmix layouts",
                 ", ".join(
-                    f"{layout.name} ({layout.bitrate})"
+                    f"{layout.name} ({layout.codec} {layout.bitrate})"
                     for layout in plan.policy.downmix_layouts
                 ),
             ),
-            ("disabled rules", ", ".join(sorted(plan.policy.disabled_rules))),
-            ("drop commentary", "on" if plan.policy.drop_commentary else ""),
-            ("regenerate mixes", plan.policy.regenerate_downmixes),
-            ("remux to mkv", "on" if plan.policy.remux_to_mkv else ""),
+            # Grouped by mode, strongest first.
+            *(
+                (f"rules {mode}", ", ".join(sorted(plan.policy.rules_in(mode))))
+                for mode in reversed(policy.MODES)
+            ),
+            ("regenerate scope", plan.policy.regenerate_scope),
         ]
         for label, value in rows:
             if value:
@@ -144,6 +175,9 @@ def cmd_plan(files: list[str], original: str | None) -> int:
             continue
         if not plan.needed:
             print("  conforms, no action")
+            # What the ride-alongs would have done, or "conforms" hides them.
+            for reason in plan.incidental:
+                print(f"  - {reason} (waiting on a rewrite)")
             continue
         for reason in plan.reasons:
             print(f"  - {reason}")
@@ -157,18 +191,16 @@ def cmd_plan(files: list[str], original: str | None) -> int:
 def cmd_fix(files: list[str], original: str | None) -> int:
     """Plan and rewrite specific files, wherever they live.
 
-    Having a shell is the authorisation; same locks, events and DRY_RUN latch
-    as everything else. Deferred fails the exit code here, unlike in the
-    sweep: a one-shot command's retry is the caller, who must not read "not
-    rewritten, run it again" as success.
+    Same locks, events and REWRITE_MODE latch as everything else. Deferred
+    fails the exit code, unlike in the sweep: the caller is the retry.
     """
-    if config.DRY_RUN:
-        print("DRY_RUN is set, planning only, nothing will be rewritten")
-    # One run for the invocation, so a multi-file fix groups in the history.
+    if config.REWRITE_MODE == "report":
+        print("REWRITE_MODE is report, planning only, nothing will be rewritten")
+    # One run per invocation, so a multi-file fix groups in the history.
     jobs, arrs_answered = _resolve_jobs(files, original, match_items=True, run=events.run_id())
-    if not arrs_answered and not original:
-        # lang=None would judge every file against ALWAYS_KEEP_LANGS alone
-        # and read a foreign film's own track as junk to drop.
+    if not arrs_answered and not original and policy.Policy.from_config().needs_original_lang():
+        # lang=None would judge against ALWAYS_KEEP_LANGS alone and drop a
+        # foreign film's own track.
         log.error(
             "a *arr library could not be listed, so original languages are unknown; "
             "pass --original or retry once it answers"
@@ -176,10 +208,12 @@ def cmd_fix(files: list[str], original: str | None) -> int:
         return 1
     failed = False
     for job in jobs:
+        # Before the probe, so the verdict is keyed to the file as it was.
+        key = cache_key(job.path, job.lang)
         result = process(job, dry_run=False, source="cli")
+        remember(job.path, key, result)
         print(f"{result.status}  {job.path}")
-        # A deferred plan is stale by definition, so its reasons would read
-        # as work done on a file that has since changed.
+        # A deferred plan is stale, so its reasons would mislead.
         if (
             result.plan
             and result.status is not Status.DEFERRED
@@ -195,9 +229,9 @@ def cmd_fix(files: list[str], original: str | None) -> int:
 def cmd_secret(name: str, rotate: bool) -> int:
     """Mint a webhook secret for a named caller and print it once.
 
-    Only a digest is kept, so this is the one time the secret is shown and
-    losing it means rotating. Hence --rotate for a caller that already has
-    one: without it a second run would quietly lock out a working client.
+    Only a digest is kept, so losing it means rotating. --rotate is required
+    for a caller that already has one, or a second run would lock out a
+    working client.
     """
     if auth.exists(name) and not rotate:
         log.error(
@@ -216,6 +250,52 @@ def cmd_secret(name: str, rotate: bool) -> int:
     return 0
 
 
+def cmd_user(args: argparse.Namespace) -> int:
+    """Account management for the web UI: add, passwd, rm and list.
+
+    passwd and rm revoke the account's sessions too. Runs against serve's
+    STATE_DIR via docker exec, which is the recovery path for a forgotten
+    admin password.
+    """
+    try:
+        if args.action == "list":
+            for held in users.accounts():
+                note = "  (must change password)" if held.must_change else ""
+                print(f"{held.name}  {held.role}{note}")
+            return 0
+        if args.action == "rm":
+            users.remove(args.name)
+            sessions.revoke_user(args.name)
+            print(f"removed {args.name}")
+            return 0
+        try:
+            password = args.password or getpass.getpass(f"new password for {args.name}: ")
+        except EOFError:
+            # `docker exec` without -it: no terminal to prompt on.
+            log.error(
+                "no terminal to read a password from; "
+                "run this under `docker exec -it`, or pass --password"
+            )
+            return 1
+        if len(password) < users.MIN_PASSWORD_LEN:
+            log.error("the password needs at least %d characters", users.MIN_PASSWORD_LEN)
+            return 1
+        if args.action == "add":
+            users.add(args.name, password, args.role)
+            print(f"added {args.name} ({args.role})")
+        else:
+            users.set_password(args.name, password)
+            sessions.revoke_user(args.name)
+            print(f"new password set for {args.name}")
+        return 0
+    except ValueError as err:
+        log.error("%s", err)
+        return 1
+    except OSError as err:
+        log.error("could not update the account store: %s", err)
+        return 1
+
+
 # No cover: hands straight to app.serve, which blocks for ever.
 def _run_serve(args: argparse.Namespace) -> int:  # pragma: no cover
     serve()
@@ -223,26 +303,29 @@ def _run_serve(args: argparse.Namespace) -> int:  # pragma: no cover
 
 
 def _run_sweep(args: argparse.Namespace) -> int:
+    # Only the pause flag is shared between processes. Having a shell is the
+    # authorisation, so this sweeps anyway and says so.
+    if runs.paused_on_disk():
+        log.warning("the service is paused; this sweep runs anyway")
     counts = sweep(dry_run=not args.apply)
-    # Deferred is a benign race retried by the next sweep; only real
-    # failures should fail the command.
+    # Deferred is a benign race the next sweep retries.
     return 0 if counts[Status.FAILED] == 0 else 1
 
 
-#: Each command's handler and the startup checks it needs. "read" is the
-#: config, policy and ffmpeg-on-PATH report; "rewrite" adds the directories
-#: and the encoder. secret runs bare, and has to work without ffmpeg.
+#: Each command's handler and the startup checks it needs. "read" checks
+#: config, policy and ffmpeg on PATH; "rewrite" adds the directories and the
+#: encoders. secret and user run bare.
 COMMANDS = {
     "serve": (_run_serve, "rewrite"),
     "sweep": (_run_sweep, "rewrite"),
     "fix": (lambda args: cmd_fix(args.files, args.original), "rewrite"),
     "plan": (lambda args: cmd_plan(args.files, args.original), "read"),
     "secret": (lambda args: cmd_secret(args.name, args.rotate), None),
+    "user": (cmd_user, None),
 }
 
 
-#: The commands that walk MEDIA_DIRS, and so want config.warnings() out loud.
-#: plan and fix are handed their files wherever those live.
+#: The commands that walk MEDIA_DIRS, and so want config.warnings().
 LIBRARY_COMMANDS = frozenset({"serve", "sweep"})
 
 
@@ -251,15 +334,11 @@ def _on_sigterm(signum: int, frame: FrameType | None) -> None:
 
 
 def handle_sigterm() -> None:
-    """Make SIGTERM end the process, the way SIGINT already does.
+    """Make SIGTERM end the process, as SIGINT does.
 
-    Python installs no SIGTERM handler and the kernel skips default actions for
-    PID 1, which is what the container runs. Without this, ``docker stop`` waits
-    out its grace period and SIGKILLs: ten seconds every update.
-
-    A rewrite in flight is not waited for. Its daemon thread dies with the
-    interpreter and leaves the staged orphan a SIGKILL would, which startup
-    clears anyway.
+    The kernel skips default signal actions for PID 1, so without this
+    ``docker stop`` waits out its grace period and SIGKILLs. A rewrite under
+    way dies with the interpreter; startup clears the staged orphan.
     """
     signal.signal(signal.SIGTERM, _on_sigterm)
 
@@ -268,15 +347,23 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     handle_sigterm()
 
+    # Before basicConfig, so it prints rather than logs. An unknown level would
+    # otherwise silently read as INFO.
+    level = args.log_level.strip().upper()
+    if level not in config.LOG_LEVELS:
+        print(
+            f"log level {args.log_level!r} is not one of: {', '.join(config.LOG_LEVELS)}",
+            file=sys.stderr,
+        )
+        return 1
     logging.basicConfig(
-        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        level=level,
         format="%(asctime)s %(levelname)-7s %(message)s",
         datefmt="%H:%M:%S",
     )
 
     handler, checks = COMMANDS[args.cmd]
-    # Every startup problem in one report, so a bad pattern and a bad mount
-    # don't take two restarts to find.
+    # Every startup problem in one report.
     problems: list[str] = []
     if checks:
         problems += config.errors() + policy.errors()
@@ -290,10 +377,13 @@ def main(argv: list[str] | None = None) -> int:
         for message in problems:
             log.error("%s", message)
         return 1
-    # Only once nothing is fatal, and only where it applies.
+    # config's warnings are about the library; policy's are about rules that
+    # cannot fire, worth saying to anything that runs the rules.
+    messages = policy.warnings() if checks else []
     if args.cmd in LIBRARY_COMMANDS:
-        for message in config.warnings():
-            log.warning("%s", message)
+        messages = config.warnings() + messages
+    for message in messages:
+        log.warning("%s", message)
     return handler(args)
 
 

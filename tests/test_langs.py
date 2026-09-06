@@ -59,11 +59,8 @@ def test_norm_lang(tag, expected):
 
 
 def test_unknown_code_passes_through():
-    """An unrecognised code must not be mistaken for 'undefined'.
-
-    Undefined tracks are kept; an unknown foreign code should be dropped, so
-    it has to stay distinguishable.
-    """
+    """An unrecognised code must not read as 'undefined': undefined tracks are
+    kept, unknown foreign ones dropped."""
     assert norm_lang("xyz") == "xyz"
 
 

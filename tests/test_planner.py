@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from conftest import audio, probe_data, subtitle, video
+from conftest import audio, probe_data, set_rules, subtitle, video
 from trackstarr import config
 from trackstarr.command import ffmpeg_args
 from trackstarr.media import is_junk_title
@@ -17,6 +17,9 @@ from trackstarr.planner import (
     describe,
     new_plan,
     plan_from_probe,
+    planned_tracks,
+    track_changes,
+    why,
 )
 from trackstarr.policy import Policy
 
@@ -106,6 +109,68 @@ def test_downmix_prefers_original_language_over_english():
     assert next(out for out in audio_out(plan) if out.encode).lang == "kor"
 
 
+def test_the_original_language_gets_every_layout():
+    """A stereo track in some other language doesn't answer for the one the
+    title was made in, which is the track a stereo player should land on."""
+    plan = plan_for(
+        video(0),
+        audio(1, 6, lang="jpn"),
+        audio(2, 2, lang="eng"),
+        original="jpn",
+    )
+    assert any("add 2.0 downmix from stream 1" in reason for reason in plan.reasons)
+    assert [(out.channels, out.lang) for out in audio_out(plan) if out.encode] == [(2, "jpn")]
+
+
+def test_downmix_original_lang_off_asks_only_for_the_layout(monkeypatch):
+    """Off, any language fills a layout, which is what the rule did before the
+    setting existed."""
+    monkeypatch.setattr(config, "DOWNMIX_ORIGINAL_LANG", False)
+    plan = plan_for(
+        video(0),
+        audio(1, 6, lang="jpn"),
+        audio(2, 2, lang="eng"),
+        original="jpn",
+    )
+    # The file is still rewritten, for the order rule; nothing is generated.
+    assert not [out for out in audio_out(plan) if out.encode]
+
+
+def test_downmix_langs_guarantee_a_layout_each(monkeypatch):
+    # A language worth a downmix is one the languages rule keeps.
+    monkeypatch.setattr(config, "ALWAYS_KEEP_LANGS", {"eng", "fre"})
+    monkeypatch.setattr(config, "DOWNMIX_LANGS", {"fre"})
+    plan = plan_for(
+        video(0),
+        audio(1, 6, lang="eng"),
+        audio(2, 6, lang="fre"),
+        original="eng",
+    )
+    generated = [out for out in audio_out(plan) if out.encode]
+    assert [(out.channels, out.lang) for out in generated] == [(2, "eng"), (2, "fre")]
+
+
+def test_a_wanted_language_with_nothing_bigger_generates_nothing(monkeypatch):
+    """Nothing is upmixed for a named language any more than for a layout."""
+    monkeypatch.setattr(config, "ALWAYS_KEEP_LANGS", {"eng", "fre"})
+    monkeypatch.setattr(config, "DOWNMIX_LANGS", {"fre"})
+    plan = plan_for(
+        video(0),
+        audio(1, 6, lang="eng"),
+        audio(2, 2, lang="fre"),
+        original="eng",
+    )
+    generated = [out for out in audio_out(plan) if out.encode]
+    assert [(out.channels, out.lang) for out in generated] == [(2, "eng")]
+
+
+def test_a_layout_no_wanted_language_can_fill_falls_back():
+    """The original language is absent, so the layout is filled from what the
+    file does have rather than left empty."""
+    plan = plan_for(video(0), audio(1, 6, lang="eng"), original="jpn")
+    assert [(out.channels, out.lang) for out in audio_out(plan) if out.encode] == [(2, "eng")]
+
+
 def test_downmix_prefers_most_channels_within_a_language():
     plan = plan_for(video(0), audio(1, 6, lang="eng"), audio(2, 8, lang="eng"))
     assert any("add 2.0 downmix from stream 2" in reason for reason in plan.reasons)
@@ -131,29 +196,29 @@ def test_layouts_never_upmix():
 
 
 def test_custom_layouts_replace_the_default(monkeypatch):
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
     plan = plan_for(video(0), audio(1, 8))
     assert [out.channels for out in audio_out(plan) if out.encode] == [2]
 
 
 def test_layouts_with_equal_channel_counts_generate_one_track(monkeypatch):
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"4.2", "5.1"})
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("4.2", "5.1"))
     plan = plan_for(video(0), audio(1, 8))
     assert len([out for out in audio_out(plan) if out.encode]) == 1
 
 
-# The regenerate opt-in (REGENERATE_DOWNMIXES)
+# The regenerate rule
 
 
-def tagged_downmix(index, channels, settings, title="2.0"):
+def tagged_downmix(index, channels, settings, title="2.0", lang="eng"):
     """An audio stream carrying the tag a generated downmix is written with."""
-    stream = audio(index, channels, title=title)
+    stream = audio(index, channels, lang=lang, title=title)
     stream["tags"]["TRACKSTARR"] = settings
     return stream
 
 
 def test_generated_mode_rebuilds_stale_downmixes(monkeypatch):
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
+    set_rules(monkeypatch, regenerate="always")
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
     plan = plan_for(video(0), tagged_downmix(1, 2, "aac 192k"), audio(2, 6))
     assert any(reason.startswith("regenerate 2.0 downmix") for reason in plan.reasons)
@@ -161,8 +226,61 @@ def test_generated_mode_rebuilds_stale_downmixes(monkeypatch):
     assert [out.channels for out in audio_out(plan) if out.encode] == [2]
 
 
+def test_a_regenerated_track_is_one_reason_not_two(monkeypatch):
+    """The drop and the track replacing it are one change. Recorded apart,
+    the library read "replace low-bitrate 5.1 track 2" over "add 5.1 downmix from
+    stream 3", which says the file gains a layout it already had."""
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
+    plan = plan_for(video(0), tagged_downmix(1, 2, "aac 192k"), audio(2, 6))
+    assert plan.reasons == [
+        "regenerate 2.0 downmix 1 (aac 192k, 2.0) as aac 320k from stream 2 (6ch eng)"
+    ]
+    assert plan.rules == {"regenerate"}
+
+
+def test_a_drop_with_no_track_to_claim_it_still_says_so(monkeypatch):
+    """Two stale copies of one layout, one track back: both drops are worth
+    naming, and only one of them is the one the new track replaces."""
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
+    plan = plan_for(
+        video(0),
+        tagged_downmix(1, 2, "aac 192k"),
+        tagged_downmix(2, 2, "aac 128k"),
+        audio(3, 6),
+    )
+    assert [reason.split(" as ")[0] for reason in plan.reasons] == [
+        "regenerate 2.0 downmix 1 (aac 192k, 2.0)",
+        "regenerate 2.0 downmix 2 (aac 128k, 2.0)",
+    ]
+    assert sum("from stream 3" in reason for reason in plan.reasons) == 1
+
+
+@pytest.mark.parametrize("wanted", [True, False], ids=["original wanted", "no language wanted"])
+def test_a_rebuilt_downmix_comes_back_in_its_own_language(monkeypatch, wanted):
+    """Dropping a French 2.0 and generating an English one in its place would
+    be a loss dressed as a regeneration, whatever the settings ask for."""
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
+    monkeypatch.setattr(config, "ALWAYS_KEEP_LANGS", {"eng", "fre"})
+    monkeypatch.setattr(config, "DOWNMIX_ORIGINAL_LANG", wanted)
+    plan = plan_for(
+        video(0),
+        tagged_downmix(1, 2, "aac 192k", lang="fre"),
+        audio(2, 6, lang="fre"),
+        audio(3, 6, lang="eng"),
+        original="eng",
+    )
+    assert 1 not in {out.src for out in plan.streams}
+    generated = {(out.channels, out.lang) for out in audio_out(plan) if out.encode}
+    assert (2, "fre") in generated
+    assert ((2, "eng") in generated) is wanted
+
+
 def test_generated_mode_leaves_matching_downmixes(monkeypatch):
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
+    set_rules(monkeypatch, regenerate="always")
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
     plan = plan_for(video(0), tagged_downmix(1, 2, "aac 320k"), audio(2, 6))
     assert not plan.needed
@@ -172,7 +290,7 @@ def test_generated_mode_leaves_matching_downmixes(monkeypatch):
 def test_respelling_a_rate_is_not_a_settings_change(monkeypatch, rate):
     """The tag is compared for equality, so without one canonical spelling per
     rate, editing 320k to 320000 would re-encode every track we have made."""
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
+    set_rules(monkeypatch, regenerate="always")
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": rate, "5.1": "640k"})
     plan = plan_for(video(0), tagged_downmix(1, 2, "aac 320k"), audio(2, 6))
     assert not plan.needed
@@ -184,14 +302,14 @@ def test_regeneration_is_off_by_default():
 
 
 def test_generated_mode_never_touches_untagged_tracks(monkeypatch):
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
+    set_rules(monkeypatch, regenerate="always")
     plan = plan_for(video(0), audio(1, 2, bitrate="96000"), audio(2, 6))
     assert not plan.needed
 
 
 def test_stale_downmix_kept_when_no_source_survives(monkeypatch):
     """A file must never lose a layout it had."""
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
+    set_rules(monkeypatch, regenerate="always")
     plan = plan_for(video(0), tagged_downmix(1, 2, "aac 192k"))
     assert not plan.needed
     assert 1 in {out.src for out in plan.streams}
@@ -206,27 +324,34 @@ def test_stale_downmix_kept_when_no_source_survives(monkeypatch):
     ],
     ids=["mp4 bit_rate", "mkvmerge BPS tag"],
 )
-def test_all_mode_replaces_weak_stereo(monkeypatch, bitrate, extra_tags):
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
+def test_all_mode_replaces_low_bitrate_stereo(monkeypatch, bitrate, extra_tags):
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "REGENERATE_SCOPE", "all")
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
-    weak = audio(1, 2, bitrate=bitrate)
-    weak["tags"].update(extra_tags)
-    plan = plan_for(video(0), weak, audio(2, 6))
-    assert any("replace weak 2.0 track 1 (96k)" in reason for reason in plan.reasons)
-    assert any("add 2.0 downmix from stream 2" in reason for reason in plan.reasons)
+    low_rate = audio(1, 2, bitrate=bitrate)
+    low_rate["tags"].update(extra_tags)
+    plan = plan_for(video(0), low_rate, audio(2, 6))
+    # One change, said once: the track that went and the one that took its
+    # place were two reasons for a while, which read as a file gaining a
+    # layout it already had.
+    assert [reason for reason in plan.reasons if "2.0" in reason] == [
+        "replace low-bitrate 2.0 track 1 (96k) with a fresh downmix from stream 2 (6ch eng)"
+    ]
     assert 1 not in {out.src for out in plan.streams}
 
 
 def test_all_mode_leaves_unknown_bitrates_alone(monkeypatch):
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "REGENERATE_SCOPE", "all")
     plan = plan_for(video(0), audio(1, 2), audio(2, 6))
     assert not plan.needed
 
 
-def test_all_mode_only_replaces_clearly_weak_tracks(monkeypatch):
-    """A decent 448k AC3 5.1 survives a 640k AAC target; _WEAK_BITRATE_RATIO says
-    why the margin is that wide."""
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
+def test_all_mode_only_replaces_clearly_low_bitrate_tracks(monkeypatch):
+    """A decent 448k AC3 5.1 survives a 640k AAC target; REGENERATE_BELOW_PERCENT
+    says why the margin is that wide."""
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "REGENERATE_SCOPE", "all")
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
     plan = plan_for(
         video(0), audio(1, 2, bitrate="300000"), audio(2, 6, bitrate="448000"), audio(3, 8)
@@ -234,10 +359,52 @@ def test_all_mode_only_replaces_clearly_weak_tracks(monkeypatch):
     assert not plan.needed
 
 
+def test_the_low_bitrate_line_is_where_the_setting_puts_it(monkeypatch):
+    """A 300k stereo is fine at the default 50 and low-bitrate at 90, which is the
+    whole point of the setting being one."""
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "REGENERATE_SCOPE", "all")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
+    monkeypatch.setattr(config, "REGENERATE_BELOW_PERCENT", 90)
+    plan = plan_for(video(0), audio(1, 2, bitrate="280000"), audio(2, 6, bitrate="448000"))
+    assert any("replace low-bitrate 2.0 track 1 (280k)" in reason for reason in plan.reasons)
+    assert 1 not in {out.src for out in plan.streams}
+
+
+def test_a_low_bitrate_track_stays_when_nothing_bigger_has_more_to_give(monkeypatch):
+    """A downmix holds no more than its source did, so a 96k stereo beside a
+    5.1 reporting 224k is already as good as this file makes stereo: replacing
+    it would spend a rewrite writing the same bits at a bigger number."""
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "REGENERATE_SCOPE", "all")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
+    plan = plan_for(video(0), audio(1, 2, bitrate="96000"), audio(2, 6, bitrate="224000"))
+    assert not plan.needed
+    assert 1 in {out.src for out in plan.streams}
+
+
+def test_a_low_bitrate_track_goes_when_any_bigger_track_has_the_bits(monkeypatch):
+    """The poor 5.1 above does not speak for the file: a rebuild comes from the
+    best source there is, so every bigger track counts, not the first one."""
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "REGENERATE_SCOPE", "all")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
+    plan = plan_for(
+        video(0),
+        audio(1, 2, bitrate="96000"),
+        audio(2, 6, bitrate="224000"),
+        audio(3, 8, bitrate="1500000"),
+    )
+    assert any("replace low-bitrate 2.0 track 1 (96k)" in reason for reason in plan.reasons)
+    # The 5.1 is under its own line as well, and has the same 7.1 to come from.
+    assert any("replace low-bitrate 5.1 track 2 (224k)" in reason for reason in plan.reasons)
+
+
 def test_regeneration_is_matroska_only(monkeypatch):
     """MP4 drops the identifying tag, where regeneration deleted commentary and
     re-encoded its own tracks every sweep."""
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "REGENERATE_SCOPE", "all")
     plan = plan_for(video(0), audio(1, 2, bitrate="96000"), audio(2, 6), path="/x/f.mp4")
     assert not plan.needed
 
@@ -246,9 +413,10 @@ def test_duplicate_layouts_regenerate_toward_one_target(monkeypatch):
     """The drop side has to judge against the layout the rebuild uses, or two
     names for one channel count regenerate forever, each rewrite making a
     track the other reads as stale. Startup refuses the pair; this is the belt."""
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"4.2", "5.1"})
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("4.2", "5.1"))
     # Both 6 channels; 4.2 sorts first, so its rate is the one target.
+    monkeypatch.setattr(config, "AUDIO_CODECS", {"4.2": "aac", "5.1": "aac"})
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"4.2": "640k", "5.1": "320k"})
     plan = plan_for(video(0), tagged_downmix(1, 6, "aac 128k", title="5.1"), audio(2, 8))
     generated = [out for out in audio_out(plan) if out.encode]
@@ -257,29 +425,30 @@ def test_duplicate_layouts_regenerate_toward_one_target(monkeypatch):
 
 
 def test_all_mode_never_replaces_commentary(monkeypatch):
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "all")
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "REGENERATE_SCOPE", "all")
     plan = plan_for(video(0), audio(1, 2, title="Commentary", bitrate="96000"), audio(2, 6))
     # The commentary survives; the missing real stereo is downmixed anyway.
     assert 1 in {out.src for out in plan.streams}
     assert any("add 2.0 downmix" in reason for reason in plan.reasons)
 
 
-# The remux opt-in (REMUX_TO_MKV)
+# The remux rule
 
 
 @pytest.mark.parametrize(
-    ("remux", "path", "reasons", "out_path"),
+    ("mode", "path", "reasons", "out_path"),
     [
-        (True, "/x/f.mp4", ["remux to mkv (REMUX_TO_MKV)"], "/x/f.mkv"),
-        (True, "/x/f.mkv", [], "/x/f.mkv"),
-        (False, "/x/f.mp4", [], "/x/f.mp4"),
+        ("always", "/x/f.mp4", ["remux to mkv (RULE_REMUX)"], "/x/f.mkv"),
+        ("always", "/x/f.mkv", [], "/x/f.mkv"),
+        ("never", "/x/f.mp4", [], "/x/f.mp4"),
     ],
     ids=["mp4 converts", "matroska is left alone", "off by default"],
 )
 def test_remux_converts_only_mp4_and_only_when_asked(
-    monkeypatch, remux, path, reasons, out_path
+    monkeypatch, mode, path, reasons, out_path
 ):
-    monkeypatch.setattr(config, "REMUX_TO_MKV", remux)
+    set_rules(monkeypatch, remux=mode)
     plan = plan_for(video(0), audio(1, 2), audio(2, 6), path=path)
     assert plan.reasons == reasons
     assert plan.out_path == out_path
@@ -288,7 +457,7 @@ def test_remux_converts_only_mp4_and_only_when_asked(
 def test_remux_converts_mov_text_subtitles(monkeypatch):
     """Matroska has no mov_text, so the text converts to SRT; other subtitle codecs
     stream copy as usual."""
-    monkeypatch.setattr(config, "REMUX_TO_MKV", True)
+    set_rules(monkeypatch, remux="always")
     mov_text = subtitle(3, "eng")
     mov_text["codec_name"] = "mov_text"
     plan = plan_for(video(0), audio(1, 2), audio(2, 6), mov_text, path="/x/f.mp4")
@@ -321,6 +490,19 @@ def test_original_language_is_kept():
         original="kor",
     )
     assert {out.src for out in plan.streams} == {0, 1}
+
+
+def test_the_original_language_can_be_left_out(monkeypatch):
+    """A library watched in dub: ALWAYS_KEEP_LANGS is then the whole list."""
+    monkeypatch.setattr(config, "KEEP_ORIGINAL_LANG", False)
+    plan = plan_for(
+        video(0),
+        audio(1, 2, lang="kor"),
+        audio(2, 2, lang="eng"),
+        original="kor",
+    )
+    assert {out.src for out in plan.streams} == {0, 2}
+    assert any("drop audio 1 (kor)" in reason for reason in plan.reasons)
 
 
 def test_untagged_tracks_are_kept():
@@ -394,12 +576,17 @@ def test_reorder_alone_triggers_a_rewrite():
     assert plan.reasons == ["reorder streams"]
 
 
-def test_a_reorder_forced_by_another_rule_rides_along():
-    """The streams come out reordered either way, so the history has to say
-    so, as the ride-along it was rather than the trigger it wasn't."""
+def test_a_reorder_forced_by_another_rule_is_still_the_order_rule(monkeypatch):
+    """The streams come out reordered either way, so the history has to say so.
+    Which half it lands in is the mode's answer and nothing else's: always here,
+    riding along below."""
     plan = plan_for(video(0), audio(1, 6), audio(2, 2), audio(3, 2, lang="ger"))
     assert any("drop audio" in reason for reason in plan.reasons)
-    assert "order" not in plan.rules
+    assert "order" in plan.rules
+    assert "reorder streams" in plan.reasons
+
+    set_rules(monkeypatch, order="alongside")
+    plan = plan_for(video(0), audio(1, 6), audio(2, 2), audio(3, 2, lang="ger"))
     assert plan.incidental == ["reorder streams"]
     assert plan.incidental_rules == {"order"}
 
@@ -421,9 +608,35 @@ def test_generated_downmix_sorts_ahead_of_a_commentary_stereo_track():
 
 
 def test_channel_rank_ordering():
-    """The order channel_rank documents: ascending, mono and unknown last."""
+    """The order channel_rank documents when no layout matches: ascending,
+    mono and unknown last."""
     ranks = [channel_rank(n) for n in (2, 4, 6, 7, 8, None, 1)]
     assert ranks == sorted(ranks)
+
+
+def test_channel_rank_follows_the_layout_order():
+    """DOWNMIX_LAYOUTS order beats channel count for the sizes it names."""
+    ranks = [channel_rank(n, [6, 2]) for n in (6, 2, 4, 8, None)]
+    assert ranks == sorted(ranks)
+
+
+def test_channel_rank_puts_unnamed_sizes_after_every_layout():
+    """An 8-channel track sorts behind a listed stereo, not ahead of it."""
+    assert channel_rank(2, [2, 6]) < channel_rank(8, [2, 6])
+
+
+def test_layout_order_lays_out_the_audio_tracks(monkeypatch):
+    """The setting reordered is the whole feature: 5.1 first puts the 5.1
+    track first, where the default 2.0,5.1 puts stereo there."""
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("5.1", "2.0"))
+    plan = plan_for(video(0), audio(1, 8))
+    assert [out.channels for out in audio_out(plan)] == [6, 2, 8]
+
+
+def test_default_layout_order_is_ascending(monkeypatch):
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0", "5.1"))
+    plan = plan_for(video(0), audio(1, 8))
+    assert [out.channels for out in audio_out(plan)] == [2, 6, 8]
 
 
 # Incidental changes
@@ -458,11 +671,96 @@ def test_attachments_are_always_carried_over():
     assert 3 in {out.src for out in plan.streams}
 
 
-# Rule opt-outs
+# Rule modes
+
+
+def test_a_ride_along_drop_never_orders_the_rebuild_that_follows_it(monkeypatch):
+    """The cascade the two planning passes exist for: a ride-along languages
+    rule dropping the German 5.1 would have the downmix rule order a rewrite
+    to rebuild it, a rewrite caused by the one rule that never may."""
+    monkeypatch.setattr(config, "DOWNMIX_ORIGINAL_LANG", False)
+    streams = (
+        video(0),
+        audio(1, 2, lang="eng"),
+        audio(2, 6, lang="ger"),
+        audio(3, 8, lang="eng"),
+    )
+    set_rules(monkeypatch, languages="alongside")
+    plan = plan_for(*streams)
+    assert not plan.needed
+    assert plan.rules == set()
+    assert any("drop audio 2" in note for note in plan.incidental)
+
+    # The same drop under always: it orders the rewrite, and the rebuild the
+    # rewrite makes room for is part of it.
+    set_rules(monkeypatch, languages="always")
+    plan = plan_for(*streams)
+    assert plan.needed
+    assert plan.rules == {"languages", "downmix"}
+
+
+def test_remux_riding_along_converts_only_a_file_being_rewritten(monkeypatch):
+    """The mode the two booleans could not spell: convert to Matroska when
+    something else is already paying for the rewrite."""
+    set_rules(monkeypatch, remux="alongside")
+    plan = plan_for(video(0), audio(1, 2), audio(2, 6), path="/x/f.mp4")
+    assert not plan.needed
+    assert plan.out_path == "/x/f.mp4"
+    assert plan.incidental == ["remux to mkv (RULE_REMUX)"]
+
+    # A 5.1 with no stereo beside it, so the downmix rule orders the rewrite.
+    plan = plan_for(video(0), audio(1, 6), path="/x/f.mp4")
+    assert plan.needed
+    assert plan.out_path == "/x/f.mkv"
+    assert "remux to mkv (RULE_REMUX)" in plan.incidental
+
+
+def test_cover_art_riding_along_is_not_worth_a_rewrite_alone(monkeypatch):
+    """40KB of artwork against a 60GB remux, which is the whole argument for
+    the mode existing."""
+    set_rules(monkeypatch, cover_art="alongside")
+    plan = plan_for(video(0), video(1, codec="mjpeg"), audio(2, 2))
+    assert not plan.needed
+    assert any("cover art" in note for note in plan.incidental)
+    assert 1 in {out.src for out in plan.streams}
+
+
+def test_with_no_rule_riding_along_the_deciding_pass_is_the_whole_answer(monkeypatch):
+    """Every rule settled one way or the other, which is what a settings page
+    somebody has actually been through looks like. Nothing is held back, so
+    there is no second pass and nothing incidental to report from it."""
+    set_rules(monkeypatch, sdh="never", junk_titles="never", stray_streams="never")
+    plan = plan_for(video(0), audio(1, 6, title="AC3 5.1 @ 640kbps"))
+
+    assert plan.needed
+    assert not plan.incidental
+    assert not plan.incidental_rules
+
+
+def test_junk_titles_switched_off_leaves_the_title(monkeypatch):
+    """A ride-along with no switch before this; now it has one."""
+    set_rules(monkeypatch, junk_titles="never")
+    plan = plan_for(video(0), audio(1, 6), audio(2, 2, title="AC3 5.1 @ 640kbps"))
+    assert plan.needed
+    assert not plan.incidental
+    assert not any(out.clear_title for out in plan.streams)
+
+
+def test_stray_streams_switched_off_carries_them_through(monkeypatch):
+    """Off means kept, not silently dropped without the note."""
+    strays = other_stream(3, "data", "bin_data")
+    plan = plan_for(video(0), audio(1, 6), strays)
+    assert 3 not in {out.src for out in plan.streams}
+    assert any("drop data stream 3" in note for note in plan.incidental)
+
+    set_rules(monkeypatch, stray_streams="never")
+    plan = plan_for(video(0), audio(1, 6), strays)
+    assert 3 in {out.src for out in plan.streams}
+    assert not plan.incidental
 
 
 def test_disabled_languages_keeps_foreign_tracks(monkeypatch):
-    monkeypatch.setattr(config, "DISABLED_RULES", {"languages"})
+    set_rules(monkeypatch, languages="never")
     plan = plan_for(
         video(0), audio(1, 2, lang="eng"), audio(2, 2, lang="ger"), subtitle(3, "ger")
     )
@@ -471,27 +769,27 @@ def test_disabled_languages_keeps_foreign_tracks(monkeypatch):
 
 
 def test_disabled_downmix_adds_no_tracks(monkeypatch):
-    monkeypatch.setattr(config, "DISABLED_RULES", {"downmix"})
+    set_rules(monkeypatch, downmix="never")
     plan = plan_for(video(0), audio(1, 6), audio(2, 2, title="Commentary"))
     assert not any("downmix" in reason for reason in plan.reasons)
     assert not any(out.encode for out in plan.streams)
 
 
 def test_disabled_cover_art_keeps_the_poster(monkeypatch):
-    monkeypatch.setattr(config, "DISABLED_RULES", {"cover_art"})
+    set_rules(monkeypatch, cover_art="never")
     plan = plan_for(video(0), video(1, codec="mjpeg"), audio(2, 2))
     assert not any("cover art" in reason for reason in plan.reasons)
     assert 1 in {out.src for out in plan.streams}
 
 
 def test_disabled_order_never_reorders(monkeypatch):
-    monkeypatch.setattr(config, "DISABLED_RULES", {"order"})
+    set_rules(monkeypatch, order="never")
     plan = plan_for(video(0), audio(1, 8), audio(2, 6), audio(3, 2))
     assert not plan.needed
 
 
 def test_disabled_order_preserves_input_order_when_rewriting(monkeypatch):
-    monkeypatch.setattr(config, "DISABLED_RULES", {"order"})
+    set_rules(monkeypatch, order="never")
     plan = plan_for(video(0), audio(1, 6), audio(2, 2, title="Commentary"))
     # The downmix still triggers the rewrite, but streams keep the input
     # order and the generated track rides directly after its source.
@@ -500,7 +798,7 @@ def test_disabled_order_preserves_input_order_when_rewriting(monkeypatch):
 
 
 def test_drop_commentary_removes_the_track(monkeypatch):
-    monkeypatch.setattr(config, "DROP_COMMENTARY", True)
+    set_rules(monkeypatch, commentary="always")
     plan = plan_for(video(0), audio(1, 6), audio(2, 2, title="Director's Commentary"))
     assert 2 not in {out.src for out in plan.streams}
     assert any("drop commentary audio 2" in reason for reason in plan.reasons)
@@ -509,7 +807,7 @@ def test_drop_commentary_removes_the_track(monkeypatch):
 
 
 def test_drop_commentary_declines_rather_than_silencing(monkeypatch):
-    monkeypatch.setattr(config, "DROP_COMMENTARY", True)
+    set_rules(monkeypatch, commentary="always")
     plan = plan_for(video(0), audio(1, 2, title="Commentary"))
     assert 1 in {out.src for out in plan.streams}
     assert not any("commentary" in reason for reason in plan.reasons)
@@ -529,15 +827,32 @@ def test_commentary_is_kept_by_default():
     ids=["title", "disposition flag"],
 )
 def test_sdh_dropped_when_a_full_subtitle_remains(title, hearing_impaired):
-    plan = plan_for(
-        video(0),
-        audio(1, 2),
+    """Riding along by default, so a redundant SDH track alone is reported and
+    left where it is; a rewrite already under way takes it."""
+    subs = (
         subtitle(2, "eng"),
         subtitle(3, "eng", title=title, hearing_impaired=hearing_impaired),
     )
+    plan = plan_for(video(0), audio(1, 2), *subs)
+    assert not plan.needed
+    assert 3 in {out.src for out in plan.streams}
+    assert any("SDH subtitle 3" in note for note in plan.incidental)
+
+    # A 5.1 with no stereo beside it, so the downmix rule orders the rewrite.
+    plan = plan_for(video(0), audio(1, 6), *subs)
+    assert plan.needed
     assert 3 not in {out.src for out in plan.streams}
     assert any("SDH subtitle 3" in note for note in plan.incidental)
-    assert not plan.needed
+
+
+def test_sdh_set_to_always_is_worth_a_rewrite_alone(monkeypatch):
+    set_rules(monkeypatch, sdh="always")
+    plan = plan_for(
+        video(0), audio(1, 2), subtitle(2, "eng"), subtitle(3, "eng", title="English (SDH)")
+    )
+    assert plan.needed
+    assert plan.rules == {"sdh"}
+    assert 3 not in {out.src for out in plan.streams}
 
 
 def test_lone_sdh_subtitle_is_kept():
@@ -557,7 +872,7 @@ def test_forced_subtitle_neither_drops_nor_counts_as_full():
 
 
 def test_sdh_rule_can_be_disabled(monkeypatch):
-    monkeypatch.setattr(config, "DISABLED_RULES", {"sdh"})
+    set_rules(monkeypatch, sdh="never")
     plan = plan_for(
         video(0),
         audio(1, 2),
@@ -625,9 +940,16 @@ def test_junk_titles_cleared_when_rewriting_anyway():
 
 
 def test_junk_container_title_is_cleared():
-    plan = plan_for(video(0), audio(1, 2), title="Movie.2024.1080p.BluRay.x264-GRP")
-    assert plan.clear_container_title
+    """Named on its own, cleared once a rewrite is happening for another reason.
+    The 5.1 with no stereo beside it is that reason."""
+    title = "Movie.2024.1080p.BluRay.x264-GRP"
+    plan = plan_for(video(0), audio(1, 2), title=title)
     assert not plan.needed
+    assert not plan.clear_container_title
+    assert any(title in note for note in plan.incidental)
+
+    plan = plan_for(video(0), audio(1, 6), title=title)
+    assert plan.clear_container_title
     args = ffmpeg_args(plan, "/tmp/out.mkv")
     assert args[args.index("-metadata") + 1] == "title="
 
@@ -696,7 +1018,7 @@ def test_command_tags_the_downmix_with_its_source_language():
 def test_each_layout_is_encoded_at_its_own_rate(monkeypatch):
     """Nothing is derived from anything else: a downmix is made at the rate its own
     variable states."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0", "5.1"})
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0", "5.1"))
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "192k", "5.1": "448k"})
     args = ffmpeg_args(plan_for(video(0), audio(1, 8)), "/tmp/out.mkv")
     assert args[args.index("-b:a:0") + 1] == "192k"
@@ -707,8 +1029,8 @@ def test_each_layout_is_encoded_at_its_own_rate(monkeypatch):
 @pytest.mark.parametrize("rate", ["320K", "320000"])
 def test_a_rate_reaches_ffmpeg_in_its_one_spelling(monkeypatch, rate):
     """The command and the tag agree whatever the variable said, because a 320K
-    left as 320K made the weak-track comparison unparseable."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
+    left as 320K made the low-bitrate comparison unparseable."""
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": rate})
     args = ffmpeg_args(plan_for(video(0), audio(1, 8)), "/tmp/out.mkv")
     assert args[args.index("-b:a:0") + 1] == "320k"
@@ -775,3 +1097,100 @@ def test_a_plan_records_every_input_track():
     plan = plan_for(video(), audio(1, 6), audio(2, 2, lang="kor"), subtitle(3))
     assert [track["index"] for track in plan.tracks] == [0, 1, 2, 3]
     assert plan.tracks[2]["lang"] == "kor"
+
+
+def test_an_untagged_stale_downmix_rebuilds_without_claiming_a_language(monkeypatch):
+    """A generated track whose language tag has since been stripped still
+    regenerates, but names no language for the rebuild to come back in: an
+    untagged source would otherwise reserve a layout for the empty string."""
+    set_rules(monkeypatch, regenerate="always")
+    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "5.1": "640k"})
+    plan = plan_for(video(0), tagged_downmix(1, 2, "aac 192k", lang=None), audio(2, 6))
+    assert any(reason.startswith("regenerate 2.0 downmix") for reason in plan.reasons)
+    assert 1 not in {out.src for out in plan.streams}
+    assert [out.channels for out in audio_out(plan) if out.encode] == [2]
+
+
+def planned_for(*streams, original="eng"):
+    """The plan's output summaries, which is what the library view reads."""
+    return planned_tracks(plan_for(*streams, original=original))
+
+
+def test_planned_tracks_carry_a_generated_downmix_as_the_track_it_will_be():
+    """Not as the track it came from: the whole point of the after-state is
+    that a 5.1 source becomes a 2.0 AAC at the layout's own rate."""
+    planned = planned_for(video(), audio(1, 8))
+    generated = [track for track in planned if "generated" in track.get("flags", [])]
+    assert [(track["channels"], track["codec"], track["src"]) for track in generated] == [
+        (2, "aac", 1),
+        (6, "ac3", 1),
+    ]
+    assert generated[0]["bitrate"] == 320_000
+
+
+def test_a_dropped_track_is_absent_from_the_planned_side():
+    """Which is how the view marks it: nothing in the after list names it as
+    a source, so the pairing shows the row struck out."""
+    plan = plan_for(video(), audio(1, 6), audio(2, 2, lang="dan"))
+    assert 2 not in {track["src"] for track in planned_tracks(plan)}
+    assert 2 in {track["index"] for track in plan.tracks}
+
+
+def test_a_copied_track_keeps_its_source_and_loses_a_cleared_title():
+    """The generated downmix names the same source, so the copy is the one
+    of the pair that is not flagged generated."""
+    plan = plan_for(video(), audio(1, 6, title="AC3 5.1 @ 640kbps"))
+    copied = next(
+        track
+        for track in planned_tracks(plan)
+        if track["src"] == 1 and "generated" not in track.get("flags", [])
+    )
+    assert copied["codec"] == plan.tracks[1]["codec"]
+    assert "title" not in copied
+
+
+def test_planned_tracks_are_positions_in_the_output():
+    """Not input indices: two of them can share one source, and the order is
+    the rewrite's rather than the file's."""
+    planned = planned_for(video(), audio(1, 8))
+    assert [track["index"] for track in planned] == list(range(len(planned)))
+
+
+def test_track_changes_names_the_dropped_source_and_the_generated_position():
+    """One index space each, matching planned_tracks: `dropped` is read against
+    the file the rewrite started from and `added` against the one it left."""
+    plan = plan_for(video(), audio(1, 8), audio(2, 2, lang="dan"))
+    told = track_changes(plan)
+    assert told["dropped"] == [2]
+    assert told["added"] == [
+        position
+        for position, track in enumerate(planned_tracks(plan))
+        if "generated" in track.get("flags", [])
+    ]
+
+
+def test_track_changes_says_nothing_where_no_track_moved(monkeypatch):
+    """A remux carries every stream over, so both lists are empty and both are
+    dropped: the view has nothing to compare and shows the one column."""
+    set_rules(monkeypatch, remux="always")
+    plan = plan_for(video(), audio(1, 2), subtitle(2), path="/x/f.mp4")
+    assert plan.needed
+    assert track_changes(plan) == {}
+
+
+def test_why_names_the_changes_and_the_rules_behind_them():
+    told = why(plan_for(video(), audio(1, 6), audio(2, 2, lang="dan")))
+    assert told["rules"] == ["downmix", "languages"]
+    assert any(reason.startswith("drop audio 2") for reason in told["reasons"])
+    assert "skip" not in told
+
+
+def test_why_leads_with_the_skip_when_there_is_one():
+    """A skipped file's reasons are what the rules wanted, not what happens,
+    so the view has to be able to say the skip first."""
+    told = why(plan_for(video(), audio(1, 2, lang="dan")))
+    assert told["skip"] == "would remove every audio track"
+
+
+def test_a_conforming_file_has_nothing_to_say():
+    assert why(plan_for(video(), audio(1, 2), audio(2, 6))) == {}

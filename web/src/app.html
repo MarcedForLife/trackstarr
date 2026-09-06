@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<!-- With ssr=false nothing in <svelte:head> exists until the router
+		     mounts, so the shell ships a name and icon. Pages replace the title. -->
+		<title>Trackstarr</title>
+		<!-- The .ico first: dashboards and unfurlers ask for /favicon.ico by name.
+		     A browser that understands the SVG takes it and follows the colour
+		     scheme. -->
+		<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<!-- The home-screen name and icon: the manifest for Android, the apple-
+		     lines for iOS. -->
+		<link rel="manifest" href="/manifest.webmanifest" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<meta name="apple-mobile-web-app-title" content="Trackstarr" />
+		<!-- viewport-fit=cover lets the layout reach under a notch; the safe-area
+		     insets below keep anything tappable out from under it. -->
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="theme-color" content="#121317" />
+		<script>
+			// Resolve the saved theme and palette before first paint;
+			// $lib/theme.svelte.ts owns them after.
+			(function () {
+				// Each palette's surfaces, mirroring layout.css, so the document never
+				// paints white while the stylesheet loads.
+				var SURFACE = {
+					brass: ['#121317', '#fbfbfa'],
+					graphite: ['#111111', '#fafafa'],
+					fjord: ['#161a21', '#f5f7fa'],
+					dusk: ['#15141c', '#faf9fc'],
+					moss: ['#121613', '#f8faf6'],
+					clay: ['#171311', '#fbf8f5']
+				};
+				var theme = null;
+				var palette = null;
+				try {
+					theme = localStorage.getItem('theme');
+					palette = localStorage.getItem('palette');
+				} catch (err) {
+					/* storage blocked: fall through to the defaults */
+				}
+				if (!SURFACE[palette]) palette = 'brass';
+				var dark =
+					theme === 'dark' ||
+					(theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+				var root = document.documentElement;
+				root.dataset.theme = dark ? 'dark' : 'light';
+				root.dataset.palette = palette;
+				var surface = SURFACE[palette][dark ? 0 : 1];
+				root.style.background = surface;
+				// Paints the mobile browser chrome to match the page.
+				var meta = document.querySelector('meta[name="theme-color"]');
+				if (meta) meta.setAttribute('content', surface);
+			})();
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

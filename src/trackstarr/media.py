@@ -7,25 +7,21 @@ from . import config
 from .langs import norm_lang
 from .policy import IMAGE_CODECS, Policy
 
-#: The settings a generated downmix was encoded with, so a later pass knows
-#: our own tracks. MP4 drops custom stream tags; this survives in Matroska.
+#: Tag recording a generated downmix's encode settings, so a later pass knows
+#: our own tracks. Survives in Matroska; MP4 drops custom tags.
 GENERATED_TAG = "TRACKSTARR"
 
 
 class ProbeError(RuntimeError):
-    """ffprobe could not produce usable output for a file.
-
-    The one exception callers have to handle. Covers a corrupt or truncated
-    file, a probe timeout, and output that won't parse.
-    """
+    """ffprobe could not produce usable output: a corrupt file, a timeout, or
+    output that will not parse."""
 
 
 def probe(path: str) -> dict:
-    """Return ffprobe's JSON for a file, raising ProbeError when it can't."""
+    """ffprobe's JSON for a file. Raises ProbeError."""
     try:
         out = subprocess.run(
-            # -v error, not quiet: on a damaged file that stderr text is the
-            # only clue about what is wrong.
+            # -v error, not quiet: on a damaged file stderr is the only clue.
             [
                 "ffprobe",
                 "-v",
@@ -62,11 +58,8 @@ def container_title(info: dict) -> str:
 
 
 def stream_title(stream: dict) -> str:
-    """The track title. Matroska reports it as ``title``, MP4 as ``name``.
-
-    ``handler_name`` is left alone on purpose: it is muxer boilerplate
-    ("SoundHandler"), not a title anyone chose.
-    """
+    """The track title: ``title`` in Matroska, ``name`` in MP4. ``handler_name``
+    is muxer boilerplate and ignored."""
     tags = stream.get("tags") or {}
     return tags.get("title") or tags.get("name") or ""
 
@@ -76,8 +69,8 @@ def stream_lang(stream: dict) -> str | None:
 
 
 def tag_value(stream: dict, name: str) -> str | None:
-    """A stream tag by name, case-insensitively, ignoring an ``-eng`` style
-    language suffix: mkvmerge writes BPS-eng, and Matroska may change case."""
+    """A stream tag by name, case-insensitively and ignoring a language suffix
+    such as BPS-eng."""
     wanted = name.lower()
     for key, value in (stream.get("tags") or {}).items():
         if key.lower().partition("-")[0] == wanted:
@@ -86,11 +79,8 @@ def tag_value(stream: dict, name: str) -> str | None:
 
 
 def stream_bitrate(stream: dict) -> int | None:
-    """Bits per second, or None when the container doesn't say.
-
-    MP4 reports per-stream bit_rate. Matroska usually doesn't, but mkvmerge
-    writes the BPS statistics tags most release files carry.
-    """
+    """Bits per second, or None. MP4 reports bit_rate; Matroska usually only
+    has mkvmerge's BPS tag."""
     for reported in (stream.get("bit_rate"), tag_value(stream, "BPS")):
         try:
             if rate := int(reported or 0):
@@ -100,9 +90,20 @@ def stream_bitrate(stream: dict) -> int | None:
     return None
 
 
+def unpreserved_bitrate(stream: dict) -> int | None:
+    """This stream's rate, only when a copy would lose it.
+
+    A BPS tag carries forward on its own, so None for a stream that has one.
+    The reported rate otherwise, which is the mp4-to-mkv case where the header
+    field has nowhere to go.
+    """
+    if tag_value(stream, "BPS") is not None:
+        return None
+    return stream_bitrate(stream)
+
+
 def generated_settings(stream: dict) -> str | None:
-    """The recorded encode settings of a trackstarr-generated track, or None
-    for tracks we didn't make."""
+    """The recorded encode settings of a generated track, or None."""
     return tag_value(stream, GENERATED_TAG)
 
 
@@ -112,21 +113,16 @@ def has_disposition(stream: dict, *flags: str) -> bool:
 
 
 def is_commentary(stream: dict, policy: Policy) -> bool:
-    """Commentary, audio description and interview tracks.
-
-    The disposition flags win when a muxer bothered to set them. Most rips
-    don't, so the title is the fallback. This is the whole point of the
-    downmix rule: a 2.0 commentary track must not count as the stereo track a
-    player falls back to.
-    """
+    """Commentary, audio description and interview tracks, by disposition or
+    by title. A 2.0 commentary must not count as the stereo track."""
     return has_disposition(stream, "comment", "visual_impaired", "descriptions") or bool(
         policy.commentary_re.search(stream_title(stream))
     )
 
 
 def is_forced(stream: dict, policy: Policy) -> bool:
-    """Forced subtitles show even with subtitles off (foreign dialogue,
-    signs), so they are always kept and never make another track redundant."""
+    """Forced subtitles show even with subtitles off, so they are always kept
+    and never make another track redundant."""
     return has_disposition(stream, "forced") or bool(
         policy.forced_re.search(stream_title(stream))
     )
@@ -146,27 +142,21 @@ def is_cover_art(stream: dict) -> bool:
 
 
 def title_is_load_bearing(stream: dict, policy: Policy) -> bool:
-    """Titles the planner's own decisions read. Clearing one would have the
-    next plan classify the track differently, breaking idempotence."""
+    """Titles the planner classifies on. Clearing one would break idempotence."""
     return is_commentary(stream, policy) or is_sdh(stream, policy) or is_forced(stream, policy)
 
 
 def is_junk_title(title: str, policy: Policy) -> bool:
-    """Release junk (bitrates, resolutions, source tags) rather than
-    meaning.
-
-    A pure pattern test. Callers clearing stream titles have to guard with
-    title_is_load_bearing first.
-    """
+    """Whether a title is release junk. A pure pattern test; callers clearing
+    titles must check title_is_load_bearing first."""
     return bool(title) and bool(policy.junk_title_re.search(title))
 
 
 def track_summary(stream: dict, policy: Policy) -> dict:
-    """One stream distilled to what a library view needs without re-probing.
+    """One stream distilled for a library view.
 
-    The flags are this module's classifications, not the raw dispositions,
-    so a view reads "commentary" the same way the rules do. Empty and
-    None-valued fields are dropped; absence means unknown or not applicable.
+    The flags are this module's classifications, so a view reads "commentary"
+    as the rules do. Empty fields are dropped.
     """
     kind = stream.get("codec_type")
     flags = [
@@ -177,8 +167,7 @@ def track_summary(stream: dict, policy: Policy) -> dict:
             ("forced", kind == "subtitle" and is_forced(stream, policy)),
             ("sdh", kind == "subtitle" and is_sdh(stream, policy)),
             ("cover_art", kind == "video" and is_cover_art(stream)),
-            # Only audio tracks are ever generated, and the tag scan walks
-            # every tag key, so the other kinds skip it.
+            # Only audio is ever generated; the tag scan walks every key.
             ("generated", kind == "audio" and generated_settings(stream) is not None),
         )
         if present

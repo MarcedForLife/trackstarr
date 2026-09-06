@@ -3,7 +3,9 @@ ffmpeg would run."""
 
 import contextlib
 import errno
+import io
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -25,9 +27,27 @@ def _work_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "WORK_DIR", str(tmp_path / "work"))
 
 
+@pytest.fixture(autouse=True)
+def _fresh_encoder_list():
+    """audio_encoders() is cached for the life of the process, so without
+    this the first test to ask pins the real ffmpeg's answer and every
+    stand-in below is answered from that cache instead of running."""
+    executor.audio_encoders.cache_clear()
+    yield
+    executor.audio_encoders.cache_clear()
+
+
+#: What _run_ffmpeg hands back. The rewrites patch that rather than
+#: subprocess.run, which apply_plan no longer uses; the encoder list does.
+def _ffmpeg_says(monkeypatch, code: int = 0, stderr: str = "") -> None:
+    monkeypatch.setattr(executor, "_run_ffmpeg", lambda args, on_progress=None: (code, stderr))
+
+
 def _no_ffmpeg(monkeypatch):
     monkeypatch.setattr(
-        executor.subprocess, "run", lambda *a, **k: pytest.fail("ffmpeg must not run")
+        executor,
+        "_run_ffmpeg",
+        lambda args, on_progress=None: pytest.fail("ffmpeg must not run"),
     )
 
 
@@ -35,12 +55,12 @@ def _capture_staged(monkeypatch) -> list[str]:
     """Collect the temp path each rewrite hands ffmpeg, stopping it there."""
     staged: list[str] = []
 
-    def capture(args, **kwargs):
+    def capture(args, on_progress=None):
         # The last argument is the temp path ffmpeg was told to write.
         staged.append(args[-1])
         raise _StopError
 
-    monkeypatch.setattr(executor.subprocess, "run", capture)
+    monkeypatch.setattr(executor, "_run_ffmpeg", capture)
     return staged
 
 
@@ -171,13 +191,12 @@ def test_a_failed_landing_copy_leaves_the_original_alone(tmp_path, monkeypatch):
 def test_failed_preflight_leaves_no_staged_file(tmp_path, monkeypatch):
     """The remux-target check returns before the cleanup, so staging any earlier
     left an empty file behind on every collision."""
-    monkeypatch.setattr(config, "REMUX_TO_MKV", True)
     _no_ffmpeg(monkeypatch)
     source = tmp_path / "f.mp4"
     source.write_bytes(b"content")
     (tmp_path / "f.mkv").write_text("precious")
 
-    outcome, detail = apply_plan(Plan(path=str(source)))
+    outcome, detail = apply_plan(Plan(path=str(source), remuxing=True))
     assert outcome is Outcome.FAILED
     assert "already exists" in detail
     assert not os.path.isdir(config.WORK_DIR) or not os.listdir(config.WORK_DIR)
@@ -259,8 +278,9 @@ def test_matching_source_passes_the_staleness_check(tmp_path, monkeypatch):
     plan = needed_plan(str(path), src_signature=SourceSignature.of(os.stat(path)))
 
     ran = []
-    fake = fake_run(returncode=1, stderr="boom")
-    monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: ran.append(a) or fake)
+    monkeypatch.setattr(
+        executor, "_run_ffmpeg", lambda args, on_progress=None: ran.append(args) or (1, "boom")
+    )
     outcome, detail = apply_plan(plan)
     assert ran, "the rewrite should have been attempted"
     assert outcome is Outcome.FAILED
@@ -273,8 +293,7 @@ def test_ffmpeg_stderr_in_the_detail_is_bounded(tmp_path, monkeypatch):
     path = tmp_path / "f.mkv"
     path.write_bytes(b"content")
     noise = "deprecated pixel format used\n" * 1000 + "final: everything broke"
-    fake = fake_run(returncode=1, stderr=noise)
-    monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: fake)
+    _ffmpeg_says(monkeypatch, code=1, stderr=noise)
 
     outcome, detail = apply_plan(needed_plan(str(path)))
     assert outcome is Outcome.FAILED
@@ -318,10 +337,9 @@ def _fake_encoders(monkeypatch):
     monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: result)
 
 
-@pytest.mark.parametrize("codec", ["aac", "ac3"], ids=["the default", "another encoder"])
-def test_an_audio_encoder_this_ffmpeg_has_passes(monkeypatch, codec):
+def test_the_shipped_encoders_pass(monkeypatch):
+    """The two a fresh install inherits, aac for 2.0 and ac3 for 5.1."""
     _fake_encoders(monkeypatch)
-    monkeypatch.setattr(config, "AUDIO_CODEC", codec)
     assert audio_codec_errors() == []
 
 
@@ -330,10 +348,22 @@ def test_an_audio_codec_ffmpeg_cannot_encode_is_refused(monkeypatch, codec):
     """A bad codec has to fail the restart that introduced it, not the first
     rewrite hours later."""
     _fake_encoders(monkeypatch)
-    monkeypatch.setattr(config, "AUDIO_CODEC", codec)
+    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "aac", "5.1": codec})
     errors = audio_codec_errors()
     assert len(errors) == 1
     assert repr(codec) in errors[0]
+    # Named by the variable to go and fix, not by the encoder, since each
+    # layout states its own and only one of them is wrong.
+    assert "AUDIO_CODEC_5_1" in errors[0]
+
+
+def test_every_layout_missing_an_encoder_is_named(monkeypatch):
+    """One line each: two layouts on a typo'd encoder are two variables to fix."""
+    _fake_encoders(monkeypatch)
+    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "acc", "5.1": "acc"})
+    errors = audio_codec_errors()
+    assert len(errors) == 2
+    assert {"AUDIO_CODEC_2_0", "AUDIO_CODEC_5_1"} == {error.split("=")[0] for error in errors}
 
 
 def test_missing_ffmpeg_is_not_this_checks_problem(monkeypatch):
@@ -390,10 +420,10 @@ def test_an_ffmpeg_timeout_is_a_failure_naming_the_limit(tmp_path, monkeypatch):
     """A wedged encode on one file must not stall a whole sweep silently."""
     monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 900)
 
-    def hang(args, **kwargs):
+    def hang(args, on_progress=None):
         raise executor.subprocess.TimeoutExpired(cmd="ffmpeg", timeout=900)
 
-    monkeypatch.setattr(executor.subprocess, "run", hang)
+    monkeypatch.setattr(executor, "_run_ffmpeg", hang)
     source = tmp_path / "f.mkv"
     source.write_bytes(b"content")
 
@@ -449,7 +479,7 @@ def test_verification_catches_a_missing_stream():
 def test_a_result_that_fails_verification_is_discarded(tmp_path, monkeypatch):
     """The source must still be there afterwards, untouched."""
     monkeypatch.setattr(executor, "_verify", lambda plan, info: "duration mismatch: 10s -> 1s")
-    monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: fake_run())
+    _ffmpeg_says(monkeypatch)
     monkeypatch.setattr(executor, "probe", lambda path: {"format": {}, "streams": []})
     source = tmp_path / "f.mkv"
     source.write_bytes(b"original")
@@ -462,8 +492,7 @@ def test_a_result_that_fails_verification_is_discarded(tmp_path, monkeypatch):
 
 def test_an_unremovable_remux_source_is_only_a_warning(tmp_path, monkeypatch, caplog):
     """The .mkv is already published, so a leftover .mp4 is untidy, not a failure."""
-    monkeypatch.setattr(config, "REMUX_TO_MKV", True)
-    monkeypatch.setattr(executor.subprocess, "run", lambda *a, **k: fake_run())
+    _ffmpeg_says(monkeypatch)
     monkeypatch.setattr(executor, "_verify", lambda plan, info: None)
     monkeypatch.setattr(executor, "probe", lambda path: {"format": {}, "streams": []})
     source = tmp_path / "f.mp4"
@@ -477,7 +506,9 @@ def test_an_unremovable_remux_source_is_only_a_warning(tmp_path, monkeypatch, ca
         real_remove(path)
 
     monkeypatch.setattr(executor.os, "remove", refuse)
-    outcome, _ = apply_plan(Plan(path=str(source), reasons=["remux to mkv (REMUX_TO_MKV)"]))
+    outcome, _ = apply_plan(
+        Plan(path=str(source), remuxing=True, reasons=["remux to mkv (RULE_REMUX)"])
+    )
     assert outcome is Outcome.APPLIED
     assert "could not remove" in caplog.text
 
@@ -508,3 +539,163 @@ def test_an_exclusive_clean_warns_rather_than_stopping_startup(tmp_path, monkeyp
     _unremovable(monkeypatch)
     executor.clean_work_dir(exclusive=True)
     assert "could not remove" in caplog.text
+
+
+def test_a_rewrite_in_flight_can_be_stopped(tmp_path, monkeypatch):
+    """The activity page's "stop rewrites now". A real child process, since
+    what is being tested is that the registry can reach one and signal it."""
+    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 60)
+    result: list[tuple[int, str]] = []
+    running = threading.Thread(
+        target=lambda: result.append(executor._run_ffmpeg(["sleep", "30"])), daemon=True
+    )
+    running.start()
+    # Registered by the time it is running, or the button would be a no-op on
+    # exactly the rewrite somebody is trying to stop.
+    for _ in range(200):
+        if executor._running_ffmpeg:
+            break
+        time.sleep(0.01)
+
+    assert executor.terminate_running() == 1
+    running.join(timeout=10)
+    (code, _) = result[0]
+    assert code < 0, "signalled, not a clean exit"
+    # And it lets go, so a later abort does not signal a process that has gone.
+    assert executor.terminate_running() == 0
+
+
+def test_a_stopped_rewrite_is_deferred_rather_than_failed(tmp_path, monkeypatch):
+    """Nothing is wrong with the file and the next pass will rewrite it, so a
+    stop must not alert like a corruption or fail a sweep's exit code."""
+    source = tmp_path / "f.mkv"
+    source.write_bytes(b"content")
+    _ffmpeg_says(monkeypatch, code=-15)
+
+    outcome, detail = apply_plan(needed_plan(str(source)))
+    assert outcome is Outcome.DEFERRED
+    assert "stopped" in detail
+    assert source.read_bytes() == b"content"
+    # The partial goes with it, rather than waiting on the age gate.
+    assert not os.listdir(config.WORK_DIR)
+
+
+def _open_fds() -> set[int]:
+    """Every descriptor this process holds, for the two leak checks below.
+
+    /dev/fd rather than /proc/self/fd, which macOS has no equivalent of: on
+    Linux the first is a symlink to the second, so both read the same list and
+    the checks run wherever the suite does.
+    """
+    return {int(name) for name in os.listdir("/dev/fd")}
+
+
+def test_a_spawn_that_never_happened_leaves_no_pipe_behind():
+    """The progress pipe is made before ffmpeg is, so a failed spawn has two
+    descriptors to give back. One rewrite per delivery, and a leak here runs
+    the whole process out of them."""
+    before = _open_fds()
+    with pytest.raises(OSError):
+        executor._run_ffmpeg(["/nonexistent/ffmpeg"], on_progress=lambda done, speed: None)
+    assert _open_fds() == before
+
+
+def test_a_child_nothing_could_reach_is_killed_rather_than_left_writing(monkeypatch):
+    """Thread exhaustion between spawn and registration. Unregistered, the child
+    is unreachable and still writing into a file about to be deleted."""
+
+    class NeverStarts:
+        def __init__(self, *args, **kwargs):
+            """Takes what threading.Thread takes, and does none of it."""
+
+        def start(self) -> None:
+            raise RuntimeError("can't start new thread")
+
+    before = _open_fds()
+    monkeypatch.setattr(executor.threading, "Thread", NeverStarts)
+    with pytest.raises(RuntimeError):
+        executor._run_ffmpeg(["sleep", "30"], on_progress=lambda done, speed: None)
+
+    assert executor._running_ffmpeg == set()
+    assert _open_fds() == before
+
+
+def test_a_wedged_process_is_killed_at_the_timeout(monkeypatch):
+    """communicate() only stops waiting; without the kill the child would go
+    on holding the CPU the timeout was meant to take back."""
+    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 0.2)
+    with pytest.raises(executor.subprocess.TimeoutExpired):
+        executor._run_ffmpeg(["sleep", "30"])
+    assert executor._running_ffmpeg == set(), "and it is no longer abortable"
+
+
+def test_the_progress_readout_reaches_the_callback():
+    """ffmpeg reports the time and the speed on separate lines, so nothing may
+    be passed on until the block's own end line says the pair is complete."""
+    seen: list[tuple[float, float]] = []
+    executor._watch_progress(
+        io.StringIO(
+            "frame=120\nout_time_us=5000000\nspeed=12.5x\nprogress=continue\n"
+            "frame=240\nout_time_us=9500000\nspeed=13x\nprogress=end\n"
+        ),
+        lambda done, speed: seen.append((done, speed)),
+    )
+    assert seen == [(5.0, 12.5), (9.5, 13.0)]
+
+
+def test_a_readout_that_cannot_be_parsed_is_dropped_rather_than_raised():
+    """ffmpeg reports N/A before the first packet is written, and a readout is
+    never worth a rewrite: the pipe has to go on being drained either way, or
+    ffmpeg blocks writing to it and the encode dies at the timeout."""
+    seen: list[tuple[float, float]] = []
+    executor._watch_progress(
+        io.StringIO(
+            "out_time_us=N/A\nspeed=N/A\nprogress=continue\n"
+            "out_time_us=3000000\nspeed=4x\nprogress=continue\n"
+        ),
+        lambda done, speed: seen.append((done, speed)),
+    )
+    # The first block still reports, with the nothing it knew at the time.
+    assert seen == [(0.0, 0.0), (3.0, 4.0)]
+
+
+def test_a_callback_that_throws_never_stops_the_encode():
+    """Same reason, one step further out: whatever the page's end of this does
+    with the numbers, the pipe keeps draining and the rewrite runs on."""
+    seen: list[float] = []
+
+    def throw_once(done: float, speed: float) -> None:
+        if not seen:
+            seen.append(done)
+            raise RuntimeError("the overview fell over")
+        seen.append(done)
+
+    executor._watch_progress(
+        io.StringIO(
+            "out_time_us=1000000\nprogress=continue\nout_time_us=2000000\nprogress=end\n"
+        ),
+        throw_once,
+    )
+    assert seen == [1.0, 2.0]
+
+
+def test_the_encode_is_declared_over_before_the_file_is_published(tmp_path, monkeypatch):
+    """The verify probe and a cross-device copy come after ffmpeg exits, and a
+    readout would otherwise report them as an encode pinned at 100%."""
+    source = tmp_path / "f.mkv"
+    source.write_bytes(b"content")
+    _ffmpeg_says(monkeypatch)
+    monkeypatch.setattr(executor, "probe", lambda path: {})
+    monkeypatch.setattr(executor, "_verify", lambda plan, info: None)
+
+    order: list[str] = []
+    monkeypatch.setattr(
+        executor,
+        "_publish",
+        lambda tmp, out_path, src: order.append("published"),
+    )
+    outcome, _ = apply_plan(
+        needed_plan(str(source)), on_encoded=lambda: order.append("encoded")
+    )
+    assert outcome is Outcome.APPLIED
+    assert order == ["encoded", "published"]

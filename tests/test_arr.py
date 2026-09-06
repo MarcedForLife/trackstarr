@@ -167,3 +167,26 @@ def test_a_malformed_headers_field_is_not_a_secret(value):
     notification = registration()
     notification["fields"] = [{"name": "headers", "value": value}]
     assert _sent_secret(notification) == ""
+
+
+@pytest.mark.parametrize(
+    ("existing", "expected"),
+    [
+        ([], "missing"),
+        ([{"id": 3, "name": "Discord"}], "missing"),
+        ([registration(url="http://old-name:9999")], "stale"),
+        ([registration(secret=UNMINTED)], "stale"),
+    ],
+)
+def test_webhook_status_reports_what_the_arr_holds(existing, expected):
+    """What the connections page shows. Asked without saving anything, so it
+    must never be the registration call in disguise."""
+    calls: list[tuple] = []
+    arr = make_arr(existing, calls)
+    assert arr.webhook_status(URL) == expected
+    assert [recorded[0] for recorded in calls] == ["GET"]
+
+
+def test_webhook_status_is_connected_only_for_a_secret_we_would_accept():
+    arr = make_arr([registration(secret=auth.mint("radarr"))], [])
+    assert arr.webhook_status(URL) == "connected"

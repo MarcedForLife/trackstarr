@@ -1,0 +1,100 @@
+{
+	"paused": false,
+	"paused_by": "",
+	"paused_at": "",
+	"up_since": "2026-02-26T12:00:00+13:00",
+	"runs": [
+		{
+			"id": "2026-03-01T03:00:00+13:00#a1b2",
+			"kind": "sweep",
+			"started": "2026-03-01T03:00:00+13:00",
+			"seconds": 32400.0,
+			"dry_run": false,
+			"label": "",
+			"total": 1180,
+			"done": 1176,
+			"counts": {
+				"conform": 1174,
+				"failed": 1,
+				"fixed": 1
+			},
+			"queued": 2,
+			"walking": false,
+			"rewrite_seconds": 12040.0,
+			"stopping": false,
+			"active": [
+				{
+					"path": "/data/media/movies/Dune (2024)/Dune (2024) Bluray-2160p.mkv",
+					"seconds": 1500.0,
+					"stage": "encoding",
+					"duration": 9330.0,
+					"done": 1800.0,
+					"speed": 1.5
+				}
+			],
+			"recent": [
+				{
+					"path": "/data/media/tv/Severance/Season 01/Severance - S01E01 - Good News About Hell.mkv",
+					"status": "fixed",
+					"seconds": 1834.2,
+					"detail": "add 2.0 downmix"
+				},
+				{
+					"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
+					"status": "failed",
+					"seconds": 95.3,
+					"detail": "ffmpeg exited 1"
+				}
+			]
+		},
+		{
+			"id": "2026-03-01T11:55:00+13:00#c3d4",
+			"kind": "import",
+			"started": "2026-03-01T11:55:00+13:00",
+			"seconds": 300.0,
+			"dry_run": false,
+			"label": "radarr",
+			"total": 1,
+			"done": 0,
+			"counts": {},
+			"queued": 0,
+			"walking": false,
+			"rewrite_seconds": null,
+			"stopping": false,
+			"active": [
+				{
+					"path": "/data/media/movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv",
+					"seconds": 300.0,
+					"stage": "waiting",
+					"duration": 0.0,
+					"done": 0.0,
+					"speed": 0.0
+				}
+			],
+			"recent": []
+		},
+		{
+			"id": "2026-03-01T11:58:00+13:00#e5f6",
+			"kind": "recheck",
+			"started": "2026-03-01T11:58:00+13:00",
+			"seconds": 120.0,
+			"dry_run": true,
+			"label": "Severance",
+			"total": 2,
+			"done": 0,
+			"counts": {},
+			"queued": 0,
+			"walking": false,
+			"rewrite_seconds": null,
+			"stopping": true,
+			"active": [],
+			"recent": []
+		}
+	],
+	"queue": 5,
+	"working": 2,
+	"rewrites": 0,
+	"parked": 0,
+	"may_rewrite": true,
+	"next_sweep": "2026-03-02T03:00:00+13:00"
+}

@@ -1,14 +1,13 @@
 name: Publish
 
-# Runs on the tag the Release workflow dispatches; the manual trigger exists
-# for rebuilding an image without cutting a release.
+# Runs on the tag the Release workflow dispatches; the manual trigger rebuilds
+# an image without a release.
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
 
-# GITHUB_TOKEN with packages:write is all GHCR needs. There is no PAT to
-# create, store or rotate.
+# GITHUB_TOKEN with packages:write is all GHCR needs; no PAT.
 permissions:
   contents: read
   packages: write
@@ -21,8 +20,7 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  # The release tag is cut from develop without waiting for CI, so run it here:
-  # a broken release must not become :latest.
+  # The release tag is cut without waiting for CI, so run it here.
   ci:
     uses: ./.github/workflows/ci.yml
 
@@ -47,8 +45,7 @@ jobs:
         with:
           images: ${{ env.IMAGE }}
           tags: |
-            # Only a tag moves :latest. A manual dispatch off a branch still
-            # rebuilds and pushes its sha tag, but cannot make develop latest.
+            # Only a tag moves :latest; a manual dispatch pushes its sha tag.
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -57,19 +54,15 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          # Both halves have already been built and run the full suite on
-          # their own native runner in the ci job above. QEMU is needed here
-          # only because one manifest has to be built on one runner, so
-          # nothing is validated for the first time under it.
+          # Both halves were built and tested natively in the ci job; QEMU is
+          # only needed because one manifest must be built on one runner.
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # The scopes ci.yml's docker matrix writes, which it has just filled
-          # natively for this commit; on the default scope, which only this job
-          # touches, both halves rebuild from cold under QEMU. Read-only for
-          # the same reason: a monthly release cannot keep a scope of its own
-          # warm past the 7-day eviction, so writing one buys nothing.
+          # The scopes ci.yml's docker matrix just filled natively. Read-only: a
+          # monthly release cannot keep its own scope warm past the 7-day
+          # eviction.
           cache-from: |
             type=gha,scope=linux/amd64
             type=gha,scope=linux/arm64

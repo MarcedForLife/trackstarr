@@ -1,0 +1,27 @@
+<!-- width and height as well as the viewBox: a rasteriser handed an SVG with
+     no intrinsic size has nothing to scale from, and the ones that do not
+     guess draw nothing at all. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+	<!-- The mark from lib/components/Mark.svelte: five upright bars whose
+	     lengths trace a four-point star, on the disc the home-screen icons
+	     draw.
+
+	     One pair of colours rather than a scheme swap, unlike the bare star
+	     this replaced: the disc is dark on a light tab and on a dark one, so
+	     the accent that reads on it is the same accent either way.
+
+	     The raised token rather than the surface it sits on, which is also the
+	     theme-color the app paints the browser chrome with. A disc in #121317
+	     is a circle nobody can see on the app's own dark page. -->
+	<circle cx="12" cy="12" r="12" fill="#1b1d23" />
+	<!-- Pulled in off the rim rather than merely centred: the star's furthest
+	     point is the corner of the long bar, 11.3 units out of a possible 12,
+	     so at full size it would sit on the edge of the disc. -->
+	<g transform="translate(12 12) scale(0.72) translate(-12 -12)" fill="#e3b25e">
+		<rect x="0.8" y="10.4" width="3.2" height="3.2" rx="1.6" />
+		<rect x="5.6" y="8.2" width="3.2" height="7.6" rx="1.6" />
+		<rect x="10.4" y="0.8" width="3.2" height="22.4" rx="1.6" />
+		<rect x="15.2" y="8.2" width="3.2" height="7.6" rx="1.6" />
+		<rect x="20" y="10.4" width="3.2" height="3.2" rx="1.6" />
+	</g>
+</svg>

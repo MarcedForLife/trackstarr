@@ -4,32 +4,32 @@ The unit suite builds ffprobe-shaped dicts by hand. The integration suite
 makes real files with ffmpeg, which :func:`pytest_configure` insists on.
 """
 
+import http.client
+import importlib
 import json
 import os
 import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import types
 from dataclasses import replace
+from http.server import ThreadingHTTPServer
 
 import pytest
 
-from trackstarr import config, processing
+import trackstarr
+from trackstarr import config, processing, runs, users, webhook
 from trackstarr.arr import Arr, radarr, sonarr
 from trackstarr.executor import Outcome
 from trackstarr.planner import Plan
 
 
 def _mp4_titles_round_trip() -> bool:
-    """Whether this ffmpeg can store a per-stream title in MP4.
-
-    The mov muxer only learned the ``name`` atom in 8.1; before that it
-    accepts the option and drops it. Two tests and their fixtures turn on it.
-
-    Detected rather than compared against a version string, since
-    distributions backport and rebuild. Costs a tenth of a second.
-    """
+    """Whether this ffmpeg can store a per-stream title in MP4. The mov muxer
+    learned the ``name`` atom in 8.1. Detected rather than version-compared,
+    since distributions backport."""
     with tempfile.TemporaryDirectory() as work:
         sample = os.path.join(work, "probe.mp4")
         try:
@@ -76,12 +76,8 @@ def _mp4_titles_round_trip() -> bool:
 
 
 def pytest_configure() -> None:
-    """Refuse to run at all without the ffmpeg the tests are written against.
-
-    trackstarr is an ffmpeg wrapper, so an environment without one is
-    unconfigured rather than limited. Saying so up front beats skipping a
-    third of the suite where nobody looks.
-    """
+    """Refuse to run without ffmpeg: an environment without one is
+    unconfigured, and skipping a third of the suite would go unnoticed."""
     if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
         raise pytest.UsageError("ffmpeg and ffprobe must be on PATH to run the tests")
     if not _mp4_titles_round_trip():
@@ -97,15 +93,83 @@ def _isolated_state(monkeypatch, tmp_path):
     /config, and drop whatever settings file a real one held at import."""
     monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setattr(config, "_SETTINGS", {})
+    monkeypatch.setattr(config, "WEB_DIR", "")
+
+
+#: Environment names settings_state scrubs so a config reload cannot pick up
+#: a developer's real services or state directory mid-test.
+_RELOAD_SENSITIVE = (
+    "STATE_DIR",
+    # Would point every reload at a developer's real key instead of the one
+    # the test's own state directory mints.
+    "TRACKSTARR_KEY_FILE",
+    # The developer's own zone, which config would otherwise apply to the
+    # process running the suite.
+    "TZ",
+    "RADARR_URL",
+    "RADARR_API_KEY",
+    "SONARR_URL",
+    "SONARR_API_KEY",
+    "PLEX_URL",
+    "PLEX_TOKEN",
+    "JELLYFIN_URL",
+    "JELLYFIN_API_KEY",
+    # The browser-side addresses too: each is enough on its own to put an
+    # "Open in" link on a title, so a developer's own would show up in tests
+    # that assert a sheet offers none.
+    "RADARR_PUBLIC_URL",
+    "SONARR_PUBLIC_URL",
+    "PLEX_PUBLIC_URL",
+    "JELLYFIN_PUBLIC_URL",
+)
+
+
+@pytest.fixture
+def settings_state(tmp_path):
+    """STATE_DIR pinned through the environment, for tests that run
+    settings.update(): its config reload discards attribute patches, so the
+    isolation must be in the environment. Teardown reloads with the real one.
+    """
+    previous = {name: os.environ.get(name) for name in _RELOAD_SENSITIVE}
+    for name in _RELOAD_SENSITIVE:
+        os.environ.pop(name, None)
+    os.environ["STATE_DIR"] = str(tmp_path / "state")
+    # What the deploy said about the zone, read once at package import: a
+    # developer's own would pin TZ and refuse every write a test makes.
+    stated_tz, trackstarr.ENV_TZ = trackstarr.ENV_TZ, ""
+    importlib.reload(config)
+    yield tmp_path / "state"
+    trackstarr.ENV_TZ = stated_tz
+    for name, value in previous.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+    importlib.reload(config)
+
+
+@pytest.fixture(autouse=True)
+def _reset_accounts():
+    """Login throttling and the timing dummy are module state; a lockout must
+    not outlive the test that earned it."""
+    yield
+    with users._failures_lock:
+        users._failures.clear()
+    users._dummy_hash = None
+
+
+@pytest.fixture
+def fast_scrypt(monkeypatch):
+    """Interactive-cost scrypt would make this suite crawl. Each hash stores
+    its own parameters, so tiny ones exercise the same paths; the one test of
+    the real cost settings skips this."""
+    monkeypatch.setattr(users, "_SCRYPT_N", 8)
 
 
 @pytest.fixture(autouse=True)
 def _restore_sigterm():
-    """Put the SIGTERM disposition back after every test.
-
-    main() installs a handler and most of this suite calls it, so otherwise
-    the first test to do so changes how pytest itself handles a signal.
-    """
+    """Put the SIGTERM disposition back after every test, since main() installs
+    a handler."""
     original = signal.getsignal(signal.SIGTERM)
     yield
     signal.signal(signal.SIGTERM, original)
@@ -117,14 +181,24 @@ def _no_services(monkeypatch):
     for name in (
         "RADARR_URL",
         "RADARR_API_KEY",
+        "RADARR_PUBLIC_URL",
         "SONARR_URL",
         "SONARR_API_KEY",
+        "SONARR_PUBLIC_URL",
         "PLEX_URL",
         "PLEX_TOKEN",
+        "PLEX_PUBLIC_URL",
         "JELLYFIN_URL",
         "JELLYFIN_API_KEY",
+        "JELLYFIN_PUBLIC_URL",
     ):
         monkeypatch.setattr(config, name, "")
+
+
+def set_rules(monkeypatch, **modes: str) -> None:
+    """Set named rules' modes, leaving the rest at their defaults:
+    ``set_rules(monkeypatch, remux="always", sdh="never")``."""
+    monkeypatch.setattr(config, "RULE_MODES", dict(config.RULE_MODES) | modes)
 
 
 def fake_run(returncode: int = 0, stdout: str = "", stderr: str = ""):
@@ -133,11 +207,7 @@ def fake_run(returncode: int = 0, stdout: str = "", stderr: str = ""):
 
 
 def read_events() -> list[dict]:
-    """Every event recorded under the test's STATE_DIR, in written order.
-
-    The service only writes the history. This lives here because the tests
-    are the only thing that reads it back.
-    """
+    """Every event recorded under the test's STATE_DIR, in written order."""
     try:
         with open(os.path.join(config.STATE_DIR, "events.jsonl")) as events_file:
             return [json.loads(line) for line in events_file if line.strip()]
@@ -150,38 +220,30 @@ _ARR_URLS = {"radarr": "http://radarr:7878", "sonarr": "http://sonarr:8989"}
 
 
 def configured_arr(name: str = "radarr", key: str = "key") -> Arr:
-    """A reachable-looking *arr, for the paths gated on ``Arr.enabled``.
-
-    One with no url or key returns before it touches the network, so a test
-    of a real call has to start here.
-    """
+    """A reachable-looking *arr, for the paths gated on ``Arr.enabled``."""
     arr = sonarr() if name == "sonarr" else radarr()
     return replace(arr, url=_ARR_URLS[name], key=key)
 
 
 def needed_plan(path: str = "/x.mkv", **overrides) -> Plan:
-    """A plan with work to do, since ``Plan.needed`` is having a reason.
-
-    The reason is a placeholder; most tests want *a* plan that would be
-    rewritten. Pass ``reasons`` where it matters, and ``rules`` with it: the
-    planner writes the two together, so setting one alone would let a test
-    assert against a pairing the real thing cannot produce.
-    """
+    """A plan with work to do. Pass ``reasons`` where it matters, and ``rules``
+    with it, since the planner writes the two together."""
     return Plan(path=path, reasons=["reorder streams"], rules={"order"}, **overrides)
 
 
 @pytest.fixture
 def stub_rewrite(monkeypatch):
     """Give process() a prepared plan and a canned apply_plan result.
-
-    The outcome handling is what these tests are about, so the probe and the
-    ffmpeg run are stubbed. ``stub_rewrite(plan)`` for the applied case, or
-    pass an ``outcome`` and ``detail``.
-    """
+    ``stub_rewrite(plan)`` for the applied case, or pass ``outcome`` and
+    ``detail``."""
 
     def _stub(plan: Plan, outcome: Outcome = Outcome.APPLIED, detail: str = "") -> None:
         monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
-        monkeypatch.setattr(processing, "apply_plan", lambda plan: (outcome, detail))
+        monkeypatch.setattr(
+            processing,
+            "apply_plan",
+            lambda plan, on_progress=None, on_encoded=None: (outcome, detail),
+        )
 
     return _stub
 
@@ -204,12 +266,8 @@ def audio(
     comment: int = 0,
     bitrate: str | None = None,
 ) -> dict:
-    """An ffprobe-shaped audio stream.
-
-    ``bitrate`` is the per-stream ``bit_rate`` MP4 reports and Matroska
-    usually omits. Left off rather than defaulted, since "the container
-    doesn't say" is a case the rules treat differently.
-    """
+    """An ffprobe-shaped audio stream. ``bitrate`` is left off rather than
+    defaulted, since an unreported rate is a case the rules treat differently."""
     stream = {
         "index": index,
         "codec_type": "audio",
@@ -338,3 +396,54 @@ def make_file(tmp_path):
         return str(dest)
 
     return _make
+
+
+@pytest.fixture
+def listener():
+    """A live Handler on a loopback socket."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), webhook.Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield server
+    server.shutdown()
+    server.server_close()
+
+
+def api(server, method: str, path: str, body=None, cookie: str = "", headers=None):
+    """One API request, returning (status, JSON payload, response headers). A
+    dict or list body goes as JSON unless the test supplies a content type."""
+    all_headers = dict(headers or {})
+    if cookie:
+        all_headers["Cookie"] = cookie
+    payload = None
+    if body is not None:
+        all_headers.setdefault("Content-Type", "application/json")
+        payload = json.dumps(body).encode()
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+    try:
+        conn.request(method, path, payload, all_headers)
+        response = conn.getresponse()
+        return response.status, json.loads(response.read()), dict(response.getheaders())
+    finally:
+        conn.close()
+
+
+def sign_in(server, name: str, password: str = "right password") -> str:
+    """A session cookie for an existing account, as the Cookie header value."""
+    status, _, headers = api(
+        server, "POST", "/api/auth/login", {"username": name, "password": password}
+    )
+    assert status == 200
+    return headers["Set-Cookie"].split(";")[0]
+
+
+@pytest.fixture
+def clean_registry():
+    """The activity registry and the pause are module state; neither may
+    outlive the test that made it, least of all a pause."""
+    runs._runs.clear()
+    runs._running.set()
+    runs.forget_logs()
+    yield runs
+    runs._runs.clear()
+    runs._running.set()
+    runs.forget_logs()

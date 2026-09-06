@@ -2,17 +2,21 @@
 
 import os
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
 
-from conftest import read_events
-from trackstarr import config, executor, planner
+from conftest import read_events, set_rules
+from trackstarr import config, executor, planner, sweep_cache
 from trackstarr.cli import main as cli_main
 from trackstarr.executor import Outcome, apply_plan
 from trackstarr.media import ProbeError, duration, probe, stream_title
 from trackstarr.planner import build_plan
+from trackstarr.policy import Policy
+from trackstarr.status import Status
 from trackstarr.sweep import sweep
+from trackstarr.sweep_cache import read
 
 #: The defect this tool exists to fix: a 5.1 main track and a 2.0 commentary.
 COMMENTARY_CASE = [(6, "eng", "Surround"), (2, "eng", "Commentary")]
@@ -70,14 +74,14 @@ def test_commentary_case_produces_a_real_stereo_track(make_file):
 
 def test_regenerate_downmix_end_to_end(make_file, monkeypatch):
     """The settings tag survives the mkv round trip; a bitrate change
-    rewrites only under REGENERATE_DOWNMIXES."""
+    rewrites only once the regenerate rule is on."""
     path = make_file("f.mkv", COMMENTARY_CASE)
     assert rewrite(build_plan(path, "eng")) is Outcome.APPLIED
 
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "128k", "5.1": "640k"})
     assert not build_plan(path, "eng").needed
 
-    monkeypatch.setattr(config, "REGENERATE_DOWNMIXES", "generated")
+    set_rules(monkeypatch, regenerate="always")
     plan = build_plan(path, "eng")
     assert any("regenerate 2.0 downmix" in reason for reason in plan.reasons)
     assert rewrite(plan) is Outcome.APPLIED
@@ -99,10 +103,10 @@ def test_mp4_commentary_titles_are_read_and_survive(make_file):
 def test_remux_to_mkv_end_to_end(make_file, monkeypatch):
     """An MP4 converts to its .mkv sibling: subtitles become SRT, the
     generated downmix carries its settings tag, and the original is gone."""
-    monkeypatch.setattr(config, "REMUX_TO_MKV", True)
+    set_rules(monkeypatch, remux="always")
     path = make_file("f.mp4", COMMENTARY_CASE, subs=[("eng", "")])
     plan = build_plan(path, "eng")
-    assert "remux to mkv (REMUX_TO_MKV)" in plan.reasons
+    assert "remux to mkv (RULE_REMUX)" in plan.reasons
     assert rewrite(plan) is Outcome.APPLIED
 
     converted = plan.out_path
@@ -113,8 +117,58 @@ def test_remux_to_mkv_end_to_end(make_file, monkeypatch):
     assert not build_plan(converted, "eng").needed
 
 
+def test_remux_carries_the_mp4_bitrates_into_bps_tags(make_file, monkeypatch):
+    """Matroska has no per-stream rate field, so without a BPS tag every
+    remuxed file loses its track rates."""
+    set_rules(monkeypatch, remux="always")
+    path = make_file("f.mp4", COMMENTARY_CASE)
+    source_rates = {
+        stream["index"]: stream["bit_rate"] for stream in streams_of(path, "audio", "video")
+    }
+    assert source_rates, "the MP4 fixture should report per-stream rates"
+
+    plan = build_plan(path, "eng")
+    assert rewrite(plan) is Outcome.APPLIED
+
+    for stream in streams_of(plan.out_path, "audio", "video"):
+        tags = stream.get("tags") or {}
+        if "TRACKSTARR" in tags:
+            # A fresh encode has no measured rate to state yet; its settings
+            # tag is what a later pass reads instead.
+            assert "BPS" not in tags
+            continue
+        assert tags["BPS"] in source_rates.values()
+    # And they survive being read back as rates, which is the whole point.
+    carried = [
+        track
+        for track in build_plan(plan.out_path, "eng").tracks
+        if "generated" not in (track.get("flags") or [])
+    ]
+    assert carried and all(track.get("bitrate") for track in carried)
+
+
+def test_a_rewrite_never_restates_a_source_bps_tag(make_file, monkeypatch):
+    """A file's own mkvmerge statistics are better than ffprobe's reading of
+    them, so the gap-filling above must not overwrite one that is already there."""
+    set_rules(monkeypatch, remux="always")
+    path = make_file("f.mkv", COMMENTARY_CASE)
+    tagged = Path(path).with_name("tagged.mkv")
+    subprocess.run(
+        [
+            *["ffmpeg", "-v", "error", "-y", "-i", path, "-map", "0", "-c", "copy"],
+            *["-metadata:s:a:0", "BPS=999999", str(tagged)],
+        ],
+        check=True,
+    )
+    os.replace(tagged, path)
+
+    assert rewrite(build_plan(path, "eng")) is Outcome.APPLIED
+    surround = next(s for s in streams_of(path, "audio") if s["channels"] == 6)
+    assert (surround.get("tags") or {})["BPS"] == "999999"
+
+
 def test_remux_never_overwrites_an_existing_sibling(make_file, monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "REMUX_TO_MKV", True)
+    set_rules(monkeypatch, remux="always")
     path = make_file("f.mp4", COMMENTARY_CASE)
     (tmp_path / "f.mkv").write_text("precious")
 
@@ -127,7 +181,7 @@ def test_remux_never_overwrites_an_existing_sibling(make_file, monkeypatch, tmp_
 
 def test_generated_track_inherits_no_statistics_tags(make_file, tmp_path):
     """A fresh encode advertising the source's mkvmerge BPS would show the old
-    numbers in every player and poison the weak-track test."""
+    numbers in every player and poison the low-bitrate test."""
     path = make_file("f.mkv", COMMENTARY_CASE)
     remuxed = tmp_path / "remux.mkv"
     subprocess.run(
@@ -254,6 +308,9 @@ def test_unsupported_container_is_skipped(tmp_path):
     plan = build_plan(str(stale), "eng")
     assert plan.skip is not None
     assert "ALLOWED_EXTS" in plan.skip
+    # Named as well as skipped, which is what process() hands back rather than
+    # reading the sentence above for it.
+    assert plan.skip_status is Status.UNSUPPORTED
 
 
 def test_corrupt_file_raises_rather_than_being_rewritten(tmp_path):
@@ -292,7 +349,7 @@ def test_second_sweep_skips_probing_unchanged_files(make_file, swept_library):
 
 
 def test_drop_commentary_end_to_end(make_file, monkeypatch):
-    monkeypatch.setattr(config, "DROP_COMMENTARY", True)
+    set_rules(monkeypatch, commentary="always")
     path = make_file("f.mkv", COMMENTARY_CASE)
     assert rewrite(build_plan(path, "eng")) is Outcome.APPLIED
 
@@ -404,4 +461,48 @@ def test_report_only_sweep_reuses_would_fix_verdicts(make_file, swept_library, t
 
     counts = sweep(dry_run=False)
     assert counts["fixed"] == 1
-    assert len(swept_library) == 2
+    # Two more probes: the plan's, and the re-judge of what it wrote; see
+    # :func:`trackstarr.processing._rejudged`.
+    assert len(swept_library) == 3
+    stored = read(sweep_cache.cache_path(), Policy.from_config().fingerprint()).files
+    entry = stored[str(tmp_path / "f.mkv")]
+    assert entry["status"] == "conform"
+    # Passed from here on, so what the rewrite did rides on the verdict; the
+    # library has nothing else to tell this file from one we never touched.
+    assert entry["fixed"]["at"]
+    assert entry["fixed"]["bytes_after"] == entry["size"]
+    # The two columns the sheet draws it in. `added` is a position in the file
+    # as it now stands, so it is read against the re-probed tracks: nothing
+    # else proves the record and the file agree.
+    was = entry["fixed"]["was"]
+    assert [track["index"] for track in was] == [0, 1, 2]
+    assert "dropped" not in entry["fixed"]
+    (added,) = entry["fixed"]["added"]
+    assert entry["tracks"][added]["channels"] == 2
+    assert len(entry["tracks"]) == len(was) + 1
+
+
+def test_a_rewrite_reports_how_far_through_the_file_it_is(make_file):
+    """The per-file bar: ffmpeg's own readout against the plan's duration, so
+    the page draws the encode rather than the slot wait."""
+    path = make_file("f.mkv", COMMENTARY_CASE)
+    plan = build_plan(path, "eng")
+    assert plan.needed
+    assert plan.src_duration == pytest.approx(2.0, abs=0.2)
+
+    seen: list[tuple[float, float]] = []
+    assert (
+        apply_plan(plan, lambda done, speed: seen.append((done, speed)))[0] is Outcome.APPLIED
+    )
+    # The last block lands as the child exits, so the reader thread may still
+    # be a moment behind the rename.
+    for _ in range(200):
+        if seen:
+            break
+        time.sleep(0.01)
+    assert seen, "the rewrite reported nothing to draw a bar with"
+    done, speed = seen[-1]
+    assert done == pytest.approx(plan.src_duration, abs=0.2), (
+        "it should end at the file's length"
+    )
+    assert speed > 0, "and say how fast it got there, which is what a time left is made of"

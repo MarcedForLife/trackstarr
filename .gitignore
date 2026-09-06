@@ -1,5 +1,7 @@
 __pycache__/
 *.py[cod]
+# web/ has its own; this catches a tool run from the repo root by mistake.
+node_modules/
 *.egg-info/
 build/
 dist/
@@ -15,3 +17,8 @@ pending.tsv
 .env
 !.env.example
 dev/
+
+# Machine-specific Claude Code config: the redeploy hook points at
+# /opt/stacks/arrs on this host.
+.claude/settings.local.json
+.claude/hooks/

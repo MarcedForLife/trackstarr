@@ -1,11 +1,5 @@
-"""Radarr and Sonarr clients.
-
-Three things are wanted from them: a title's ``originalLanguage``, a nudge to
-rescan a rewritten file, and a webhook connection pointing back here so
-nothing has to be clicked together in their UIs. ``originalLanguage`` is
-already on the movie/series object, so there is no TMDB key to configure and
-nothing to rate-limit.
-"""
+"""Radarr and Sonarr clients: a title's ``originalLanguage``, a rescan of a
+rewritten file, and a webhook connection pointing back here."""
 
 import logging
 import os
@@ -20,9 +14,18 @@ log = logging.getLogger(__name__)
 #: What the connection is called inside Radarr and Sonarr.
 WEBHOOK_NAME = "trackstarr"
 
-#: Header the connection is configured to send back with every webhook,
-#: carrying the shared secret the listener requires.
+#: The header the connection sends with every webhook, carrying the shared
+#: secret.
 AUTH_HEADER = "X-Api-Key"
+
+#: The one path webhook POSTs are accepted on, so the rest of the namespace
+#: stays free for the API. Here because it is part of the saved connection.
+WEBHOOK_PATH = "/webhook"
+
+
+def webhook_url() -> str:
+    """The URL the *arrs are registered to call: WEBHOOK_URL plus the path."""
+    return config.WEBHOOK_URL + WEBHOOK_PATH
 
 
 @dataclass
@@ -54,8 +57,8 @@ class Arr:
         return request(f"{self.url}{path}", {"X-Api-Key": self.key}, payload, timeout, method)
 
     def all_items(self) -> list[dict]:
-        """The whole movie/series list. Raises API_ERRORS when the *arr
-        cannot answer, so a caller can tell an outage from an empty library."""
+        """The whole movie/series list. Raises API_ERRORS on an outage, so a
+        caller can tell it from an empty library."""
         if not self.enabled:
             return []
         return self._call(self.item_ep, timeout=120) or []
@@ -69,28 +72,42 @@ class Arr:
             log.warning("%s: lookup of id %s failed (%s)", self.name, item_id, err)
             return None
 
+    def _connection(self) -> dict | None:
+        """Our notification entry in this *arr, or None. Raises API_ERRORS."""
+        existing = self._call("/api/v3/notification") or []
+        return next((entry for entry in existing if entry.get("name") == WEBHOOK_NAME), None)
+
+    def _connection_current(self, ours: dict, url: str) -> bool:
+        """Whether an entry points here and carries a secret the listener
+        accepts. Verified against the stored digest, since only that is kept."""
+        return _webhook_current(ours, _payload(url)) and auth.matches(
+            self.name, _sent_secret(ours)
+        )
+
+    def webhook_status(self, url: str) -> str:
+        """Whether this *arr will call us: connected, stale or missing. For
+        the connections page, so it works with unsaved values. Raises
+        API_ERRORS."""
+        ours = self._connection()
+        if ours is None:
+            return "missing"
+        return "connected" if self._connection_current(ours, url) else "stale"
+
     def register_webhook(self, url: str) -> bool:
         """Create or update this *arr's webhook connection back to us.
 
-        True once it exists, points at ``url`` and carries a secret the
-        listener accepts; False (the *arr unreachable, or it refused the
-        save) is safe to retry. Only a digest of the secret is kept, so what
-        the *arr holds is verified against that, and a connection that
-        doesn't verify gets a fresh one.
+        True once it points at ``url`` with a secret the listener accepts;
+        False is safe to retry. A connection that does not verify gets a fresh
+        secret.
         """
         if not self.enabled:
             return True
         try:
-            existing = self._call("/api/v3/notification") or []
+            ours = self._connection()
         except API_ERRORS as err:
             log.warning("%s: webhook registration failed (%s), will retry", self.name, err)
             return False
-        ours = next((entry for entry in existing if entry.get("name") == WEBHOOK_NAME), None)
-        if (
-            ours
-            and _webhook_current(ours, _payload(url))
-            and auth.matches(self.name, _sent_secret(ours))
-        ):
+        if ours and self._connection_current(ours, url):
             return True
         try:
             secret = auth.mint(self.name)
@@ -101,8 +118,7 @@ class Arr:
             return False
         payload = _payload(url, secret)
         try:
-            # Saving makes the *arr fire a test event at the url, so the
-            # listener has to be accepting connections already.
+            # Saving fires a test event at the url, so the listener must be up.
             if ours:
                 self._call(
                     f"/api/v3/notification/{ours['id']}",
@@ -114,8 +130,8 @@ class Arr:
         except API_ERRORS as err:
             log.warning("%s: webhook registration failed (%s), will retry", self.name, err)
             return False
-        # Reaching here always rotates one, so this logged on every restart
-        # means the *arr is not giving the header back as saved.
+        # Always rotates the secret, so seeing this on every restart means the
+        # *arr is not returning the header as saved.
         log.info("%s: webhook connection registered with a fresh secret -> %s", self.name, url)
         return True
 
@@ -130,11 +146,8 @@ class Arr:
 
 
 def _payload(url: str, secret: str | None = None) -> dict:
-    """The connection we want the *arr to hold.
-
-    Without a secret it is the settings half alone, what an existing
-    connection is compared against; with one it is the body to save.
-    """
+    """The connection we want the *arr to hold. Without a secret it is what
+    an existing connection is compared against; with one, the body to save."""
     fields = [
         {"name": "url", "value": url},
         {"name": "method", "value": 1},
@@ -154,11 +167,8 @@ def _payload(url: str, secret: str | None = None) -> dict:
 
 
 def _fields(notification: dict) -> dict:
-    """A notification's settings as name -> value.
-
-    Read back from a foreign API, so anything but the shape we saved degrades
-    to a miss rather than an exception on the register thread.
-    """
+    """A notification's settings as name -> value. An unexpected shape is a
+    miss, not an exception."""
     return {entry.get("name"): entry.get("value") for entry in notification.get("fields") or []}
 
 
@@ -172,11 +182,8 @@ def _sent_secret(notification: dict) -> str:
 
 
 def _webhook_current(notification: dict, payload: dict) -> bool:
-    """Whether an existing connection already matches what we would save.
-
-    Driven by the payload, so the desired state is declared once: every event
-    flag the payload turns on has to be on, and every field has to match.
-    """
+    """Whether an existing connection matches what we would save: every event
+    flag the payload turns on is on, and every field matches."""
     current = _fields(notification)
     events_on = all(
         notification.get(key)
@@ -236,10 +243,7 @@ def original_of(item: dict | None) -> str | None:
 
 @dataclass(frozen=True)
 class LibraryItem:
-    """What the *arrs know about a title: its original language and id.
-
-    Where it lives is the key it is indexed under, not a field.
-    """
+    """What the *arrs know about a title. Its folder is the index key."""
 
     lang: str | None
     item_id: int
@@ -250,9 +254,8 @@ class LibraryItem:
 class LibraryIndex:
     """Every title the *arrs answered for, and whether they all answered.
 
-    ``complete`` False means unmatched files may only look unmatched because
-    an outage hid their titles, so their original language is not "none",
-    it is unknown. Anything that rewrites has to treat the two differently.
+    With ``complete`` False an unmatched file's original language is unknown,
+    not "none", and anything that rewrites must treat the two differently.
     """
 
     items: dict[str, LibraryItem]
@@ -260,13 +263,8 @@ class LibraryIndex:
 
 
 def path_index(arrs: list[Arr]) -> LibraryIndex:
-    """Library titles with their original language, keyed by their folder.
-
-    Built once per sweep and asked about every file in the library, so a
-    mapping rather than a list. See :func:`match_path`. An *arr that fails
-    to answer is logged and marks the index incomplete; the others' titles
-    still match.
-    """
+    """Library titles keyed by folder. An *arr that fails to answer marks the
+    index incomplete; the others' titles still match."""
     items: dict[str, LibraryItem] = {}
     complete = True
     for arr in arrs:
@@ -277,27 +275,32 @@ def path_index(arrs: list[Arr]) -> LibraryIndex:
             complete = False
             continue
         for item in fetched:
-            # A folder that normalises to nothing is the filesystem root,
-            # which would claim every file in the library.
+            # A folder that normalises to nothing is the root, which would
+            # claim every file.
             if base := (item.get("path") or "").rstrip("/"):
-                # First wins, which is the order the list this replaced kept.
+                # First wins.
                 items.setdefault(base, LibraryItem(original_of(item), item["id"], arr))
     log.info("indexed %d titles from the *arrs", len(items))
     return LibraryIndex(items, complete)
 
 
-def match_path(index: LibraryIndex, path: str) -> LibraryItem | None:
-    """The innermost indexed title containing ``path``, or None.
+def innermost[T](folders: dict[str, T], path: str) -> T | None:
+    """The value under the deepest key containing ``path``, or None.
 
-    Walks the file's folders outwards, so a title nested inside another's
-    folder still wins, at one dict lookup per directory level. Purely
-    lexical: the *arrs report these folders, which need not exist here.
+    Walks the folders outwards, so a nested title wins. Purely lexical.
+    Generic because :mod:`trackstarr.library` indexes the same folders under
+    a richer value.
     """
     while True:
-        if found := index.items.get(path):
+        if (found := folders.get(path)) is not None:
             return found
         parent = os.path.dirname(path)
         # dirname of a root is itself, so this terminates.
         if parent == path:
             return None
         path = parent
+
+
+def match_path(index: LibraryIndex, path: str) -> LibraryItem | None:
+    """The innermost indexed title containing ``path``, or None."""
+    return innermost(index.items, path)

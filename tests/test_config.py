@@ -38,22 +38,23 @@ def test_good_values_record_nothing(monkeypatch):
 
 
 def test_a_boolean_typo_keeps_the_default_and_records_an_error(monkeypatch):
-    """DRY_RUN read as false by a typo is the worst misread config could make:
-    the owner believes nothing will be rewritten."""
-    monkeypatch.setenv("DRY_RUN", "enalbed")
+    """SKIP_HARDLINKS read as false by a typo is among the worst misreads
+    config could make: every rewrite breaks a seeding torrent's hard link and
+    the file costs disk twice."""
+    monkeypatch.setenv("DOWNMIX_ORIGINAL_LANG", "enalbed")
     monkeypatch.setenv("SKIP_HARDLINKS", "ture")
-    assert config._bool("DRY_RUN") is False
+    assert config._bool("DOWNMIX_ORIGINAL_LANG") is False
     assert config._bool("SKIP_HARDLINKS", "true") is True
     errors = config.errors()
     assert len(errors) == 2
-    assert "DRY_RUN" in errors[0]
+    assert "DOWNMIX_ORIGINAL_LANG" in errors[0]
     assert "SKIP_HARDLINKS" in errors[1]
 
 
 @pytest.mark.parametrize("raw", ["1", "true", "Yes", " ON "])
 def test_every_spelling_of_true_reads_as_true(monkeypatch, raw):
-    monkeypatch.setenv("DRY_RUN", raw)
-    assert config._bool("DRY_RUN") is True
+    monkeypatch.setenv("SKIP_HARDLINKS", raw)
+    assert config._bool("SKIP_HARDLINKS") is True
     assert config.errors() == []
 
 
@@ -65,11 +66,12 @@ def test_every_spelling_of_false_reads_as_false(monkeypatch, raw):
 
 
 def test_an_empty_boolean_reads_as_its_default(monkeypatch):
-    """A leftover ``DRY_RUN: ${DRY_RUN}`` in a compose file expands to empty,
-    which is a leftover, not a typo, and must not block startup."""
-    monkeypatch.setenv("DRY_RUN", "")
+    """A leftover ``DOWNMIX_ORIGINAL_LANG: ${DOWNMIX_ORIGINAL_LANG}`` in a compose
+    file expands to empty, which is a leftover, not a typo, and must not block
+    startup."""
+    monkeypatch.setenv("DOWNMIX_ORIGINAL_LANG", "")
     monkeypatch.setenv("SKIP_HARDLINKS", " ")
-    assert config._bool("DRY_RUN") is False
+    assert config._bool("DOWNMIX_ORIGINAL_LANG") is False
     assert config._bool("SKIP_HARDLINKS", "true") is True
     assert config.errors() == []
 
@@ -175,33 +177,30 @@ def test_a_valid_sweep_schedule_passes(monkeypatch, value):
 
 
 @pytest.mark.parametrize(
-    "raw",
-    ["cover_art", "cover-art", "Cover-Art", " cover-art , sdh "],
-    ids=["underscore", "dash", "mixed case", "spaced list"],
+    "variable",
+    ["RULE_COVER_ART", "RULE_COVER-ART"],
+    ids=["underscore", "dash"],
 )
-def test_a_rule_can_be_named_with_either_separator(monkeypatch, raw):
-    """cover_art is the one rule name with a separator in it, so it is the
-    one anybody has to guess at, and guessing wrong refuses to start."""
-    monkeypatch.setenv("DISABLED_RULES", raw)
-    assert "cover_art" in config._rules("DISABLED_RULES", "")
+def test_a_rule_variable_can_be_named_either_way(monkeypatch, variable):
+    """cover_art is the one rule name with a separator in it, so it is the one
+    anybody has to guess at, and guessing wrong refuses to start."""
+    monkeypatch.setenv(variable, "  Alongside ")
+    assert config._rule_modes()["cover_art"] == "alongside"
     # Still only a spelling: policy.errors() is what refuses a real typo,
     # and test_policy.py covers that.
 
 
-@pytest.mark.parametrize("value", ["off", "none", "false", "no", "0", "", "  OFF  "])
-def test_every_spelling_of_off_reads_as_unset(monkeypatch, value):
-    """Startup refuses anything that is neither a mode nor off, so guessing one
-    would be a failed boot rather than the default."""
-    monkeypatch.setenv("REGENERATE_DOWNMIXES", value)
-    assert config._mode("REGENERATE_DOWNMIXES") == ""
+def test_a_rule_variable_stating_nothing_leaves_the_default(monkeypatch):
+    """A leftover ``RULE_SDH: ${RULE_SDH}`` in a compose file expands to
+    empty, which must not read as a mode nobody chose."""
+    monkeypatch.setenv("RULE_SDH", "  ")
+    assert "sdh" not in config._rule_modes()
 
 
-@pytest.mark.parametrize("value", ["generated", "ALL", " all "])
-def test_a_named_mode_survives_normalisation(monkeypatch, value):
-    """Case and spacing are this function's business; whether the name means
-    anything is policy.errors()'."""
-    monkeypatch.setenv("REGENERATE_DOWNMIXES", value)
-    assert config._mode("REGENERATE_DOWNMIXES") == value.strip().lower()
+def test_the_environment_wins_over_the_file_for_one_rule(monkeypatch):
+    monkeypatch.setattr(config, "_SETTINGS", {"RULE_REMUX": "always"})
+    monkeypatch.setenv("RULE_REMUX", "never")
+    assert config._rule_modes()["remux"] == "never"
 
 
 def test_a_missing_media_dir_is_a_warning_not_an_error(monkeypatch, tmp_path):
@@ -218,7 +217,7 @@ def test_a_missing_media_dir_is_a_warning_not_an_error(monkeypatch, tmp_path):
 def test_a_rate_for_a_layout_nobody_asked_for_is_a_warning(monkeypatch, tmp_path):
     """Half an edit: the variable added, the layout not. Silent otherwise."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "7.1": "1280k"})
     monkeypatch.setenv("AUDIO_BITRATE_7_1", "1280k")
     warnings = config.warnings()
@@ -226,13 +225,32 @@ def test_a_rate_for_a_layout_nobody_asked_for_is_a_warning(monkeypatch, tmp_path
     assert "AUDIO_BITRATE_7_1" in warnings[0]
 
 
+def test_an_encoder_for_a_layout_nobody_asked_for_is_a_warning(monkeypatch, tmp_path):
+    """The same half-edit as the rate, and just as silent: nothing reads it."""
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
+    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "aac", "7.1": "aac"})
+    monkeypatch.setenv("AUDIO_CODEC_7_1", "aac")
+    warnings = config.warnings()
+    assert len(warnings) == 1
+    assert "AUDIO_CODEC_7_1" in warnings[0]
+
+
 def test_dropping_a_default_layout_is_not_a_leftover(monkeypatch, tmp_path):
     """2.0 and 5.1 always carry a rate, so running one would otherwise report the
     other's default as an orphan every startup."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
     monkeypatch.delenv("AUDIO_BITRATE_5_1", raising=False)
     assert config.warnings() == []
+
+
+def _bitrates() -> dict[str, str]:
+    return config._per_layout(config.BITRATE_PREFIX, config._DEFAULT_BITRATES)
+
+
+def _codecs() -> dict[str, str]:
+    return config._per_layout(config.CODEC_PREFIX, config._DEFAULT_CODECS)
 
 
 @pytest.mark.parametrize(
@@ -244,13 +262,44 @@ def test_a_layout_rate_is_read_from_its_own_variable(monkeypatch, variable, name
     spelled with underscores and mapped back here."""
     monkeypatch.setenv(variable, "448k")
     assert config.bitrate_variable(name) == variable
-    assert config._bitrates()[name] == "448k"
+    assert _bitrates()[name] == "448k"
+
+
+@pytest.mark.parametrize(
+    ("variable", "name"),
+    [("AUDIO_CODEC_2_0", "2.0"), ("AUDIO_CODEC_7_1", "7.1")],
+)
+def test_a_layout_encoder_is_read_from_its_own_variable(monkeypatch, variable, name):
+    """The same spelling as the rate beside it, and the same scan: the encoder is
+    per layout because stereo and surround are guaranteed for different players."""
+    monkeypatch.setenv(variable, "eac3")
+    assert config.codec_variable(name) == variable
+    assert _codecs()[name] == "eac3"
 
 
 def test_the_shipped_rates_apply_when_nothing_states_one(monkeypatch):
     monkeypatch.delenv("AUDIO_BITRATE_2_0", raising=False)
     monkeypatch.delenv("AUDIO_BITRATE_5_1", raising=False)
-    assert config._bitrates() == {"2.0": "320k", "5.1": "640k"}
+    assert _bitrates() == {"2.0": "320k", "5.1": "640k"}
+
+
+def test_the_shipped_encoders_apply_when_nothing_states_one(monkeypatch):
+    """AAC for the layout a phone falls back to, AC-3 for the one a receiver
+    takes. A fresh install names neither and still gets both right."""
+    monkeypatch.delenv("AUDIO_CODEC_2_0", raising=False)
+    monkeypatch.delenv("AUDIO_CODEC_5_1", raising=False)
+    assert _codecs() == {"2.0": "aac", "5.1": "ac3"}
+
+
+def test_the_layout_prefixes_do_not_collide(monkeypatch):
+    """AUDIO_CODEC_5_1 and AUDIO_BITRATE_5_1 are scanned by prefix, and the
+    encoder prefix is a prefix of nothing else."""
+    monkeypatch.setattr(
+        config, "_SETTINGS", {"AUDIO_CODEC_5_1": "eac3", "AUDIO_BITRATE_5_1": "448k"}
+    )
+    assert _codecs()["5.1"] == "eac3"
+    assert _bitrates()["5.1"] == "448k"
+    assert config.errors() == []
 
 
 def _write_settings(tmp_path, monkeypatch, text: str) -> None:
@@ -272,11 +321,11 @@ def test_the_environment_beats_the_settings_file(monkeypatch):
 
 
 def test_a_blank_environment_value_yields_to_the_settings_file(monkeypatch):
-    """A leftover ``DRY_RUN: ${DRY_RUN}`` expands to empty, which is a
-    leftover, not a choice, and must not mask a setting the file states."""
-    monkeypatch.setenv("DRY_RUN", "")
-    monkeypatch.setattr(config, "_SETTINGS", {"DRY_RUN": "true"})
-    assert config._bool("DRY_RUN") is True
+    """A leftover ``SKIP_HARDLINKS: ${SKIP_HARDLINKS}`` expands to empty, which is
+    a leftover, not a choice, and must not mask a setting the file states."""
+    monkeypatch.setenv("SKIP_HARDLINKS", "")
+    monkeypatch.setattr(config, "_SETTINGS", {"SKIP_HARDLINKS": "true"})
+    assert config._bool("SKIP_HARDLINKS") is True
 
 
 def test_an_empty_media_dirs_still_means_no_dirs(monkeypatch):
@@ -314,19 +363,33 @@ def test_no_path_map_is_no_mapping(monkeypatch):
     assert config.errors() == []
 
 
+def test_an_ordered_setting_keeps_what_was_written(monkeypatch):
+    """DOWNMIX_LAYOUTS is read in the order it was written, since that order
+    is what the order rule lays the audio tracks out in."""
+    monkeypatch.setenv("DOWNMIX_LAYOUTS", " 5.1 , 2.0 ,7.1")
+    assert config._ordered("DOWNMIX_LAYOUTS", "") == ("5.1", "2.0", "7.1")
+
+
+def test_an_ordered_setting_keeps_a_repeat_where_it_first_appeared(monkeypatch):
+    """Two spellings of one position mean nothing; the later would win the
+    dicts built from this and silently move the track."""
+    monkeypatch.setenv("DOWNMIX_LAYOUTS", "5.1,2.0,5.1")
+    assert config._ordered("DOWNMIX_LAYOUTS", "") == ("5.1", "2.0")
+
+
 def test_settings_numbers_and_booleans_read_as_their_literals(tmp_path, monkeypatch):
     """A hand-written file naturally says 5120 and true; they arrive spelled
     the way the same-named variable would hold them."""
-    _write_settings(tmp_path, monkeypatch, '{"LISTEN_PORT": 5120, "DRY_RUN": true}')
-    assert config._load_settings() == {"LISTEN_PORT": "5120", "DRY_RUN": "true"}
+    _write_settings(tmp_path, monkeypatch, '{"LISTEN_PORT": 5120, "SKIP_HARDLINKS": true}')
+    assert config._load_settings() == {"LISTEN_PORT": "5120", "SKIP_HARDLINKS": "true"}
     assert config.errors() == []
 
 
 def test_a_structured_settings_value_is_refused(tmp_path, monkeypatch):
     """A dropped setting has to reach errors(), never quietly mean its
     default; the rest of the file still loads."""
-    _write_settings(tmp_path, monkeypatch, '{"MEDIA_DIRS": ["/a"], "DRY_RUN": "true"}')
-    assert config._load_settings() == {"DRY_RUN": "true"}
+    _write_settings(tmp_path, monkeypatch, '{"MEDIA_DIRS": ["/a"], "SKIP_HARDLINKS": "true"}')
+    assert config._load_settings() == {"SKIP_HARDLINKS": "true"}
     errors = config.errors()
     assert len(errors) == 1
     assert "MEDIA_DIRS" in errors[0]
@@ -343,7 +406,7 @@ def test_an_unreadable_settings_file_is_refused(tmp_path, monkeypatch):
 
 
 def test_a_settings_file_must_hold_one_object(tmp_path, monkeypatch):
-    _write_settings(tmp_path, monkeypatch, '["DRY_RUN"]')
+    _write_settings(tmp_path, monkeypatch, '["SKIP_HARDLINKS"]')
     assert config._load_settings() == {}
     assert len(config.errors()) == 1
 
@@ -395,6 +458,15 @@ def test_a_dotenv_line_without_an_equals_is_refused(tmp_path):
     assert "NAME=VALUE" in errors[0]
 
 
+def test_a_dotenv_hands_back_what_it_held(tmp_path, monkeypatch):
+    """TZ is read before .env can be loaded, since applying a saved zone means
+    writing the variable itself, so STATED_TZ asks the file rather than the
+    environment it has just filled in."""
+    monkeypatch.delenv("TZ", raising=False)
+    held = config._load_dotenv(_write_env(tmp_path, "TZ=Pacific/Auckland\n# a comment\n"))
+    assert held == {"TZ": "Pacific/Auckland"}
+
+
 def test_a_missing_dotenv_is_silent(tmp_path):
     config._load_dotenv(str(tmp_path / "nope.env"))
     assert config.errors() == []
@@ -411,34 +483,50 @@ def test_an_unreadable_dotenv_is_refused(tmp_path):
 
 
 def test_a_settings_key_nothing_reads_refuses_startup(monkeypatch):
-    """Unlike the environment, the file's names are a closed set, so an
-    unread key is a typo silently meaning its default. Refused like a
-    DISABLED_RULES typo, and by errors() rather than warnings() so plan and
-    fix, which read the same file, report it too."""
+    """The file's names are a closed set, so an unread key is a typo silently
+    meaning its default. An error, so plan and fix report it too."""
     monkeypatch.setattr(config, "_SETTINGS", {"MEDIA_DIRZ": "/data"})
     errors = config.errors()
     assert len(errors) == 1
     assert "MEDIA_DIRZ" in errors[0]
+    # The one error nobody can reach the settings pages to fix, so the line has
+    # to carry the file's whole path and what to do with it.
+    assert config._settings_path() in errors[0]
+    assert "remove or rename them" in errors[0]
 
 
 def test_a_settings_file_bitrate_is_read_and_not_flagged_unread(monkeypatch):
     """AUDIO_BITRATE_ names are read by prefix scan rather than by asking, so
     the unread-key check has to know they count as read."""
     monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_BITRATE_7_1": "1280k"})
-    assert config._bitrates()["7.1"] == "1280k"
+    assert _bitrates()["7.1"] == "1280k"
+    assert config.errors() == []
+
+
+def test_a_settings_file_encoder_is_read_and_not_flagged_unread(monkeypatch):
+    """The same prefix scan as the rate, so the unread-key check has to know
+    both prefixes count as read."""
+    monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_CODEC_7_1": "aac"})
+    assert _codecs()["7.1"] == "aac"
     assert config.errors() == []
 
 
 def test_an_environment_bitrate_beats_the_settings_file(monkeypatch):
     monkeypatch.setenv("AUDIO_BITRATE_5_1", "448k")
     monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_BITRATE_5_1": "768k"})
-    assert config._bitrates()["5.1"] == "448k"
+    assert _bitrates()["5.1"] == "448k"
+
+
+def test_an_environment_encoder_beats_the_settings_file(monkeypatch):
+    monkeypatch.setenv("AUDIO_CODEC_5_1", "eac3")
+    monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_CODEC_5_1": "ac3"})
+    assert _codecs()["5.1"] == "eac3"
 
 
 def test_a_file_rate_for_a_layout_nobody_asked_for_is_a_warning(monkeypatch, tmp_path):
     """The same half-edit the environment check catches, stated in the file."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", {"2.0"})
+    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
     monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "7.1": "1280k"})
     monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_BITRATE_7_1": "1280k"})
     warnings = config.warnings()
@@ -477,3 +565,99 @@ def test_a_timeout_below_one_is_refused(monkeypatch, name):
     errors = config.errors()
     assert len(errors) == 1
     assert name in errors[0]
+
+
+@pytest.mark.parametrize(
+    "name", ["RADARR_URL", "SONARR_URL", "PLEX_URL", "JELLYFIN_URL", "WEBHOOK_URL"]
+)
+def test_an_address_without_a_scheme_is_refused(monkeypatch, name):
+    """A scheme is the one thing a hand-typed address always loses, and
+    urllib's complaint about it lands on a background thread once per call."""
+    monkeypatch.setattr(config, name, "radarr:7878")
+    errors = config.errors()
+    assert len(errors) == 1
+    assert name in errors[0]
+
+
+def test_an_address_with_a_scheme_records_nothing(monkeypatch):
+    monkeypatch.setattr(config, "PLEX_URL", "https://plex.example.com")
+    assert config.errors() == []
+
+
+@pytest.mark.parametrize(
+    ("set_name", "unset_name"),
+    [("PLEX_URL", "PLEX_TOKEN"), ("SONARR_API_KEY", "SONARR_URL")],
+)
+def test_half_a_service_is_a_warning_naming_both_halves(monkeypatch, set_name, unset_name):
+    """Either half alone leaves the service silently off. A warning rather
+    than an error: clearing an address is how one is switched off."""
+    monkeypatch.setattr(config, set_name, "set")
+    monkeypatch.setattr(config, "MEDIA_DIRS", [])
+    (problem,) = config.warnings()
+    assert set_name in problem
+    assert unset_name in problem
+
+
+# REWRITE_MODE, the ladder that replaced the DRY_RUN and SWEEP_APPLY pair.
+
+
+@pytest.mark.parametrize("value", ["report", "IMPORTS", " all "])
+def test_every_rung_of_the_ladder_is_read(monkeypatch, value):
+    monkeypatch.setenv("REWRITE_MODE", value)
+    assert (
+        config._choice("REWRITE_MODE", "imports", config.REWRITE_MODES) == value.strip().lower()
+    )
+    assert config.errors() == []
+
+
+def test_a_mode_typo_is_refused_rather_than_read_as_the_default(monkeypatch):
+    """Read as its default, a typo would put a library its owner had asked to
+    be reported on back on the rung that rewrites imports."""
+    monkeypatch.setenv("REWRITE_MODE", "reprot")
+    assert config._choice("REWRITE_MODE", "imports", config.REWRITE_MODES) == "imports"
+    (problem,) = config.errors()
+    assert "reprot" in problem
+    assert "report, imports, all" in problem
+
+
+def test_an_empty_mode_reads_as_its_default(monkeypatch):
+    """A leftover ``REWRITE_MODE: ${REWRITE_MODE}`` expands to empty, which is
+    a leftover, not a typo, and must not block startup."""
+    monkeypatch.setenv("REWRITE_MODE", "  ")
+    assert config._choice("REWRITE_MODE", "imports", config.REWRITE_MODES) == "imports"
+    assert config.errors() == []
+
+
+def test_the_probe_pool_no_longer_borrows_the_rewrite_budget():
+    """Two settings that used to be one: probing is short and IO-bound where a
+    rewrite is long and disk-bound, so the disk that wants one rewrite at a
+    time still wants several probes."""
+    assert config.PROBE_WORKERS == 4
+    assert config.MAX_CONCURRENT_REWRITES == 1
+
+
+@pytest.mark.parametrize("name", ["MAX_CONCURRENT_REWRITES", "PROBE_WORKERS"])
+def test_a_pool_below_one_is_refused(monkeypatch, name):
+    """A rewrite budget of zero hangs the slot loop; a probe pool of zero is a
+    ThreadPoolExecutor that refuses to start."""
+    monkeypatch.setattr(config, name, 0)
+    assert any(name in problem for problem in config.errors())
+
+
+@pytest.mark.parametrize("percent", [9, 91])
+def test_a_low_bitrate_threshold_outside_the_band_is_refused(monkeypatch, percent):
+    """Near the rate itself every honest variable-rate track reads as low-bitrate and
+    the library rewrites itself to gain nothing; near zero none ever does,
+    which is the mode being off and has its own spelling."""
+    monkeypatch.setattr(config, "REGENERATE_BELOW_PERCENT", percent)
+    errors = config.errors()
+    assert len(errors) == 1
+    assert "REGENERATE_BELOW_PERCENT" in errors[0]
+
+
+@pytest.mark.parametrize("percent", [10, 90])
+def test_the_edges_of_the_low_bitrate_band_are_allowed(monkeypatch, percent):
+    """The band the settings page offers is the band the service takes, ends
+    included, or the field's own limits would refuse a save it invited."""
+    monkeypatch.setattr(config, "REGENERATE_BELOW_PERCENT", percent)
+    assert config.errors() == []

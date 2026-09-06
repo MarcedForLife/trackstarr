@@ -1,15 +1,10 @@
-"""Service wiring: the webhook listener plus the scheduled sweep.
-
-The pieces have their own modules, :mod:`trackstarr.processing` for one
-file, :mod:`trackstarr.sweep` for the library walk, :mod:`trackstarr.webhook`
-for the listener. This starts the threads and the server.
-"""
+"""Service wiring: starts the background threads and the HTTP server."""
 
 import logging
 import threading
 from http.server import ThreadingHTTPServer
 
-from . import config, events
+from . import config, events, library, notify, ratings, runs, users
 from .arr import all_arrs
 from .executor import clean_work_dir, work_dir_is_remote
 from .media_server import server_status
@@ -20,53 +15,63 @@ from .webhook import (
     Handler,
     load_parked,
     parked_recheck_loop,
-    parking_enabled,
     register_webhooks,
-    worker,
+    start_workers,
 )
 
 log = logging.getLogger(__name__)
 
 
-# No cover: wiring. It starts daemon threads and blocks in serve_forever, so
-# a test could only assert its own mocks were called.
+# No cover: wiring that starts daemon threads and blocks in serve_forever.
 def serve() -> None:  # pragma: no cover
-    # First, so every later event's config_id resolves against something. A
-    # sweep records its own, but a webhook-only install never runs one.
-    policy = Policy.from_config()
-    events.record("config", config=policy.fingerprint(), config_id=policy.digest())
+    # First, so every later event's config_id resolves; a webhook-only install
+    # never runs a sweep to record it.
+    events.record_config(Policy.from_config())
+    # Before the listener binds, so a generated password sits at the top of a
+    # first run's log.
+    users.ensure_admin()
     with all_slots_held() as exclusive:
         clean_work_dir(exclusive=exclusive)
     if work_dir_is_remote():
-        # Not a problem, but it doubles the writing per rewrite. Better said
-        # than discovered from disk activity.
+        # Not a problem, but it doubles the writing per rewrite.
         log.info(
             "WORK_DIR %s is not on the media's filesystem; each rewrite will be "
             "copied onto it before being published",
             config.WORK_DIR,
         )
-    # One worker per rewrite slot, so a burst can use the whole budget.
-    for number in range(config.MAX_CONCURRENT_REWRITES):
-        threading.Thread(target=worker, daemon=True, name=f"worker-{number}").start()
-    if parking_enabled():
-        # Before the loop that drains it. Nothing else revisits a parked
-        # file, so dropping the set strands whatever was seeding.
-        load_parked()
-        threading.Thread(target=parked_recheck_loop, daemon=True, name="parked-recheck").start()
-    if config.SWEEP_AT:
-        threading.Thread(target=scheduler, daemon=True, name="scheduler").start()
+    # Before anything picks up a file, so every worker log line is kept with
+    # its file for the overview.
+    runs.capture_logs()
+    # Before the workers exist, so a restart does not undo a pause.
+    runs.load_paused()
+    # Topped up again after a settings save.
+    start_workers()
+    # Before the loop that drains it.
+    load_parked()
+    # Each loop runs whether or not its setting is on and re-reads it as it
+    # goes, so a setting saved later takes effect without a restart.
+    threading.Thread(target=parked_recheck_loop, daemon=True, name="parked-recheck").start()
+    threading.Thread(target=scheduler, daemon=True, name="scheduler").start()
+    # Handed the shelf's ids and forget so ratings stays a leaf module.
+    threading.Thread(
+        target=ratings.refresh_loop,
+        args=(library.imdb_ids, library.forget),
+        daemon=True,
+        name="imdb-ratings",
+    ).start()
+    # A file watcher rather than hooks in the writers, so a CLI sweep in a
+    # second process is announced too.
+    threading.Thread(target=notify.watcher, daemon=True, name="stream-watcher").start()
     srv = ThreadingHTTPServer((config.LISTEN_ADDR, config.LISTEN_PORT), Handler)
-    # Saving the connection makes the *arr fire a test event at us, so this
-    # starts only once the socket above is bound.
+    # Registration fires a test event at us, so the socket must be bound first.
     threading.Thread(target=register_webhooks, daemon=True, name="register").start()
     log.info("listening on %s:%s", config.LISTEN_ADDR, config.LISTEN_PORT)
     log.info(
-        "arrs=[%s] servers=[%s] always_keep=%s sweep_at=%s apply=%s dry_run=%s",
+        "arrs=[%s] servers=[%s] always_keep=%s sweep_at=%s mode=%s",
         ", ".join(f"{arr.name}={'on' if arr.enabled else 'off'}" for arr in all_arrs()),
         ", ".join(f"{name}={'on' if on else 'off'}" for name, on in server_status().items()),
         sorted(config.ALWAYS_KEEP_LANGS),
         config.SWEEP_AT or "disabled",
-        config.SWEEP_APPLY,
-        config.DRY_RUN,
+        config.REWRITE_MODE,
     )
     srv.serve_forever()

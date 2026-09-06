@@ -1,0 +1,147 @@
+{
+	"id": "arr:sonarr:12",
+	"name": "Severance",
+	"kind": "series",
+	"year": 2022,
+	"lang": "eng",
+	"folder": "/data/media/tv/Severance",
+	"current": true,
+	"files": [
+		{
+			"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
+			"name": "Severance - S01E02 - Half Loop.mkv",
+			"status": "failed",
+			"bytes": 2147483648,
+			"lang": "eng",
+			"tracks": [
+				{
+					"index": 0,
+					"kind": "video",
+					"codec": "h264"
+				},
+				{
+					"index": 1,
+					"kind": "audio",
+					"codec": "eac3",
+					"channels": 6,
+					"lang": "eng",
+					"flags": [
+						"default"
+					]
+				},
+				{
+					"index": 3,
+					"kind": "subtitle",
+					"codec": "subrip",
+					"lang": "eng",
+					"flags": [
+						"forced"
+					]
+				}
+			],
+			"planned": [],
+			"why": {
+				"failed": "ffmpeg exited 1: Conversion failed!",
+				"reasons": [
+					"add 2.0 downmix (from track 1)"
+				],
+				"rules": [
+					"downmix"
+				]
+			}
+		},
+		{
+			"path": "/data/media/tv/Severance/Season 01/Severance - S01E01 - Good News About Hell.mkv",
+			"name": "Severance - S01E01 - Good News About Hell.mkv",
+			"status": "conform",
+			"bytes": 2251799813,
+			"lang": "eng",
+			"tracks": [
+				{
+					"index": 0,
+					"kind": "video",
+					"codec": "h264"
+				},
+				{
+					"index": 1,
+					"kind": "audio",
+					"codec": "eac3",
+					"channels": 6,
+					"lang": "eng",
+					"flags": [
+						"default"
+					]
+				},
+				{
+					"index": 2,
+					"kind": "audio",
+					"codec": "aac",
+					"channels": 2,
+					"lang": "eng",
+					"title": "Stereo",
+					"flags": [
+						"generated"
+					]
+				},
+				{
+					"index": 3,
+					"kind": "subtitle",
+					"codec": "subrip",
+					"lang": "eng",
+					"flags": [
+						"forced"
+					]
+				}
+			],
+			"planned": [],
+			"why": {},
+			"fixed": {
+				"at": "2026-02-28T12:00:00+13:00",
+				"bytes_before": 2147483648,
+				"bytes_after": 2251799813,
+				"was": [
+					{
+						"index": 0,
+						"kind": "video",
+						"codec": "h264"
+					},
+					{
+						"index": 1,
+						"kind": "audio",
+						"codec": "eac3",
+						"channels": 6,
+						"lang": "eng",
+						"title": "Surround 5.1",
+						"flags": [
+							"default"
+						]
+					},
+					{
+						"index": 2,
+						"kind": "subtitle",
+						"codec": "mov_text",
+						"lang": "eng",
+						"flags": [
+							"forced"
+						]
+					}
+				],
+				"added": [
+					2
+				]
+			}
+		}
+	],
+	"total": 2,
+	"servers": [
+		{
+			"server": "plex",
+			"label": "Plex"
+		},
+		{
+			"server": "sonarr",
+			"label": "Sonarr",
+			"url": "http://sonarr:8989/series/severance"
+		}
+	]
+}

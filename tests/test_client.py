@@ -1,10 +1,5 @@
-"""client.request against a real loopback server.
-
-Every *arr and media-server call goes through request(), and the rest of
-the suite replaces it wholesale, so nothing else exercises what it puts on
-the wire. A real server rather than a faked urlopen, since a fake would be
-checking the fake.
-"""
+"""client.request and client.fetch against a real loopback server, since the
+rest of the suite replaces them wholesale."""
 
 import json
 import threading
@@ -12,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from trackstarr.client import API_ERRORS, request
+from trackstarr.client import API_ERRORS, fetch, request, stream
 
 
 @pytest.fixture
@@ -23,7 +18,7 @@ def server():
     saw; assigning ``state["response"]`` sets the ``(status, body)`` it
     replies with.
     """
-    state: dict = {"received": None, "response": (200, b'{"ok": true}')}
+    state: dict = {"received": None, "response": (200, b'{"ok": true}'), "content_type": ""}
 
     class Handler(BaseHTTPRequestHandler):
         def _handle(self) -> None:
@@ -36,6 +31,8 @@ def server():
             }
             status, body = state["response"]
             self.send_response(status)
+            if state["content_type"]:
+                self.send_header("Content-Type", state["content_type"])
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -114,10 +111,8 @@ def test_an_http_error_is_an_api_error(server):
     state["response"] = (500, b"boom")
     with pytest.raises(API_ERRORS) as caught:
         request(f"{url}/api/v3/movie")
-    # HTTPError is itself an open response, and urlopen raises it before
-    # request() can enter its with-block, so nothing has closed it. Callers
-    # drop it immediately and refcounting does the rest; close it here so the
-    # deallocator does not run mid-test and trip filterwarnings=error.
+    # HTTPError is an open response nothing closed. Closed here so its
+    # deallocator does not trip filterwarnings=error mid-test.
     caught.value.close()
 
 
@@ -126,3 +121,49 @@ def test_unparseable_json_is_an_api_error(server):
     state["response"] = (200, b"<html>not json</html>")
     with pytest.raises(API_ERRORS):
         request(f"{url}/api/v3/movie")
+
+
+def test_fetch_hands_back_the_bytes_and_what_they_are(server):
+    """The library view passes the content type straight to the browser, so a
+    poster that came back as JPEG must not be announced as anything else."""
+    url, state = server
+    state["response"] = (200, b"\xff\xd8\xff not really a jpeg")
+    state["content_type"] = "image/jpeg"
+
+    body, kind = fetch(f"{url}/api/v3/mediacover/7/poster.jpg", {"X-Api-Key": "k"})
+
+    assert body == b"\xff\xd8\xff not really a jpeg"
+    assert kind == "image/jpeg"
+    assert state["received"]["headers"]["X-Api-Key"] == "k"
+
+
+def test_stream_hands_back_the_body_a_line_at_a_time(server):
+    """What the IMDb ratings dataset is read through: 45MB of text nobody
+    should hold, so the caller gets the response itself to read from."""
+    url, state = server
+    state["response"] = (200, b"tt0000001\t5.7\t2230\ntt15239678\t6.4\t712000\n")
+
+    with stream(f"{url}/title.ratings.tsv.gz") as body:
+        first = body.readline()
+        rest = body.read()
+
+    assert first == b"tt0000001\t5.7\t2230\n"
+    assert rest == b"tt15239678\t6.4\t712000\n"
+
+
+def test_stream_failures_land_in_the_same_place_as_the_rest(server):
+    url, state = server
+    state["response"] = (503, b"")
+    with pytest.raises(API_ERRORS) as caught, stream(f"{url}/title.ratings.tsv.gz"):
+        pass  # pragma: no cover, urlopen raises before the body exists
+    caught.value.close()
+
+
+def test_fetch_failures_land_in_the_same_place_as_the_json_ones(server):
+    """Callers catch API_ERRORS around both; a poster that 404s must not
+    escape as its own type and take the whole grid with it."""
+    url, state = server
+    state["response"] = (404, b"")
+    with pytest.raises(API_ERRORS) as caught:
+        fetch(f"{url}/api/v3/mediacover/7/poster.jpg")
+    caught.value.close()

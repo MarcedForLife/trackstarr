@@ -1,17 +1,17 @@
-"""The verdict vocabulary process() reports and the sweep persists.
-
-A leaf module with no intra-package imports, so :mod:`trackstarr.processing`
-and :mod:`trackstarr.sweep_cache` can share it without importing each other.
-"""
+"""The verdict vocabulary process() reports and the sweep persists. A leaf
+module."""
 
 import enum
 
 
 class Status(enum.StrEnum):
-    """Everything process() can report. The sweep's counts are keyed by
-    these, and the values are what the cache and pending.tsv store."""
+    """Everything process() can report. The values are what the cache and
+    pending.tsv store."""
 
     SKIP = "skip"
+    #: A video file in a container the rules will never rewrite. Its own
+    #: verdict because the reader can act on it, by changing ALLOWED_EXTS.
+    UNSUPPORTED = "unsupported"
     CONFORM = "conform"
     WOULD_FIX = "would-fix"
     FIXED = "fixed"

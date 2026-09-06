@@ -1,0 +1,35 @@
+{
+	"states": [
+		"failed",
+		"would-fix",
+		"skip",
+		"unsupported",
+		"conform",
+		"unchecked",
+		"missing"
+	],
+	"services": [
+		{
+			"name": "radarr",
+			"label": "Radarr"
+		},
+		{
+			"name": "sonarr",
+			"label": "Sonarr"
+		},
+		{
+			"name": "plex",
+			"label": "Plex"
+		},
+		{
+			"name": "jellyfin",
+			"label": "Jellyfin"
+		}
+	],
+	"kinds": [
+		"runs",
+		"events",
+		"library",
+		"progress"
+	]
+}

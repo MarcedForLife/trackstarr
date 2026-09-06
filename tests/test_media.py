@@ -1,9 +1,6 @@
-"""probe's failure paths, and the tag readers that meet junk values.
-
-A sweep points ffprobe at a whole library, so it eventually meets a
-truncated download, a stalled mount, and tags saying something ridiculous.
-Each has to become a ProbeError or a None, never a traceback.
-"""
+"""probe's failure paths and the tag readers meeting junk. A truncated
+download, a stalled mount or a ridiculous tag must become a ProbeError or a
+None, never a traceback."""
 
 import json
 import subprocess

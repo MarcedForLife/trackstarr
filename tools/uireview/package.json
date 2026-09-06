@@ -1,0 +1,9 @@
+{
+	"name": "trackstarr-uireview",
+	"private": true,
+	"type": "module",
+	"description": "Playwright harness for reviewing the trackstarr web UI at phone metrics.",
+	"dependencies": {
+		"playwright": "1.62.0-alpha-1783623505000"
+	}
+}

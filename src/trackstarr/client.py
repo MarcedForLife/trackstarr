@@ -1,11 +1,30 @@
 """The HTTP chokepoint for every service client: the *arrs, Plex, Jellyfin."""
 
+import contextlib
 import json
 import urllib.request
+from collections.abc import Iterator
+from typing import IO
 
-#: Everything request() can raise: connection and HTTP failures, since
-#: urllib.error.URLError subclasses OSError, plus a response that won't parse.
+#: Everything request() can raise: urllib's errors subclass OSError, plus a
+#: response that will not parse.
 API_ERRORS = (OSError, json.JSONDecodeError)
+
+
+@contextlib.contextmanager
+def stream(url: str, timeout: int = 30) -> Iterator[IO[bytes]]:
+    """The response as a file object, for a body too big to hold, such as
+    IMDb's 45MB ratings dataset. Raises API_ERRORS."""
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        yield response
+
+
+def fetch(url: str, headers: dict | None = None, timeout: int = 30) -> tuple[bytes, str]:
+    """Raw body and content type, for cover art. Raises API_ERRORS."""
+    req = urllib.request.Request(url, headers=dict(headers or {}))
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return response.read(), response.headers.get_content_type()
 
 
 def request(
