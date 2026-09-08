@@ -1,9 +1,24 @@
 // The draft every settings page edits: the snapshot it started from, the clone
 // being typed into, what a save would send, and the leave guard.
 
+import { getContext, setContext } from 'svelte';
 import { beforeNavigate } from '$app/navigation';
 import { changes as diff, cloneValues } from '$lib/draft';
 import { SettingsError, saveSettings, type Setting, type SettingValue } from '$lib/settings';
+
+const PAGE = Symbol('settings-draft');
+
+/** Called by a settings page during init. Its rows then name a setting and take
+ * the ENV badge, the unsaved dot and the environment's sentence from that
+ * alone, rather than being handed all three. */
+export function provideSettings(settings: SettingsDraft) {
+	setContext(PAGE, settings);
+}
+
+/** Undefined on a page with no draft, as Appearance is. */
+export function pageSettings(): SettingsDraft | undefined {
+	return getContext(PAGE);
+}
 
 export type Changes = Record<string, SettingValue | null>;
 
@@ -63,6 +78,17 @@ export class SettingsDraft {
 
 	envLocked(name: string): boolean {
 		return this.#readOnly || !!this.baseline[name]?.env;
+	}
+
+	/** Whether this name differs from the snapshot, for the dot a row wears. Gated
+	 * like `count`, or a viewer would see marks against a bar that never comes up. */
+	changed(name: string): boolean {
+		return !this.#readOnly && name in this.changes;
+	}
+
+	/** The same for a shut group, whose rows are unmounted and cannot mark it. */
+	anyChanged(names: string[]): boolean {
+		return names.some((name) => this.changed(name));
 	}
 
 	desc(name: string, fallback: string): string {

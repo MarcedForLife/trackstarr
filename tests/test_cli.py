@@ -124,7 +124,7 @@ def test_fix_rewrites_files_and_reports_failures(startup_ok, monkeypatch, capsys
     when any was not rewritten. A deferral counts: a fix's retry is the
     caller, who must not read it as success."""
     results = {
-        "/lib/a.mkv": ProcessResult(Status.FIXED, needed_plan("/lib/a.mkv")),
+        "/lib/a.mkv": ProcessResult(Status.MODIFIED, needed_plan("/lib/a.mkv")),
         "/lib/b.mkv": ProcessResult(Status.FAILED, detail="ffmpeg failed (1): boom"),
         "/lib/c.mkv": ProcessResult(Status.DEFERRED, detail="source changed"),
     }
@@ -285,7 +285,7 @@ def test_plan_groups_the_rules_by_mode_and_omits_the_empty_groups(
     main(["plan", "f.mkv"])
     out = capsys.readouterr().out
     assert "rules always" in out and "languages" in out
-    assert "rules alongside" in out and "junk_titles" in out
+    assert "rules alongside" in out and "release_tags" in out
     assert "rules never" in out and "remux" in out
 
     set_rules(monkeypatch, **dict.fromkeys(policy.RULES, "always"))
@@ -310,15 +310,15 @@ def test_plan_names_what_the_ride_alongs_are_waiting_for(startup_ok, monkeypatch
     invisible."""
     plan = Plan(
         path="f.mkv",
-        incidental=["clear junk title on audio 1"],
-        incidental_rules={"junk_titles"},
+        incidental=["clear release tags on audio 1"],
+        incidental_rules={"release_tags"},
     )
     _planned(monkeypatch, plan)
 
     assert main(["plan", "f.mkv"]) == 0
     out = capsys.readouterr().out
     assert "conforms, no action" in out
-    assert "clear junk title on audio 1 (waiting on a rewrite)" in out
+    assert "clear release tags on audio 1 (waiting on a rewrite)" in out
     # Nothing is being rewritten, so there is no command to show.
     assert "ffmpeg" not in out
 
@@ -326,14 +326,14 @@ def test_plan_names_what_the_ride_alongs_are_waiting_for(startup_ok, monkeypatch
 def test_plan_prints_the_reasons_and_the_command(startup_ok, monkeypatch, capsys):
     """The printed ffmpeg line is the tool showing its work, so it has to be the
     command that would really run."""
-    plan = Plan(path="f.mkv", reasons=["drop audio jpn"], incidental=["strip junk title"])
+    plan = Plan(path="f.mkv", reasons=["drop audio jpn"], incidental=["strip release tags"])
     plan.streams.append(OutStream(src=0, kind="video"))
     _planned(monkeypatch, plan)
 
     assert main(["plan", "f.mkv"]) == 0
     out = capsys.readouterr().out
     assert "- drop audio jpn" in out
-    assert "strip junk title (rides along)" in out
+    assert "strip release tags (rides along)" in out
     # The real command, not a summary of it: the stream map is the part a user
     # would copy out to run by hand.
     assert "ffmpeg -hide_banner -nostdin -y -loglevel error -i f.mkv -map 0:0" in out
@@ -418,12 +418,12 @@ def test_fix_books_its_verdict_where_the_collection_reads_it(startup_ok, monkeyp
     plan = needed_plan(str(media))
     monkeypatch.setattr(
         "trackstarr.cli.process",
-        lambda job, dry_run, source: ProcessResult(Status.WOULD_FIX, plan),
+        lambda job, dry_run, source: ProcessResult(Status.PENDING, plan),
     )
     assert main(["fix", str(media), "--original", "eng"]) == 0
 
     stored = read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
-    assert stored.files[str(media)]["status"] == "would-fix"
+    assert stored.files[str(media)]["status"] == "pending"
 
 
 def test_secret_reports_a_state_dir_it_cannot_write(monkeypatch, caplog):

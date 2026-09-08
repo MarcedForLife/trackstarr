@@ -138,7 +138,7 @@ describe('fileRows', () => {
 				recent: [
 					{ path: '/data/b.mkv', status: '', seconds: 2, detail: '' },
 					{ path: '/data/a.mkv', status: '', seconds: 1, detail: '' },
-					{ path: '/data/c.mkv', status: 'fixed', seconds: 30, detail: 'added 2.0' }
+					{ path: '/data/c.mkv', status: 'modified', seconds: 30, detail: 'added 2.0' }
 				]
 			})
 		);
@@ -146,20 +146,20 @@ describe('fileRows', () => {
 		expect(rows.map((row) => row.path)).toEqual(['/data/a.mkv', '/data/b.mkv', '/data/c.mkv']);
 		expect(rows[0].live).not.toBeNull();
 		expect(rows[1].waiting).not.toBeNull();
-		expect(rows[2].verdict).toBe('fixed');
+		expect(rows[2].verdict).toBe('modified');
 	});
 
 	test('keeps the newest of two released rows for one file', () => {
 		const rows = fileRows(
 			run({
 				recent: [
-					{ path: '/data/a.mkv', status: 'fixed', seconds: 30, detail: 'added 2.0' },
+					{ path: '/data/a.mkv', status: 'modified', seconds: 30, detail: 'added 2.0' },
 					{ path: '/data/a.mkv', status: '', seconds: 1, detail: '' }
 				]
 			})
 		);
 
 		expect(rows).toHaveLength(1);
-		expect(rows[0].verdict).toBe('fixed');
+		expect(rows[0].verdict).toBe('modified');
 	});
 });

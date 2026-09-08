@@ -30,7 +30,6 @@
 
 	const draft = $derived(settings.draft);
 	const baseline = $derived(settings.baseline);
-	const desc = (name: string, fallback: string) => settings.desc(name, fallback);
 
 	// All shut on arrival: the shut row says which services work.
 	let open = $state(false);
@@ -43,15 +42,10 @@
 	const configured = $derived(!!(draft[service.url] as string) && (!!draft[service.key] || kept));
 
 	// Edits to a shut card still count towards the save bar, so the row says so.
-	const edited = $derived.by(() => {
-		const changes = settings.changes;
-		return (
-			service.url in changes ||
-			service.key in changes ||
-			(!!service.map && service.map in changes) ||
-			(!!service.publicUrl && service.publicUrl in changes)
-		);
-	});
+	// The two optional names fall back to '', which no setting is called.
+	const edited = $derived(
+		settings.anyChanged([service.url, service.key, service.map ?? '', service.publicUrl ?? ''])
+	);
 
 	// An answer arriving after the card has gone is dropped.
 	let gone = false;
@@ -200,9 +194,9 @@
 				{/if}
 
 				<SettingRow
+					name={service.url}
 					label="Address"
-					desc={desc(service.url, `Where ${service.label} answers, as this container reaches it.`)}
-					env={!!baseline[service.url]?.env}
+					desc={`Where ${service.label} answers, as this container reaches it.`}
 					stack
 				>
 					<!-- Four cards have an Address row, so the field's name says whose. -->
@@ -227,14 +221,11 @@
 				</SettingRow>
 
 				<SettingRow
+					name={service.key}
 					label={service.keyLabel}
-					desc={desc(
-						service.key,
-						kept
-							? 'One is stored. Type a new one to replace it, or clear it to switch the service off.'
-							: `Found in ${service.label}'s own settings.`
-					)}
-					env={!!baseline[service.key]?.env}
+					desc={kept
+						? 'One is stored. Type a new one to replace it, or clear it to switch the service off.'
+						: `Found in ${service.label}'s own settings.`}
 					stack
 				>
 					{#snippet children({ describedBy })}
@@ -278,12 +269,9 @@
 				{#if service.publicUrl}
 					{@const name = service.publicUrl}
 					<SettingRow
+						{name}
 						label="Public address"
-						desc={desc(
-							name,
-							`Where a title's "Open in ${service.label}" link points. Only needed when a browser cannot reach the address above.`
-						)}
-						env={!!baseline[name]?.env}
+						desc={`Where a title's "Open in ${service.label}" link points. Only needed when a browser cannot reach the address above.`}
 						stack
 					>
 						{#snippet children({ describedBy })}
@@ -311,12 +299,9 @@
 					{@const name = service.map}
 					<!-- A list, so it drops below the description. -->
 					<SettingRow
+						{name}
 						label="Path map"
-						desc={desc(
-							name,
-							`Only needed when ${service.label} sees the library at a different path. Ours on the left.`
-						)}
-						env={!!baseline[name]?.env}
+						desc={`Only needed when ${service.label} sees the library at a different path. Ours on the left.`}
 						full
 					>
 						{#snippet children({ labelledBy, describedBy })}

@@ -18,7 +18,10 @@ export type Hold = {
 	name: string;
 };
 
-type Held = { holds: Hold[] };
+// Optional, and defaulted at every call: a body without the key is an answer
+// the sheet can still draw, where reading `.find` off nothing takes the sheet
+// down with it.
+type Held = { holds?: Hold[] };
 
 /**
  * How long a hold can be placed for: a film, an evening, or until somebody
@@ -33,7 +36,7 @@ export const SPANS: { seconds: number; label: string }[] = [
 ];
 
 export async function getHolds(fetcher: typeof fetch = fetch): Promise<Hold[]> {
-	return (await request<Held>('/api/holds', undefined, fetcher)).holds;
+	return (await request<Held>('/api/holds', undefined, fetcher)).holds ?? [];
 }
 
 /** Hold titles by id or files by path. Answers with every hold now standing. */
@@ -46,7 +49,7 @@ export async function place(
 		method: 'POST',
 		body: JSON.stringify({ ...what, seconds, reason })
 	});
-	return answer.holds;
+	return answer.holds ?? [];
 }
 
 export async function lift(what: { ids?: string[]; paths?: string[] }): Promise<Hold[]> {
@@ -54,7 +57,7 @@ export async function lift(what: { ids?: string[]; paths?: string[] }): Promise<
 		method: 'POST',
 		body: JSON.stringify(what)
 	});
-	return answer.holds;
+	return answer.holds ?? [];
 }
 
 export function forTitle(holds: Hold[], id: string): Hold | undefined {

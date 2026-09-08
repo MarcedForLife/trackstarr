@@ -1,13 +1,15 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import EnvBadge from '$lib/components/EnvBadge.svelte';
+	import { pageSettings } from '$lib/draft.svelte';
 
 	// A two-column grid: label and description stack on the left, the control
 	// beside both. A `stack` control drops to its own row.
 	let {
+		name = '',
 		label,
 		desc,
-		env = false,
+		note = '',
 		align = 'center',
 		stack = false,
 		full = false,
@@ -15,9 +17,16 @@
 		dim = false,
 		children
 	}: {
+		// The setting this row is for. The ENV badge, the unsaved dot and the
+		// sentence about the environment all follow from it, so the row says it
+		// once. Empty for a row that presses a button rather than holding a value.
+		name?: string;
 		label: string;
+		// What the setting is for, replaced when the environment owns the value.
 		desc: string;
-		env?: boolean;
+		// A sentence about the value held rather than about the setting, so it
+		// survives that replacement.
+		note?: string;
 		align?: 'center' | 'start';
 		stack?: boolean;
 		// A list control, too wide for the right column at any width.
@@ -28,6 +37,16 @@
 		dim?: boolean;
 		children: Snippet<[{ labelledBy: string; describedBy: string }]>;
 	} = $props();
+
+	// Every settings page provides its draft, so a named row reads its own state
+	// off it.
+	const settings = pageSettings();
+	const env = $derived(!!name && !!settings?.baseline[name]?.env);
+	const changed = $derived(!!name && !!settings?.changed(name));
+	const sentence = $derived.by(() => {
+		const said = name && settings ? settings.desc(name, desc) : desc;
+		return note ? `${said} ${note}` : said;
+	});
 
 	// The ids the control is named and described by. By id rather than <label>,
 	// since most controls are a group of buttons, and an aria-label left the
@@ -67,6 +86,10 @@
 		class="col-start-1 row-start-1 flex flex-wrap items-center gap-2 text-sm font-medium"
 	>
 		{label}
+		{#if changed}
+			<span class="h-1.5 w-1.5 flex-none rounded-full bg-accent"></span>
+			<span class="sr-only">Unsaved</span>
+		{/if}
 		{#if env}
 			<EnvBadge />
 		{/if}
@@ -75,7 +98,7 @@
 		id={describedBy}
 		class="col-start-1 row-start-2 mt-0.5 self-start text-[13px] leading-snug text-pretty text-dim"
 	>
-		{desc}
+		{sentence}
 	</p>
 	<div class={controlClass}>
 		{@render children({ labelledBy, describedBy })}

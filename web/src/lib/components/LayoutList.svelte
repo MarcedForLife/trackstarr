@@ -49,11 +49,10 @@
 		remove: 'Remove'
 	};
 
-	// Fills the second line where a kept or removed size has no rates, so every
+	// Fills the second line where a kept size has no rates, so every draggable
 	// row is one height: the drag measures one row's step and applies it to all.
 	const ACTION_NOTES: Record<string, string> = {
-		keep: 'left as found',
-		remove: 'every track removed'
+		keep: 'left as found'
 	};
 
 	// What is half-typed in the new-layout box.
@@ -134,6 +133,7 @@
 			{orderable}
 			{actions}
 			actionLabels={ACTION_LABELS}
+			actionWidth={row.action === 'remove' ? 'min-w-0 flex-1' : undefined}
 			{locked}
 			{drag}
 			onaction={(action) => setAction(index, action)}
@@ -160,30 +160,35 @@
 			{/if}
 			<!-- The rates take the row's second line at every width: five of them
 			     never fit beside three controls. `basis-full` forces the wrap, every
-			     row carries this group so they all stay one height, and pr-9 clears
-			     the cross's column so the chips end where the controls do. -->
-			<div class={`order-last flex basis-full items-center gap-1.5 pr-9 pl-5 ${control}`}>
-				{#if row.action === 'downmix'}
-					{#each rateNotches(rates[row.name] ?? [], row.bitrate) as rate (rate)}
-						{@const held = sameRate(rate, row.bitrate)}
-						<button
-							onclick={() => setField(index, 'bitrate', rate)}
-							disabled={locked}
-							aria-pressed={held}
-							aria-label={`${rate} for ${row.name}`}
-							class={`${rateChip} ${
-								held ? 'border-accent bg-accent/12 text-fg' : 'border-line text-faint hover:text-fg'
-							}`}
-						>
-							{rate}
-						</button>
-					{/each}
-				{:else}
-					<span class="text-[13px] text-faint sm:text-xs">
-						{ACTION_NOTES[row.action] ?? ''}
-					</span>
-				{/if}
-			</div>
+			     draggable row carries this group so they all stay one height, and
+			     pr-9 clears the cross's column so the chips end where the controls
+			     do. A removed row has nothing to say here and drops to one line. -->
+			{#if row.action !== 'remove'}
+				<div class={`order-last flex basis-full items-center gap-1.5 pr-9 pl-5 ${control}`}>
+					{#if row.action === 'downmix'}
+						{#each rateNotches(rates[row.name] ?? [], row.bitrate) as rate (rate)}
+							{@const held = sameRate(rate, row.bitrate)}
+							<button
+								onclick={() => setField(index, 'bitrate', rate)}
+								disabled={locked}
+								aria-pressed={held}
+								aria-label={`${rate} for ${row.name}`}
+								class={`${rateChip} ${
+									held
+										? 'border-accent bg-accent/12 text-fg'
+										: 'border-line text-faint hover:text-fg'
+								}`}
+							>
+								{rate}
+							</button>
+						{/each}
+					{:else}
+						<span class="text-[13px] text-faint sm:text-xs">
+							{ACTION_NOTES[row.action] ?? ''}
+						</span>
+					{/if}
+				</div>
+			{/if}
 		</ReorderRow>
 	{/each}
 	<div class="flex items-center gap-2">

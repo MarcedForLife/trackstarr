@@ -68,6 +68,8 @@ EPISODE_ONE = f"{SEVERANCE}/Season 01/Severance - S01E01 - Good News About Hell.
 EPISODE_TWO = f"{SEVERANCE}/Season 01/Severance - S01E02 - Half Loop.mkv"
 BEAR = f"{TV}/The Bear"
 HOLIDAY = f"{MOVIES}/Home Videos/Queenstown 2019.avi"
+#: Beside it, and fine. The two together are the one card that reads "mixed".
+WANAKA = f"{MOVIES}/Home Videos/Wanaka 2021.mkv"
 CONTACT = f"{MOVIES}/Contact (1997)/Contact (1997).mkv"
 
 #: The ids the *arr items below resolve to, for the holds placed on them.
@@ -108,7 +110,7 @@ EPISODE_TRACKS = [
     track(2, "audio", "aac", channels=2, lang="eng", title="Stereo", flags=["generated"]),
     track(3, "subtitle", "subrip", lang="eng", flags=["forced"]),
 ]
-#: The same episode before we rewrote it: an mp4 with a junk-titled 5.1 and
+#: The same episode before we rewrote it: an mp4 with a tagged 5.1 and
 #: nothing stereo. The downmix lands at position 2 of what came out.
 EPISODE_WAS = [
     track(0, "video", "h264"),
@@ -194,7 +196,8 @@ def seeded(monkeypatch, pinned):
 
 def seed_library(monkeypatch, clock: Clock) -> None:
     """Two *arrs answering for three titles, a folder none of them claims, and
-    a cached verdict of each kind a card can say."""
+    a cached verdict of each kind a card can say, including the two clips that
+    leave their folder mixed."""
     radarr = configured_arr("radarr")
     sonarr = configured_arr("sonarr")
     items = {
@@ -245,7 +248,7 @@ def seed_library(monkeypatch, clock: Clock) -> None:
         DUNE_FILE,
         FileKey(58_720_256_000, 1_709_284_200_000_000_000, 1, "eng"),
         Verdict(
-            Status.WOULD_FIX,
+            Status.PENDING,
             "add 2.0 downmix",
             tracks=DUNE_TRACKS,
             planned=DUNE_PLANNED,
@@ -263,9 +266,9 @@ def seed_library(monkeypatch, clock: Clock) -> None:
             tracks=EPISODE_TRACKS,
             duration=3420.0,
             # Passed because we rewrote it, which is the one thing the verdict
-            # cannot say. The same rewrite the history's "fixed" line records,
+            # cannot say. The same rewrite the history's "modified" line records,
             # which is where the reasons in prose stay.
-            fixed={
+            modified={
                 "at": stamp(clock.now),
                 "bytes_before": 2_147_483_648,
                 "bytes_after": 2_251_799_813,
@@ -300,6 +303,11 @@ def seed_library(monkeypatch, clock: Clock) -> None:
             why={"skip": ".avi is not in ALLOWED_EXTS"},
         ),
     )
+    cache.record(
+        WANAKA,
+        FileKey(1_073_741_824, 1_625_097_600_000_000_000, 1, None),
+        Verdict(Status.CONFORM, "", duration=612.0),
+    )
     cache.save()
 
 
@@ -320,11 +328,11 @@ def seed_history() -> None:
         config=in_force.fingerprint(),
         config_id=digest,
         cached=1174,
-        counts={"conform": 1177, "fixed": 1, "failed": 1, "unsupported": 1},
+        counts={"conform": 1177, "modified": 1, "failed": 1, "unsupported": 1},
         seconds=5423.5,
     )
     events.record(
-        "fixed",
+        "modified",
         run=LAST_SWEEP,
         source="sweep",
         config_id=digest,
@@ -335,8 +343,8 @@ def seed_history() -> None:
         duration=3420.0,
         path=EPISODE_ONE,
         from_path=EPISODE_ONE.removesuffix(".mkv") + ".mp4",
-        incidental=["clear junk title on audio 1 ('Surround 5.1')"],
-        incidental_rules=["junk_titles"],
+        incidental=["clear release tags on audio 1 ('Surround 5.1')"],
+        incidental_rules=["release_tags"],
         downmixed=["2.0"],
         bytes_before=2_147_483_648,
         bytes_after=2_251_799_813,
@@ -369,7 +377,7 @@ def seed_history() -> None:
     )
     events.record("webhook", run=LAST_IMPORT, arr="radarr", files=1, paths=[DUNE_FILE])
     events.record(
-        "would-fix",
+        "pending",
         run=LAST_IMPORT,
         source="webhook",
         config_id=digest,
@@ -433,7 +441,7 @@ def seed_runs(clock: Clock) -> None:
     runs.begin(SWEEP_RUN, EPISODE_ONE)
     clock.tick(1834.2)
     runs.finish(SWEEP_RUN, EPISODE_ONE)
-    runs.tally(SWEEP_RUN, "fixed", path=EPISODE_ONE, detail="add 2.0 downmix")
+    runs.tally(SWEEP_RUN, "modified", path=EPISODE_ONE, detail="add 2.0 downmix")
     runs.queue(SWEEP_RUN, DUNE_FILE, 9330.0)
     runs.queue(SWEEP_RUN, f"{MOVIES}/Blade Runner (1982)/Blade Runner (1982).mkv", 7020.0)
     runs.queue(SWEEP_RUN, CONTACT, 0.0)
@@ -520,6 +528,10 @@ def test_events(ask):
     hold("events", ask("GET", "/api/events"))
 
 
+def test_holds(ask):
+    hold("holds", ask("GET", "/api/holds"))
+
+
 def test_settings(ask):
     hold("settings", ask("GET", "/api/settings"))
 
@@ -569,6 +581,12 @@ def test_vocabulary(ask, monkeypatch):
         "vocabulary",
         {
             "states": list(library.STATES),
+            # The word a card leads with when nothing is outstanding and its
+            # files disagree. Apart from the states: no file is ever in it.
+            "mixed": library.MIXED,
+            # What the grid's chips offer: the states, plus one thing a file is
+            # rather than a state it is in.
+            "filters": list(library.FILTERS),
             "services": [
                 {"name": service.name, "label": service.label}
                 for service in connections.SERVICES

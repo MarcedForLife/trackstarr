@@ -5,7 +5,7 @@
 	import Segmented from '$lib/components/Segmented.svelte';
 	import SettingRow from '$lib/components/SettingRow.svelte';
 	import { field, noteBox } from '$lib/controls';
-	import { SettingsDraft } from '$lib/draft.svelte';
+	import { provideSettings, SettingsDraft } from '$lib/draft.svelte';
 	import { wholeUnits } from '$lib/format';
 	import type { PageProps } from './$types';
 
@@ -15,13 +15,12 @@
 
 	// svelte-ignore state_referenced_locally
 	const settings = new SettingsDraft(data.snapshot.settings, { readOnly: () => readOnly });
-	// Both records are mutated in place, so these read the live objects after a
-	// save.
+	// The rows below name a setting and read the rest off the draft.
+	provideSettings(settings);
+	// Mutated in place, so this reads the live object after a save.
 	const draft = settings.draft;
-	const baseline = settings.baseline;
-	// Named locally because the rows below say them a great many times.
+	// Named locally because the controls below say it a great many times.
 	const envLocked = (name: string) => settings.envLocked(name);
-	const desc = (name: string, fallback: string) => settings.desc(name, fallback);
 
 	// A ladder: each mode does everything the one before it does.
 	const MODES = [
@@ -119,13 +118,10 @@
 		<section class="mt-7">
 			<p class="pb-2 text-[13px] font-semibold">Mode</p>
 			<SettingRow
+				name="REWRITE_MODE"
 				label="What gets rewritten"
 				align="start"
-				desc={desc(
-					'REWRITE_MODE',
-					'How far trackstarr may go. Each step includes the one before it.'
-				)}
-				env={!!baseline.REWRITE_MODE?.env}
+				desc="How far trackstarr may go. Each step includes the one before it."
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
@@ -150,13 +146,10 @@
 		<section class="mt-8">
 			<p class="pb-2 text-[13px] font-semibold">Clock</p>
 			<SettingRow
+				name="TZ"
 				label="Time zone"
 				align="start"
-				desc={desc(
-					'TZ',
-					'The clock the sweep schedule, events and log lines use. An IANA name such as Pacific/Auckland; empty means UTC.'
-				)}
-				env={!!baseline.TZ?.env}
+				desc="The clock the sweep schedule, events and log lines use. An IANA name such as Pacific/Auckland. Empty means UTC."
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
@@ -190,49 +183,40 @@
 		<section class="mt-8">
 			<p class="pb-2 text-[13px] font-semibold">Limits</p>
 			<SettingRow
+				name="MAX_CONCURRENT_REWRITES"
 				label="Rewrites at once"
 				align="start"
-				desc={desc(
-					'MAX_CONCURRENT_REWRITES',
-					'Rewrites running at once, shared by imports, sweeps and anything else on the same state directory.'
-				)}
-				env={!!baseline.MAX_CONCURRENT_REWRITES?.env}
+				desc="Rewrites running at once, shared by imports, sweeps and anything else on the same state directory."
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					{@render numberField('MAX_CONCURRENT_REWRITES', labelledBy, describedBy, 1, '')}
 				{/snippet}
 			</SettingRow>
 			<SettingRow
+				name="PROBE_WORKERS"
 				label="Probes at once"
 				align="start"
-				desc={desc(
-					'PROBE_WORKERS',
-					'Files a sweep probes at once. Separate from the rewrite limit above: a probe is short and cheap, so a disk that wants one rewrite at a time still takes several probes.'
-				)}
-				env={!!baseline.PROBE_WORKERS?.env}
+				desc="Files a sweep probes at once. Separate from Rewrites at once: a probe is short and cheap, so a disk that wants one rewrite at a time still takes several probes."
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					{@render numberField('PROBE_WORKERS', labelledBy, describedBy, 1, '')}
 				{/snippet}
 			</SettingRow>
 			<SettingRow
+				name="FFMPEG_TIMEOUT"
 				label="Rewrite timeout"
 				align="start"
-				desc={desc(
-					'FFMPEG_TIMEOUT',
-					'How long one ffmpeg run may take before it is killed and the file left as it was.'
-				)}
-				env={!!baseline.FFMPEG_TIMEOUT?.env}
+				desc="How long one ffmpeg run may take before it is killed and the file left as it was."
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					{@render numberField('FFMPEG_TIMEOUT', labelledBy, describedBy, 1, 'seconds')}
 				{/snippet}
 			</SettingRow>
 			<SettingRow
+				name="PROBE_TIMEOUT"
 				label="Probe timeout"
 				align="start"
-				desc={desc('PROBE_TIMEOUT', 'How long ffprobe may take to describe one file.')}
-				env={!!baseline.PROBE_TIMEOUT?.env}
+				desc="How long ffprobe may take to describe one file."
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					{@render numberField('PROBE_TIMEOUT', labelledBy, describedBy, 1, 'seconds')}

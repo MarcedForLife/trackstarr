@@ -32,7 +32,7 @@
 	let library = $derived(seed);
 
 	// The one number that says whether the library is as it should be.
-	const wouldFix = $derived(library?.counts['would-fix'] ?? 0);
+	const pending = $derived(library?.counts['pending'] ?? 0);
 
 	// How long a poster slides to its new place; the grid's figure.
 	const SLIDE_MS = 320;
@@ -116,8 +116,8 @@
 					{library.titles.toLocaleString()}
 					{library.titles === 1 ? 'title' : 'titles'}
 				</p>
-				<p class={`flex-none text-[12px] font-medium ${wouldFix ? 'text-accent' : 'text-faint'}`}>
-					{wouldFix ? `${wouldFix.toLocaleString()} pending` : 'nothing pending'}
+				<p class={`flex-none text-[12px] font-medium ${pending ? 'text-accent' : 'text-faint'}`}>
+					{pending ? `${pending.toLocaleString()} pending` : 'nothing pending'}
 				</p>
 			</div>
 

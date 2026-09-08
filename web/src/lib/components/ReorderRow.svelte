@@ -15,6 +15,7 @@
 		orderable,
 		actions,
 		actionLabels,
+		actionWidth = 'w-[6.5rem] flex-none sm:w-24',
 		locked,
 		drag,
 		onaction,
@@ -32,6 +33,9 @@
 		orderable: number;
 		actions: string[];
 		actionLabels: Record<string, string>;
+		// How the action takes its width. Its own column by default, so the fields
+		// beside it line up; a row with nothing to configure hands it the slack.
+		actionWidth?: string;
 		locked: boolean;
 		drag: Reorder;
 		onaction: (action: string) => void;
@@ -87,7 +91,7 @@
 		onchange={(event) => onaction(event.currentTarget.value)}
 		aria-label={`What happens to ${label ?? name}`}
 		disabled={locked}
-		class={`${selectCell} w-[6.5rem] flex-none sm:w-24`}
+		class={`${selectCell} ${actionWidth}`}
 	>
 		{#each actions as option (option)}
 			<option value={option}>{actionLabels[option] ?? option}</option>

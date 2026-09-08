@@ -49,6 +49,11 @@ export function basename(path: string | undefined): string {
 const EPISODE = / - (S\d{1,3}E\d{1,3}(?:-E\d{1,3})*)(?: - |$)/;
 // Only stripped where an episode follows, so a film keeps its year.
 const YEAR = / \((?:19|20)\d\d\)$/;
+// A media extension, not any dot: these names reach here as folders too, and
+// "Mr. Robot (2015)" cut at its last dot reads "Mr".
+const EXTENSION = /\.[a-z0-9]{2,4}$/i;
+// What the *arrs hang off a title's own folder: "Mindhunter (2017) {tvdb-328708}".
+const PROVIDER_ID = /(?: \{[^{}]*\})+$/;
 
 /** A file as a truncating line names it: what it is, and which one. */
 export type Named = { name: string; episode: string };
@@ -60,13 +65,17 @@ export type Named = { name: string; episode: string };
  * history line on a phone cut every episode of one series to the same title.
  * The episode comes back separately so a caller can keep it out of the
  * truncation; an episode drops its year, a film keeps it.
+ *
+ * A title's own folder comes through here too, where a hold is placed on one,
+ * so the provider's id goes the way the tags do.
  */
 export function named(path: string | undefined): Named {
 	const base = basename(path);
 	// The space keeps a title opening on a bracket, like [REC] (2007), whole.
 	const tags = base.indexOf(' [');
-	const dot = base.lastIndexOf('.');
-	const whole = (tags > 0 ? base.slice(0, tags) : dot > 0 ? base.slice(0, dot) : base).trim();
+	const whole = (tags > 0 ? base.slice(0, tags) : base.replace(EXTENSION, ''))
+		.replace(PROVIDER_ID, '')
+		.trim();
 	// Nothing but tags: the file name beats an empty line.
 	if (!whole) return { name: base, episode: '' };
 	const found = whole.match(EPISODE);

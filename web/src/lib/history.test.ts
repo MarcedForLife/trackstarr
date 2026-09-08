@@ -38,7 +38,7 @@ vi.mock('svelte', async (original) => ({
 const { getEvents } = await import('$lib/events');
 
 /** A line, named by the second it was written in: what `key` reads. */
-function line(at: string, event = 'fixed', path = '/films/one.mkv') {
+function line(at: string, event = 'modified', path = '/films/one.mkv') {
 	return { ts: at, event, version: '1', path, title: 'film-1' };
 }
 

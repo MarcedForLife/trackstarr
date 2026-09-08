@@ -2,10 +2,11 @@
 // offset: a line never moves.
 
 import { request } from '$lib/api';
+import type { GlyphName } from '$lib/components/Glyph.svelte';
 import { basename, duration, named, size, titled } from '$lib/format';
 // The library's verdict vocabulary, so the history and the library agree on
 // words and colours.
-import { pip, verdictLabel, type Card } from '$lib/library';
+import { isVerdict, judged, pip, verdictLabel, type Card } from '$lib/library';
 import { phrase, tally } from '$lib/runs';
 
 // Every field any event carries; `event` says which to expect.
@@ -82,7 +83,7 @@ export type Span = { since?: string; until?: string };
  */
 export const LOOKBACK = 60;
 
-export function getEvents(
+export async function getEvents(
 	fetcher: typeof fetch = fetch,
 	limit = 100,
 	before: number | null = null,
@@ -92,7 +93,9 @@ export function getEvents(
 	if (before !== null) query.set('before', String(before));
 	if (span.since) query.set('since', span.since);
 	if (span.until) query.set('until', span.until);
-	return request<EventPage>(`/api/events?${query}`, undefined, fetcher);
+	const page = await request<EventPage>(`/api/events?${query}`, undefined, fetcher);
+	judged(Object.values(page.titles ?? {}));
+	return page;
 }
 
 const MINUTE_MS = 60_000;
@@ -179,14 +182,20 @@ export function moved(entry: Event): string[] {
 	);
 }
 
-/** What happened, in the few words a single line has room for. */
-export function headline(entry: Event): string {
+/**
+ * What happened, in the few words a single line has room for.
+ *
+ * `title` is the library's own name for the title the line is about, where the
+ * page has the card for it. A hold is placed on a whole title, whose folder is
+ * named for the *arr rather than for a reader.
+ */
+export function headline(entry: Event, title = ''): string {
 	switch (entry.event) {
 		// One file reaching one verdict, in the library's word for it. The
 		// series name, not the file: this line truncates and a release name is
 		// mostly tags. The episode is `marker` below.
-		case 'fixed':
-		case 'would-fix':
+		case 'modified':
+		case 'pending':
 		case 'failed':
 		case 'deferred':
 			return `${verdictLabel(entry.event)}: ${named(entry.path).name}`;
@@ -206,9 +215,9 @@ export function headline(entry: Event): string {
 		case 'resumed':
 			return 'Processing resumed';
 		case 'held':
-			return `Held ${named(entry.path).name}`;
+			return `Held ${title || named(entry.path).name}`;
 		case 'lifted':
-			return `Hold lifted on ${named(entry.path).name}`;
+			return `Hold lifted on ${title || named(entry.path).name}`;
 		case 'skipped':
 			return `Skipped ${named(entry.path).name}`;
 		case 'webhook': {
@@ -262,8 +271,8 @@ function firedRules(entry: Event): string[] {
 /** The second line under a headline: why, or what, in a few more words. */
 export function detail(entry: Event): string {
 	switch (entry.event) {
-		case 'fixed':
-		case 'would-fix': {
+		case 'modified':
+		case 'pending': {
 			const changes = [...(entry.reasons ?? []), ...(entry.incidental ?? [])];
 			if (changes.length <= NAMED_CHANGES) return changes.join(', ');
 			// Past that, how many and under which rules. Naming the first two would
@@ -360,8 +369,8 @@ export function details(entry: Event, before?: Event): Detail[] {
 		if (kept.length) out.push({ label, values: kept, mono });
 	};
 	switch (entry.event) {
-		case 'fixed':
-		case 'would-fix':
+		case 'modified':
+		case 'pending':
 		case 'failed':
 		case 'deferred':
 			add('File', [entry.path], true);
@@ -414,7 +423,8 @@ export function details(entry: Event, before?: Event): Detail[] {
 		case 'held':
 		case 'lifted':
 		case 'skipped':
-			add('File', [entry.path], true);
+			// A hold on a whole title is on its folder, and a skip is on one file.
+			add(entry.event === 'skipped' ? 'File' : 'Path', [entry.path], true);
 			add('Reason', [entry.reason]);
 			add('By', [entry.by]);
 			break;
@@ -428,5 +438,48 @@ export function details(entry: Event, before?: Event): Detail[] {
 
 // The verdict's colour from the library's pips; everything else is background.
 export function dot(entry: Event): string {
-	return pip[entry.event] ?? 'bg-faint';
+	return isVerdict(entry.event) ? pip[entry.event] : 'bg-faint';
+}
+
+/**
+ * The thread a feed's covers and marks are beaded on: one line down the middle
+ * of the 40px column they take, behind them, so it never crosses the words and
+ * costs no gutter. Goes in a list's own `relative` box.
+ *
+ * Faded at both ends rather than inset by a measure: a cover sits at the top of
+ * its line and a mark in the middle of one, so where the first and the last
+ * node begin depends on which kind they are, and a hard stop landed short of
+ * one and past the other. The fade also says the history carries on past the
+ * last line loaded, which it does. Held here because two feeds draw it and the
+ * offset is only right while it matches the column's width.
+ *
+ * Behind the beads by z-index, not by luck: an absolute span paints over its
+ * plain siblings, and the events page only hid it because `content-visibility`
+ * makes a stacking context of every row. The list it goes in must `isolate`,
+ * so behind means behind the rows rather than behind the page.
+ */
+export const THREAD =
+	'absolute inset-y-0 left-[19.5px] -z-10 w-px bg-line [mask-image:linear-gradient(to_bottom,transparent,#000_2.5rem,#000_calc(100%_-_2.5rem),transparent)]';
+
+/**
+ * The mark for a line about the service rather than a title, which has its
+ * poster to be known by. Both runs share one: what the line is about is a run,
+ * and which kind is the first word of the headline. Only these kinds: a mark
+ * for a title's line would be a picture of nothing beside the words that
+ * already say it.
+ */
+const MARKS: Record<string, GlyphName> = {
+	sweep: 'refresh',
+	recheck: 'refresh',
+	paused: 'pause',
+	resumed: 'play',
+	config: 'sliders',
+	settings: 'sliders',
+	// A delivery spanning two titles names neither, so it has no poster to show
+	// even though it is about files arriving.
+	webhook: 'arrow'
+};
+
+export function badge(entry: Event): GlyphName | '' {
+	return MARKS[entry.event] ?? '';
 }

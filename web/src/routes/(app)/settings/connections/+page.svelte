@@ -7,7 +7,7 @@
 	import SaveBar from '$lib/components/SaveBar.svelte';
 	import SettingRow from '$lib/components/SettingRow.svelte';
 	import Toggle from '$lib/components/Toggle.svelte';
-	import { SettingsDraft } from '$lib/draft.svelte';
+	import { provideSettings, SettingsDraft } from '$lib/draft.svelte';
 	import { wholeUnits } from '$lib/format';
 	import type { PageProps } from './$types';
 
@@ -26,12 +26,13 @@
 				(name) => cleared[name] && baseline[name]?.set && !baseline[name]?.env
 			)
 	});
+	// The rows below name a setting and read the rest off the draft.
+	provideSettings(settings);
 	// Both records are mutated in place, so these read the live objects after a
 	// save.
 	const draft = settings.draft;
 	const baseline = settings.baseline;
 	const envLocked = (name: string) => settings.envLocked(name);
-	const desc = (name: string, fallback: string) => settings.desc(name, fallback);
 
 	// Which credentials the reader emptied. The page's, since the draft turns one
 	// into a change.
@@ -61,15 +62,11 @@
 	}
 
 	// Zero is a real answer, distinct from the row above being off.
-	const recheckDesc = $derived.by(() => {
-		const base = desc(
-			'HARDLINK_RECHECK',
-			'How often a waiting file is checked again, so it is rewritten shortly after seeding ends.'
-		);
-		return text('HARDLINK_RECHECK').trim() === '0'
-			? `${base} At 0 nothing waits: a seeding file is skipped as it arrives and left to the next sweep.`
-			: base;
-	});
+	const recheckNote = $derived(
+		text('HARDLINK_RECHECK').trim() === '0'
+			? 'At 0 nothing waits: a seeding file is skipped as it arrives and left to the next sweep.'
+			: ''
+	);
 </script>
 
 <Page
@@ -129,12 +126,9 @@
 		<section class="mt-8">
 			<p class="pb-2 text-[13px] font-semibold">Callback</p>
 			<SettingRow
+				name="WEBHOOK_URL"
 				label="Webhook address"
-				desc={desc(
-					'WEBHOOK_URL',
-					'The address Radarr and Sonarr call, so it must be reachable from their containers. Base URL only; the path is added.'
-				)}
-				env={!!baseline.WEBHOOK_URL?.env}
+				desc="The address Radarr and Sonarr call, so it must be reachable from their containers. Base URL only, the path is added."
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
@@ -161,12 +155,9 @@
 				What happens to an imported file the download client is still seeding.
 			</p>
 			<SettingRow
+				name="SKIP_HARDLINKS"
 				label="Leave seeding files alone"
-				desc={desc(
-					'SKIP_HARDLINKS',
-					'Leave a file alone while the download client still hard-links it. Rewriting breaks the link, so the file takes disk twice until the torrent is removed.'
-				)}
-				env={!!baseline.SKIP_HARDLINKS?.env}
+				desc="Leave a file alone while the download client still hard-links it. Rewriting breaks the link, so the file takes disk twice until the torrent is removed."
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					<Toggle
@@ -179,10 +170,11 @@
 				{/snippet}
 			</SettingRow>
 			<SettingRow
+				name="HARDLINK_RECHECK"
 				label="Recheck every"
 				align="start"
-				desc={recheckDesc}
-				env={!!baseline.HARDLINK_RECHECK?.env}
+				desc="How often a waiting file is checked again, so it is rewritten shortly after seeding ends."
+				note={recheckNote}
 				nested
 				dim={!draft.SKIP_HARDLINKS}
 			>

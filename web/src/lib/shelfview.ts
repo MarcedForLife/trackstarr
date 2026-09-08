@@ -3,7 +3,15 @@
 // where a failed search would have landed, and whether the grid is mostly
 // unswept. Pure functions, so a test can put a fixture shelf through them.
 
-import { KINDS, MISSING, VERDICTS, type Card, type Kind, type Verdict } from '$lib/library';
+import {
+	FILTERS,
+	KINDS,
+	MISSING,
+	MODIFIED,
+	type Card,
+	type Kind,
+	type Verdict
+} from '$lib/library';
 import { FLOW, ORDER, type Flow, type Sort } from '$lib/order.svelte';
 
 /** The row of controls over the grid, as the cut below reads it. */
@@ -42,11 +50,25 @@ export function kindsOn(titles: readonly Card[]): Kind[] {
 	return [...known, ...rest];
 }
 
-/** Whether the filters would show a title in this state. With none held the
- * grid is everything less what Appearance hides; a hidden state held by name
- * shows anyway. */
-export function holds(state: string, view: Pick<View, 'filters' | 'hidden'>): boolean {
-	return view.filters.length ? view.filters.includes(state) : !view.hidden.includes(state);
+/** Whether a title holds any file in this state. The card carries the tally its
+ * files reached, so a mostly-passed title with one skipped file is found under
+ * both. A card with no verdicts on it has only its headline to answer with. */
+export function within(card: Card, state: Verdict): boolean {
+	// A rewritten file passes, so only the count marks it as ours.
+	if (state === MODIFIED) return !!card.modified;
+	if (!card.counts) return card.state === state;
+	return (card.counts[state] ?? 0) > 0;
+}
+
+/** Whether the filters would show this title.
+ *
+ * A held chip finds every title with a file in that state, so nothing is
+ * reachable under one verdict only. Hiding reads the headline instead: it drops
+ * the titles that are nothing but that state and keeps the ones that merely
+ * hold one. A hidden state held by name shows anyway. */
+export function holds(card: Card, view: Pick<View, 'filters' | 'hidden'>): boolean {
+	if (view.filters.length) return view.filters.some((state) => within(card, state));
+	return !view.hidden.includes(card.state);
 }
 
 /** The shelf as the filters, the search and the order leave it. */
@@ -55,7 +77,7 @@ export function sift(titles: readonly Card[], view: View): Card[] {
 	const kept = titles.filter(
 		(card) =>
 			ofKind(card, view.kind) &&
-			holds(card.state, view) &&
+			holds(card, view) &&
 			(!needle || card.name.toLowerCase().includes(needle))
 	);
 	const order = ORDER[sort];
@@ -69,21 +91,32 @@ export function sift(titles: readonly Card[], view: View): Card[] {
 	return kept.sort(back ? (a, b) => compare(b, a) : compare);
 }
 
-/** How many titles each verdict holds, for the filter counts. */
+/** How many titles each chip would show, counted by membership. A title with
+ * more than one verdict in it is counted under each, so these sum past the
+ * shelf; the number on a chip is what pressing it lands on. */
 export function tally(titles: readonly Card[]): Record<string, number> {
+	const counts: Record<string, number> = {};
+	for (const card of titles) {
+		for (const state of FILTERS) {
+			if (within(card, state)) counts[state] = (counts[state] ?? 0) + 1;
+		}
+	}
+	return counts;
+}
+
+/** The same tally over the headline words, one per title. What Appearance hides
+ * and how much of the grid is unswept are both about the word on the poster
+ * rather than what is inside it. */
+export function headlines(titles: readonly Card[]): Record<string, number> {
 	return titles.reduce<Record<string, number>>((counts, card) => {
 		counts[card.state] = (counts[card.state] ?? 0) + 1;
 		return counts;
 	}, {});
 }
 
-/** How many titles All stands for: everything less what Appearance hides. */
-export function everything(
-	counts: Record<string, number>,
-	total: number,
-	hidden: readonly Verdict[]
-): number {
-	return hidden.reduce((left, state) => left - (counts[state] ?? 0), total);
+/** How many titles All stands for: everything Appearance does not hide. */
+export function everything(titles: readonly Card[], hidden: readonly Verdict[]): number {
+	return titles.filter((card) => !hidden.includes(card.state)).length;
 }
 
 // Files on disk with no verdict: work not done, unlike `missing`.
@@ -98,7 +131,8 @@ export type Waiting = { titles: number; judgeable: number };
 
 /** Whether the grid is mostly Unknown, as a fresh install is, and by how much.
  * Null once enough is judged. `missing` is left out of both numbers, since no
- * sweep will ever judge it. */
+ * sweep will ever judge it. Counted over headlines: one unswept file among
+ * judged ones is not what a wall of Unknown means. */
 export function waiting(counts: Record<string, number>, total: number): Waiting | null {
 	const titles = counts[UNJUDGED] ?? 0;
 	const judgeable = total - (counts[MISSING] ?? 0);
@@ -116,13 +150,17 @@ export function elsewhere(titles: readonly Card[], view: View): Hit[] {
 	for (const card of titles) {
 		if (
 			ofKind(card, view.kind) &&
-			!holds(card.state, view) &&
+			!holds(card, view) &&
 			card.name.toLowerCase().includes(view.needle)
 		) {
-			counts[card.state] = (counts[card.state] ?? 0) + 1;
+			// Every state it holds, not its headline, or a chip could be offered
+			// that lands on nothing.
+			for (const state of FILTERS) {
+				if (within(card, state)) counts[state] = (counts[state] ?? 0) + 1;
+			}
 		}
 	}
-	return VERDICTS.filter((state) => counts[state]).map((state) => ({
+	return FILTERS.filter((state) => counts[state]).map((state) => ({
 		state,
 		count: counts[state]
 	}));
@@ -137,7 +175,7 @@ export function otherKinds(titles: readonly Card[], view: View): KindHit[] {
 	for (const card of titles) {
 		if (
 			!ofKind(card, view.kind) &&
-			holds(card.state, view) &&
+			holds(card, view) &&
 			card.name.toLowerCase().includes(view.needle)
 		) {
 			counts[card.kind] = (counts[card.kind] ?? 0) + 1;

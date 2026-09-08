@@ -3,6 +3,7 @@
 	import { flip } from 'svelte/animate';
 	import { cubicOut } from 'svelte/easing';
 	import { page } from '$app/state';
+	import { Snapshot } from '$lib/activity.svelte';
 	import { refusalText } from '$lib/api';
 	import { setHold } from '$lib/chrome.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
@@ -35,6 +36,7 @@
 	import {
 		elsewhere,
 		everything,
+		headlines,
 		kindsOn,
 		ofKind,
 		otherKinds,
@@ -154,11 +156,11 @@
 	// withholds.
 	const inKind = $derived(kind ? shelf.titles.filter((card) => ofKind(card, kind)) : shelf.titles);
 	const counts = $derived(tally(inKind));
-	const allCount = $derived(everything(counts, inKind.length, display.hidden));
+	const allCount = $derived(everything(inKind, display.hidden));
 
-	// The whole library's tally, for the wall below: that is the shelf's state
-	// rather than the filter's.
-	const shelfCounts = $derived(kind ? tally(shelf.titles) : counts);
+	// The whole library's headlines, for the wall below: that is the shelf's
+	// state rather than the filter's.
+	const shelfCounts = $derived(headlines(shelf.titles));
 
 	// What All promises, naming the setting that narrows it.
 	const allHint = $derived.by(() => {
@@ -212,10 +214,12 @@
 		dismiss: () => bar.dismiss()
 	});
 
-	// Seeded from the load so the run controls have an answer before the first
-	// poll.
+	// What the service is doing, seeded from the load so the run controls have an
+	// answer before the first look. Only the re-check reads it here.
 	// svelte-ignore state_referenced_locally
-	const recheck: Recheck = new Recheck(data.activity, {
+	const snapshot = new Snapshot(data.activity);
+
+	const recheck: Recheck = new Recheck(snapshot, {
 		// A selection and an open sheet both need to know whether a run may start.
 		asking: () => selection.picking || sheetUp,
 		onwritten: () => posters.now(),

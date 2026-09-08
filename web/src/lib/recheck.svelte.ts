@@ -5,16 +5,16 @@
 // verdicts. Which posters are ticked is the grid's business.
 
 import { onDestroy } from 'svelte';
+import type { Landed, Snapshot } from '$lib/activity.svelte';
 import { refusalText } from '$lib/api';
 import { count, getEvents, LOOKBACK, type Event } from '$lib/events';
 import { runTitles, type Card, type RunMode } from '$lib/library';
-import { poll, type Poller } from '$lib/poll';
-import { getActivity, stopRun, type Activity, type Run } from '$lib/runs';
+import { stopRun, type Run } from '$lib/runs';
 import { told } from '$lib/stream';
 
-// Three paces: a progress bar, a control that must stay honest about whether a
-// run may start, and a tab with no reason of its own that must still notice a
-// sweep starting next door.
+// The three paces this asks the snapshot for: a progress bar, a control that
+// must stay honest about whether a run may start, and a tab with no reason of
+// its own that must still notice a sweep starting next door.
 const BUSY_MS = 2000;
 const IDLE_MS = 15000;
 const WATCH_MS = 30000;
@@ -49,16 +49,13 @@ export class Recheck {
 	summary = $state<Event | null>(null);
 	/** The service's words when it turns a press down, kept until the next. */
 	refusal = $state('');
-	/** A lost connection, kept apart from a refusal: the next look clears it,
-	 * and what is on screen stays up under it. */
-	offline = $state('');
 	/** Which of the two runs a press has started, so only that one says so. */
 	started = $state<'' | RunMode>('');
-	/** A stop already sent, which the next poll has yet to confirm. */
+	/** A stop already sent, which the next snapshot has yet to confirm. */
 	stopping = $state(false);
 
-	// The run being watched. Seeded from the load and adopted in the poll, which
-	// is what makes the bar survive a reload.
+	// The run being watched. Seeded from the load and adopted as snapshots land,
+	// which is what makes the bar survive a reload.
 	#watching = $state<string | null>(null);
 	// When it was picked up, for the warming window.
 	#watchedAt = Date.now();
@@ -71,25 +68,30 @@ export class Recheck {
 	#ranLabel = $state('');
 	#ranDry = $state(true);
 	#options: Options;
-	// Made in the constructor because `poll()` reads the pace as it arms, and
-	// the pace needs the seed.
-	#runs: Poller;
+	#snapshot: Snapshot;
 
-	constructor(activity: Activity, options: Options) {
+	constructor(snapshot: Snapshot, options: Options) {
+		this.#snapshot = snapshot;
 		this.#options = options;
+		const activity = snapshot.current;
 		this.mayRewrite = activity.may_rewrite;
 		this.paused = activity.paused;
 		this.#watching = activity.runs.find((run) => run.kind === 'recheck')?.id ?? null;
-		// On the poll's own terms, or the adopted run would be its own rival
+		// On this class's own terms, or the adopted run would be its own rival
 		// until the first look.
 		this.otherRun = activity.runs.find((run) => this.#rival(run)) ?? null;
-		this.#runs = poll({
-			ask: () => this.#ask(),
-			pace: () => this.#pace(),
-			gap: BUSY_MS,
-			kinds: ['runs', 'progress']
-		});
-		onDestroy(() => this.#runs.stop());
+		onDestroy(
+			snapshot.watch({
+				pace: () => this.#pace(),
+				saw: (landed) => this.#saw(landed)
+			})
+		);
+	}
+
+	/** A lost connection, the snapshot's own: every reader on the page lost the
+	 * same one. */
+	get offline(): string {
+		return this.#snapshot.offline;
 	}
 
 	/** Anything the service is running that this page did not start. */
@@ -148,8 +150,8 @@ export class Recheck {
 		if (!this.summary || this.running) return '';
 		const counts = this.summary.counts ?? {};
 		const notes = [
-			counts['fixed'] ? `${counts['fixed'].toLocaleString()} rewritten` : '',
-			counts['would-fix'] ? `${counts['would-fix'].toLocaleString()} pending` : '',
+			counts['modified'] ? `${counts['modified'].toLocaleString()} rewritten` : '',
+			counts['pending'] ? `${counts['pending'].toLocaleString()} pending` : '',
 			counts['failed'] ? `${counts['failed'].toLocaleString()} failed` : ''
 		].filter(Boolean);
 		const looked = count(this.summary.files, 'file');
@@ -165,7 +167,7 @@ export class Recheck {
 
 	/** Ask the service now. */
 	prod() {
-		this.#runs.prod();
+		this.#snapshot.prod();
 	}
 
 	/** Judge these titles again, from the bar over the grid. */
@@ -218,7 +220,7 @@ export class Recheck {
 			this.#watchedAt = Date.now();
 			// Fetch the snapshot now rather than at the next idle look; `warming`
 			// covers the gap.
-			this.#runs.prod();
+			this.#snapshot.prod();
 		} catch (error) {
 			this.refusal = refusalText(error);
 		} finally {
@@ -236,49 +238,46 @@ export class Recheck {
 		return told(WATCH_MS);
 	}
 
-	async #ask() {
-		try {
-			const activity = await getActivity();
-			this.offline = '';
-			this.mayRewrite = activity.may_rewrite;
-			this.paused = activity.paused;
-			let mine = this.#watching
-				? activity.runs.find((run) => run.id === this.#watching)
-				: undefined;
-			// A re-check nobody here started. It is writing this grid's verdicts,
-			// so the bar shows it.
-			if (!this.#watching) {
-				const loose = activity.runs.find((run) => run.kind === 'recheck');
-				if (loose) {
-					this.#watching = loose.id;
-					this.#watchedAt = Date.now();
-					mine = loose;
-				}
+	// What this page's run is doing, off the snapshot the page's readers share.
+	async #saw({ now: activity }: Landed) {
+		this.mayRewrite = activity.may_rewrite;
+		this.paused = activity.paused;
+		let mine = this.#watching ? activity.runs.find((run) => run.id === this.#watching) : undefined;
+		// A re-check nobody here started. It is writing this grid's verdicts, so
+		// the bar shows it.
+		if (!this.#watching) {
+			const loose = activity.runs.find((run) => run.kind === 'recheck');
+			if (loose) {
+				this.#watching = loose.id;
+				this.#watchedAt = Date.now();
+				mine = loose;
 			}
-			const before = this.otherRun;
-			this.otherRun = activity.runs.find((run) => this.#rival(run)) ?? null;
-			// A rival run just ended, having written the grid's verdicts.
-			if (before && !this.otherRun) this.#options.onwritten();
-			// Gone from the registry means finished, unless it was only just
-			// started and no snapshot knows about it yet.
-			if (this.#watching && !mine && (this.running || Date.now() - this.#watchedAt > WARMING_MS)) {
-				const ended = this.#watching;
-				this.#watching = null;
-				this.running = null;
-				// Both at once: whatever shows the run holds a dead progress bar
-				// until one of them lands.
-				this.#options.onwritten();
-				this.summary = await this.#ranTo(ended);
-				if (this.summary) this.#options.ondone();
-				return;
-			}
-			if (mine) {
-				this.running = mine;
-				this.#ranLabel = mine.label;
-				this.#ranDry = mine.dry_run;
-			}
-		} catch {
-			this.offline = 'Could not reach the service.';
+		}
+		const before = this.otherRun;
+		this.otherRun = activity.runs.find((run) => this.#rival(run)) ?? null;
+		// A rival run just ended, having written the grid's verdicts.
+		if (before && !this.otherRun) this.#options.onwritten();
+		// Gone from the registry means finished, unless it was only just started
+		// and no snapshot knows about it yet.
+		if (this.#watching && !mine && (this.running || Date.now() - this.#watchedAt > WARMING_MS)) {
+			const ended = this.#watching;
+			this.#watching = null;
+			this.running = null;
+			// Both at once: whatever shows the run holds a dead progress bar until
+			// one of them lands.
+			this.#options.onwritten();
+			const receipt = await this.#ranTo(ended);
+			// A snapshot landing while the history was read may have adopted a run
+			// since, and the last one's receipt is not that one's.
+			if (this.#watching) return;
+			this.summary = receipt;
+			if (receipt) this.#options.ondone();
+			return;
+		}
+		if (mine) {
+			this.running = mine;
+			this.#ranLabel = mine.label;
+			this.#ranDry = mine.dry_run;
 		}
 	}
 

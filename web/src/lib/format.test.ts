@@ -52,6 +52,18 @@ describe('named', () => {
 		});
 	});
 
+	// A hold is placed on a title, so what arrives is the folder the *arr made.
+	test("a title's own folder drops the provider's id and keeps the year", () => {
+		expect(named('/data/media/tv/MINDHUNTER (2017) {tvdb-328708}')).toEqual({
+			name: 'MINDHUNTER (2017)',
+			episode: ''
+		});
+	});
+
+	test('a dot in a folder is not an extension', () => {
+		expect(named('/data/media/tv/Mr. Robot (2015) {tvdb-289590}').name).toBe('Mr. Robot (2015)');
+	});
+
 	test('a name with nothing to drop is handed back whole', () => {
 		expect(named('/data/readme').name).toBe('readme');
 		expect(named(undefined).name).toBe('');

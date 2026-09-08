@@ -1,7 +1,7 @@
 """Plex and Jellyfin refreshes for a rewritten file, since their filesystem
 watchers see nothing on a network mount.
 
-Best effort: nothing here may fail the job that fixed the file. A server
+Best effort: nothing here may fail the job that rewrote the file. A server
 failing repeatedly is muted until restart, and a missed refresh heals on the
 next scheduled scan.
 """

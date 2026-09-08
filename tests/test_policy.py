@@ -34,7 +34,7 @@ _FIELD_CHANGES = {
     "commentary_re": ("COMMENTARY_RE", re.compile("changed", re.IGNORECASE)),
     "sdh_re": ("SDH_RE", re.compile("changed", re.IGNORECASE)),
     "forced_re": ("FORCED_RE", re.compile("changed", re.IGNORECASE)),
-    "junk_title_re": ("JUNK_TITLE_RE", re.compile("changed", re.IGNORECASE)),
+    "release_tag_re": ("RELEASE_TAG_RE", re.compile("changed", re.IGNORECASE)),
 }
 
 

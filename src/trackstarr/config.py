@@ -468,10 +468,10 @@ SDH_RE = _regex("SDH_PATTERN", r"\bsdh\b|\bcc\b|hearing[\s._-]*impaired")
 #: Likewise for forced subtitles and the forced disposition.
 FORCED_RE = _regex("FORCED_PATTERN", r"\bforced\b")
 
-#: Release junk in track titles: bitrates, resolutions, source tags, codec
+#: Release tags in track titles: bitrates, resolutions, source tags, codec
 #: names. Cleared during a rewrite. Conservative: a bare "AC3 5.1" survives.
-JUNK_TITLE_RE = _regex(
-    "JUNK_TITLE_PATTERN",
+RELEASE_TAG_RE = _regex(
+    "RELEASE_TAG_PATTERN",
     r"\d+\s*k?bps"
     r"|\bx?26[45]\b|\bhevc\b|\bavc\b"
     r"|\b(?:480|576|720|1080|2160)[pi]\b"

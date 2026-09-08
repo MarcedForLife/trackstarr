@@ -58,9 +58,6 @@
 		ondismiss: () => void;
 	} = $props();
 
-	// The sentence both buttons share; the bar stays one line while picking.
-	const willDo = $derived(refuses || 'Reads every file again, whatever the last sweep said.');
-
 	// Putting the bar away. The Select button is a scroll away by then, so the
 	// bar carries the sheet's grip: drag it off or press it. All three ways go
 	// through `dismiss`, so it leaves the same way whichever was used.
@@ -191,8 +188,8 @@
 					</button>
 
 					{#if picking}
-						<!-- The count and its two buttons share a line; the sentence gets
-						     the full width under them. -->
+						<!-- The count and its two buttons share a line, with the run pair
+						     under them. -->
 						<div class="flex items-baseline gap-x-3">
 							<p class="min-w-0 flex-1 text-[13px] font-medium">
 								{picked
@@ -220,8 +217,6 @@
 							</div>
 						</div>
 
-						<p class="mt-0.5 text-[12.5px] text-dim">{willDo}</p>
-
 						<div class="mt-2.5">
 							<!-- `refuses` goes separately: an empty selection stops the press
 							     but is not a refusal. The pair fills the bar's width. -->
@@ -236,12 +231,15 @@
 						</div>
 					{/if}
 
-					<!-- Only this bar's own refusal; a sheet's was answered there. A lost
-					     connection ranks behind it. -->
+					<!-- One line, the loudest first. Only this bar's own refusal; a sheet's
+					     was answered there. A lost connection ranks behind it, and why the
+					     pair is dead behind that. -->
 					{#if refusal}
 						<p role="alert" class="swap mt-2 text-[12.5px] text-danger">{refusal}</p>
 					{:else if offline}
 						<p role="alert" class="swap mt-2 text-[12.5px] text-danger">{offline}</p>
+					{:else if picking && refuses}
+						<p class="swap mt-2 text-[12.5px] text-dim">{refuses}</p>
 					{:else if done}
 						<!-- What the last run came to, kept until the next starts. -->
 						<p role="status" class={`swap text-[12.5px] text-dim ${picking ? 'mt-2' : ''}`}>

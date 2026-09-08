@@ -7,7 +7,7 @@ import pytest
 from conftest import audio, probe_data, set_langs, set_layouts, set_rules, subtitle, video
 from trackstarr import config
 from trackstarr.command import ffmpeg_args
-from trackstarr.media import is_junk_title
+from trackstarr.media import matches_release_tags
 from trackstarr.planner import (
     OutStream,
     Plan,
@@ -826,7 +826,7 @@ def test_with_no_rule_riding_along_the_deciding_pass_is_the_whole_answer(monkeyp
     """Every rule settled one way or the other, which is what a settings page
     somebody has actually been through looks like. Nothing is held back, so
     there is no second pass and nothing incidental to report from it."""
-    set_rules(monkeypatch, sdh="never", junk_titles="never", stray_streams="never")
+    set_rules(monkeypatch, sdh="never", release_tags="never", stray_streams="never")
     plan = plan_for(video(0), audio(1, 6, title="AC3 5.1 @ 640kbps"))
 
     assert plan.needed
@@ -834,9 +834,9 @@ def test_with_no_rule_riding_along_the_deciding_pass_is_the_whole_answer(monkeyp
     assert not plan.incidental_rules
 
 
-def test_junk_titles_switched_off_leaves_the_title(monkeypatch):
+def test_release_tags_switched_off_leaves_the_title(monkeypatch):
     """A ride-along with no switch before this; now it has one."""
-    set_rules(monkeypatch, junk_titles="never")
+    set_rules(monkeypatch, release_tags="never")
     plan = plan_for(video(0), audio(1, 6), audio(2, 2, title="AC3 5.1 @ 640kbps"))
     assert plan.needed
     assert not plan.incidental
@@ -981,17 +981,17 @@ def test_sdh_rule_can_be_disabled(monkeypatch):
     assert 3 in {out.src for out in plan.streams}
 
 
-# Junk titles (ride along with a rewrite, never trigger one)
+# Release tags (ride along with a rewrite, never trigger one)
 
 
 @pytest.mark.parametrize(
-    ("title", "junk"),
+    ("title", "tagged"),
     [
         ("AC3 5.1 @ 640kbps", True),
         ("Movie.2024.1080p.WEB-DL.x264-GRP", True),
         # A pure pattern test: load-bearing protection is the planner's job.
         ("Commentary @ 192kbps", True),
-        # The default is conservative: bare codec names are not junk.
+        # The default is conservative: bare codec names are not release tags.
         ("DTS-HD MA", False),
         ("AAC 2.0", False),
         ("Director's Commentary", False),
@@ -999,8 +999,8 @@ def test_sdh_rule_can_be_disabled(monkeypatch):
         ("", False),
     ],
 )
-def test_is_junk_title(title, junk):
-    assert is_junk_title(title, Policy.from_config()) is junk
+def test_matches_release_tags(title, tagged):
+    assert matches_release_tags(title, Policy.from_config()) is tagged
 
 
 def test_load_bearing_titles_are_never_cleared():
@@ -1013,18 +1013,18 @@ def test_load_bearing_titles_are_never_cleared():
         subtitle(3, "eng", title="English (Forced) BluRay"),
         subtitle(4, "eng", title="English SDH 1080p"),
     )
-    assert not any("junk title" in note for note in plan.incidental)
+    assert not any("release tags" in note for note in plan.incidental)
     # The forced track never counts as the full subtitle, so the SDH stays.
     assert {out.src for out in plan.streams} >= {3, 4}
 
 
-def test_junk_title_alone_does_not_trigger():
+def test_release_tags_alone_do_not_trigger():
     plan = plan_for(video(0), audio(1, 2, title="AAC 2.0 @ 192kbps"))
     assert not plan.needed
-    assert any("junk title" in note for note in plan.incidental)
+    assert any("release tags" in note for note in plan.incidental)
 
 
-def test_junk_titles_cleared_when_rewriting_anyway():
+def test_release_tags_cleared_when_rewriting_anyway():
     plan = plan_for(
         video(0),
         audio(1, 6, title="DTS-HD MA 5.1 @ 1509kbps"),
@@ -1033,12 +1033,12 @@ def test_junk_titles_cleared_when_rewriting_anyway():
     )
     assert plan.needed  # the German track and the missing stereo trigger it
     args = ffmpeg_args(plan, "/tmp/out.mkv")
-    # Audio 0 is the generated downmix; the junk-titled 5.1 copies as audio 1.
+    # Audio 0 is the generated downmix; the tagged 5.1 copies as audio 1.
     assert args[args.index("-metadata:s:a:1") + 1] == "title="
     assert args[args.index("-metadata:s:s:0") + 1] == "title="
 
 
-def test_junk_container_title_is_cleared():
+def test_release_tags_on_the_container_title_are_cleared():
     """Named on its own, cleared once a rewrite is happening for another reason.
     The 5.1 with no stereo beside it is that reason."""
     title = "Movie.2024.1080p.BluRay.x264-GRP"
@@ -1156,7 +1156,7 @@ def test_a_kept_subtitle_title_is_reasserted_in_the_command():
 
 
 def test_a_copied_audio_track_keeps_its_own_title():
-    """The ordinary case between a generated downmix and a stripped junk title:
+    """The ordinary case between a generated downmix and a cleared release tag:
     copied through, title re-asserted as it was."""
     args = args_for(
         OutStream(src=0, kind="video"),

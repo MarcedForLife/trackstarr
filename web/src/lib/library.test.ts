@@ -1,5 +1,16 @@
 import { describe, expect, test } from 'vitest';
-import { listing, unify, type LibraryFile, type Track } from '$lib/library';
+import {
+	asVerdict,
+	FILTERS,
+	judged,
+	listing,
+	unify,
+	VERDICTS,
+	type Card,
+	type LibraryFile,
+	type Track,
+	type Verdict
+} from '$lib/library';
 
 // Shorthand for the fields the unified list reads.
 function track(index: number, kind: string, extra: Partial<Track> = {}): Track {
@@ -95,7 +106,7 @@ describe('listing', () => {
 		const shown = listing(
 			file({
 				tracks: [track(0, 'audio')],
-				fixed: {
+				modified: {
 					at: '2026-09-01T00:00:00Z',
 					was: [track(0, 'audio'), track(1, 'audio')],
 					dropped: [1]
@@ -112,7 +123,7 @@ describe('listing', () => {
 			file({
 				tracks: [track(0, 'audio')],
 				planned: [track(0, 'audio', { src: 0 })],
-				fixed: {
+				modified: {
 					at: '2026-09-01T00:00:00Z',
 					was: [track(0, 'audio'), track(1, 'audio')],
 					dropped: [1]
@@ -138,11 +149,51 @@ describe('listing', () => {
 			file({
 				tracks: [track(0, 'audio')],
 				// A remux: the record kept no lists, so there is nothing to compare.
-				fixed: { at: '2026-09-01T00:00:00Z' }
+				modified: { at: '2026-09-01T00:00:00Z' }
 			})
 		);
 
 		expect(shown.label).toBe('Tracks');
 		expect(shown.rows.map((row) => row.position)).toEqual([1]);
+	});
+});
+
+describe('asVerdict and judged', () => {
+	function card(over: Partial<Card> = {}): Card {
+		return { id: 'arr:radarr:1', name: 'Dune', kind: 'movie', state: 'conform', ...over };
+	}
+
+	test('takes every word the app draws, deferred among them', () => {
+		for (const word of [...VERDICTS, ...FILTERS, 'deferred', 'mixed']) {
+			expect(asVerdict(word)).toBe(word);
+		}
+	});
+
+	test('reads a word this build has never heard of as unchecked', () => {
+		expect(asVerdict('quarantined')).toBe('unchecked');
+		expect(asVerdict('')).toBe('unchecked');
+		// Off Object.prototype, so a lookup by inherited name is not a verdict.
+		expect(asVerdict('constructor')).toBe('unchecked');
+	});
+
+	test('narrows a fetched card in place, tally and all', () => {
+		const shelf = [card({ counts: { quarantined: 3, conform: 1 } })];
+		// The cast is the point: no card written in the app can hold this, and one
+		// off a newer service can.
+		shelf[0].state = 'quarantined' as Verdict;
+		judged(shelf);
+
+		expect(shelf[0].state).toBe('unchecked');
+		// Folded, so the card's word and its chips cannot disagree.
+		expect(shelf[0].counts).toEqual({ unchecked: 3, conform: 1 });
+	});
+
+	test('leaves a card whose words are all known alone', () => {
+		const counts = { conform: 2 };
+		const shelf = [card({ counts })];
+		judged(shelf);
+
+		expect(shelf[0].state).toBe('conform');
+		expect(shelf[0].counts).toBe(counts);
 	});
 });

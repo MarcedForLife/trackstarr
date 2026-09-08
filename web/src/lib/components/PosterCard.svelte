@@ -1,7 +1,9 @@
 <script lang="ts">
+	import { arrival, COVER_FADE, type Arrival } from '$lib/covers';
 	import { display } from '$lib/display.svelte';
 	import { pressing } from '$lib/field';
-	import { coverUrl, initials, pip, verdictLabel, type Card } from '$lib/library';
+	import { coverUrl, dot, initials, VERDICTS, verdictLabel, type Card } from '$lib/library';
+	import Mark from '$lib/components/Mark.svelte';
 	import { pressGesture } from '$lib/press';
 
 	let {
@@ -15,7 +17,7 @@
 		// Off for an illustration of a card; the tilt still answers a finger.
 		tabbable = true,
 		// The verdict and change badges across the bottom. Off at sizes where
-		// "Would fix" is "Wou…".
+		// "Unsupported" is "Uns…".
 		verdict = true,
 		// Whether this card is selected, and by being defined at all, whether a
 		// tap selects. The tap still arrives through `onopen`; the grid decides.
@@ -45,6 +47,10 @@
 	let missing = $state(false);
 	// Whether lifting now would pick the card: the one piece of a press drawn.
 	let armed = $state(false);
+	// How the cover got here, and whether the tile it fades off is still
+	// mounted.
+	let cover = $state<Arrival>('coming');
+	let tiled = $state(true);
 
 	let frame: HTMLElement | null = $state(null);
 
@@ -75,6 +81,14 @@
 
 	const mark = $derived(initials(card.name));
 
+	// The artwork: a title's own poster, or the one an illustration was handed.
+	const art = $derived(src ?? coverUrl(card.id));
+
+	// The tile a card wears until its cover lands, and keeps instead of one that
+	// never arrives, so a poster that fails to load changes nothing but stays.
+	const TILE =
+		'flex h-full w-full items-center justify-center bg-raised text-lg font-semibold text-faint';
+
 	// The layouts a rewrite would add and rebuild, told apart by fill: green for
 	// a gain, accent for a rebuild. A rebuild is one change, not a gain plus a
 	// drop.
@@ -86,9 +100,40 @@
 		}))
 	]);
 
-	// A title trackstarr has rewritten reads Passed like any other, so the count
-	// is the only thing saying its files are the ones we made.
-	const fixed = $derived(!card.fixed ? '' : card.fixed === 1 ? 'Fixed' : `Fixed ×${card.fixed}`);
+	// A title trackstarr has rewritten reads Passed like any other, so the mark
+	// beside the word is the only thing saying its files are the ones we made.
+	// How much of the title that is goes in the label: a number on the card was
+	// noise on a film, always one, and no fraction on a series.
+	const rewritten = $derived.by(() => {
+		const made = card.modified ?? 0;
+		const files = card.files ?? 0;
+		if (!made) return '';
+		if (made < files) return `${made} of ${files} rewritten`;
+		return files > 1 ? `all ${files} rewritten` : 'rewritten';
+	});
+
+	// A dot per state the title holds, worst first, so the leading dot is the
+	// word beside it. Files that agree leave the one dot a card always had; a
+	// mixed one gets up to four, since anything outstanding takes the headline
+	// instead.
+	const dots = $derived.by(() => {
+		const held = card.counts;
+		if (!held) return [card.state];
+		const states = VERDICTS.filter((state) => (held[state] ?? 0) > 0);
+		return states.length ? states : [card.state];
+	});
+
+	// The dots say which states in colour alone and the mark says only that we
+	// rewrote something, so the label says both in words.
+	const spread = $derived.by(() => {
+		const parts =
+			dots.length < 2
+				? []
+				: dots.map((state) => `${card.counts?.[state]} ${verdictLabel(state).toLowerCase()}`);
+		if (rewritten) parts.push(rewritten);
+		const word = verdictLabel(card.state);
+		return parts.length ? `${word}: ${parts.join(', ')}` : word;
+	});
 
 	// The line under the name. Joined, since a series has no year.
 	const sub = $derived(
@@ -109,7 +154,7 @@
 	class:pans-both={pan === 'both'}
 	class="poster group block w-full text-left"
 	aria-pressed={picking ? selected : undefined}
-	aria-label={`${card.name}${card.year ? ` (${card.year})` : ''} — ${verdictLabel(card.state)}`}
+	aria-label={`${card.name}${card.year ? ` (${card.year})` : ''} — ${spread}`}
 >
 	<!-- data-tilt is how the field finds the element it turns; `frame` is scoped.
 	     --fx is the effects multiplier the lift, shadow and keystone read, set
@@ -129,49 +174,71 @@
 		     `inherits: false`, so the write lands on one element. -->
 		<span
 			data-sheen
-			style:--cover={missing || display.art === 'hide'
-				? undefined
-				: `url("${src ?? coverUrl(card.id)}")`}
+			style:--cover={missing || display.art === 'hide' ? undefined : `url("${art}")`}
 			class={`art absolute inset-0 block overflow-hidden rounded-xl border bg-sunken ${
 				flat || !display.lights ? '' : `is-${display.sheen}`
 			} ${selected || armed ? 'border-accent' : 'border-line'}`}
 		>
 			{#if missing || display.art === 'hide'}
-				<span
-					class="flex h-full w-full items-center justify-center bg-raised text-lg font-semibold text-faint"
-				>
-					{mark}
-				</span>
+				<span class={TILE}>{mark}</span>
 			{:else}
 				<!-- The same cover, never seen: a background image cannot say it
-				     failed, so this hidden element fetches it, reports the failure,
-				     and carries the lazy load. data-cover lets $lib/covers call it
-				     off on navigation. -->
+				     failed or landed, so this hidden element fetches it, reports
+				     both, and carries the lazy load. data-cover lets $lib/covers
+				     call it off on navigation. -->
 				<img
 					data-cover
-					src={src ?? coverUrl(card.id)}
+					src={art}
 					alt=""
 					width="500"
 					height="750"
 					loading="lazy"
 					decoding="async"
 					draggable="false"
+					onload={() => (cover = arrival(art))}
 					onerror={() => (missing = true)}
 					class="invisible h-full w-full object-cover"
 				/>
+				{#if tiled && cover !== 'seen'}
+					<!-- A background layer cannot fade, so the tile over it fades off
+					     instead. Under the scrim and the badges, which say what the
+					     title is and how it fared while the artwork is still coming.
+					     Dropped once faded, or every card in the grid would keep a
+					     spare layer for a fade that is over. -->
+					<span
+						aria-hidden="true"
+						ontransitionend={() => (tiled = false)}
+						class={`${TILE} ${COVER_FADE} absolute inset-0 ${
+							cover === 'fading' ? 'opacity-0' : ''
+						}`}
+					>
+						{mark}
+					</span>
+				{/if}
 			{/if}
 
 			<span class="scrim pointer-events-none absolute inset-x-0 bottom-0 block h-1/2"></span>
 			{#if verdict}
 				<span class="pointer-events-none absolute inset-x-2 bottom-2 block">
-					<span class="flex items-center gap-1.5">
-						<span class={`h-1.5 w-1.5 flex-none rounded-full ${pip[card.state] ?? 'bg-faint'}`}
-						></span>
+					<span class="flex items-center gap-1.5" title={spread}>
+						<!-- Half the gap between the dots that sits between them and the
+						     word, so a run of them reads as one mark. -->
+						<span class="flex flex-none items-center gap-0.5">
+							{#each dots as state (state)}
+								<span class={`h-1.5 w-1.5 rounded-full ${dot(state)}`}></span>
+							{/each}
+						</span>
 						<span class="truncate text-[11px] font-medium text-white/70">
 							{verdictLabel(card.state)}
 						</span>
+						<!-- Our own star after the word: this title is as it should be,
+						     and trackstarr made it so. In Passed's green, since accent on
+						     a card means work outstanding. -->
+						{#if rewritten}
+							<Mark size={11} class="flex-none text-ok" />
+						{/if}
 					</span>
-					{#if written.length || card.drops || fixed}
+					{#if written.length || card.drops}
 						<span class="mt-1 flex flex-wrap gap-1">
 							{#each written as change (change.chip)}
 								<span
@@ -185,16 +252,6 @@
 									class="rounded bg-black/60 px-1 py-px font-mono text-[10px] leading-tight text-white/80"
 								>
 									−{card.drops}
-								</span>
-							{/if}
-							{#if fixed}
-								<!-- After the plan's chips: what is still owed leads, what is
-								     already done follows. Outlined rather than filled, or a
-								     library trackstarr has been through is a wall of green. -->
-								<span
-									class="rounded border border-ok/70 px-1 py-px font-mono text-[10px] leading-tight text-white/85"
-								>
-									{fixed}
 								</span>
 							{/if}
 						</span>

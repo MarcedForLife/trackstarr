@@ -7,6 +7,7 @@
 	import Sheet, { SLIDE } from '$lib/components/Sheet.svelte';
 	import { refusalText } from '$lib/api';
 	import { MARKS, type MarkName } from '$lib/connections';
+	import { arrival, coverShow, type Arrival } from '$lib/covers';
 	import { button } from '$lib/controls';
 	import { ago } from '$lib/events';
 	import { duration } from '$lib/format';
@@ -30,7 +31,7 @@
 		verdictLabel,
 		verdictText,
 		type Card,
-		type Fixed,
+		type Modified,
 		type Row,
 		type RunMode,
 		type TitleDetail,
@@ -83,6 +84,14 @@
 	let loading = $state(false);
 	let failure = $state('');
 
+	// How the cover reached the header, so it fades in over the tile rather than
+	// snapping onto it. A cover the grid has already shown arrives without a
+	// fade, which is most of them: the card that was tapped wears one. Reset
+	// per title, since the sheet shows a second without either going.
+	let cover = $state<Arrival>('coming');
+	const showing = $derived(coverShow(cover));
+	const art = $derived(opened ? coverUrl(opened.id) : '');
+
 	// Where to watch this title. Null while the media servers are being asked, so
 	// the buttons stand greyed in the row rather than landing under the thumb.
 	let links = $state<TitleLink[] | null>(null);
@@ -98,6 +107,22 @@
 	let holdError = $state('');
 	const hold = $derived(opened ? forTitle(holds, opened.id) : undefined);
 	const left = $derived(hold?.seconds ? `${duration(hold.seconds)} left` : 'until lifted');
+
+	// The menu the Hold button raises. Answers Escape before the sheet under it,
+	// and takes no history entry: a back press should leave the sheet, not the
+	// menu over it.
+	const chooser = overlay({ close: () => (choosing = false) });
+	// The button and its menu, for telling a press outside the pair from one in
+	// it.
+	let howLong = $state<HTMLElement>();
+
+	function askHowLong() {
+		if (choosing) chooser.lower();
+		else {
+			choosing = true;
+			chooser.raise();
+		}
+	}
 
 	// A long series is two hundred files with a track list each.
 	const FILE_PAGE = 12;
@@ -123,11 +148,15 @@
 		up = true;
 		opened = card;
 		detail = null;
+		// A second title tapped brings a second cover, which has yet to arrive.
+		cover = 'coming';
 		files = FILE_PAGE;
 		failure = '';
 		links = null;
 		holds = [];
-		choosing = false;
+		// Through the stack, or a menu left up over the last title would still be
+		// answering Escape.
+		chooser.lower();
 		holdError = '';
 		loading = true;
 		// Alongside the verdicts: neither should wait on the other.
@@ -171,7 +200,7 @@
 		holdError = '';
 		try {
 			holds = await placeHold({ ids: [opened.id] }, seconds);
-			choosing = false;
+			chooser.lower();
 		} catch (error) {
 			holdError = refusalText(error);
 		} finally {
@@ -200,6 +229,24 @@
 
 	// A share of the line below sm, natural width from sm up, as RunButtons does.
 	const spread = 'flex-1 sm:flex-none';
+
+	// One button to open the title elsewhere: centred in the row a phone gives it,
+	// left-aligned in the column from sm up so the marks line up down its edge.
+	const link = `${button} ${spread} sm:justify-start`;
+
+	// The services the header offers, whether they have been asked yet or not.
+	const offered = $derived(links ?? detail?.servers ?? []);
+
+	// From sm up the cover stands as tall as the buttons beside it and their
+	// gaps: 40px each and 8px between, so three make 136 and four make 184.
+	// Never shorter than three, so a title with two links keeps the poster a
+	// title with three gets, and four is the most the service can offer one
+	// title. Written out, since Tailwind reads its classes from the source.
+	const poster = $derived(offered.length > 3 ? 'sm:h-46' : 'sm:h-34');
+
+	// What the hold control takes of the row: a column of the grid where Plan and
+	// Process are beside it, its own width where it stands alone.
+	const cell = $derived(runner ? 'w-full' : 'flex-none');
 
 	// Every close goes through the entry, or the next back would raise the sheet
 	// again. The entry going is what shuts it; see $lib/overlay.
@@ -232,10 +279,13 @@
 		}
 	}
 
-	// The sentence both buttons share.
-	const note = $derived(
-		!runner ? '' : runner.refuses || 'Reads every file here again, whatever the last sweep said.'
-	);
+	// Whether the box has buttons, not just a line saying what stands: a reader
+	// who cannot act still sees a hold.
+	const acting = $derived(!!runner || admin);
+
+	// What went wrong, whichever button caused it. One line, since only one
+	// press is ever in flight.
+	const alarm = $derived(holdError || runner?.error || '');
 
 	const KIND_LETTER: Record<string, string> = {
 		video: 'V',
@@ -257,34 +307,67 @@
 	}
 
 	// One change per line; run together they were a paragraph nobody finished.
-	type Change = { text: string; rides: boolean };
+	// `mark` says what the change does to the file and `rides` whether the rules
+	// chose it, so neither has to carry the other's meaning.
+	type Change = { text: string; mark: string; rides: boolean };
+
+	// The verb a change opens with and the mark that stands for it. The planner
+	// writes these strings to a form, so the first word is the verb; see
+	// _record in planner.py. A clear takes a title away, which is a drop of the
+	// only thing it had. The plus and minus are the pair shrank() already uses.
+	const CHANGE_MARKS: [string, string][] = [
+		['add', '+'],
+		['drop', '−'],
+		['clear', '−'],
+		['regenerate', '~'],
+		['replace', '~']
+	];
+
+	// A remux or a reorder is none of the three, and keeps the plain mark.
+	function changeMark(text: string): string {
+		const verb = text.slice(0, text.indexOf(' '));
+		return CHANGE_MARKS.find(([opener]) => opener === verb)?.[1] ?? '›';
+	}
 
 	function changes(told: Why): Change[] {
 		return [
-			...(told.reasons ?? []).map((text) => ({ text, rides: false })),
-			// Marked apart: these never cause a rewrite on their own.
-			...(told.incidental ?? []).map((text) => ({ text, rides: true }))
+			...(told.reasons ?? []).map((text) => ({ text, mark: changeMark(text), rides: false })),
+			// Marked apart by the colour: these never cause a rewrite on their own.
+			...(told.incidental ?? []).map((text) => ({ text, mark: changeMark(text), rides: true }))
 		];
 	}
 
 	// What the rewrite did to the file's size, as the history's chips spell it.
-	function shrank(fixed: Fixed): string {
-		const { bytes_before: before, bytes_after: after } = fixed;
+	function shrank(rewrote: Modified): string {
+		const { bytes_before: before, bytes_after: after } = rewrote;
 		if (before === undefined || after === undefined) return '';
 		const delta = after - before;
 		return `${delta < 0 ? '−' : '+'}${size(delta)}`;
 	}
 </script>
 
+<svelte:window
+	onpointerdown={(event) => choosing && !howLong?.contains(event.target as Node) && chooser.lower()}
+/>
+
 <Sheet open={up} onclose={close} label={opened?.name ?? 'Title'}>
 	{#if opened}
 		<div class="px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
-			<div class="flex gap-4">
-				<img
-					src={coverUrl(opened.id)}
-					alt=""
-					class="h-[7.5rem] w-20 flex-none rounded-lg border border-line bg-sunken object-cover"
-				/>
+			<div class="flex flex-wrap gap-4">
+				<!-- As tall as the links beside it; see `poster`. Width follows the
+				     height at a poster's 2:3. The tile holds the shape and the border
+				     while the cover fades in over it, so the header does not shift or
+				     flash as the picture lands. -->
+				<span
+					class={`relative block aspect-[2/3] h-[7.5rem] w-auto flex-none overflow-hidden rounded-lg border border-line bg-sunken ${poster}`}
+				>
+					<img
+						src={art}
+						alt=""
+						onload={() => (cover = arrival(art))}
+						class={`absolute inset-0 h-full w-full object-cover ${showing}`}
+					/>
+				</span>
 				<div class="min-w-0 flex-1">
 					<h2 class="text-[17px] font-semibold tracking-tight">{opened.name}</h2>
 					<p class="mt-0.5 text-[12.5px] text-dim">
@@ -306,119 +389,130 @@
 						<p class="mt-0.5 font-mono text-[11px] break-all text-faint">{detail.folder}</p>
 					{/if}
 				</div>
+
+				<!-- Where to watch it and where it is managed. A row under the cover on
+				     a phone, a column beside the title from sm up, where the header has
+				     room to spare and a row of its own cost a line. A server still being
+				     asked holds its place greyed, so a late answer does not shove
+				     everything up under the thumb. The mark leads on its dark tile, and
+				     the label drops to the name; "Open in" stays for a screen reader. -->
+				{#if offered.length}
+					<div class="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-col sm:flex-nowrap">
+						{#each offered as server (server.server)}
+							{@const found = server.url ?? ''}
+							{@const logo = mark(server.server)}
+							{#if found}
+								<!-- Another application on another host, so no resolve(). -->
+								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+								<a href={found} target="_blank" rel="noreferrer" class={link}>
+									{#if logo}<ServiceIcon name={logo} box={20} size={14} />{/if}
+									<span class="sr-only">Open in </span>{server.label}
+									<!-- Last on the line rather than trailing the name, so the
+									     column ends on one edge as it starts on one. -->
+									<span class="flex-none sm:ml-auto"><Glyph name="open" /></span>
+								</a>
+							{:else}
+								<span class={`${link} opacity-40`} aria-hidden="true">
+									{#if logo}<ServiceIcon name={logo} box={20} size={14} />{/if}
+									<span class="sr-only">Open in </span>{server.label}
+									<span class="flex-none sm:ml-auto"><Glyph name="open" /></span>
+								</span>
+							{/if}
+						{/each}
+					</div>
+				{/if}
 			</div>
 
-			<!-- Where to watch it and where it is managed. A server still being asked
-			     holds the row open greyed, so a late row does not shove everything
-			     up under the thumb. The mark leads on its dark tile, and the label
-			     drops to the name; "Open in" stays for a screen reader. Buttons
-			     share the line on a phone and take natural width from sm up. -->
-			{#if links?.length || (!links && detail?.servers.length)}
-				<div class="mt-4 flex flex-wrap gap-2">
-					{#each links ?? detail?.servers ?? [] as server (server.server)}
-						{@const found = server.url ?? ''}
-						{@const logo = mark(server.server)}
-						{#if found}
-							<!-- Another application on another host, so no resolve(). -->
-							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
-							<a href={found} target="_blank" rel="noreferrer" class={`${button} ${spread}`}>
-								{#if logo}<ServiceIcon name={logo} box={20} size={14} />{/if}
-								<span class="sr-only">Open in </span>{server.label}
-								<Glyph name="open" />
-							</a>
-						{:else}
-							<span class={`${button} ${spread} opacity-40`} aria-hidden="true">
-								{#if logo}<ServiceIcon name={logo} box={20} size={14} />{/if}
-								<span class="sr-only">Open in </span>{server.label}
-								<Glyph name="open" />
-							</span>
-						{/if}
-					{/each}
-				</div>
-			{/if}
-
-			<!-- Whether this title is being left alone, and how to say so. Above the
-			     run buttons: it is the answer to "not now", and pressing Process
-			     while it is held would rewrite nothing. -->
-			{#if hold || admin}
-				<div class="mt-4 flex flex-wrap items-center gap-2">
-					{#if hold}
-						<span class="min-w-0 flex-1 text-[12.5px] text-dim">
-							{[`Held${hold.by ? ` by ${hold.by}` : ''}`, left, hold.reason]
-								.filter(Boolean)
-								.join(' · ')}
-						</span>
-						{#if admin}
-							<button onclick={release} disabled={!!holdBusy} class={`${button} flex-none`}>
-								{holdBusy === 'lift' ? 'Lifting…' : 'Lift the hold'}
-							</button>
-						{/if}
-					{:else if choosing}
-						<!-- The choices themselves, since "how long" is the only question a
-						     hold asks, and a way back out of having asked it. -->
-						{#each SPANS as span (span.seconds)}
-							<button
-								onclick={() => keep(span.seconds)}
-								disabled={!!holdBusy}
-								class={`${button} ${spread}`}
-							>
-								{span.label}
-							</button>
-						{/each}
-						<button
-							onclick={() => (choosing = false)}
-							disabled={!!holdBusy}
-							class={`${button} ${spread}`}
-						>
-							Cancel
-						</button>
-					{:else}
-						<button
-							onclick={() => (choosing = true)}
-							title="Leave this title alone. It is still judged, just not rewritten."
-							class={`${button} ${spread}`}
-						>
-							<Glyph name="pause" />
-							Hold
-						</button>
-					{/if}
-				</div>
-				{#if holdError}
-					<p role="alert" class="mt-1.5 text-[12px] text-danger">{holdError}</p>
-				{/if}
-			{/if}
-
-			{#if runner}
-				<!-- Under the header, near the thumb. A sunken block of its own, being
-				     the one thing here that does something. -->
+			<!-- One sunken block, near the thumb, for everything here that does
+			     something. Hold sits with the runs: it answers the same question, and
+			     Process on a held title rewrites nothing. A run takes the row over. -->
+			{#if acting || hold}
 				<div class="mt-4 rounded-xl border border-line bg-sunken p-3">
-					{#if runner.run}
+					{#if runner?.run}
 						<RunProgress
 							run={runner.run}
 							stopping={runner.stopping}
 							noun="this title"
 							onstop={runner.onstop}
 						/>
-					{:else}
-						<!-- One row on a phone too; stacked, the panel pushed the rows below
-						     the fold. -->
-						<RunButtons
-							fill
-							mayRewrite={runner.mayRewrite}
-							refuses={runner.refuses}
-							disabled={runner.starting}
-							busy={runner.busy}
-							onrun={(mode) => opened && runner.onrun(opened, mode)}
-						/>
+					{:else if acting}
+						<!-- One row at every width; stacked, the panel pushed the rows below
+						     the fold. Three equal columns, since the three are one decision
+						     and a narrower Hold read as the lesser of them. Nothing to run:
+						     Hold alone, at its own width rather than a third of the row. -->
+						<div class={runner ? 'grid grid-cols-3 items-center gap-3' : 'flex items-center gap-3'}>
+							{#if runner}
+								<RunButtons
+									columns
+									mayRewrite={runner.mayRewrite}
+									refuses={runner.refuses}
+									disabled={runner.starting}
+									busy={runner.busy}
+									onrun={(mode) => opened && runner.onrun(opened, mode)}
+								/>
+							{/if}
+							{#if admin && hold}
+								<button onclick={release} disabled={!!holdBusy} class={`${cell} ${button}`}>
+									{holdBusy === 'lift' ? 'Lifting…' : 'Lift'}
+								</button>
+							{:else if admin}
+								<!-- How long is the only question a hold asks, and it is asked in a
+								     menu under the button rather than in the row: opened inline it
+								     shoved the file list down the screen every time. -->
+								<div bind:this={howLong} class={`relative ${cell}`}>
+									<button
+										onclick={askHowLong}
+										aria-expanded={choosing}
+										title="Leave this title alone. It is still judged, just not rewritten."
+										class={`${cell} ${button}`}
+									>
+										<Glyph name="pause" />
+										Hold
+									</button>
 
-						<p class="mt-2 text-[12px] text-dim">{note}</p>
+									{#if choosing}
+										<!-- Under the button that raised it and as wide, over the rows
+										     below rather than moving them. The minimum is what the
+										     longest choice needs, since a third of a phone is narrower
+										     than that; there it hangs from the button's right edge. -->
+										<div
+											class="menu absolute top-full right-0 z-30 mt-2 w-full min-w-52 rounded-xl border border-line-strong bg-raised p-1 shadow-lg"
+										>
+											<p class="px-2.5 pt-1.5 pb-1 text-[11px] text-faint">Hold for</p>
+											{#each SPANS as span (span.seconds)}
+												<button
+													onclick={() => keep(span.seconds)}
+													disabled={!!holdBusy}
+													class="flex h-10 w-full items-center rounded-lg px-2.5 text-[13px] font-medium transition-colors hover:bg-sunken disabled:opacity-50"
+												>
+													{holdBusy === String(span.seconds) ? 'Holding…' : span.label}
+												</button>
+											{/each}
+										</div>
+									{/if}
+								</div>
+							{/if}
+						</div>
+					{/if}
 
-						{#if runner.error}
-							<p role="alert" class="mt-1.5 text-[12px] text-danger">{runner.error}</p>
-						{:else if runner.done}
-							<!-- What the last run came to, kept until the next starts. -->
-							<p role="status" class="mt-1.5 text-[12px] text-dim">{runner.done}</p>
-						{/if}
+					<!-- What stands, and what came of the last press. A hold is a state,
+					     so it shows alongside; the rest is one line, the loudest first. -->
+					{#if hold || alarm || runner?.refuses || runner?.done}
+						<div class={`flex flex-col gap-1 text-[12px] ${acting ? 'mt-2.5' : ''}`}>
+							{#if hold}
+								<!-- Not who placed it: on a library one household runs, the name is
+								     always the reader's own. -->
+								<p class="text-dim">{['On hold', left, hold.reason].filter(Boolean).join(' · ')}</p>
+							{/if}
+							{#if alarm}
+								<p role="alert" class="text-danger">{alarm}</p>
+							{:else if runner?.refuses}
+								<p class="text-dim">{runner.refuses}</p>
+							{:else if runner?.done}
+								<!-- What the last run came to, kept until the next starts. -->
+								<p role="status" class="text-dim">{runner.done}</p>
+							{/if}
+						</div>
 					{/if}
 				</div>
 			{/if}
@@ -459,8 +553,6 @@
 									{verdictLabel(file.status)}
 								</span>
 							</div>
-							<!-- A flex row rather than a run of text: whitespace between two
-							     blocks is the one thing a template cannot be held to. -->
 							<!-- The whole of what a rewrite of ours left behind: when, and what
 							     it cost. What it changed is the two columns below, where any
 							     track moved, and the history page where none did. A flex row
@@ -468,11 +560,11 @@
 							     one thing a template cannot be held to. -->
 							<p class="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[11.5px] text-faint">
 								<span>{size(file.bytes)}</span>
-								{#if file.fixed}
+								{#if file.modified}
 									<span aria-hidden="true">·</span>
-									<span class="text-ok">Fixed {ago(file.fixed.at)}</span>
-									{#if shrank(file.fixed)}
-										<span class="font-mono">{shrank(file.fixed)}</span>
+									<span class="text-ok">Modified {ago(file.modified.at)}</span>
+									{#if shrank(file.modified)}
+										<span class="font-mono">{shrank(file.modified)}</span>
 									{/if}
 								{/if}
 							</p>
@@ -575,9 +667,9 @@
 		<ul class="mt-3 flex flex-col gap-1">
 			{#each changes(told) as change, at (at)}
 				<li class={`flex gap-1.5 text-[12px] ${change.rides ? 'text-faint' : 'text-dim'}`}>
-					<!-- Marks our fonts carry; see Glyph.svelte. Fixed width so both kinds
-					     of line start on one column. -->
-					<span class="w-2 flex-none text-center">{change.rides ? '·' : '›'}</span>
+					<!-- Marks our fonts carry; see Glyph.svelte. Fixed width so every
+					     line starts on one column whichever mark it takes. -->
+					<span class="w-2 flex-none text-center">{change.mark}</span>
 					<span class="min-w-0">{change.text}</span>
 				</li>
 			{/each}
@@ -600,3 +692,20 @@
 		</div>
 	{/if}
 {/snippet}
+
+<style>
+	/* The menu arriving from under the button that raised it. Out-cubic over a
+	   short distance, as the sheet and the bar use; the global reduced-motion
+	   rule in layout.css takes it away. */
+	.menu {
+		animation: menu-in 150ms cubic-bezier(0.33, 1, 0.68, 1);
+		transform-origin: top right;
+	}
+
+	@keyframes menu-in {
+		from {
+			opacity: 0;
+			transform: translateY(-6px) scale(0.97);
+		}
+	}
+</style>

@@ -14,9 +14,9 @@ def _generated(*layouts: str) -> list[dict]:
     ]
 
 
-def _fixed(duration: float, seconds: float, *layouts: str, waited: float = 0.0) -> None:
+def _modified(duration: float, seconds: float, *layouts: str, waited: float = 0.0) -> None:
     events.record(
-        "fixed",
+        "modified",
         path="/library/film.mkv",
         duration=duration,
         seconds=seconds,
@@ -59,7 +59,7 @@ def test_what_this_machine_has_actually_run_at_beats_the_guess():
     """The whole point of reading the history back: a box that encodes at 20x
     must not be estimated at 120x, however reasonable that was to start with."""
     for _ in range(estimate.ENOUGH):
-        _fixed(3600, 180, "2.0")
+        _modified(3600, 180, "2.0")
 
     assert measured().of(("2.0",)) == 20.0
 
@@ -67,7 +67,7 @@ def test_what_this_machine_has_actually_run_at_beats_the_guess():
 def test_too_few_rewrites_to_mean_anything_leave_the_guess_alone():
     """Two rewrites can both have been the same unusual file."""
     for _ in range(estimate.ENOUGH - 1):
-        _fixed(3600, 180, "2.0")
+        _modified(3600, 180, "2.0")
 
     assert measured().of(("2.0",)) == estimate.BOOTSTRAP[1]
 
@@ -76,9 +76,9 @@ def test_each_shape_is_measured_on_its_own():
     """Two downmixes cost more than one, and a remux with neither costs least,
     so one number across all of them would be wrong for every file."""
     for _ in range(estimate.ENOUGH):
-        _fixed(3600, 12, waited=0)
-        _fixed(3600, 180, "2.0")
-        _fixed(3600, 360, "2.0", "5.1")
+        _modified(3600, 12, waited=0)
+        _modified(3600, 180, "2.0")
+        _modified(3600, 360, "2.0", "5.1")
 
     speeds = measured()
     assert (speeds.of(()), speeds.of(("2.0",)), speeds.of(("2.0", "5.1"))) == (
@@ -92,7 +92,7 @@ def test_the_queue_for_a_slot_is_not_the_work():
     """A rewrite that waited an hour for its turn is not a slow rewrite, and
     taking it for one would put every file behind it an hour out."""
     for _ in range(estimate.ENOUGH):
-        _fixed(3600, 3780, "2.0", waited=3600)
+        _modified(3600, 3780, "2.0", waited=3600)
 
     assert measured().of(("2.0",)) == 20.0
 
@@ -101,7 +101,7 @@ def test_the_middle_rewrite_is_the_one_believed():
     """One file that hit a full disk and took an hour must not drag the
     estimate for the hundred behind it."""
     for seconds in (180, 180, 180, 180, 3600):
-        _fixed(3600, seconds, "2.0")
+        _modified(3600, seconds, "2.0")
 
     assert measured().of(("2.0",)) == 20.0
 
@@ -118,9 +118,9 @@ def test_a_rewrite_the_history_could_not_time_is_left_out():
     whole cost was the wait for a slot. Neither says anything about how fast
     this machine encodes, and a zero would say it is infinitely fast."""
     for _ in range(estimate.ENOUGH):
-        _fixed(3600, 180, "2.0")
-        events.record("fixed", path="/library/film.mkv", seconds=180, downmixed=["2.0"])
-        _fixed(3600, 3600, "2.0", waited=3600)
+        _modified(3600, 180, "2.0")
+        events.record("modified", path="/library/film.mkv", seconds=180, downmixed=["2.0"])
+        _modified(3600, 3600, "2.0", waited=3600)
 
     assert measured().of(("2.0",)) == 20.0
 
@@ -130,7 +130,7 @@ def test_the_history_is_read_a_page_at_a_time_and_only_so_far_back():
     stops after so many pages; the guess suits a machine that has not
     rewritten lately."""
     for _ in range(estimate.ENOUGH):
-        _fixed(3600, 180, "2.0")
+        _modified(3600, 180, "2.0")
     for _ in range(estimate._PAGE + 1):
         events.record("skipped", path="/library/film.mkv")
 

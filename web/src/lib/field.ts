@@ -435,8 +435,18 @@ export function tiltField(
 	// the geometry the second time: the reader may have leaned a card meanwhile.
 	function relayout() {
 		onResize();
-		const sliding = node.getAnimations({ subtree: true });
-		if (sliding.length) Promise.allSettled(sliding.map((slide) => slide.finished)).then(remeasure);
+		// The slides are looked for a frame on, not here: Svelte starts them after
+		// the mutation this runs from, and what a tile carries now is its finished
+		// arrival fade, still filling. Waiting on that settled in the same frame,
+		// which left every card measured where it set off from, so the field went
+		// on leaning covers the reader had moved on from.
+		requestAnimationFrame(() => {
+			const sliding = node
+				.getAnimations({ subtree: true })
+				.filter((slide) => slide.playState !== 'finished');
+			if (!sliding.length) return remeasure();
+			Promise.allSettled(sliding.map((slide) => slide.finished)).then(remeasure);
+		});
 	}
 
 	for (const child of node.children) seen.observe(child);

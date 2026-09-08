@@ -200,7 +200,7 @@ def _before(plan: Plan) -> dict:
     return {"was": plan.tracks, **changes} if changes and plan.tracks else {}
 
 
-def _fixed(plan: Plan, bytes_before: int | None, bytes_after: int | None) -> dict:
+def _modified(plan: Plan, bytes_before: int | None, bytes_after: int | None) -> dict:
     """What the rewrite did: when, the sizes either side, and the streams it
     moved.
 
@@ -215,14 +215,14 @@ def _fixed(plan: Plan, bytes_before: int | None, bytes_after: int | None) -> dic
     return record
 
 
-def _rejudged(job: Job, plan: Plan, fixed: dict) -> Rewritten | None:
+def _rejudged(job: Job, plan: Plan, modified: dict) -> Rewritten | None:
     """The file a rewrite has just published, judged again.
 
-    Without this a fixed title reads as unchecked until the next sweep. One
+    Without this a rewritten title reads as unchecked until the next sweep. One
     probe, through :func:`process` in report mode so verdicts are reached in
     one place; that call never rewrites, so it cannot recurse. None when the
-    file has gone or the probe would not read it. ``fixed`` is :func:`_fixed`,
-    which the fresh verdict has no way of knowing.
+    file has gone or the probe would not read it. ``modified`` is
+    :func:`_modified`, which the fresh verdict has no way of knowing.
     """
     key = cache_key(plan.out_path, job.lang)
     if key is None:
@@ -233,7 +233,7 @@ def _rejudged(job: Job, plan: Plan, fixed: dict) -> Rewritten | None:
         # "Failed" against a checked file would be wrong.
         log.warning("could not judge %s after rewriting it: %s", plan.out_path, judged.detail)
         return None
-    return Rewritten(plan.out_path, key, replace(verdict_of(judged), fixed=fixed))
+    return Rewritten(plan.out_path, key, replace(verdict_of(judged), modified=modified))
 
 
 def _file_size(path: str) -> int | None:
@@ -279,16 +279,16 @@ def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
     if not plan.needed:
         return ProcessResult(Status.CONFORM, plan)
     if dry_run:
-        # A held file is a would-fix nothing picked up, which is what a
+        # A held file is a pending file nothing picked up, which is what a
         # reporting run already produces. The detail is the only difference,
         # and it is what the run row and pending.tsv say instead of the plan.
         if hold:
             log.info("not rewriting %s: %s", job.path, hold.describe())
-            return ProcessResult(Status.WOULD_FIX, plan, hold.describe())
-        log.info("would fix %s: %s", job.path, describe(plan))
-        return ProcessResult(Status.WOULD_FIX, plan)
+            return ProcessResult(Status.PENDING, plan, hold.describe())
+        log.info("would rewrite %s: %s", job.path, describe(plan))
+        return ProcessResult(Status.PENDING, plan)
 
-    log.info("fixing %s: %s", job.path, describe(plan))
+    log.info("rewriting %s: %s", job.path, describe(plan))
     # The size at plan time, which apply_plan guarantees still holds. The
     # fallback is for hand-built plans.
     bytes_before = plan.src_signature.size if plan.src_signature else _file_size(job.path)
@@ -332,7 +332,7 @@ def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
     if outcome is Outcome.APPLIED:
         bytes_after = _file_size(plan.out_path)
         events.record(
-            "fixed",
+            "modified",
             path=plan.out_path,
             # Only for a remux; None is dropped.
             from_path=plan.path if plan.out_path != plan.path else None,
@@ -347,8 +347,8 @@ def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
             job.arr.rescan(job.item_id)
         # out_path, not job.path: a remux publishes under a new extension.
         refresh_servers(plan.out_path)
-        fixed = _fixed(plan, bytes_before, bytes_after)
-        return ProcessResult(Status.FIXED, plan, became=_rejudged(job, plan, fixed))
+        modified = _modified(plan, bytes_before, bytes_after)
+        return ProcessResult(Status.MODIFIED, plan, became=_rejudged(job, plan, modified))
     if outcome is Outcome.DEFERRED:
         log.info("deferred %s: %s", job.path, detail)
         # Recorded because a file that defers every pass leaves no other trace.

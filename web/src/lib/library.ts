@@ -22,7 +22,7 @@ export type Track = {
 	src?: number;
 };
 
-// Why a file is what it is: the lists a "fixed" event records, plus the skip.
+// Why a file is what it is: the lists a "modified" event records, plus the skip.
 export type Why = {
 	skip?: string;
 	// Only on a failed rewrite: what broke. The next sweep tries again.
@@ -36,7 +36,7 @@ export type Why = {
 // What a rewrite did, kept on the file it left behind. `at` is when, as the
 // history spells its stamps. The reasons in prose are the history page's; here
 // the tracks it moved are the account. See unify().
-export type Fixed = {
+export type Modified = {
 	at: string;
 	bytes_before?: number;
 	bytes_after?: number;
@@ -49,8 +49,21 @@ export type Fixed = {
 	added?: number[];
 };
 
+// `mixed` and `modified` are a card's words, never a file's. See FILTERS below.
+// Closed on purpose: a word off the wire is narrowed by asVerdict() before it
+// reaches anything typed with this, so a misspelling here is a build error and
+// not a chip nothing ever draws.
 export type Verdict =
-	'would-fix' | 'conform' | 'skip' | 'unsupported' | 'failed' | 'unchecked' | 'missing' | string;
+	| 'failed'
+	| 'pending'
+	| 'deferred'
+	| 'skip'
+	| 'unsupported'
+	| 'conform'
+	| 'modified'
+	| 'mixed'
+	| 'unchecked'
+	| 'missing';
 
 // What a title is: the *arr's own word for what it tracks, or a folder the
 // sweep found under a media dir that neither Radarr nor Sonarr claims.
@@ -81,7 +94,7 @@ export type Card = {
 	drops?: number;
 	// How many of its files trackstarr has rewritten. A rewritten file passes,
 	// so without this a card cannot say it was ever touched.
-	fixed?: number;
+	modified?: number;
 	// Those three as the one number the grid and strip sort on. See _weight in
 	// library.py.
 	weight?: number;
@@ -103,12 +116,12 @@ export type LibraryFile = {
 	bytes: number;
 	lang?: string | null;
 	// The file now, and what a rewrite would leave. The second is empty for
-	// everything but a would-fix.
+	// everything but a pending file.
 	tracks: Track[];
 	planned: Track[];
 	why: Why;
 	// Absent on a file no rewrite of ours has published.
-	fixed?: Fixed;
+	modified?: Modified;
 };
 
 // A service the title could be opened in. The sheet draws its buttons from this
@@ -143,23 +156,55 @@ export type Summary = {
 	swept: number;
 };
 
-export function getShelf(fetcher: typeof fetch = fetch): Promise<Shelf> {
-	return request<Shelf>('/api/library', undefined, fetcher);
+/** A tally under the words this build draws. Anything else is folded into the
+ * verdict asVerdict() puts it under, so a count cannot go on saying a word its
+ * card no longer leads with. The same object back where every word is known,
+ * which is every answer until the service learns a new one. */
+function counted(counts: Record<string, number>): Record<string, number> {
+	const words = Object.keys(counts);
+	if (words.every(isVerdict)) return counts;
+	const folded: Record<string, number> = {};
+	for (const word of words) {
+		const verdict = asVerdict(word);
+		folded[verdict] = (folded[verdict] ?? 0) + counts[word];
+	}
+	return folded;
 }
 
-export function getSummary(
+/** Narrow the verdicts on fetched cards, in place. The types here promise a
+ * Verdict and the service is free to answer with a word this build has never
+ * heard of, so every answer carrying cards comes through here. */
+export function judged(cards: Card[]): void {
+	for (const card of cards) {
+		card.state = asVerdict(card.state);
+		if (card.counts) card.counts = counted(card.counts);
+	}
+}
+
+export async function getShelf(fetcher: typeof fetch = fetch): Promise<Shelf> {
+	const shelf = await request<Shelf>('/api/library', undefined, fetcher);
+	judged(shelf.titles);
+	return shelf;
+}
+
+export async function getSummary(
 	fetcher: typeof fetch = fetch,
 	sort: Sort = 'processed'
 ): Promise<Summary> {
-	return request<Summary>(`/api/library/summary?sort=${sort}`, undefined, fetcher);
+	const summary = await request<Summary>(`/api/library/summary?sort=${sort}`, undefined, fetcher);
+	judged(summary.head);
+	summary.counts = counted(summary.counts);
+	return summary;
 }
 
-export function getTitle(id: string, fetcher: typeof fetch = fetch): Promise<TitleDetail> {
-	return request<TitleDetail>(
+export async function getTitle(id: string, fetcher: typeof fetch = fetch): Promise<TitleDetail> {
+	const title = await request<TitleDetail>(
 		`/api/library/title?id=${encodeURIComponent(id)}`,
 		undefined,
 		fetcher
 	);
+	for (const file of title.files) file.status = asVerdict(file.status);
+	return title;
 }
 
 /** Where this title lives in Plex and Jellyfin. Its own request, so a media
@@ -267,12 +312,12 @@ function pair(file: { tracks: Track[]; planned: Track[] }): Pairing {
  * Null where the rewrite moved no track, a remux or a cleared title: nothing
  * was dropped and nothing is new, so the list has only itself to show.
  */
-function paired(fixed: Fixed): Pairing | null {
-	if (!fixed.was?.length || !(fixed.dropped?.length || fixed.added?.length)) return null;
-	const dropped = new Set(fixed.dropped ?? []);
+function paired(rewrote: Modified): Pairing | null {
+	if (!rewrote.was?.length || !(rewrote.dropped?.length || rewrote.added?.length)) return null;
+	const dropped = new Set(rewrote.dropped ?? []);
 	return {
-		kept: new Set(fixed.was.map((track) => track.index).filter((index) => !dropped.has(index))),
-		added: new Set(fixed.added ?? [])
+		kept: new Set(rewrote.was.map((track) => track.index).filter((index) => !dropped.has(index))),
+		added: new Set(rewrote.added ?? [])
 	};
 }
 
@@ -330,8 +375,8 @@ export function listing(file: LibraryFile): { label: string; rows: Row[] } {
 	if (file.planned.length) {
 		return { label: 'After the rewrite', rows: unify(file.tracks, file.planned, pair(file)) };
 	}
-	const was = file.fixed?.was ?? [];
-	const moved = file.fixed && was.length ? paired(file.fixed) : null;
+	const was = file.modified?.was ?? [];
+	const moved = file.modified && was.length ? paired(file.modified) : null;
 	// The after is the file as it was probed once rewritten, not the plan's word
 	// for what it would be.
 	if (moved) return { label: 'As rewritten', rows: unify(was, file.tracks, moved) };
@@ -342,56 +387,184 @@ export function listing(file: LibraryFile): { label: string; rows: Row[] } {
 	return { label: 'Tracks', rows: unify(file.tracks, file.tracks, whole) };
 }
 
-// Each verdict's colour as a dot. Three hues say what state the file is in:
-// accent is work outstanding, danger is trouble, ok is as it should be. So
-// `fixed` shares `conform`'s green and only `would-fix` keeps the accent.
-export const pip: Record<string, string> = {
-	fixed: 'bg-ok',
-	'would-fix': 'bg-accent',
-	failed: 'bg-danger',
-	deferred: 'bg-danger/50',
-	conform: 'bg-ok',
-	skip: 'bg-faint',
-	// Hollow in the accent: something to attend to that is not ours to do.
-	unsupported: 'border border-accent',
-	unchecked: 'bg-line-strong',
-	// A ring for a title with no file in it.
-	missing: 'border border-faint'
+// Everything the app knows how to say about one verdict.
+type Words = {
+	// The one word a card, a filter and a sheet header share. Most name the
+	// state of a file rather than anything done to it: `conform` is "Passed",
+	// not "Done".
+	label: string;
+	// The sentence behind the word, for a `title` attribute. Most say whether
+	// the file on disk was touched.
+	hint: string;
+	// The verdict as a dot, on a card and on a chip.
+	pip: string;
+	// The same dot over artwork, where the pip is a ring or wants pulling back.
+	// See dot().
+	onArt?: string;
+	// The same colour as a switched-on filter chip. Absent on the verdicts no
+	// chip row offers.
+	tint?: string;
+	// The same colour as a word, for a title's sheet and its files.
+	text: string;
 };
 
-// The same colours as a switched-on filter chip. The states with no colour of
-// their own take the raised surface the rest of the app uses for on.
-export const tint: Record<string, string> = {
-	'would-fix': 'border-accent/50 bg-accent/12',
-	conform: 'border-ok/50 bg-ok/12',
-	skip: 'border-line-strong bg-raised',
-	// Edge coloured, fill neutral, since a filled one is Pending's.
-	unsupported: 'border-accent/50 bg-raised',
-	failed: 'border-danger/50 bg-danger/12',
-	unchecked: 'border-line-strong bg-raised',
-	missing: 'border-line-strong bg-raised'
+// Every verdict in one place: adding one is a single entry here, and the maps
+// and lookups below follow.
+//
+// Three hues say what state the file is in: accent is work outstanding, danger
+// is trouble, ok is as it should be. So `modified` shares `conform`'s green and
+// only `pending` keeps the accent. A state with no colour of its own takes the
+// raised surface the rest of the app uses for on.
+const VOCABULARY: Record<Verdict, Words> = {
+	failed: {
+		label: 'Failed',
+		hint: 'The rewrite was tried and broke. The file is as it was.',
+		pip: 'bg-danger',
+		tint: 'border-danger/50 bg-danger/12',
+		text: 'text-danger'
+	},
+	pending: {
+		label: 'Pending',
+		hint: 'A rewrite would change this file. Nothing has been written yet.',
+		pip: 'bg-accent',
+		tint: 'border-accent/50 bg-accent/12',
+		text: 'text-accent'
+	},
+	deferred: {
+		label: 'Waiting',
+		hint: 'Nothing was written: the file changed mid-rewrite, the run stopped, or a download client still hard-links it. The next sweep tries again.',
+		pip: 'bg-danger/50',
+		text: 'text-danger/70'
+	},
+	skip: {
+		label: 'Skipped',
+		hint: 'Not eligible for a rewrite at all.',
+		pip: 'bg-faint',
+		tint: 'border-line-strong bg-raised',
+		text: 'text-faint'
+	},
+	unsupported: {
+		label: 'Unsupported',
+		hint: 'A container trackstarr does not rewrite, so the file was never opened. Containers under Rules decides which.',
+		// Hollow in the accent: something to attend to that is not ours to do.
+		pip: 'border border-accent',
+		onArt: 'bg-accent/70',
+		// Edge coloured, fill neutral, since a filled one is Pending's.
+		tint: 'border-accent/50 bg-raised',
+		text: 'text-accent'
+	},
+	conform: {
+		label: 'Passed',
+		hint: 'Already meets the rules. Nothing to do.',
+		pip: 'bg-ok',
+		tint: 'border-ok/50 bg-ok/12',
+		text: 'text-ok'
+	},
+	modified: {
+		label: 'Modified',
+		// Only the run and history rows ask for a hint, so this is the file's
+		// reading. A card says the same thing with the mark after its verdict,
+		// and how much of the title in its label; see PosterCard.
+		hint: 'Rewritten. The file on disk is the new one.',
+		pip: 'bg-ok',
+		// Edge coloured, fill neutral, so a filter for what we rewrote is told
+		// apart from Passed beside it.
+		tint: 'border-ok/50 bg-raised',
+		text: 'text-ok'
+	},
+	mixed: {
+		label: 'Mixed',
+		hint: 'Nothing outstanding, but the files do not all say the same thing. The dots say which states are in it.',
+		// A fallback only: a mixed card draws a dot per state it holds. See PosterCard.
+		pip: 'bg-ok/60',
+		text: 'text-ok/80'
+	},
+	unchecked: {
+		// Where a word this build does not know lands, since that is what it is.
+		// See asVerdict().
+		label: 'Unknown',
+		hint: 'No verdict yet. The files exist, but no sweep has reached them since they were written.',
+		pip: 'bg-line-strong',
+		tint: 'border-line-strong bg-raised',
+		text: 'text-faint'
+	},
+	missing: {
+		label: 'Missing',
+		hint: 'Nothing downloaded. Radarr or Sonarr tracks this title, but there is no file to judge yet.',
+		// A ring for a title with no file in it.
+		pip: 'border border-faint',
+		// Filled for a poster: a 1px ring at 6px over artwork is mostly poster
+		// showing through, and two side by side read as one smudge.
+		onArt: 'bg-white/40',
+		tint: 'border-line-strong bg-raised',
+		text: 'text-faint'
+	}
 };
 
-// The same colours as a word, for a title's sheet and its files.
-export const verdictText: Record<string, string> = {
-	fixed: 'text-ok',
-	'would-fix': 'text-accent',
-	failed: 'text-danger',
-	deferred: 'text-danger/70',
-	conform: 'text-ok',
-	skip: 'text-faint',
-	unsupported: 'text-accent',
-	unchecked: 'text-faint',
-	missing: 'text-faint'
-};
+// One field of the vocabulary as its own map, for the call sites that index a
+// verdict straight into a class. Keyed by every verdict, and the value type
+// follows the field: `tint` says it can be missing where `pip` cannot. The two
+// assertions hold because the record is keyed by Verdict to begin with.
+function column<Value extends string | undefined>(
+	pick: (words: Words) => Value
+): Record<Verdict, Value> {
+	const picked = {} as Record<Verdict, Value>;
+	for (const [verdict, words] of Object.entries(VOCABULARY) as [Verdict, Words][]) {
+		picked[verdict] = pick(words);
+	}
+	return picked;
+}
 
-// Worst first: the order the service sorts the shelf in.
+export const pip = column((words) => words.pip);
+export const tint = column((words) => words.tint);
+export const verdictText = column((words) => words.text);
+
+/** Whether a word is one of ours, for the feeds that hold a word we never gave
+ * them. Off ``Object.hasOwn``, so "constructor" is not a verdict. */
+export function isVerdict(value: string): value is Verdict {
+	return Object.hasOwn(VOCABULARY, value);
+}
+
+/** A verdict off the wire, or `unchecked` for a word this build has never heard
+ * of, which is what it amounts to here: nothing it can draw. */
+export function asVerdict(value: string): Verdict {
+	return isVerdict(value) ? value : 'unchecked';
+}
+
+/** A state's dot as a card draws it: the chip's colour, filled where that one
+ * is a ring. */
+export function dot(state: Verdict): string {
+	return VOCABULARY[state].onArt ?? VOCABULARY[state].pip;
+}
+
+// The two lists below each name their own subset of the vocabulary in their own
+// order, so neither is derived from it: the order is meaning, and fixtures.test
+// holds both to the service's own lists.
+//
+// Worst first: the order the service sorts the shelf in, and every state a file
+// can be in. What hiding reads, and what a title's own files are labelled with.
 export const VERDICTS: Verdict[] = [
 	'failed',
-	'would-fix',
+	'pending',
 	'skip',
 	'unsupported',
 	'conform',
+	'unchecked',
+	'missing'
+];
+
+// What a chip row cuts the grid by. `modified` reads off a card's own
+// count, so "what have I rewritten" is a filter and not a badge to go hunting
+// for. Hiding reads VERDICTS above, since it goes on the word a card leads with
+// and `modified` is never one.
+export const MODIFIED: Verdict = 'modified';
+export const FILTERS: Verdict[] = [
+	'failed',
+	'pending',
+	'skip',
+	'unsupported',
+	'conform',
+	MODIFIED,
 	'unchecked',
 	'missing'
 ];
@@ -444,54 +617,14 @@ export function initials(name: string): string {
 		.toUpperCase();
 }
 
-// The one-word label a card, a filter and a sheet header share. Most name the
-// state of a file rather than anything done to it: `conform` is "Passed", not
-// "Done". `missing` is a title with no file; `unchecked` has files no sweep has
-// reached, or a rewrite nothing has looked at since.
+/** The one-word label a card, a filter and a sheet header share. `missing` is a
+ * title with no file; `unchecked` has files no sweep has reached, or a rewrite
+ * nothing has looked at since. */
 export function verdictLabel(state: Verdict): string {
-	switch (state) {
-		case 'fixed':
-			return 'Fixed';
-		case 'would-fix':
-			return 'Pending';
-		case 'failed':
-			return 'Failed';
-		case 'deferred':
-			return 'Waiting';
-		case 'conform':
-			return 'Passed';
-		case 'skip':
-			return 'Skipped';
-		case 'unsupported':
-			return 'Unsupported';
-		case 'missing':
-			return 'Missing';
-		default:
-			return 'Unknown';
-	}
+	return VOCABULARY[state].label;
 }
 
-// The sentence behind the word, for a `title` attribute. Most say whether the
-// file on disk was touched.
+/** The sentence behind the word, for a `title` attribute. */
 export function verdictHint(state: Verdict): string {
-	switch (state) {
-		case 'fixed':
-			return 'Rewritten. The file on disk is the new one.';
-		case 'would-fix':
-			return 'A rewrite would change this file. Nothing has been written yet.';
-		case 'failed':
-			return 'The rewrite was tried and broke. The file is as it was.';
-		case 'deferred':
-			return 'Nothing was written: the file changed mid-rewrite, the run stopped, or a download client still hard-links it. The next sweep tries again.';
-		case 'conform':
-			return 'Already meets the rules. Nothing to do.';
-		case 'skip':
-			return 'Not eligible for a rewrite at all.';
-		case 'unsupported':
-			return 'A container trackstarr does not rewrite, so the file was never opened. Containers under Rules decides which.';
-		case 'missing':
-			return 'Nothing downloaded. Radarr or Sonarr tracks this title, but there is no file to judge yet.';
-		default:
-			return 'No verdict yet. The files exist, but no sweep has reached them since they were written.';
-	}
+	return VOCABULARY[state].hint;
 }

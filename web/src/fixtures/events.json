@@ -82,7 +82,7 @@
 			"dry_run": true,
 			"titles": 1,
 			"files": 2,
-			"config_id": "7506e78c2b57",
+			"config_id": "03e6bfe6b8a1",
 			"counts": {
 				"conform": 1,
 				"failed": 1
@@ -91,11 +91,11 @@
 		},
 		{
 			"ts": "2026-03-01T11:06:00+13:00",
-			"event": "would-fix",
+			"event": "pending",
 			"version": "0.0.0",
 			"run": "2026-02-28T19:12:40+13:00#7d6c",
 			"source": "webhook",
-			"config_id": "7506e78c2b57",
+			"config_id": "03e6bfe6b8a1",
 			"path": "/data/media/movies/Dune (2024)/Dune (2024) Bluray-2160p.mkv",
 			"reasons": [
 				"add 2.0 downmix (from track 1)"
@@ -128,7 +128,7 @@
 			"version": "0.0.0",
 			"run": "2026-02-28T03:00:00+13:00#9f8e",
 			"source": "sweep",
-			"config_id": "7506e78c2b57",
+			"config_id": "03e6bfe6b8a1",
 			"reasons": [
 				"add 2.0 downmix (from track 1)"
 			],
@@ -147,7 +147,7 @@
 			"version": "0.0.0",
 			"run": "2026-02-28T03:00:00+13:00#9f8e",
 			"source": "sweep",
-			"config_id": "7506e78c2b57",
+			"config_id": "03e6bfe6b8a1",
 			"reasons": [
 				"add 2.0 downmix (from track 1)"
 			],
@@ -162,11 +162,11 @@
 		},
 		{
 			"ts": "2026-03-01T11:02:00+13:00",
-			"event": "fixed",
+			"event": "modified",
 			"version": "0.0.0",
 			"run": "2026-02-28T03:00:00+13:00#9f8e",
 			"source": "sweep",
-			"config_id": "7506e78c2b57",
+			"config_id": "03e6bfe6b8a1",
 			"reasons": [
 				"remux to mkv (RULE_REMUX)",
 				"add 2.0 downmix (from track 1)"
@@ -181,10 +181,10 @@
 			"path": "/data/media/tv/Severance/Season 01/Severance - S01E01 - Good News About Hell.mkv",
 			"from_path": "/data/media/tv/Severance/Season 01/Severance - S01E01 - Good News About Hell.mp4",
 			"incidental": [
-				"clear junk title on audio 1 ('Surround 5.1')"
+				"clear release tags on audio 1 ('Surround 5.1')"
 			],
 			"incidental_rules": [
-				"junk_titles"
+				"release_tags"
 			],
 			"downmixed": [
 				"2.0"
@@ -222,10 +222,6 @@
 						"always"
 					],
 					[
-						"junk_titles",
-						"alongside"
-					],
-					[
 						"languages",
 						"always"
 					],
@@ -236,6 +232,10 @@
 					[
 						"regenerate",
 						"never"
+					],
+					[
+						"release_tags",
+						"alongside"
 					],
 					[
 						"remux",
@@ -260,13 +260,13 @@
 				"commentary_re": "comment|descriptive|described\\s*video|audio\\s*description|isolated\\s*score|director'?s?\\s*track|interview|behind\\s*the\\s*scenes",
 				"sdh_re": "\\bsdh\\b|\\bcc\\b|hearing[\\s._-]*impaired",
 				"forced_re": "\\bforced\\b",
-				"junk_title_re": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b"
+				"release_tag_re": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b"
 			},
-			"config_id": "7506e78c2b57",
+			"config_id": "03e6bfe6b8a1",
 			"cached": 1174,
 			"counts": {
 				"conform": 1177,
-				"fixed": 1,
+				"modified": 1,
 				"failed": 1,
 				"unsupported": 1
 			},
@@ -297,10 +297,6 @@
 						"always"
 					],
 					[
-						"junk_titles",
-						"alongside"
-					],
-					[
 						"languages",
 						"always"
 					],
@@ -311,6 +307,10 @@
 					[
 						"regenerate",
 						"never"
+					],
+					[
+						"release_tags",
+						"alongside"
 					],
 					[
 						"remux",
@@ -335,9 +335,9 @@
 				"commentary_re": "comment|descriptive|described\\s*video|audio\\s*description|isolated\\s*score|director'?s?\\s*track|interview|behind\\s*the\\s*scenes",
 				"sdh_re": "\\bsdh\\b|\\bcc\\b|hearing[\\s._-]*impaired",
 				"forced_re": "\\bforced\\b",
-				"junk_title_re": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b"
+				"release_tag_re": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b"
 			},
-			"config_id": "7506e78c2b57"
+			"config_id": "03e6bfe6b8a1"
 		}
 	],
 	"titles": {
@@ -364,21 +364,21 @@
 				"conform": 1,
 				"failed": 1
 			},
-			"fixed": 1,
+			"modified": 1,
 			"processed": 1772233500
 		},
 		"arr:radarr:7": {
 			"id": "arr:radarr:7",
 			"name": "Dune",
 			"kind": "movie",
-			"state": "would-fix",
+			"state": "pending",
 			"year": 2024,
 			"lang": "eng",
 			"added": 1709285400,
 			"files": 1,
 			"bytes": 58720256000,
 			"counts": {
-				"would-fix": 1
+				"pending": 1
 			},
 			"adds": [
 				"Stereo"

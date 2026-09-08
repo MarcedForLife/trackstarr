@@ -9,7 +9,7 @@ import time
 import pytest
 
 from conftest import configured_arr
-from trackstarr import config, library, ratings, settings, state, sweep_cache
+from trackstarr import config, library, ratings, settings, state, sweep, sweep_cache
 from trackstarr.policy import Policy
 from trackstarr.status import Status
 from trackstarr.sweep_cache import FileKey, SweepCache, Verdict
@@ -108,9 +108,9 @@ def backdate(when: float, *paths: str) -> None:
     library.forget()
 
 
-def would_fix() -> Verdict:
+def pending() -> Verdict:
     return Verdict(
-        Status.WOULD_FIX,
+        Status.PENDING,
         "add 2.0 downmix from stream 1 (6ch eng)",
         tracks=[
             {"index": 0, "kind": "video", "codec": "h264"},
@@ -134,7 +134,7 @@ def would_fix() -> Verdict:
 
 
 #: What a rewrite leaves on the verdict it publishes; see
-#: :func:`trackstarr.processing._fixed`.
+#: :func:`trackstarr.processing._modified`.
 REWROTE = {
     "at": "2026-03-01T12:00:00+13:00",
     "bytes_before": 2_000,
@@ -157,7 +157,7 @@ def regenerated(stale_only: bool = True) -> Verdict:
             {"index": 3, "kind": "audio", "codec": "dts", "channels": 6, "lang": "dan"}
         )
     return Verdict(
-        Status.WOULD_FIX,
+        Status.PENDING,
         "regenerate 2.0 downmix",
         tracks=tracks,
         planned=[
@@ -183,6 +183,20 @@ def regenerated(stale_only: bool = True) -> Verdict:
         ],
         why={"reasons": ["regenerate 2.0 downmix"], "rules": ["downmix"]},
     )
+
+
+def test_the_shelf_has_a_word_for_every_verdict_a_card_can_hold():
+    """Which states the lists hold, as opposed to the order they hold them in.
+
+    A card counts what the sweep cached, so the words are the cacheable ones
+    plus the two the library works out itself. Adding a Status without a home
+    here would leave it ranked last, counted by nothing and offered by no chip,
+    which the orders alone cannot catch.
+    """
+    computed = {library.UNCHECKED, library.MISSING}
+    assert set(library.STATES) - computed == set(sweep.CACHEABLE_STATUSES)
+    assert set(library.FILTERS) == set(library.STATES) | {library.MODIFIED}
+    assert set(library.ACTIONABLE) <= set(library.STATES)
 
 
 def test_a_title_with_no_verdicts_is_still_on_the_shelf(media, monkeypatch):
@@ -333,8 +347,8 @@ def test_a_verdict_beats_what_the_arr_believes_about_the_file(media, monkeypatch
     import must not empty a title the cache holds real verdicts for."""
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder) | {"hasFile": False}])
-    cache((f"{folder}/dune.mkv", would_fix()))
-    assert library.shelf()["titles"][0]["state"] == "would-fix"
+    cache((f"{folder}/dune.mkv", pending()))
+    assert library.shelf()["titles"][0]["state"] == "pending"
 
 
 def test_missing_titles_sort_below_the_unswept_ones(media, monkeypatch):
@@ -354,14 +368,14 @@ def test_verdicts_land_under_the_title_whose_folder_holds_them(media, monkeypatc
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
     cache(
-        (f"{folder}/Dune.mkv", would_fix()),
+        (f"{folder}/Dune.mkv", pending()),
         (f"{folder}/extras/short.mkv", Verdict(Status.CONFORM)),
     )
     card = library.shelf()["titles"][0]
     assert card["files"] == 2
-    assert card["counts"] == {"would-fix": 1, "conform": 1}
+    assert card["counts"] == {"pending": 1, "conform": 1}
     # The worst thing true of any of its files is what the card says.
-    assert card["state"] == "would-fix"
+    assert card["state"] == "pending"
     assert card["adds"] == ["2.0"]
 
 
@@ -399,15 +413,89 @@ def test_a_stray_unsupported_file_does_not_outrank_the_work(media, monkeypatch):
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
     cache(
-        (f"{folder}/Dune.mkv", would_fix()),
+        (f"{folder}/Dune.mkv", pending()),
         (
             f"{folder}/sample.avi",
             Verdict(Status.UNSUPPORTED, "container .avi not in ALLOWED_EXTS"),
         ),
     )
     card = library.shelf()["titles"][0]
-    assert card["counts"] == {"would-fix": 1, "unsupported": 1}
-    assert card["state"] == "would-fix"
+    assert card["counts"] == {"pending": 1, "unsupported": 1}
+    assert card["state"] == "pending"
+
+
+def test_a_mostly_passed_title_reads_mixed_rather_than_its_one_odd_file(media, monkeypatch):
+    """Nothing is outstanding, so naming the title after its one AVI extra says
+    the wrong thing about the episodes that pass."""
+    folder = f"{media}/Severance"
+    stub_arrs(monkeypatch, [movie(1, "Severance", folder)])
+    cache(
+        (f"{folder}/S01E01.mkv", Verdict(Status.CONFORM)),
+        (f"{folder}/S01E02.mkv", Verdict(Status.CONFORM)),
+        (f"{folder}/extras/sample.avi", Verdict(Status.UNSUPPORTED, "container .avi")),
+    )
+    card = library.shelf()["titles"][0]
+    assert card["counts"] == {"conform": 2, "unsupported": 1}
+    assert card["state"] == library.MIXED
+
+
+def test_a_title_whose_files_all_agree_keeps_its_own_word(media, monkeypatch):
+    folder = f"{media}/Arrival (2016)"
+    stub_arrs(monkeypatch, [movie(1, "Arrival", folder)])
+    cache(
+        (f"{folder}/Arrival.mkv", Verdict(Status.CONFORM)),
+        (f"{folder}/extras/short.mkv", Verdict(Status.CONFORM)),
+    )
+    assert library.shelf()["titles"][0]["state"] == "conform"
+
+
+def test_a_deferred_file_leaves_the_card_to_the_ones_still_judged(media, monkeypatch):
+    """A deferred rewrite drops its cache entry, since it says nothing about the
+    file (see sweep.CACHEABLE_STATUSES). So it is absent here rather than a
+    state of its own, and an absence must not read as disagreement."""
+    folder = f"{media}/Dune (2024)"
+    stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
+    # Dune.mkv was deferred, so nothing was stored for it.
+    cache((f"{folder}/extras/short.mkv", Verdict(Status.CONFORM)))
+    card = library.shelf()["titles"][0]
+    assert card["state"] == "conform"
+    assert card["files"] == 1
+
+
+def test_a_mixed_title_ranks_on_the_worst_state_it_holds(media, monkeypatch):
+    """Mixed is a word, not a place in the queue: the grid still puts the title
+    where its odd file says, not in a block of its own."""
+    stub_arrs(
+        monkeypatch,
+        [
+            movie(1, "Passed", f"{media}/Passed"),
+            movie(2, "Mixed", f"{media}/Mixed"),
+        ],
+    )
+    cache(
+        (f"{media}/Passed/film.mkv", Verdict(Status.CONFORM)),
+        (f"{media}/Mixed/film.mkv", Verdict(Status.CONFORM)),
+        (f"{media}/Mixed/sample.avi", Verdict(Status.UNSUPPORTED, "container .avi")),
+    )
+    shelf = library.shelf()["titles"]
+    assert [(card["name"], card["state"]) for card in shelf] == [
+        ("Mixed", library.MIXED),
+        ("Passed", "conform"),
+    ]
+
+
+def test_the_summary_counts_a_mixed_title_under_every_state_it_holds(media, monkeypatch):
+    """The chips promise what pressing them lands on, and the grid finds a title
+    under each of its states, so the overview must count it the same way."""
+    folder = f"{media}/Severance"
+    stub_arrs(monkeypatch, [movie(1, "Severance", folder)])
+    cache(
+        (f"{folder}/S01E01.mkv", Verdict(Status.CONFORM)),
+        (f"{folder}/extras/sample.avi", Verdict(Status.UNSUPPORTED, "container .avi")),
+    )
+    summary = library.summary()
+    assert summary["titles"] == 1
+    assert summary["counts"] == {"conform": 1, "unsupported": 1}
 
 
 def test_a_regenerated_downmix_is_one_change_not_a_gain_and_a_loss(media, monkeypatch):
@@ -438,7 +526,7 @@ def _relanguaged() -> Verdict:
     """A German 2.0 and a French one dropped, with a French 2.0 generated in
     their place. The German is a loss; only the French is a rebuild."""
     return Verdict(
-        Status.WOULD_FIX,
+        Status.PENDING,
         "regenerate 2.0 downmix",
         tracks=[
             {"index": 0, "kind": "video", "codec": "h264"},
@@ -503,7 +591,7 @@ def test_a_verdict_with_no_readable_stamp_does_not_take_the_card_with_it(media, 
     when is one file's worth of the answer missing, not the card's."""
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
-    cache((f"{folder}/one.mkv", would_fix()), (f"{folder}/two.mkv", Verdict(Status.CONFORM)))
+    cache((f"{folder}/one.mkv", pending()), (f"{folder}/two.mkv", Verdict(Status.CONFORM)))
     backdate("last tuesday", f"{folder}/one.mkv")
     backdate(LAST_YEAR, f"{folder}/two.mkv")
 
@@ -518,7 +606,7 @@ def test_a_nested_title_wins_over_the_one_around_it(media, monkeypatch):
     outer = f"{media}/Collection"
     inner = f"{outer}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Collection", outer), movie(2, "Dune", inner)])
-    cache((f"{inner}/Dune.mkv", would_fix()))
+    cache((f"{inner}/Dune.mkv", pending()))
     counted = {card["name"]: card.get("files", 0) for card in library.shelf()["titles"]}
     assert counted == {"Collection": 0, "Dune": 1}
 
@@ -527,18 +615,18 @@ def test_files_no_arr_claims_are_grouped_by_their_own_folder(media, monkeypatch)
     """A file the *arrs have never heard of is the one most worth seeing, so
     it gets a tile of its own rather than being dropped."""
     stub_arrs(monkeypatch, [])
-    cache((f"{media}/Loose Film (1999)/film.mkv", would_fix()))
+    cache((f"{media}/Loose Film (1999)/film.mkv", pending()))
     card = library.shelf()["titles"][0]
     assert (card["name"], card["kind"], card["state"]) == (
         "Loose Film (1999)",
         "folder",
-        "would-fix",
+        "pending",
     )
 
 
 def test_a_file_loose_in_a_media_dir_has_no_title_folder(media, monkeypatch):
     stub_arrs(monkeypatch, [])
-    cache((f"{media}/stray.mkv", would_fix()))
+    cache((f"{media}/stray.mkv", pending()))
     assert library.shelf()["titles"] == []
 
 
@@ -551,8 +639,8 @@ def test_a_verdict_outside_every_media_dir_belongs_to_no_title(media, monkeypatc
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tv), media])
     stub_arrs(monkeypatch, [])
     cache(
-        (f"{media}/Loose Film (1999)/film.mkv", would_fix()),
-        (str(tmp_path / "elsewhere" / "Stray (2001)" / "stray.mkv"), would_fix()),
+        (f"{media}/Loose Film (1999)/film.mkv", pending()),
+        (str(tmp_path / "elsewhere" / "Stray (2001)" / "stray.mkv"), pending()),
     )
 
     assert [card["name"] for card in library.shelf()["titles"]] == ["Loose Film (1999)"]
@@ -569,7 +657,7 @@ def test_the_shelf_leads_with_what_needs_work(media, monkeypatch):
     )
     cache(
         (f"{media}/Tidy/a.mkv", Verdict(Status.CONFORM)),
-        (f"{media}/Broken/b.mkv", would_fix()),
+        (f"{media}/Broken/b.mkv", pending()),
     )
     assert [card["name"] for card in library.shelf()["titles"]] == [
         "Broken",
@@ -591,7 +679,7 @@ def test_the_overview_strip_leads_with_what_landed_last(media, monkeypatch):
         ],
     )
     cache(
-        (f"{media}/Older/a.mkv", would_fix()),
+        (f"{media}/Older/a.mkv", pending()),
         (f"{media}/Newer/b.mkv", Verdict(Status.CONFORM)),
     )
     assert [card["name"] for card in library.shelf()["titles"]] == ["Older", "Newer"]
@@ -618,7 +706,7 @@ def test_a_title_with_nothing_downloaded_is_not_the_newest_poster(media, monkeyp
 def test_a_card_says_when_its_files_were_last_judged(media, monkeypatch):
     stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
     before = int(time.time())
-    cache((f"{media}/Dune/d.mkv", would_fix()))
+    cache((f"{media}/Dune/d.mkv", pending()))
     assert library.shelf()["titles"][0]["processed"] >= before
 
 
@@ -627,7 +715,7 @@ def test_the_newest_of_a_titles_files_is_when_it_was_processed(media, monkeypatc
     when trackstarr last had any of them open."""
     stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
     cache(
-        (f"{media}/Dune/one.mkv", would_fix()),
+        (f"{media}/Dune/one.mkv", pending()),
         (f"{media}/Dune/two.mkv", Verdict(Status.CONFORM)),
     )
     backdate(LAST_YEAR, f"{media}/Dune/one.mkv")
@@ -640,7 +728,7 @@ def test_a_card_carries_the_weight_of_its_changes(media, monkeypatch):
     so the number the two of them read is worked out once, here."""
     stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
     cache(
-        (f"{media}/Dune/one.mkv", would_fix()),
+        (f"{media}/Dune/one.mkv", pending()),
         (f"{media}/Dune/two.mkv", Verdict(Status.CONFORM)),
     )
     # One layout gained across the title's files, and nothing dropped.
@@ -658,7 +746,7 @@ def test_the_strip_can_lead_with_what_was_processed_last(media, monkeypatch):
         ],
     )
     cache(
-        (f"{media}/Older/a.mkv", would_fix()),
+        (f"{media}/Older/a.mkv", pending()),
         (f"{media}/Newer/b.mkv", Verdict(Status.CONFORM)),
     )
     backdate(LAST_YEAR, f"{media}/Older/a.mkv")
@@ -682,7 +770,7 @@ def test_an_order_nothing_goes_by_is_the_default_rather_than_an_error(media, mon
         ],
     )
     cache(
-        (f"{media}/Older/a.mkv", would_fix()),
+        (f"{media}/Older/a.mkv", pending()),
         (f"{media}/Newer/b.mkv", Verdict(Status.CONFORM)),
     )
     assert library.summary(order="sideways")["head"] == library.summary()["head"]
@@ -693,7 +781,7 @@ def test_a_folder_no_arr_claims_is_dated_by_the_folder_itself(media, monkeypatch
     folder = f"{media}/Loose Film (1999)"
     os.makedirs(folder)
     stub_arrs(monkeypatch, [])
-    cache((f"{folder}/film.mkv", would_fix()))
+    cache((f"{folder}/film.mkv", pending()))
     card = library.shelf()["titles"][0]
     assert card["added"] == int(os.stat(folder).st_mtime)
 
@@ -713,7 +801,7 @@ def test_a_shelf_says_when_an_arr_could_not_be_listed(media, monkeypatch):
 
 def test_a_shelf_says_when_the_rules_have_moved_on(media, monkeypatch):
     stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
-    cache((f"{media}/Dune/d.mkv", would_fix()))
+    cache((f"{media}/Dune/d.mkv", pending()))
     assert library.shelf()["current"] is True
     monkeypatch.setattr(config, "AUDIO_LAYOUTS", ("2.0",))
     library.forget()
@@ -723,7 +811,7 @@ def test_a_shelf_says_when_the_rules_have_moved_on(media, monkeypatch):
 def test_a_title_hands_back_both_states_and_the_reason(media, monkeypatch):
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
-    cache((f"{folder}/Dune.mkv", would_fix()))
+    cache((f"{folder}/Dune.mkv", pending()))
     detail = library.title("arr:radarr:1")
     assert detail["name"] == "Dune"
     only = detail["files"][0]
@@ -739,13 +827,13 @@ def test_a_passed_file_still_says_a_rewrite_made_it_pass(media, monkeypatch):
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
     cache(
-        (f"{folder}/Dune.mkv", Verdict(Status.CONFORM, fixed=REWROTE)),
+        (f"{folder}/Dune.mkv", Verdict(Status.CONFORM, modified=REWROTE)),
         (f"{folder}/Extras.mkv", Verdict(Status.CONFORM)),
     )
     files = {file["name"]: file for file in library.title("arr:radarr:1")["files"]}
-    assert files["Dune.mkv"]["fixed"] == REWROTE
+    assert files["Dune.mkv"]["modified"] == REWROTE
     # Off every other file, which is most of a settled library.
-    assert "fixed" not in files["Extras.mkv"]
+    assert "modified" not in files["Extras.mkv"]
 
 
 def test_a_rewritten_file_leads_the_others_of_its_verdict(media, monkeypatch):
@@ -755,8 +843,8 @@ def test_a_rewritten_file_leads_the_others_of_its_verdict(media, monkeypatch):
     stub_arrs(monkeypatch, [movie(1, "Show", folder)], name="sonarr")
     cache(
         (f"{folder}/s01e01.mkv", Verdict(Status.CONFORM)),
-        (f"{folder}/s01e02.mkv", Verdict(Status.CONFORM, fixed=REWROTE)),
-        (f"{folder}/s01e03.mkv", would_fix()),
+        (f"{folder}/s01e02.mkv", Verdict(Status.CONFORM, modified=REWROTE)),
+        (f"{folder}/s01e03.mkv", pending()),
     )
     detail = library.title("arr:sonarr:1")
     assert [file["name"] for file in detail["files"]] == [
@@ -771,13 +859,13 @@ def test_a_card_counts_the_files_a_rewrite_left(media, monkeypatch):
     marks a title trackstarr has been through."""
     stub_arrs(monkeypatch, [movie(1, "Show", f"{media}/Show")], name="sonarr")
     cache(
-        (f"{media}/Show/one.mkv", Verdict(Status.CONFORM, fixed=REWROTE)),
-        (f"{media}/Show/two.mkv", Verdict(Status.CONFORM, fixed=REWROTE)),
+        (f"{media}/Show/one.mkv", Verdict(Status.CONFORM, modified=REWROTE)),
+        (f"{media}/Show/two.mkv", Verdict(Status.CONFORM, modified=REWROTE)),
         (f"{media}/Show/three.mkv", Verdict(Status.CONFORM)),
     )
     card = library.shelf()["titles"][0]
     assert card["state"] == "conform"
-    assert card["fixed"] == 2
+    assert card["modified"] == 2
 
 
 def test_a_title_lists_what_needs_work_first(media, monkeypatch):
@@ -787,11 +875,11 @@ def test_a_title_lists_what_needs_work_first(media, monkeypatch):
     stub_arrs(monkeypatch, [movie(1, "Show", folder)], name="sonarr")
     cache(
         (f"{folder}/s01e01.mkv", Verdict(Status.CONFORM)),
-        (f"{folder}/s01e02.mkv", would_fix()),
+        (f"{folder}/s01e02.mkv", pending()),
         (f"{folder}/s01e03.mkv", Verdict(Status.SKIP, "no video stream")),
     )
     detail = library.title("arr:sonarr:1")
-    assert [file["status"] for file in detail["files"]] == ["would-fix", "skip", "conform"]
+    assert [file["status"] for file in detail["files"]] == ["pending", "skip", "conform"]
     assert detail["total"] == 3
 
 
@@ -854,7 +942,7 @@ def test_a_png_kept_on_disk_is_still_a_png(media, monkeypatch):
     with open(os.path.join(folder, "poster.png"), "wb") as art:
         art.write(b"\x89PNG\r\n\x1a\nlocal")
     stub_arrs(monkeypatch, [])
-    cache((f"{folder}/film.mkv", would_fix()))
+    cache((f"{folder}/film.mkv", pending()))
     library.cover(f"dir:{folder}")
     assert library.cover(f"dir:{folder}")[1] == "image/png"
 
@@ -950,7 +1038,7 @@ def test_the_sweep_cache_is_parsed_once_per_version_of_it(media, monkeypatch):
     """On a real library this file is megabytes and one page load reads it
     once per poster; parsing it each time is what made the grid crawl."""
     stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
-    cache((f"{media}/Dune/d.mkv", would_fix()))
+    cache((f"{media}/Dune/d.mkv", pending()))
     parses: list[int] = []
     real = library.sweep_cache.read
     monkeypatch.setattr(
@@ -1008,7 +1096,7 @@ def test_an_empty_file_beside_the_media_is_not_the_cover(media, monkeypatch):
     with open(os.path.join(folder, "folder.jpg"), "wb") as art:
         art.write(b"local")
     stub_arrs(monkeypatch, [])
-    cache((f"{folder}/film.mkv", would_fix()))
+    cache((f"{folder}/film.mkv", pending()))
 
     assert library.cover(f"dir:{folder}") == (b"local", "image/jpeg")
 
@@ -1019,7 +1107,7 @@ def test_a_cover_falls_back_to_artwork_beside_the_files(media, monkeypatch):
     with open(os.path.join(folder, "poster.jpg"), "wb") as art:
         art.write(b"local")
     stub_arrs(monkeypatch, [])
-    cache((f"{folder}/film.mkv", would_fix()))
+    cache((f"{folder}/film.mkv", pending()))
     assert library.cover(f"dir:{folder}") == (b"local", "image/jpeg")
 
 
@@ -1077,7 +1165,7 @@ def test_a_verdict_written_by_a_sweep_is_readable_by_the_view(media, monkeypatch
     other cannot read fails here rather than in a browser."""
     folder = f"{media}/Dune"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
-    cache((f"{folder}/d.mkv", would_fix()))
+    cache((f"{folder}/d.mkv", pending()))
     with open(os.path.join(config.STATE_DIR, "sweep-cache.json")) as stored:
         entry = next(iter(json.load(stored)["files"].values()))
     assert {"status", "reasons", "tracks", "planned", "why"} <= set(entry)
@@ -1087,11 +1175,11 @@ def test_clearing_drops_the_verdicts_and_nothing_else(media, monkeypatch):
     """Clearing empties the verdicts. The *arr titles stay, and so does the rest
     of STATE_DIR."""
     stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune (2024)")])
-    cache((f"{media}/Dune (2024)/dune.mkv", would_fix()))
+    cache((f"{media}/Dune (2024)/dune.mkv", pending()))
     keepsake = os.path.join(config.STATE_DIR, "events.jsonl")
     with open(keepsake, "w") as other:
         other.write('{"event": "sweep"}\n')
-    assert library.shelf()["titles"][0]["state"] == "would-fix"
+    assert library.shelf()["titles"][0]["state"] == "pending"
 
     assert library.clear() == 1
 
@@ -1107,7 +1195,7 @@ def test_clearing_takes_the_memo_with_it(media, monkeypatch):
     """`_parsed` would notice on its own, but the title list is on a timer, and
     a library still showing cleared verdicts gets cleared twice."""
     stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune (2024)")])
-    cache((f"{media}/Dune (2024)/dune.mkv", would_fix()))
+    cache((f"{media}/Dune (2024)/dune.mkv", pending()))
     library.shelf()
 
     library.clear()
@@ -1127,7 +1215,7 @@ def test_selected_resolves_ids_to_the_folders_behind_them(media, monkeypatch):
     anywhere the library does not already hold."""
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
-    cache((f"{folder}/Dune.mkv", would_fix()))
+    cache((f"{folder}/Dune.mkv", pending()))
     picked = library.selected(["arr:radarr:1"])
     assert [(title.name, title.folder) for title in picked] == [("Dune", folder)]
 
@@ -1137,7 +1225,7 @@ def test_selected_reaches_a_folder_no_arr_claims(media, monkeypatch):
     so its own tile has to be runnable like any other."""
     stub_arrs(monkeypatch, [])
     folder = f"{media}/Loose Film (1999)"
-    cache((f"{folder}/film.mkv", would_fix()))
+    cache((f"{folder}/film.mkv", pending()))
     assert [title.folder for title in library.selected([f"dir:{folder}"])] == [folder]
 
 
@@ -1146,7 +1234,7 @@ def test_selected_drops_an_id_nothing_goes_by(media, monkeypatch):
     reader the rest of what they picked."""
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
-    cache((f"{folder}/Dune.mkv", would_fix()))
+    cache((f"{folder}/Dune.mkv", pending()))
     picked = library.selected(["arr:radarr:1", "arr:radarr:99", "dir:/etc"])
     assert [title.name for title in picked] == ["Dune"]
 
@@ -1158,7 +1246,7 @@ def test_paths_resolve_to_the_card_of_the_title_holding_them(media, monkeypatch)
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
     cache(
-        (f"{folder}/Dune.mkv", would_fix()),
+        (f"{folder}/Dune.mkv", pending()),
         (f"{folder}/extras/short.mkv", Verdict(Status.CONFORM)),
     )
     owners, cards = library.cards_for_paths(
@@ -1168,7 +1256,7 @@ def test_paths_resolve_to_the_card_of_the_title_holding_them(media, monkeypatch)
     assert set(owners.values()) == {"arr:radarr:1"}
     assert list(cards) == ["arr:radarr:1"]
     card = cards["arr:radarr:1"]
-    assert (card["name"], card["state"], card["files"]) == ("Dune", "would-fix", 2)
+    assert (card["name"], card["state"], card["files"]) == ("Dune", "pending", 2)
 
 
 def test_paths_reach_a_folder_no_arr_claims(media, monkeypatch):
@@ -1176,7 +1264,7 @@ def test_paths_reach_a_folder_no_arr_claims(media, monkeypatch):
     stand under, for the same reason its tile is on the shelf."""
     stub_arrs(monkeypatch, [])
     folder = f"{media}/Loose Film (1999)"
-    cache((f"{folder}/film.mkv", would_fix()))
+    cache((f"{folder}/film.mkv", pending()))
     owners, cards = library.cards_for_paths([f"{folder}/film.mkv"])
     assert owners == {f"{folder}/film.mkv": f"dir:{folder}"}
     assert cards[f"dir:{folder}"]["kind"] == "folder"
@@ -1186,7 +1274,7 @@ def test_a_path_under_no_title_names_none(media, monkeypatch):
     """A file outside every media dir, or loose in one. The row goes without a
     poster rather than the request going without an answer."""
     stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune (2024)")])
-    cache((f"{media}/Dune (2024)/Dune.mkv", would_fix()))
+    cache((f"{media}/Dune (2024)/Dune.mkv", pending()))
     assert library.cards_for_paths(["/elsewhere/film.mkv", f"{media}/stray.mkv"]) == (
         {},
         {},
@@ -1199,11 +1287,11 @@ def test_a_running_walks_verdicts_show_before_they_reach_disk(media, monkeypatch
     walk's first half minute used to read as a library nothing had looked at."""
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
-    with walking((f"{folder}/dune.mkv", would_fix())):
+    with walking((f"{folder}/dune.mkv", pending())):
         assert not os.path.exists(os.path.join(config.STATE_DIR, "sweep-cache.json"))
         card = library.shelf()["titles"][0]
-        assert (card["state"], card["files"]) == ("would-fix", 1)
-        assert library.summary()["counts"] == {"would-fix": 1}
+        assert (card["state"], card["files"]) == ("pending", 1)
+        assert library.summary()["counts"] == {"pending": 1}
 
 
 def test_a_running_walk_is_current_over_a_file_it_is_replacing(media, monkeypatch):
@@ -1211,7 +1299,7 @@ def test_a_running_walk_is_current_over_a_file_it_is_replacing(media, monkeypatc
     current whatever the verdicts it is about to overwrite were judged under."""
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
-    cache((f"{folder}/dune.mkv", would_fix()))
+    cache((f"{folder}/dune.mkv", pending()))
     monkeypatch.setattr(config, "AUDIO_LAYOUTS", ("2.0",))
     library.forget()
     assert library.shelf()["current"] is False
@@ -1227,7 +1315,7 @@ def test_the_grid_is_built_once_per_version_of_the_verdicts(media, monkeypatch):
     at one request a checkpoint, and is not at one every few seconds per tab."""
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
-    cache((f"{folder}/dune.mkv", would_fix()))
+    cache((f"{folder}/dune.mkv", pending()))
     first = library.shelf()
     assert library.shelf() is first
 
@@ -1237,7 +1325,7 @@ def test_the_grid_is_rebuilt_when_a_walk_offers_more(media, monkeypatch):
     behind the grid have."""
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
-    with walking((f"{folder}/one.mkv", would_fix())) as store:
+    with walking((f"{folder}/one.mkv", pending())) as store:
         first = library.shelf()
         store.record(f"{folder}/two.mkv", FileKey(100, 1, 1, "eng"), Verdict(Status.CONFORM))
         store.publish_view()
@@ -1252,7 +1340,7 @@ def test_the_grid_is_rebuilt_when_the_titles_are_fetched_again(media, monkeypatc
     folder = f"{media}/Dune (2024)"
     items = [movie(1, "Dune", folder)]
     stub_arrs(monkeypatch, items)
-    cache((f"{folder}/dune.mkv", would_fix()))
+    cache((f"{folder}/dune.mkv", pending()))
     monkeypatch.setattr(library, "_INDEX_TTL", 0.0)
     first = library.shelf()
 
@@ -1266,7 +1354,7 @@ def test_forgetting_drops_the_built_grid(media, monkeypatch):
     """The rules are not one of the reads it is keyed on, so a settings save
     has to be able to drop it outright."""
     stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
-    cache((f"{media}/Dune/d.mkv", would_fix()))
+    cache((f"{media}/Dune/d.mkv", pending()))
     first = library.shelf()
     library.forget()
     assert library._built is None

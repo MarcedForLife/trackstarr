@@ -47,7 +47,7 @@ def test_concurrent_sweep_reports_in_walk_order(monkeypatch, tmp_path):
     # files would all land after the even ones.
     def slow_judge(path, **kwargs):
         time.sleep(0.02 if int(os.path.basename(path)[:3]) % 2 else 0.001)
-        return Judged(Job(path), None, Verdict(Status.WOULD_FIX, "reorder streams"))
+        return Judged(Job(path), None, Verdict(Status.PENDING, "reorder streams"))
 
     monkeypatch.setattr("trackstarr.sweep._judge", slow_judge)
     sweep(dry_run=True)
@@ -65,7 +65,7 @@ def test_a_path_cannot_break_its_own_report_row(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "trackstarr.sweep._judge",
         lambda path, **kwargs: Judged(
-            Job(path), None, Verdict(Status.WOULD_FIX, "reorder streams")
+            Job(path), None, Verdict(Status.PENDING, "reorder streams")
         ),
     )
     sweep(dry_run=True)
@@ -140,7 +140,7 @@ def test_an_arr_outage_stops_nothing_a_policy_never_asked(monkeypatch, tmp_path,
 
     def spy(job, dry_run, source="sweep"):
         judged_dry.append(dry_run)
-        return ProcessResult(Status.WOULD_FIX if dry_run else Status.FIXED)
+        return ProcessResult(Status.PENDING if dry_run else Status.MODIFIED)
 
     monkeypatch.setattr("trackstarr.sweep.process", spy)
 
@@ -425,7 +425,7 @@ def test_a_sweep_puts_each_file_it_worked_on_up_with_its_verdict(
             clean_registry.begin("r#1", path)
             clean_registry.finish("r#1", path)
         return Judged(
-            Job(path), None, Verdict(Status.WOULD_FIX, "add 2.0 downmix"), cached=cached
+            Job(path), None, Verdict(Status.PENDING, "add 2.0 downmix"), cached=cached
         )
 
     monkeypatch.setattr("trackstarr.sweep._judge", judge)
@@ -439,7 +439,7 @@ def test_a_sweep_puts_each_file_it_worked_on_up_with_its_verdict(
     (recent,) = rows
     assert [
         (os.path.basename(row["path"]), row["status"], row["detail"]) for row in recent
-    ] == [("000.mkv", "would-fix", "add 2.0 downmix")]
+    ] == [("000.mkv", "pending", "add 2.0 downmix")]
 
 
 def test_a_stopped_sweep_leaves_the_rest_of_the_library_unjudged(
@@ -661,7 +661,7 @@ def _failing_sweeps(monkeypatch, tmp_path, count: int, detail: str = "ffmpeg fai
 
     def failing(job, dry_run, source="sweep"):
         if dry_run:
-            return ProcessResult(Status.WOULD_FIX, None)
+            return ProcessResult(Status.PENDING, None)
         attempts.append(job.path)
         return ProcessResult(Status.FAILED, None, detail)
 
@@ -716,11 +716,11 @@ def test_a_report_that_cannot_be_written_does_not_cost_the_sweep(monkeypatch, tm
     os.mkdir(os.path.join(config.STATE_DIR, "pending.tsv"))
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": ProcessResult(Status.WOULD_FIX),
+        lambda job, dry_run, source="": ProcessResult(Status.PENDING),
     )
 
     counts = sweep(dry_run=True)
-    assert counts[Status.WOULD_FIX] == 1
+    assert counts[Status.PENDING] == 1
     assert "could not write" in caplog.text
 
 
@@ -766,7 +766,7 @@ def test_reporting_sweeps_neither_spend_the_budget_nor_stop_retrying(monkeypatch
 
     def rewriting(job, dry_run, source="sweep"):
         if dry_run:
-            return ProcessResult(Status.WOULD_FIX, None)
+            return ProcessResult(Status.PENDING, None)
         attempts.append(job.path)
         return ProcessResult(Status.FAILED, None, "ffmpeg failed (1): boom")
 
@@ -807,10 +807,10 @@ class _Sweeping:
     def process(self, job, dry_run, source="sweep"):
         if dry_run:
             self.walked.append(job.path)
-            return ProcessResult(Status.WOULD_FIX, None)
+            return ProcessResult(Status.PENDING, None)
         self.rewriting.append(job.path)
         self._held.wait(_PATIENCE)
-        return ProcessResult(Status.FIXED, None)
+        return ProcessResult(Status.MODIFIED, None)
 
     def release(self) -> None:
         self._held.set()
@@ -845,7 +845,7 @@ def _mid_sweep(monkeypatch, tmp_path, count: int, run: str = "r#1"):
 
 def test_the_walk_keeps_finding_work_while_a_rewrite_holds_a_slot(monkeypatch, tmp_path):
     """The whole reason the two are separate pools. With one budget-sized pool
-    doing both, the walk gets no further than its first would-fix."""
+    doing both, the walk gets no further than its first pending file."""
     with _mid_sweep(monkeypatch, tmp_path, 6) as sweeping:
         assert len(sweeping.walked) == 6
         assert len(sweeping.rewriting) == 1, "the rewrite budget was not the walk's"
@@ -884,15 +884,15 @@ def test_a_stopped_sweep_says_what_it_found_rather_than_forgetting_it(
     monkeypatch, tmp_path, clean_registry
 ):
     """A file the walk judged and no rewrite reached was still looked at, and
-    would-fix is what was found. Dropping it would lose the answer as well as
+    a pending verdict is what was found. Dropping it would lose the answer as well as
     the rewrite."""
     with _mid_sweep(monkeypatch, tmp_path, 6) as sweeping:
         _until(lambda: not sweeping.snapshot()["walking"], "the walk never finished")
         clean_registry.stop("r#1")
 
     counts = read_events()[-1]["counts"]
-    assert counts[str(Status.FIXED)] == 1, "the rewrite already going still finished"
-    assert counts[str(Status.WOULD_FIX)] == 5
+    assert counts[str(Status.MODIFIED)] == 1, "the rewrite already going still finished"
+    assert counts[str(Status.PENDING)] == 5
     # Every file was looked at, so none of them is unjudged.
     assert "stopped" not in read_events()[-1]
 
@@ -916,7 +916,7 @@ def test_a_sweep_queues_its_work_with_how_long_it_will_take(
         return Judged(
             Job(path, run=run),
             None,
-            Verdict(Status.WOULD_FIX, "add a 2.0", planned=planned, duration=3600.0),
+            Verdict(Status.PENDING, "add a 2.0", planned=planned, duration=3600.0),
         )
 
     monkeypatch.setattr("trackstarr.sweep._judge", judge)
@@ -938,19 +938,19 @@ def test_a_sweep_queues_its_work_with_how_long_it_will_take(
 
 
 def test_the_report_gives_a_file_its_final_verdict_and_only_that(monkeypatch, tmp_path):
-    """A would-fix is written down while it waits for a slot, so the report has
+    """A pending verdict is written down while it waits for a slot, so the report has
     to be the file's answer rather than both of them one after the other."""
     names = _library(tmp_path, monkeypatch, 4)
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="sweep": ProcessResult(
-            Status.WOULD_FIX if dry_run else Status.FIXED, None
+            Status.PENDING if dry_run else Status.MODIFIED, None
         ),
     )
     sweep(dry_run=False)
 
     rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
-    assert [row.split("\t")[0] for row in rows] == [str(Status.FIXED)] * 4
+    assert [row.split("\t")[0] for row in rows] == [str(Status.MODIFIED)] * 4
     # One row each, and the one the rewrite reached rather than the one the
     # walk queued. Their order is the walk's; see the test above.
     assert sorted(Path(row.split("\t")[2]).name for row in rows) == sorted(names)
@@ -965,12 +965,12 @@ def test_an_applying_sweep_leaves_a_held_title_where_the_walk_found_it(monkeypat
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="sweep": ProcessResult(
-            Status.WOULD_FIX if dry_run else Status.FIXED, None
+            Status.PENDING if dry_run else Status.MODIFIED, None
         ),
     )
     counts = sweep(dry_run=False)
-    assert counts[Status.WOULD_FIX] == 3
-    assert counts[Status.FIXED] == 0, "nothing reached the rewrite pool"
+    assert counts[Status.PENDING] == 3
+    assert counts[Status.MODIFIED] == 0, "nothing reached the rewrite pool"
     # The reason on every row, including the ones a warm cache answered, which
     # never pass through process() to say it themselves.
     rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
@@ -979,19 +979,19 @@ def test_an_applying_sweep_leaves_a_held_title_where_the_walk_found_it(monkeypat
 
 
 def test_a_file_skipped_mid_sweep_keeps_the_verdict_the_walk_gave_it(monkeypatch, tmp_path):
-    """Skipping is "not in this pass": the file keeps its would-fix, so the
+    """Skipping is "not in this pass": the file keeps its pending verdict, so the
     library still shows the work and the next sweep picks it up."""
     _library(tmp_path, monkeypatch, 1)
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="sweep": ProcessResult(
-            Status.WOULD_FIX if dry_run else Status.FIXED, None
+            Status.PENDING if dry_run else Status.MODIFIED, None
         ),
     )
     monkeypatch.setattr(runs, "skipped", lambda run, path: True)
     counts = sweep(dry_run=False, run="r#1")
-    assert counts[Status.WOULD_FIX] == 1
-    assert counts[Status.FIXED] == 0
+    assert counts[Status.PENDING] == 1
+    assert counts[Status.MODIFIED] == 0
     rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
     assert "skipped for this run" in rows[0]
 
@@ -1010,7 +1010,7 @@ def test_a_queued_file_reads_as_pending_while_it_waits_for_its_rewrite(monkeypat
         return {entry["status"] for entry in json.loads(stored.read_text())["files"].values()}
 
     with _mid_sweep(monkeypatch, tmp_path, 3):
-        _until(lambda: pending() == {str(Status.WOULD_FIX)}, "the work found was never written")
+        _until(lambda: pending() == {str(Status.PENDING)}, "the work found was never written")
 
     # And gone again once the rewrites answered them: a file that has just been
     # rewritten is not the file the entry described.
@@ -1081,7 +1081,7 @@ def test_a_recheck_leaves_the_rest_of_the_librarys_verdicts_alone(
 
 def test_a_recheck_replaces_the_verdict_it_re_judged(monkeypatch, tmp_path, clean_registry):
     folder = _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv")
-    verdicts = iter([Status.WOULD_FIX, Status.CONFORM])
+    verdicts = iter([Status.PENDING, Status.CONFORM])
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="": ProcessResult(next(verdicts), None),
@@ -1103,7 +1103,7 @@ def test_a_recheck_does_not_overwrite_the_last_sweeps_report(
     _folder(tmp_path, monkeypatch, "Arrival (2016)", "Arrival.mkv")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": ProcessResult(Status.WOULD_FIX, None),
+        lambda job, dry_run, source="": ProcessResult(Status.PENDING, None),
     )
     sweep(dry_run=True)
     before = (Path(config.STATE_DIR) / "pending.tsv").read_text()
@@ -1264,7 +1264,7 @@ def test_a_recheck_tries_a_file_the_sweeps_gave_up_on(monkeypatch, tmp_path, cle
 
     def failing(job, dry_run, source="sweep"):
         if dry_run:
-            return ProcessResult(Status.WOULD_FIX, None)
+            return ProcessResult(Status.PENDING, None)
         attempts.append(job.path)
         return ProcessResult(Status.FAILED, None, "ffmpeg failed (1): boom")
 
@@ -1364,7 +1364,7 @@ def test_the_grid_reads_a_walk_before_the_cache_file_exists(
     _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": ProcessResult(Status.WOULD_FIX),
+        lambda job, dry_run, source="": ProcessResult(Status.PENDING),
     )
     library.forget()
     seen: list[tuple[str, bool]] = []
@@ -1377,4 +1377,4 @@ def test_the_grid_reads_a_walk_before_the_cache_file_exists(
 
     monkeypatch.setattr(notify, "publish", watch)
     sweep(dry_run=True)
-    assert seen == [("would-fix", False)]
+    assert seen == [("pending", False)]

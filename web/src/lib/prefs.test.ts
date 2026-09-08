@@ -3,21 +3,21 @@ import { keep, keepAll, keepFlag, stored, storedAll, storedFlag } from '$lib/pre
 
 beforeEach(() => localStorage.clear());
 
-const VERDICTS = ['fixed', 'failed', 'skip'] as const;
+const VERDICTS = ['modified', 'failed', 'skip'] as const;
 
 describe('stored', () => {
 	test('takes a kept word that is still one of the choices', () => {
 		localStorage.setItem('order', 'failed');
-		expect(stored('order', VERDICTS, 'fixed')).toBe('failed');
+		expect(stored('order', VERDICTS, 'modified')).toBe('failed');
 	});
 
 	test('falls back for a word that has stopped being one', () => {
 		localStorage.setItem('order', 'retired');
-		expect(stored('order', VERDICTS, 'fixed')).toBe('fixed');
+		expect(stored('order', VERDICTS, 'modified')).toBe('modified');
 	});
 
 	test('falls back for a key nobody has written', () => {
-		expect(stored('order', VERDICTS, 'fixed')).toBe('fixed');
+		expect(stored('order', VERDICTS, 'modified')).toBe('modified');
 	});
 });
 
@@ -31,7 +31,7 @@ describe('keep', () => {
 	// the default reaches every browser that never chose.
 	test('removes the key when the choice is the default', () => {
 		localStorage.setItem('order', 'failed');
-		keep('order', 'fixed', true);
+		keep('order', 'modified', true);
 		expect(localStorage.getItem('order')).toBeNull();
 	});
 });
@@ -56,8 +56,8 @@ describe('flags', () => {
 
 describe('storedAll', () => {
 	test('keeps the words that are still choices and drops the rest', () => {
-		localStorage.setItem('held', 'fixed,retired,skip');
-		expect(storedAll('held', VERDICTS)).toEqual(['fixed', 'skip']);
+		localStorage.setItem('held', 'modified,retired,skip');
+		expect(storedAll('held', VERDICTS)).toEqual(['modified', 'skip']);
 	});
 
 	test('says the same word once', () => {
@@ -74,8 +74,8 @@ describe('storedAll', () => {
 
 describe('keepAll', () => {
 	test('writes the chosen words comma-separated', () => {
-		keepAll('held', ['fixed', 'skip']);
-		expect(localStorage.getItem('held')).toBe('fixed,skip');
+		keepAll('held', ['modified', 'skip']);
+		expect(localStorage.getItem('held')).toBe('modified,skip');
 	});
 
 	test('removes the key when nothing is held', () => {

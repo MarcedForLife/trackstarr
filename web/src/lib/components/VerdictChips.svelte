@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { control } from '$lib/controls';
-	import { pip, tint, VERDICTS, verdictHint, verdictLabel, type Verdict } from '$lib/library';
+	import { FILTERS, pip, tint, verdictHint, verdictLabel, type Verdict } from '$lib/library';
 
 	// The verdict filter row, over the library grid and on Appearance, where it
 	// sets what the grid opens holding. One component, so the setting looks like
@@ -29,9 +29,9 @@
 		describedBy?: string;
 	} = $props();
 
-	// Against a shelf, only the verdicts something is in. Without one, all of
-	// them, or a setting that hides Failed until something fails is unfindable.
-	const states = $derived(counts ? VERDICTS.filter((state) => counts[state]) : VERDICTS);
+	// Against a shelf, only the states something is in. Without one, all of them,
+	// or a setting that holds Failed until something fails is unfindable.
+	const states = $derived(counts ? FILTERS.filter((state) => counts[state]) : FILTERS);
 
 	const on = (state: Verdict) => chosen.includes(state);
 
@@ -44,7 +44,7 @@
 	const chip = `flex ${control} items-center gap-2 rounded-full border px-3.5 text-[13px] transition-colors sm:px-3`;
 </script>
 
-<!-- A wrapping row, not tabs: seven states will not fit a phone. -->
+<!-- A wrapping row, not tabs: eight states will not fit a phone. -->
 <div
 	role="group"
 	aria-label={label}

@@ -170,7 +170,7 @@ def test_worker_keeps_a_language_the_webhook_already_carried():
 
 def test_report_mode_never_rewrites_a_webhook_import(monkeypatch):
     """The REWRITE_MODE latch lives inside process(), so the handler's plain
-    dry_run=False still has to end as a would-fix."""
+    dry_run=False still has to end as a pending verdict."""
     monkeypatch.setattr(config, "REWRITE_MODE", "report")
     plan = needed_plan()
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: plan)
@@ -179,11 +179,11 @@ def test_report_mode_never_rewrites_a_webhook_import(monkeypatch):
     )
     webhook._handle(Job("/x.mkv"))
     (entry,) = read_events()
-    assert entry["event"] == "would-fix"
+    assert entry["event"] == "pending"
 
 
 def test_the_worker_labels_history_with_the_delivery_run(monkeypatch):
-    """In report mode the would-fix entry is the webhook's only record, so it
+    """In report mode the pending entry is the webhook's only record, so it
     has to carry the run the delivery minted."""
     monkeypatch.setattr(config, "REWRITE_MODE", "report")
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: needed_plan())
@@ -210,7 +210,7 @@ def test_a_delivery_books_its_verdict_where_the_collection_reads_it(monkeypatch,
     webhook._handle(Job(imported, "eng"))
 
     entry = read(sweep_cache.cache_path(), Policy.from_config().fingerprint()).files[imported]
-    assert entry["status"] == "would-fix"
+    assert entry["status"] == "pending"
     assert entry["lang"] == "eng"
 
 
@@ -229,10 +229,10 @@ def _stub_rewrite_then(monkeypatch, first: Plan, second: Plan) -> None:
 def test_a_delivery_books_the_file_its_rewrite_wrote(monkeypatch, imported):
     """The old entry described a file that no longer exists, so it goes. The
     new file must still get a verdict, or the library files a title it has just
-    fixed under "unchecked" until the next sweep."""
+    rewritten under "unchecked" until the next sweep."""
     os.makedirs(config.STATE_DIR, exist_ok=True)
     cache = SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
-    stale = Verdict(Status.WOULD_FIX, "add 2.0 downmix")
+    stale = Verdict(Status.PENDING, "add 2.0 downmix")
     cache.record(imported, FileKey(10, 1, 1, "eng"), stale)
     cache.save()
 
@@ -259,7 +259,7 @@ def test_a_remux_books_the_mkv_and_forgets_the_file_it_replaced(monkeypatch, tmp
     set_rules(monkeypatch, remux="always")
     os.makedirs(config.STATE_DIR, exist_ok=True)
     cache = SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
-    cache.record(source, FileKey(10, 1, 1, "eng"), Verdict(Status.WOULD_FIX, "remux to mkv"))
+    cache.record(source, FileKey(10, 1, 1, "eng"), Verdict(Status.PENDING, "remux to mkv"))
     cache.save()
 
     _stub_rewrite_then(monkeypatch, needed_plan(source, remuxing=True), Plan(path=remuxed))
@@ -277,9 +277,7 @@ def test_a_rewrite_nothing_can_judge_leaves_the_library_saying_nothing(
     the probe. Nothing is stored; the next sweep settles it."""
     os.makedirs(config.STATE_DIR, exist_ok=True)
     cache = SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
-    cache.record(
-        imported, FileKey(10, 1, 1, "eng"), Verdict(Status.WOULD_FIX, "add 2.0 downmix")
-    )
+    cache.record(imported, FileKey(10, 1, 1, "eng"), Verdict(Status.PENDING, "add 2.0 downmix"))
     cache.save()
 
     plans = iter([needed_plan(imported)])
@@ -316,7 +314,7 @@ def test_a_delivery_leaves_the_rest_of_the_library_alone(monkeypatch, imported, 
 
     stored = read(sweep_cache.cache_path(), Policy.from_config().fingerprint()).files
     assert stored[neighbour]["status"] == "conform"
-    assert stored[imported]["status"] == "would-fix"
+    assert stored[imported]["status"] == "pending"
 
 
 def test_a_stopped_delivery_drops_the_files_still_in_its_queue(monkeypatch):
@@ -591,7 +589,7 @@ def test_the_events_api_pages_the_history_newest_first(listener):
 
     headers = {AUTH_HEADER: auth.mint("browser")}
     for index in range(3):
-        events.record("fixed", path=f"/{index}.mkv")
+        events.record("modified", path=f"/{index}.mkv")
 
     status, page = request(listener, "GET", "/api/events", headers=headers)
     assert status == 200
@@ -617,7 +615,7 @@ def test_the_events_api_bounds_a_page_in_time(listener):
         for day in range(1, 6):
             line = {
                 "ts": f"2026-03-0{day}T12:00:00+00:00",
-                "event": "fixed",
+                "event": "modified",
                 "path": f"/{day}.mkv",
             }
             history.write(json.dumps(line) + "\n")
@@ -654,7 +652,7 @@ def test_a_window_with_its_ends_crossed_is_empty_rather_than_a_mistake(listener)
     """A from/to pair is two fields somebody types in either order, and half a
     second with the ends crossed should not put an error where the list goes."""
     headers = {AUTH_HEADER: auth.mint("browser")}
-    events.record("fixed", path="/a.mkv")
+    events.record("modified", path="/a.mkv")
 
     path = "/api/events?since=2026-03-05T00:00:00%2B00:00&until=2026-03-01T00:00:00%2B00:00"
     status, page = request(listener, "GET", path, headers=headers)
@@ -668,25 +666,25 @@ def test_the_events_api_names_the_title_each_line_is_about(listener, one_title):
     file belongs to."""
     headers = {AUTH_HEADER: auth.mint("browser")}
     inside = f"{one_title}/Dune.mkv"
-    events.record("fixed", path=inside)
+    events.record("modified", path=inside)
     events.record("webhook", arr="radarr", files=1, paths=[inside])
     # About the library rather than about a title, and about a file under no
     # title at all: neither has a poster to stand under.
     events.record("sweep", files=1)
-    events.record("fixed", path="/elsewhere/film.mkv")
+    events.record("modified", path="/elsewhere/film.mkv")
 
     status, page = request(listener, "GET", "/api/events", headers=headers)
     assert status == 200
     assert [(entry["event"], entry.get("title")) for entry in page["events"]] == [
-        ("fixed", None),
+        ("modified", None),
         ("sweep", None),
         ("webhook", "arr:radarr:7"),
-        ("fixed", "arr:radarr:7"),
+        ("modified", "arr:radarr:7"),
     ]
     # One card for the two lines naming it, and it is the card the grid draws.
     assert list(page["titles"]) == ["arr:radarr:7"]
     card = page["titles"]["arr:radarr:7"]
-    assert (card["name"], card["state"]) == ("Dune", "would-fix")
+    assert (card["name"], card["state"]) == ("Dune", "pending")
 
 
 def test_a_history_with_no_titles_in_it_carries_no_cards(listener):
@@ -1473,13 +1471,13 @@ def test_a_files_verdict_and_its_log_are_both_readable_from_the_row(
     clean_registry.begin("r#1", "/data/film.mkv")
     logging.getLogger("trackstarr.test").info("ffmpeg -i film.mkv")
     clean_registry.finish("r#1", "/data/film.mkv")
-    clean_registry.tally("r#1", "fixed", path="/data/film.mkv", detail="add 2.0 downmix")
+    clean_registry.tally("r#1", "modified", path="/data/film.mkv", detail="add 2.0 downmix")
 
     _, answer, _ = api(listener, "GET", "/api/runs", cookie=cookie)
     (row,) = answer["runs"][0]["recent"]
     assert (row["path"], row["status"], row["detail"]) == (
         "/data/film.mkv",
-        "fixed",
+        "modified",
         "add 2.0 downmix",
     )
 
@@ -2071,7 +2069,7 @@ def one_title(monkeypatch, tmp_path):
     cache.record(
         str(folder / "Dune.mkv"),
         FileKey(10, 1, 1, "eng"),
-        Verdict(Status.WOULD_FIX, "add 2.0 downmix", tracks=[{"index": 0, "kind": "video"}]),
+        Verdict(Status.PENDING, "add 2.0 downmix", tracks=[{"index": 0, "kind": "video"}]),
     )
     cache.save()
     yield str(folder)
@@ -2085,9 +2083,7 @@ def test_the_collection_is_a_read_any_session_may_make(listener, fast_scrypt, on
     cookie = sign_in(listener, "watcher")
     status, shelf, _ = api(listener, "GET", "/api/library", cookie=cookie)
     assert status == 200
-    assert [(card["name"], card["state"]) for card in shelf["titles"]] == [
-        ("Dune", "would-fix")
-    ]
+    assert [(card["name"], card["state"]) for card in shelf["titles"]] == [("Dune", "pending")]
 
 
 def test_the_summary_is_a_tally_and_the_newest_few_posters(listener, fast_scrypt, one_title):
@@ -2098,8 +2094,8 @@ def test_the_summary_is_a_tally_and_the_newest_few_posters(listener, fast_scrypt
     status, found, _ = api(listener, "GET", "/api/library/summary", cookie=cookie)
     assert status == 200
     assert found["titles"] == 1
-    assert found["counts"] == {"would-fix": 1}
-    assert [(card["name"], card["state"]) for card in found["head"]] == [("Dune", "would-fix")]
+    assert found["counts"] == {"pending": 1}
+    assert [(card["name"], card["state"]) for card in found["head"]] == [("Dune", "pending")]
     # A count, not the list itself: the landing page has no use for a few
     # hundred kilobytes of cards it will not draw.
     assert isinstance(found["titles"], int)

@@ -16,7 +16,7 @@
 			"counts": {
 				"conform": 1174,
 				"failed": 1,
-				"fixed": 1
+				"modified": 1
 			},
 			"queued": 2,
 			"walking": false,
@@ -48,7 +48,7 @@
 			"recent": [
 				{
 					"path": "/data/media/tv/Severance/Season 01/Severance - S01E01 - Good News About Hell.mkv",
-					"status": "fixed",
+					"status": "modified",
 					"seconds": 1834.2,
 					"detail": "add 2.0 downmix"
 				},

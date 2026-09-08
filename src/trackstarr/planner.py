@@ -24,8 +24,8 @@ from .media import (
     is_commentary,
     is_cover_art,
     is_forced,
-    is_junk_title,
     is_sdh,
+    matches_release_tags,
     probe,
     stream_bitrate,
     stream_lang,
@@ -86,7 +86,7 @@ class OutStream:
     title: str = ""
     codec: str = ""  # resolved encoder, generated downmixes only
     bitrate: str = ""  # resolved encode rate, generated downmixes only
-    clear_title: bool = False  # strip a junk title while rewriting anyway
+    clear_title: bool = False  # strip release tags from a title while rewriting anyway
     sub_codec: str | None = None  # convert a subtitle while remuxing (mov_text -> srt)
     #: A copied stream's rate when the output container would otherwise lose
     #: it; see :func:`trackstarr.media.unpreserved_bitrate`. None otherwise.
@@ -126,7 +126,7 @@ class Plan:
     #: goes stale, so apply_plan refuses unless this matches. None when
     #: hand-built.
     src_signature: SourceSignature | None = None
-    #: Strip a junk container title while rewriting anyway.
+    #: Strip release tags from the container title while rewriting anyway.
     clear_container_title: bool = False
     #: Whether this rewrite converts the container. Decided per pass, since a
     #: ride-along remux rule does not act on the deciding pass.
@@ -226,7 +226,8 @@ def track_changes(plan: Plan) -> dict:
 
 def why(plan: Plan) -> dict:
     """The plan's conclusion in the history's vocabulary: the four lists a
-    "fixed" event records, plus the skip. :func:`describe` is the prose form."""
+    "modified" event records, plus the skip. :func:`describe` is the prose
+    form."""
     told = {
         "skip": plan.skip or "",
         "reasons": plan.reasons,
@@ -299,7 +300,7 @@ def plan_from_probe(plan: Plan, info: dict) -> Plan:
     if deciding.reasons:
         return whole
     # No rewrite, so no ride-alongs happen; what they would have done is still
-    # reported, so a junk title reads as that rather than as conforming.
+    # reported, so a title carrying release tags reads as that rather than as conforming.
     deciding.incidental = whole.incidental
     deciding.incidental_rules = whole.incidental_rules
     return deciding
@@ -385,7 +386,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
             kind="audio",
             channels=stream.get("channels"),
             title=stream_title(stream),
-            clear_title=_flag_junk_title(plan, stream),
+            clear_title=_flag_release_tags(plan, stream),
             src_bitrate=unpreserved_bitrate(stream),
         )
         for stream in kept_audio
@@ -423,7 +424,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
                 src=stream["index"],
                 kind="subtitle",
                 title=stream_title(stream),
-                clear_title=_flag_junk_title(plan, stream),
+                clear_title=_flag_release_tags(plan, stream),
                 # Not carried across a conversion: the rate describes the
                 # mov_text bytes, and the SRT will be a different size.
                 src_bitrate=None if sub_codec else unpreserved_bitrate(stream),
@@ -436,8 +437,8 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     ]
 
     file_title = container_title(info)
-    if plan.acts("junk_titles") and is_junk_title(file_title, policy):
-        _record(plan, "junk_titles", f"clear junk container title ({file_title!r})")
+    if plan.acts("release_tags") and matches_release_tags(file_title, policy):
+        _record(plan, "release_tags", f"clear release tags on container title ({file_title!r})")
         plan.clear_container_title = True
 
     if plan.acts("order"):
@@ -501,17 +502,19 @@ def _stream_label(stream: dict, detail: str = "") -> str:
     return f"{stream['index']} ({', '.join(parts)})" if parts else str(stream["index"])
 
 
-def _flag_junk_title(plan: Plan, stream: dict) -> bool:
-    """Record a junk title for clearing, and say whether to clear it."""
-    if not plan.acts("junk_titles"):
+def _flag_release_tags(plan: Plan, stream: dict) -> bool:
+    """Record a title carrying release tags for clearing, and say whether to clear it."""
+    if not plan.acts("release_tags"):
         return False
     title = stream_title(stream)
-    if not is_junk_title(title, plan.policy) or title_is_load_bearing(stream, plan.policy):
+    if not matches_release_tags(title, plan.policy) or title_is_load_bearing(
+        stream, plan.policy
+    ):
         return False
     _record(
         plan,
-        "junk_titles",
-        f"clear junk title on {stream.get('codec_type')} {stream['index']} ({title!r})",
+        "release_tags",
+        f"clear release tags on {stream.get('codec_type')} {stream['index']} ({title!r})",
     )
     return True
 

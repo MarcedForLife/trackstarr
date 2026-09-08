@@ -14,6 +14,7 @@ import statistics
 from dataclasses import dataclass, field
 
 from . import config, events
+from .status import Status
 
 log = logging.getLogger(__name__)
 
@@ -72,8 +73,8 @@ class Speeds:
 
 
 def _worked(entry: dict) -> tuple[tuple[str, ...], float] | None:
-    """One fixed file as its shape and speed, or None. The slot wait is taken
-    off ``seconds``: only the work scales with the file."""
+    """One rewritten file as its shape and speed, or None. The slot wait is
+    taken off ``seconds``: only the work scales with the file."""
     duration = entry.get("duration")
     seconds = entry.get("seconds")
     if not isinstance(duration, int | float) or not isinstance(seconds, int | float):
@@ -93,7 +94,7 @@ def measured(pages: int = _PAGES) -> Speeds:
     for _ in range(pages):
         entries, cursor = events.read(_PAGE, cursor)
         for entry in entries:
-            if entry.get("event") != "fixed":
+            if entry.get("event") != Status.MODIFIED:
                 continue
             if worked := _worked(entry):
                 made, speed = worked

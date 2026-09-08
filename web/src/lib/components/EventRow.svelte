@@ -1,12 +1,23 @@
 <script lang="ts">
 	import Disclosure from '$lib/components/Disclosure.svelte';
+	import Glyph from '$lib/components/Glyph.svelte';
 	import TitleThumb from '$lib/components/TitleThumb.svelte';
-	import { ago, chips, detail, details, dot, headline, marker, type Event } from '$lib/events';
+	import {
+		ago,
+		badge,
+		chips,
+		detail,
+		details,
+		dot,
+		headline,
+		marker,
+		type Event
+	} from '$lib/events';
 	import { stamp } from '$lib/format';
 	import type { Card } from '$lib/library';
 
-	// One line of history, opening to the full record. On the events page's
-	// timeline, and in the overview's rail.
+	// One line of history, opening to the full record. On the events page's list,
+	// and in the overview's rail.
 	let {
 		entry,
 		open = false,
@@ -36,6 +47,10 @@
 	// Both or neither: a thumb with nowhere to go swallows a tap.
 	const poster = $derived(card && onopen ? card : undefined);
 
+	// What stands where the poster would on a line about the service: its kind's
+	// mark, so the list can be read down the column.
+	const mark = $derived(poster ? '' : badge(entry));
+
 	const line = $derived(detail(entry));
 	const marks = $derived(chips(entry));
 	const episode = $derived(marker(entry));
@@ -53,30 +68,61 @@
 </script>
 
 {#snippet thumb()}
-	{#if poster && onopen}
-		<TitleThumb card={poster} {onopen} />
-	{/if}
+	<!-- The column goes below lg in the overview's rail, which is too narrow to
+	     spare it there. `contents` wherever it stays, so what it holds is the flex
+	     item itself and keeps its own alignment; by stylesheet, not a branch, so
+	     a resize across lg needs no measuring. -->
+	<span class={compact ? 'hidden lg:contents' : 'contents'}>
+		{#if poster && onopen}
+			<TitleThumb card={poster} {onopen} />
+		{:else if mark}
+			<!-- Round, and as wide as a poster: it fills the column so the headlines
+			     line up, and its shape says a mark rather than a cover that failed
+			     to load, which an empty slot of the same size did. Centred against
+			     the lines, since a run's line carries chips under it and half a
+			     poster's height left the mark stranded at the top of them.
+
+			     It opens the line, like the summary beside it, since a mark sitting
+			     next to something that opens looks as though it should. Out of the
+			     tab order and hidden from a reader who is told: the summary already
+			     carries this action and says what it does, so a second stop here
+			     would be the same press twice. -->
+			<button
+				type="button"
+				tabindex="-1"
+				aria-hidden="true"
+				onclick={ontoggle}
+				class="flex h-10 w-10 flex-none items-center justify-center self-center rounded-full border border-line bg-sunken text-dim transition-colors hover:border-line-strong hover:text-fg active:bg-raised"
+			>
+				<Glyph name={mark} size={14} />
+			</button>
+		{/if}
+	</span>
 {/snippet}
 
 <!-- The chips stay in the line's column; the panel takes the full width. -->
-<Disclosure {id} {open} {ontoggle} beside={poster ? thumb : undefined}>
+<Disclosure {id} {open} {ontoggle} beside={poster || mark ? thumb : undefined}>
 	{#snippet summary(chevron)}
 		<span class="flex items-baseline gap-2.5">
-			{#if compact}
-				<!-- A compact row has no timeline rail, so it carries its own dot. -->
-				<span
-					aria-hidden="true"
-					class={`h-1.5 w-1.5 flex-none translate-y-[-2px] rounded-full ${dot(entry)}`}
-				></span>
-			{/if}
-			<!-- The episode sits outside the truncation, so a long series title
-			     cannot take it over the end. -->
+			<!-- The verdict's colour, in the line rather than in a column of its own:
+			     beside the round mark, a dot in its own column read as a second
+			     badge. Nudged up, since a 6px circle on the baseline sits low. -->
 			<span
-				class={`flex min-w-0 flex-1 items-baseline gap-1.5 font-medium ${
+				aria-hidden="true"
+				class={`h-1.5 w-1.5 flex-none translate-y-[-2px] rounded-full ${dot(entry)}`}
+			></span>
+			<!-- The episode sits outside the truncation, so a long series title
+			     cannot take it over the end. Shrinks but does not grow: what follows
+			     reads as the end of the line rather than standing off at the far
+			     edge of a wide one. -->
+			<span
+				class={`flex min-w-0 items-baseline gap-1.5 font-medium ${
 					compact ? 'text-[12.5px] text-dim lg:text-[13.5px] lg:text-fg' : 'text-[13.5px]'
 				}`}
 			>
-				<span class="min-w-0 truncate">{headline(entry)}</span>
+				<!-- The card's name where there is one: a title's folder is named for
+				     the *arr that made it. -->
+				<span class="min-w-0 truncate">{headline(entry, card?.name)}</span>
 				{#if episode}
 					<span class="flex-none text-faint tabular-nums">{episode}</span>
 				{/if}

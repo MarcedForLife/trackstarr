@@ -177,11 +177,16 @@
 	}
 }
 
+/* What a bar standing over the page casts. Per theme rather than per palette,
+   since a shadow is depth rather than hue. Tailwind's own are 10% black, which
+   a dark surface swallows, so the dark pair is heavier. */
 [data-theme='dark'] {
 	color-scheme: dark;
+	--float-shadow: 0 12px 32px rgba(0, 0, 0, 0.62), 0 3px 10px rgba(0, 0, 0, 0.45);
 }
 [data-theme='light'] {
 	color-scheme: light;
+	--float-shadow: 0 12px 28px rgba(24, 20, 12, 0.16), 0 3px 8px rgba(24, 20, 12, 0.08);
 }
 
 /* The page and every swatch ease between palettes on the same curve. */
@@ -490,6 +495,7 @@
 	--color-toggle-off: var(--toggle-off);
 	--color-knob: var(--knob);
 	--color-knob-on: var(--knob-on);
+	--shadow-float: var(--float-shadow);
 }
 
 html {

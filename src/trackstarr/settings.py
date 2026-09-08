@@ -38,7 +38,7 @@ EDITABLE = frozenset(
         "COMMENTARY_PATTERN",
         "SDH_PATTERN",
         "FORCED_PATTERN",
-        "JUNK_TITLE_PATTERN",
+        "RELEASE_TAG_PATTERN",
         "MEDIA_DIRS",
         "SWEEP_AT",
         "IMDB_RATINGS",
@@ -131,7 +131,7 @@ def _values() -> dict[str, object]:
         "COMMENTARY_PATTERN": config.COMMENTARY_RE.pattern,
         "SDH_PATTERN": config.SDH_RE.pattern,
         "FORCED_PATTERN": config.FORCED_RE.pattern,
-        "JUNK_TITLE_PATTERN": config.JUNK_TITLE_RE.pattern,
+        "RELEASE_TAG_PATTERN": config.RELEASE_TAG_RE.pattern,
         # Not sorted: the sweep walks in this order.
         "MEDIA_DIRS": list(config.MEDIA_DIRS),
         "SWEEP_AT": config.SWEEP_AT,

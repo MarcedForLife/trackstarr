@@ -13,7 +13,7 @@ from trackstarr.sweep_cache import FORMAT, FileKey, SweepCache, Verdict, cache_k
 CONFORM = Verdict(Status.CONFORM)
 
 #: What a rewrite leaves on the verdict it publishes; see
-#: :func:`trackstarr.processing._fixed`.
+#: :func:`trackstarr.processing._modified`.
 REWROTE = {
     "at": "2026-03-01T12:00:00+13:00",
     "bytes_before": 2_000,
@@ -53,9 +53,9 @@ def test_unchanged_file_hits(cache_path, media):
     assert cache.lookup(media, key) == CONFORM
 
 
-def test_would_fix_verdict_round_trips(cache_path, media):
+def test_pending_verdict_round_trips(cache_path, media):
     key = cache_key(media, "eng")
-    verdict = Verdict(Status.WOULD_FIX, "add 2.0 downmix from stream 1 (6ch eng)")
+    verdict = Verdict(Status.PENDING, "add 2.0 downmix from stream 1 (6ch eng)")
     cache = saved_cache(cache_path, (media, key, verdict))
     assert cache.lookup(media, key) == verdict
 
@@ -194,7 +194,7 @@ def test_a_rewritten_files_old_verdict_goes_at_the_next_write(cache_path, media)
     """A checkpoint used to carry it forward, so a rewritten file read Pending
     for the whole walk."""
     key = cache_key(media, "eng")
-    cache = saved_cache(cache_path, (media, key, Verdict(Status.WOULD_FIX)))
+    cache = saved_cache(cache_path, (media, key, Verdict(Status.PENDING)))
 
     cache.drop(media)
     cache.checkpoint()
@@ -206,7 +206,7 @@ def test_a_dropped_file_that_gets_a_verdict_after_all_keeps_it(cache_path, media
     """A re-check judges the same file twice inside one run when somebody
     picks a title, runs it, and picks it again."""
     key = cache_key(media, "eng")
-    cache = saved_cache(cache_path, (media, key, Verdict(Status.WOULD_FIX)))
+    cache = saved_cache(cache_path, (media, key, Verdict(Status.PENDING)))
 
     cache.drop(media)
     cache.record(media, key, CONFORM)
@@ -310,23 +310,23 @@ def test_a_rewrite_record_outlives_the_same_verdict_reached_again(cache_path, me
     which is the right answer and says nothing about the rewrite. Without this
     the library would go back to calling the file untouched."""
     key = cache_key(media, "eng")
-    cache = saved_cache(cache_path, (media, key, Verdict(Status.CONFORM, fixed=REWROTE)))
+    cache = saved_cache(cache_path, (media, key, Verdict(Status.CONFORM, modified=REWROTE)))
 
     cache.record(media, key, CONFORM)
     cache.save()
-    assert read(cache_path, fingerprint()).files[media]["fixed"] == REWROTE
+    assert read(cache_path, fingerprint()).files[media]["modified"] == REWROTE
 
 
 def test_a_changed_file_leaves_the_rewrite_record_behind(cache_path, media):
     """Whatever we made of the file, it is not what is on disk now."""
-    fixed = Verdict(Status.CONFORM, fixed=REWROTE)
-    saved_cache(cache_path, (media, cache_key(media, "eng"), fixed))
+    rewrote = Verdict(Status.CONFORM, modified=REWROTE)
+    saved_cache(cache_path, (media, cache_key(media, "eng"), rewrote))
     Path(media).write_bytes(b"x" * 20)
 
     cache = SweepCache.load(cache_path, fingerprint())
     cache.record(media, cache_key(media, "eng"), CONFORM)
     cache.save()
-    assert "fixed" not in read(cache_path, fingerprint()).files[media]
+    assert "modified" not in read(cache_path, fingerprint()).files[media]
 
 
 def test_an_unrewritten_file_has_no_record(cache_path, media):
@@ -334,7 +334,7 @@ def test_an_unrewritten_file_has_no_record(cache_path, media):
     them."""
     saved_cache(cache_path, (media, cache_key(media, "eng"), CONFORM))
 
-    assert "fixed" not in json.loads(Path(cache_path).read_text())["files"][media]
+    assert "modified" not in json.loads(Path(cache_path).read_text())["files"][media]
 
 
 def test_a_failure_count_round_trips(cache_path, media):
@@ -398,11 +398,11 @@ def test_update_books_one_verdict_without_disturbing_the_others(state_cache, med
     Path(neighbour).write_bytes(b"y" * 10)
     saved_cache(str(state_cache), (neighbour, cache_key(neighbour, "eng"), CONFORM))
 
-    verdict = Verdict(Status.WOULD_FIX, "drop subtitle 3 (spa, Spanish)")
+    verdict = Verdict(Status.PENDING, "drop subtitle 3 (spa, Spanish)")
     sweep_cache.update(media, cache_key(media, "eng"), verdict, fingerprint())
 
     stored = read(str(state_cache), fingerprint())
-    assert stored.files[media]["status"] == "would-fix"
+    assert stored.files[media]["status"] == "pending"
     assert stored.files[media]["reasons"] == "drop subtitle 3 (spa, Spanish)"
     # The whole point: the rest of the library is still there.
     assert stored.files[neighbour]["status"] == "conform"
@@ -414,7 +414,7 @@ def test_update_writes_the_same_entry_a_sweep_would(state_cache, media):
     depending on which looked at it last."""
     key = cache_key(media, "eng")
     verdict = Verdict(
-        Status.WOULD_FIX,
+        Status.PENDING,
         "drop subtitle 3 (spa)",
         [{"index": 0, "kind": "video"}],
         [{"index": 0, "kind": "video", "src": 0}],
@@ -438,10 +438,10 @@ def test_update_keeps_the_rewrite_record_the_sweep_stored(state_cache, media):
     """A delivery re-judging a file we rewrote reaches the same verdict a
     re-check would, and must not drop the record the same way."""
     key = cache_key(media, "eng")
-    saved_cache(str(state_cache), (media, key, Verdict(Status.CONFORM, fixed=REWROTE)))
+    saved_cache(str(state_cache), (media, key, Verdict(Status.CONFORM, modified=REWROTE)))
 
     sweep_cache.update(media, key, CONFORM, fingerprint())
-    assert read(str(state_cache), fingerprint()).files[media]["fixed"] == REWROTE
+    assert read(str(state_cache), fingerprint()).files[media]["modified"] == REWROTE
 
 
 def test_update_with_no_verdict_drops_the_stored_entry(state_cache, media):
@@ -460,7 +460,7 @@ def test_update_leaves_a_cache_judged_under_other_rules_alone(state_cache, media
     before = state_cache.read_text()
 
     stale = fingerprint() | {"languages": ["fre:add"]}
-    sweep_cache.update(media, cache_key(media, "eng"), Verdict(Status.WOULD_FIX), stale)
+    sweep_cache.update(media, cache_key(media, "eng"), Verdict(Status.PENDING), stale)
     assert state_cache.read_text() == before
 
 
@@ -508,7 +508,7 @@ def test_update_survives_a_write_it_cannot_make(state_cache, media, monkeypatch,
         raise OSError("no space left on device")
 
     monkeypatch.setattr(sweep_cache, "write_json", full)
-    sweep_cache.update(media, cache_key(media, "eng"), Verdict(Status.WOULD_FIX), fingerprint())
+    sweep_cache.update(media, cache_key(media, "eng"), Verdict(Status.PENDING), fingerprint())
 
     assert read(str(state_cache), fingerprint()).files[media]["status"] == "conform"
     assert "could not write the sweep cache" in caplog.text
@@ -520,7 +520,7 @@ def test_the_offered_view_is_what_a_checkpoint_would_write(cache_path, media, tm
     key = cache_key(media, "eng")
     cache = saved_cache(cache_path, (media, key, CONFORM))
     fresh = str(tmp_path / "g.mkv")
-    cache.record(fresh, FileKey(20, 2, 1, "eng"), Verdict(Status.WOULD_FIX, "add 2.0"))
+    cache.record(fresh, FileKey(20, 2, 1, "eng"), Verdict(Status.PENDING, "add 2.0"))
     cache.drop(media)
 
     assert cache.publish_view() is True
@@ -545,7 +545,7 @@ def test_a_verdict_and_a_drop_each_earn_a_new_view(cache_path, media):
     nothing between them is the same view, and says so."""
     key = cache_key(media, "eng")
     cache = saved_cache(cache_path, (media, key, CONFORM))
-    cache.record(media, key, Verdict(Status.WOULD_FIX, "add 2.0"))
+    cache.record(media, key, Verdict(Status.PENDING, "add 2.0"))
     assert cache.publish_view() is True
     assert cache.publish_view() is False
     cache.drop(media)

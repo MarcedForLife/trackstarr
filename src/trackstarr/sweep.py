@@ -35,14 +35,14 @@ from .sweep_cache import FileKey, SweepCache, Verdict, cache_key, cache_path
 log = logging.getLogger(__name__)
 
 #: The statuses worth a row in pending.tsv.
-REPORTED_STATUSES = frozenset({Status.WOULD_FIX, Status.FIXED, Status.DEFERRED, Status.FAILED})
+REPORTED_STATUSES = frozenset({Status.PENDING, Status.MODIFIED, Status.DEFERRED, Status.FAILED})
 
-#: Verdicts that describe the file as it stands. Fixed changes the file, so its
-#: entry would be keyed to a size and mtime that no longer exist; deferred says
-#: nothing about the file. Failed is stored so the library can show it, but not
-#: trusted; see :data:`RETRY_STATUSES`.
+#: Verdicts that describe the file as it stands. A rewrite changes the file, so
+#: its entry would be keyed to a size and mtime that no longer exist; deferred
+#: says nothing about the file. Failed is stored so the library can show it, but
+#: not trusted; see :data:`RETRY_STATUSES`.
 CACHEABLE_STATUSES = frozenset(
-    {Status.SKIP, Status.UNSUPPORTED, Status.CONFORM, Status.WOULD_FIX, Status.FAILED}
+    {Status.SKIP, Status.UNSUPPORTED, Status.CONFORM, Status.PENDING, Status.FAILED}
 )
 
 #: Stored, but never a cache hit while an attempt is left. A failure records
@@ -145,7 +145,7 @@ class Judged:
     verdict: Verdict
     detail: str = ""
     #: The published file's own verdict after a rewrite. ``verdict`` above says
-    #: this file was fixed; this is what the library stores in its place.
+    #: this file was rewritten; this is what the library stores in its place.
     became: Rewritten | None = None
     #: The verdict came from the cache, so the file was never probed.
     cached: bool = False
@@ -187,10 +187,10 @@ def _judge(
         job = Job.from_match(path, match_path(index, path), run=run)
         key = cache_key(path, job.lang)
         if not force and (verdict := cache.lookup(path, key)) is not None:
-            # A cached would-fix only stands in while reporting; an applying
-            # sweep must rewrite the file.
+            # A cached pending verdict only stands in while reporting; an
+            # applying sweep must rewrite the file.
             if verdict.status not in RETRY_STATUSES:
-                if dry_run or verdict.status is not Status.WOULD_FIX:
+                if dry_run or verdict.status is not Status.PENDING:
                     return Judged(job, key, verdict, cached=True)
             # A cached failure stands in only once the attempts are spent; the
             # file is still counted and reported. Reporting sweeps spend none,
@@ -343,7 +343,7 @@ def sweep(dry_run: bool, run: str | None = None) -> dict[Status, int]:
 def _stash(judged: Judged, cache: SweepCache) -> None:
     """Store one verdict in the cache without booking it against the run.
 
-    Separate because an applying sweep stores a file twice: the would-fix on
+    Separate because an applying sweep stores a file twice: the pending verdict on
     discovery, so the library shows the work while it waits, and then the
     rewrite's result. Only the second is counted.
     """
@@ -468,7 +468,7 @@ def _rewrite(
     Judged again from scratch: discovery's plan can be hours old by the time a
     slot frees, and a probe is cheap beside an encode. ``force`` must come from
     the walk, or a re-check would meet the failure ceiling here. A run stopped
-    or a file skipped before this got a slot keeps discovery's would-fix.
+    or a file skipped before this got a slot keeps discovery's pending verdict.
     """
     if not runs.hold(run):
         return found
@@ -591,7 +591,7 @@ def _walk_files(run: str, ready: _Ready, walk: Walk) -> _Totals:
                 continue
             if judged.key:
                 totals.library_bytes += judged.key.size
-            wanted = not dry_run and judged.verdict.status is Status.WOULD_FIX
+            wanted = not dry_run and judged.verdict.status is Status.PENDING
             # A held file is booked as discovery judged it rather than queued:
             # the rewrite would latch to report anyway, having spent a slot and
             # a second probe getting there.

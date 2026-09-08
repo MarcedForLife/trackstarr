@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import Disclosure from '$lib/components/Disclosure.svelte';
+	import { pageSettings } from '$lib/draft.svelte';
 
 	// One foldable group of a long settings page. `note` makes the fold honest:
 	// a shut group still answers what it holds.
@@ -8,6 +9,7 @@
 		heading,
 		note = '',
 		open = false,
+		names = [],
 		// The Appearance rows are boxes rather than a ruled list, so they want air.
 		spaced = false,
 		children
@@ -16,9 +18,15 @@
 		note?: string;
 		// Whether the group starts open, as the first on a page does.
 		open?: boolean;
+		// The settings this group holds. Shut, its rows are unmounted and cannot
+		// wear the unsaved dot, so the heading wears it for them.
+		names?: string[];
 		spaced?: boolean;
 		children: Snippet;
 	} = $props();
+
+	const settings = pageSettings();
+	const changed = $derived(!!settings?.anyChanged(names));
 
 	// The starting state; the reader owns it from here.
 	// svelte-ignore state_referenced_locally
@@ -32,6 +40,10 @@
      before the heading does. -->
 {#snippet line(chevron: Snippet)}
 	<span class="flex-none text-[17px] font-semibold tracking-tight">{heading}</span>
+	{#if changed}
+		<span class="-ml-1.5 h-1.5 w-1.5 flex-none rounded-full bg-accent"></span>
+		<span class="sr-only">Unsaved changes</span>
+	{/if}
 	<span class="min-w-0 flex-1 truncate text-right text-[12.5px] text-dim">{note}</span>
 	{@render chevron()}
 {/snippet}

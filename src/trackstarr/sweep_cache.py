@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 #: meaning: ``carry`` moves unchanged entries forward byte for byte, so an added
 #: field would otherwise never arrive. A mismatch drops the cache whole; the
 #: rebuild is a sweep.
-FORMAT = 4
+FORMAT = 5
 
 
 def cache_path() -> str:
@@ -64,8 +64,8 @@ class Verdict:
 
     ``tracks`` is the probe's :func:`trackstarr.media.track_summary` dicts,
     empty when never probed. ``planned`` is what a rewrite would leave, only on
-    would-fix. ``why`` is :func:`trackstarr.planner.why`, so the library can
-    list the changes and rules.
+    a pending file. ``why`` is :func:`trackstarr.planner.why`, so the library
+    can list the changes and rules.
     """
 
     status: Status
@@ -77,7 +77,7 @@ class Verdict:
     #: side, and the streams it moved. Empty on a file nothing has rewritten,
     #: which is what an entry written before this field existed also reads as.
     #: See :func:`trackstarr.processing._rejudged`.
-    fixed: dict = field(default_factory=dict)
+    modified: dict = field(default_factory=dict)
     #: Running time in seconds, zero when never probed. What
     #: :mod:`trackstarr.estimate` sizes a backlog from.
     duration: float = 0.0
@@ -139,7 +139,7 @@ def cache_key(path: str, lang: str | None) -> FileKey | None:
     return FileKey(stat_result.st_size, stat_result.st_mtime_ns, stat_result.st_nlink, lang)
 
 
-def _carried_fix(previous: dict | None, key: FileKey) -> dict:
+def _carried_rewrite(previous: dict | None, key: FileKey) -> dict:
     """The rewrite the stored entry remembers, where the file has not changed
     since.
 
@@ -149,8 +149,8 @@ def _carried_fix(previous: dict | None, key: FileKey) -> dict:
     """
     if not isinstance(previous, dict) or not asdict(key).items() <= previous.items():
         return {}
-    fixed = previous.get("fixed")
-    return fixed if isinstance(fixed, dict) else {}
+    modified = previous.get("modified")
+    return modified if isinstance(modified, dict) else {}
 
 
 def _entry(key: FileKey, verdict: Verdict, previous: dict | None = None) -> dict:
@@ -160,13 +160,13 @@ def _entry(key: FileKey, verdict: Verdict, previous: dict | None = None) -> dict
     rewritten whole at every checkpoint. ``judged`` is stamped here because
     :meth:`SweepCache.carry` moves entries forward untouched, so it keeps
     saying when the file was last opened. ``previous`` is what stands at this
-    path, for :func:`_carried_fix`.
+    path, for :func:`_carried_rewrite`.
     """
     extras = {
         "tracks": verdict.tracks,
         "planned": verdict.planned,
         "why": verdict.why,
-        "fixed": verdict.fixed or _carried_fix(previous, key),
+        "modified": verdict.modified or _carried_rewrite(previous, key),
         "failures": verdict.failures,
         "duration": verdict.duration,
     }
@@ -299,7 +299,7 @@ class SweepCache:
         """The stored verdict for an unchanged file, or None.
 
         Tracks and the rewrite record are not decoded, since ``carry`` moves
-        the entry forward whole and :func:`_carried_fix` keeps the record on a
+        the entry forward whole and :func:`_carried_rewrite` keeps the record on a
         verdict reached again.
         ``why``, ``planned`` and ``duration`` are: a hit out of retries must
         say what went wrong, and an estimate needs the other two.
@@ -351,7 +351,7 @@ class SweepCache:
         checkpoint and the library would call it Pending for the whole walk.
         """
         self._dropped.add(path)
-        # This walk's own entries too: an applying sweep stores a would-fix
+        # This walk's own entries too: an applying sweep stores a pending file
         # while the rewrite waits, and the rewrite then drops the file.
         self._next.pop(path, None)
         self._dirty = True

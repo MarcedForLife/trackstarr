@@ -7,7 +7,7 @@
 	import Segmented from '$lib/components/Segmented.svelte';
 	import SettingRow from '$lib/components/SettingRow.svelte';
 	import { box, cell } from '$lib/controls';
-	import { SettingsDraft } from '$lib/draft.svelte';
+	import { provideSettings, SettingsDraft } from '$lib/draft.svelte';
 	import { belowNote, belowProblem, codecNotes, parseLang, parseRow } from '$lib/rules';
 	import type { PageProps } from './$types';
 
@@ -21,13 +21,12 @@
 		ordered: new Set(['AUDIO_LAYOUTS']),
 		readOnly: () => readOnly
 	});
-	// Both records are mutated in place, so these read the live objects after a
-	// save.
+	// The rows below name a setting and read the rest off the draft.
+	provideSettings(settings);
+	// Mutated in place, so this reads the live object after a save.
 	const draft = settings.draft;
-	const baseline = settings.baseline;
-	// Named locally because the rows below say them a great many times.
+	// Named locally because the controls below say it a great many times.
 	const envLocked = (name: string) => settings.envLocked(name);
-	const desc = (name: string, fallback: string) => settings.desc(name, fallback);
 
 	const exts = $derived((draft.ALLOWED_EXTS as string[]) ?? []);
 	// One entry per language, carrying whether layouts are made in it.
@@ -57,35 +56,33 @@
 		data.snapshot.modes.map((value) => ({ value, label: MODE_LABELS[value] ?? value }))
 	);
 
+	const LANGS_DESC =
+		'Every language this library keeps, in the order a downmix source is picked. Downmix makes every layout in it, Keep leaves what the file has, and Original is whatever Radarr or Sonarr reports.';
+
 	// Only untagged tracks would survive an empty list.
-	const langsDesc = $derived.by(() => {
-		const base = desc(
-			'LANGUAGES',
-			'Every language this library keeps, in the order a downmix source is picked. Downmix makes every layout in it, Keep leaves what the file has, and Original is whatever Radarr or Sonarr reports.'
-		);
-		if (langRows.length || !ruleOn('languages')) return base;
-		return `${base} This is empty and the rule below drops the rest, so only untagged tracks would survive.`;
-	});
+	const langsNote = $derived(
+		langRows.length || !ruleOn('languages')
+			? ''
+			: 'This is empty and the rule below drops the rest, so only untagged tracks would survive.'
+	);
+
+	const REMUX_DESC =
+		'Rewrite MP4 into Matroska so every rule applies. MP4 direct-plays on more devices, so Alongside is the usual choice.';
+	const REGENERATE_DESC =
+		"Rebuild downmixes whose settings have changed. MKV only, the one container that keeps the tag marking trackstarr's own tracks.";
 
 	// Both read as on while the containers row decides whether they can fire.
-	const remuxDesc = $derived.by(() => {
-		const base = desc(
-			ruleVar('remux'),
-			'Rewrite MP4 into Matroska so every rule applies. MP4 direct-plays on more devices, so Alongside is the usual choice.'
-		);
-		const convertible = exts.filter((ext) => ext !== '.mkv');
-		if (!ruleOn('remux') || convertible.length) return base;
-		return `${base} No container below is selected to convert from, so nothing is remuxed.`;
-	});
+	const remuxNote = $derived(
+		!ruleOn('remux') || exts.some((ext) => ext !== '.mkv')
+			? ''
+			: 'No container below is selected to convert from, so nothing is remuxed.'
+	);
 
-	const regenerateDesc = $derived.by(() => {
-		const base = desc(
-			ruleVar('regenerate'),
-			"Rebuild downmixes whose settings have changed. MKV only, the one container that keeps the tag marking trackstarr's own tracks."
-		);
-		if (!ruleOn('regenerate') || exts.includes('.mkv')) return base;
-		return `${base} .mkv is not selected under Containers, so nothing is regenerated.`;
-	});
+	const regenerateNote = $derived(
+		!ruleOn('regenerate') || exts.includes('.mkv')
+			? ''
+			: '.mkv is not selected under Containers, so nothing is regenerated.'
+	);
 
 	// A string, so what is typed goes over the wire untouched.
 	const belowPercent = $derived(String(draft.REGENERATE_BELOW_PERCENT ?? ''));
@@ -116,11 +113,9 @@
 	}
 
 	// Nothing listed means nothing is ever rewritten. Legal, and worth saying.
-	const extsDesc = $derived.by(() => {
-		const base = desc('ALLOWED_EXTS', 'The containers a rewrite may touch.');
-		if (exts.length) return base;
-		return `${base} Nothing is selected, so no file will be rewritten.`;
-	});
+	const extsNote = $derived(
+		exts.length ? '' : 'Nothing is selected, so no file will be rewritten.'
+	);
 
 	const codecs = $derived(data.snapshot.codecs);
 	const codecOf = $derived(new Map(codecs.map((codec) => [codec.name, codec])));
@@ -129,21 +124,21 @@
 	// encoder only Matroska holds is fine.
 	const outputExts = $derived(ruleOn('remux') ? ['.mkv'] : exts);
 
+	const LAYOUTS_DESC =
+		'Every size this library has an opinion about, in the audio track order. Downmix guarantees one exists, made from the best bigger track, Keep leaves it alone and Remove deletes it.';
+
 	// The row says what each encoder is for; nobody arrives knowing. Notes come
 	// only from downmixed rows, since nothing else is encoded.
-	const layoutsDesc = $derived.by(() => {
-		const base = desc(
-			'AUDIO_LAYOUTS',
-			'Every size this library has an opinion about, in the audio track order. Downmix guarantees one exists, made from the best bigger track, Keep leaves it alone and Remove deletes it.'
-		);
-		const notes = downmixed.flatMap((row) =>
-			codecNotes(row.name, codecOf.get(row.codec), outputExts)
-		);
-		const warning = removed.length
-			? ' Removing is the one thing here you cannot undo: the mix is gone from the file, and nothing can be downmixed or rebuilt from it again.'
-			: '';
-		return `${base}${notes.length ? ` ${notes.join(' ')}` : ''}${warning}`;
-	});
+	const layoutsNote = $derived(
+		[
+			...downmixed.flatMap((row) => codecNotes(row.name, codecOf.get(row.codec), outputExts)),
+			removed.length
+				? 'Removing is the one thing here you cannot undo: the mix is gone from the file, and nothing can be downmixed or rebuilt from it again.'
+				: ''
+		]
+			.filter(Boolean)
+			.join(' ')
+	);
 
 	const scopeOptions = [
 		{ value: 'generated', label: 'Generated' },
@@ -175,9 +170,9 @@
 			desc: 'Matches forced subtitles, which are always kept.'
 		},
 		{
-			name: 'JUNK_TITLE_PATTERN',
-			label: 'Junk titles',
-			desc: 'Release junk cleared from track and container titles: bitrates, resolutions, source and codec tags.'
+			name: 'RELEASE_TAG_PATTERN',
+			label: 'Release tags',
+			desc: 'Release tags cleared from track and container titles: bitrates, resolutions, source and codec tags.'
 		}
 	];
 
@@ -191,8 +186,20 @@
 	const lowLine = `${id}-low`;
 
 	// The longest page in the app, so its groups fold; each shows its count shut.
-	const TITLE_RULES = ['junk_titles', 'cover_art'];
+	const TITLE_RULES = ['release_tags', 'cover_art'];
 	const STREAM_RULES = ['stray_streams', 'order'];
+
+	// What each group holds. Shut, its rows are unmounted and cannot mark the
+	// heading themselves, so the group is told what to watch.
+	const TRACK_SETTINGS = [
+		'LANGUAGES',
+		'AUDIO_LAYOUTS',
+		'REGENERATE_SCOPE',
+		'REGENERATE_BELOW_PERCENT',
+		...['languages', 'regenerate', 'commentary', 'sdh'].map(ruleVar)
+	];
+	const FORMAT_SETTINGS = ['ALLOWED_EXTS', ruleVar('remux')];
+	const PATTERN_SETTINGS = PATTERNS.map((pattern) => pattern.name);
 
 	// Alongside counts as on. No group is named for a rule inside it.
 	const ruleNote = (rules: string[]) => `${rules.filter(ruleOn).length} of ${rules.length} on`;
@@ -219,7 +226,7 @@
 
 <!-- One row per rule. `text` is the fallback; an env-pinned rule says so. -->
 {#snippet ruleRow({ rule, label, text }: { rule: string; label: string; text: string })}
-	<SettingRow {label} desc={desc(ruleVar(rule), text)} env={!!baseline[ruleVar(rule)]?.env} stack>
+	<SettingRow name={ruleVar(rule)} {label} desc={text} stack>
 		{#snippet children({ labelledBy, describedBy })}
 			<Segmented
 				fill
@@ -246,12 +253,13 @@
 			Alongside acts only on a file another rule is already rewriting.
 		</p>
 
-		<Section heading="Languages and audio" note={tracksNote} open>
+		<Section heading="Languages and audio" note={tracksNote} names={TRACK_SETTINGS} open>
 			<SettingRow
+				name="LANGUAGES"
 				label="Languages"
 				align="start"
-				desc={langsDesc}
-				env={!!baseline.LANGUAGES?.env}
+				desc={LANGS_DESC}
+				note={langsNote}
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
@@ -271,10 +279,11 @@
 				text: 'Drop audio and subtitles in a language the list above does not name. Untagged tracks always stay.'
 			})}
 			<SettingRow
+				name="AUDIO_LAYOUTS"
 				label="Layouts"
 				align="start"
-				desc={layoutsDesc}
-				env={!!baseline.AUDIO_LAYOUTS?.env}
+				desc={LAYOUTS_DESC}
+				note={layoutsNote}
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
@@ -290,9 +299,10 @@
 				{/snippet}
 			</SettingRow>
 			<SettingRow
+				name={ruleVar('regenerate')}
 				label="Regenerate downmixes"
-				desc={regenerateDesc}
-				env={!!baseline[ruleVar('regenerate')]?.env}
+				desc={REGENERATE_DESC}
+				note={regenerateNote}
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
@@ -308,12 +318,9 @@
 				{/snippet}
 			</SettingRow>
 			<SettingRow
+				name="REGENERATE_SCOPE"
 				label="Rebuild which tracks"
-				desc={desc(
-					'REGENERATE_SCOPE',
-					"Generated rebuilds trackstarr's own tracks once their codec or bitrate no longer matches the settings above. All also replaces any other layout-sized track reporting under the share of its rate set below. Either way the replacement is a fresh downmix from a surviving bigger track."
-				)}
-				env={!!baseline.REGENERATE_SCOPE?.env}
+				desc="Generated rebuilds trackstarr's own tracks once their codec or bitrate no longer matches the settings above. All also replaces any other layout-sized track reporting under the share of its rate set below. Either way the replacement is a fresh downmix from a surviving bigger track."
 				nested
 				stack
 				dim={!ruleOn('regenerate')}
@@ -331,13 +338,10 @@
 				{/snippet}
 			</SettingRow>
 			<SettingRow
+				name="REGENERATE_BELOW_PERCENT"
 				label="Low bitrate below"
 				align="start"
-				desc={desc(
-					'REGENERATE_BELOW_PERCENT',
-					"How far under its layout's rate a track must report before All calls it low-bitrate. A track with no bigger source is left alone, since a downmix holds no more than its source."
-				)}
-				env={!!baseline.REGENERATE_BELOW_PERCENT?.env}
+				desc="How far under its layout's rate a track must report before All calls it low-bitrate. A track with no bigger source is left alone, since a downmix holds no more than its source."
 				nested
 				stack
 				dim={!allScope()}
@@ -379,11 +383,15 @@
 			})}
 		</Section>
 
-		<Section heading="Titles and artwork" note={ruleNote(TITLE_RULES)}>
+		<Section
+			heading="Titles and artwork"
+			note={ruleNote(TITLE_RULES)}
+			names={TITLE_RULES.map(ruleVar)}
+		>
 			{@render ruleRow({
-				rule: 'junk_titles',
-				label: 'Junk titles',
-				text: 'Clear release junk from track and container titles, as the pattern below matches it.'
+				rule: 'release_tags',
+				label: 'Release tags',
+				text: 'Clear release tags from track and container titles, as the pattern below matches it.'
 			})}
 			{@render ruleRow({
 				rule: 'cover_art',
@@ -392,7 +400,11 @@
 			})}
 		</Section>
 
-		<Section heading="Streams and order" note={ruleNote(STREAM_RULES)}>
+		<Section
+			heading="Streams and order"
+			note={ruleNote(STREAM_RULES)}
+			names={STREAM_RULES.map(ruleVar)}
+		>
 			{@render ruleRow({
 				rule: 'stray_streams',
 				label: 'Stray streams',
@@ -405,8 +417,14 @@
 			})}
 		</Section>
 
-		<Section heading="File format" note={containerNote}>
-			<SettingRow label="Containers" desc={extsDesc} env={!!baseline.ALLOWED_EXTS?.env} stack>
+		<Section heading="File format" note={containerNote} names={FORMAT_SETTINGS}>
+			<SettingRow
+				name="ALLOWED_EXTS"
+				label="Containers"
+				desc="The containers a rewrite may touch."
+				note={extsNote}
+				stack
+			>
 				{#snippet children({ labelledBy, describedBy })}
 					<!-- Chips, since the service refuses anything else. -->
 					<div
@@ -434,9 +452,10 @@
 				{/snippet}
 			</SettingRow>
 			<SettingRow
+				name={ruleVar('remux')}
 				label="Remux to MKV"
-				desc={remuxDesc}
-				env={!!baseline[ruleVar('remux')]?.env}
+				desc={REMUX_DESC}
+				note={remuxNote}
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
@@ -453,22 +472,22 @@
 			</SettingRow>
 		</Section>
 
-		<Section heading="Patterns" note="{PATTERNS.length} regexes">
+		<Section heading="Patterns" note="{PATTERNS.length} regexes" names={PATTERN_SETTINGS}>
 			<p class="pb-1 text-[13px] text-dim">
 				Matched against track titles when the container's disposition flags are unset, as most rips
 				leave them. Case-insensitive Python regular expressions; clear one to restore the built-in.
 			</p>
 			{#each PATTERNS as pattern (pattern.name)}
 				<SettingRow
+					name={pattern.name}
 					label={pattern.label}
 					align="start"
-					desc={desc(pattern.name, pattern.desc)}
-					env={!!baseline[pattern.name]?.env}
+					desc={pattern.desc}
 					stack
 				>
 					{#snippet children({ labelledBy, describedBy })}
 						<div class="flex w-full flex-col gap-2">
-							<!-- A textarea: the junk-title default is 200 characters. -->
+							<!-- A textarea: the release-tag default is 200 characters. -->
 							<textarea
 								value={String(draft[pattern.name] ?? '')}
 								oninput={(event) => setPattern(pattern.name, event.currentTarget.value)}

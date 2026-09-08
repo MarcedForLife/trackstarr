@@ -38,7 +38,7 @@ from .tracks import (
 
 #: What a rule may be set to, weakest first. "alongside" means: make this
 #: change when something else is already rewriting the file, never on its own,
-#: since a 60GB remux costs more than a junk title is worth.
+#: since a 60GB remux costs more than clearing release tags is worth.
 MODES = ("never", "alongside", "always")
 NEVER, ALONGSIDE, ALWAYS = MODES
 
@@ -82,7 +82,7 @@ RULES = {
         "the best surviving bigger track, never a re-encode in place.",
     ),
     "cover_art": Rule(ALWAYS, "Drop embedded cover art."),
-    "junk_titles": Rule(ALONGSIDE, "Clear release junk from track and container titles."),
+    "release_tags": Rule(ALONGSIDE, "Clear release tags from track and container titles."),
     "stray_streams": Rule(ALONGSIDE, "Drop data and timecode streams nothing plays."),
     "order": Rule(
         ALWAYS,
@@ -194,7 +194,7 @@ class Policy:
     commentary_re: re.Pattern[str]
     sdh_re: re.Pattern[str]
     forced_re: re.Pattern[str]
-    junk_title_re: re.Pattern[str]
+    release_tag_re: re.Pattern[str]
 
     @classmethod
     def from_config(cls) -> Policy:
@@ -209,7 +209,7 @@ class Policy:
             commentary_re=config.COMMENTARY_RE,
             sdh_re=config.SDH_RE,
             forced_re=config.FORCED_RE,
-            junk_title_re=config.JUNK_TITLE_RE,
+            release_tag_re=config.RELEASE_TAG_RE,
         )
 
     def downmixed(self) -> list[Layout]:

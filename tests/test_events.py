@@ -24,16 +24,16 @@ from trackstarr.sweep import sweep
 
 
 def test_record_appends_json_lines():
-    events.record("fixed", path="/a.mkv")
+    events.record("modified", path="/a.mkv")
     events.record("failed", path="/b.mkv", detail="boom")
 
     entries = read_events()
-    assert [entry["event"] for entry in entries] == ["fixed", "failed"]
+    assert [entry["event"] for entry in entries] == ["modified", "failed"]
     assert entries[0]["path"] == "/a.mkv"
     assert entries[0]["version"] == __version__
     assert entries[1]["detail"] == "boom"
     # None means unknown or not applicable; the field is dropped, not null.
-    events.record("fixed", bytes_after=None)
+    events.record("modified", bytes_after=None)
     assert "bytes_after" not in read_events()[-1]
     # ISO 8601 with an offset, so history survives timezone changes.
     assert "T" in entries[0]["ts"] and len(entries[0]["ts"]) > len("2026-01-01T00:00:00")
@@ -51,16 +51,16 @@ def test_record_never_raises(monkeypatch, tmp_path):
     blocker = tmp_path / "a-file"
     blocker.write_text("")
     monkeypatch.setattr(config, "STATE_DIR", str(blocker / "under-a-file"))
-    events.record("fixed", path="/a.mkv")
+    events.record("modified", path="/a.mkv")
 
 
 def make_plan(path: str, **overrides) -> Plan:
     return needed_plan(
-        path, incidental=["clear junk title"], incidental_rules={"junk_titles"}, **overrides
+        path, incidental=["clear release tags"], incidental_rules={"release_tags"}, **overrides
     )
 
 
-def test_fixed_file_leaves_an_event(tmp_path, stub_rewrite):
+def test_a_rewritten_file_leaves_an_event(tmp_path, stub_rewrite):
     path = tmp_path / "f.mkv"
     path.write_bytes(b"x" * 10)
     stub_rewrite(make_plan(str(path)))
@@ -68,12 +68,12 @@ def test_fixed_file_leaves_an_event(tmp_path, stub_rewrite):
     processing.process(Job(str(path)), dry_run=False)
 
     (entry,) = read_events()
-    assert entry["event"] == "fixed"
+    assert entry["event"] == "modified"
     assert entry["source"] == "webhook"
     assert "run" not in entry
     assert entry["path"] == str(path)
     assert entry["reasons"] == ["reorder streams"]
-    assert entry["incidental"] == ["clear junk title"]
+    assert entry["incidental"] == ["clear release tags"]
     assert entry["bytes_before"] == 10
     assert entry["seconds"] >= 0
     # A plan with no encode streams downmixes nothing; the field is absent.
@@ -93,7 +93,7 @@ def test_events_name_their_rules_as_well_as_describing_them(tmp_path, stub_rewri
 
     (entry,) = read_events()
     assert entry["rules"] == ["order"]
-    assert entry["incidental_rules"] == ["junk_titles"]
+    assert entry["incidental_rules"] == ["release_tags"]
     # Beside the prose, not instead of it: the log line and pending.tsv still
     # want a sentence.
     assert entry["reasons"] == ["reorder streams"]
@@ -123,7 +123,7 @@ def test_the_rules_a_plan_can_name_are_exactly_the_vocabulary(monkeypatch):
     named = _named(
         "/x.mp4",
         video(0),
-        # A junk title to clear, and a foreign track and a commentary to drop.
+        # Release tags to clear, and a foreign track and a commentary to drop.
         audio(1, 8, "eng", "AC3 5.1 @ 640kbps"),
         audio(2, 2, "eng", "Director's Commentary"),
         audio(3, 6, "fre"),
@@ -142,7 +142,7 @@ def test_the_rules_a_plan_can_name_are_exactly_the_vocabulary(monkeypatch):
     assert named == policy.RULE_NAMES
 
 
-def test_fixed_event_names_the_downmixes_created(tmp_path, stub_rewrite):
+def test_a_modified_event_names_the_downmixes_created(tmp_path, stub_rewrite):
     path = tmp_path / "f.mkv"
     path.write_bytes(b"x")
     stub_rewrite(
@@ -203,7 +203,7 @@ def test_deferred_rewrite_leaves_an_event(stub_rewrite):
 
 def test_a_remux_event_names_the_file_it_replaced(tmp_path, monkeypatch, stub_rewrite):
     """A remux publishes an .mkv and deletes the source, so without this the
-    history says an .mkv was fixed and nothing records the .mp4 it was."""
+    history says an .mkv was rewritten and nothing records the .mp4 it was."""
     source = tmp_path / "f.mp4"
     source.write_bytes(b"x")
     stub_rewrite(make_plan(str(source), remuxing=True))
@@ -215,7 +215,7 @@ def test_a_remux_event_names_the_file_it_replaced(tmp_path, monkeypatch, stub_re
     assert entry["from_path"] == str(source)
 
 
-def test_reported_webhook_import_records_a_would_fix_event(monkeypatch):
+def test_reported_webhook_import_records_a_pending_event(monkeypatch):
     """In report mode an import leaves no other trace, so the handler records
     what would have happened."""
     monkeypatch.setattr(config, "REWRITE_MODE", "report")
@@ -223,11 +223,11 @@ def test_reported_webhook_import_records_a_would_fix_event(monkeypatch):
     webhook._handle(Job("/x.mkv"))
 
     (entry,) = read_events()
-    assert entry["event"] == "would-fix"
+    assert entry["event"] == "pending"
     assert entry["source"] == "webhook"
     assert entry["path"] == "/x.mkv"
     assert entry["reasons"] == ["reorder streams"]
-    assert entry["incidental"] == ["clear junk title"]
+    assert entry["incidental"] == ["clear release tags"]
 
 
 def test_sweep_leaves_a_summary_event(monkeypatch, tmp_path):
@@ -242,7 +242,7 @@ def test_sweep_leaves_a_summary_event(monkeypatch, tmp_path):
     assert entry["files"] == 0
     assert entry["library_bytes"] == 0
     assert entry["config"]["audio_layouts"] == ["2.0:downmix:aac:320k", "5.1:downmix:ac3:640k"]
-    assert entry["counts"]["fixed"] == 0
+    assert entry["counts"]["modified"] == 0
     assert entry["seconds"] >= 0
 
 
@@ -259,8 +259,8 @@ def test_a_rewrites_config_id_resolves_against_the_sweeps_config(
 
     sweep(dry_run=False)
 
-    fixed, summary = read_events()
-    assert fixed["config_id"] == summary["config_id"]
+    rewrote, summary = read_events()
+    assert rewrote["config_id"] == summary["config_id"]
     assert summary["config"]["audio_layouts"] == [
         "2.0:downmix:aac:320k",
         "5.1:downmix:ac3:640k",
@@ -277,9 +277,9 @@ def test_a_webhook_only_install_can_still_resolve_its_config_ids(monkeypatch):
 
     webhook._handle(Job("/x.mkv"))
 
-    startup, would_fix = read_events()
+    startup, pending = read_events()
     assert startup["event"] == "config"
-    assert would_fix["config_id"] == startup["config_id"]
+    assert pending["config_id"] == startup["config_id"]
     assert startup["config"]["audio_layouts"] == [
         "2.0:downmix:aac:320k",
         "5.1:downmix:ac3:640k",
@@ -320,7 +320,7 @@ def test_rules_older_than_the_lookback_are_recorded_again(monkeypatch):
     it, so falling off the window costs a duplicate, not a wrong digest."""
     assert events.record_config(Policy.from_config()) is True
     for _ in range(events._CONFIG_LOOKBACK):
-        events.record("fixed", path="/a.mkv")
+        events.record("modified", path="/a.mkv")
 
     assert events.record_config(Policy.from_config()) is True
     first, last = read_events()[0], read_events()[-1]
@@ -339,11 +339,11 @@ def test_sweep_events_share_a_run_id(monkeypatch, tmp_path, stub_rewrite):
 
     sweep(dry_run=False)
 
-    fixed, summary = read_events()
-    assert fixed["event"] == "fixed"
-    assert fixed["source"] == "sweep"
+    rewrote, summary = read_events()
+    assert rewrote["event"] == "modified"
+    assert rewrote["source"] == "sweep"
     assert summary["event"] == "sweep"
-    assert fixed["run"] == summary["run"]
+    assert rewrote["run"] == summary["run"]
     assert summary["library_bytes"] == 1
 
 
@@ -351,7 +351,7 @@ def test_read_answers_newest_first():
     """The feed's first screen is what just happened, so the newest line is
     the one the walk starts from."""
     for name in "abc":
-        events.record("fixed", path=f"/{name}.mkv")
+        events.record("modified", path=f"/{name}.mkv")
 
     entries, cursor = events.read()
 
@@ -362,7 +362,7 @@ def test_read_answers_newest_first():
 
 def test_read_pages_backwards_through_the_history():
     for index in range(5):
-        events.record("fixed", path=f"/{index}.mkv")
+        events.record("modified", path=f"/{index}.mkv")
 
     first, cursor = events.read(limit=2)
     assert [entry["path"] for entry in first] == ["/4.mkv", "/3.mkv"]
@@ -380,8 +380,8 @@ def test_read_pages_backwards_through_the_history():
 def test_a_page_ending_on_the_oldest_event_asks_for_no_more():
     """A full page can still be the last one, when the file holds exactly as
     many events as the page has room for."""
-    events.record("fixed", path="/a.mkv")
-    events.record("fixed", path="/b.mkv")
+    events.record("modified", path="/a.mkv")
+    events.record("modified", path="/b.mkv")
 
     entries, cursor = events.read(limit=2)
 
@@ -394,7 +394,7 @@ def test_read_walks_back_across_chunk_boundaries(monkeypatch):
     line straddling the boundary must be neither halved nor dropped."""
     monkeypatch.setattr(events, "_CHUNK", 8)
     for index in range(20):
-        events.record("fixed", path=f"/{index}.mkv")
+        events.record("modified", path=f"/{index}.mkv")
 
     entries, cursor = events.read()
 
@@ -405,11 +405,11 @@ def test_read_walks_back_across_chunk_boundaries(monkeypatch):
 def test_read_steps_over_damage_rather_than_stopping():
     """STATE_DIR is a volume anyone can edit, and a read racing an append sees
     the newest line half written. Neither may hide the history behind it."""
-    events.record("fixed", path="/a.mkv")
+    events.record("modified", path="/a.mkv")
     with open(events.path(), "a") as history:
         history.write("half a line, no closing brace\n")
         history.write("[1, 2, 3]\n")
-        history.write('{"event": "fixed", "path": "/b.mkv"}\n')
+        history.write('{"event": "modified", "path": "/b.mkv"}\n')
 
     entries, _ = events.read()
 
@@ -419,7 +419,7 @@ def test_read_steps_over_damage_rather_than_stopping():
 def test_a_cursor_past_the_end_of_the_history_is_clamped():
     """Nothing truncates the file today, but a cursor is a number a caller can
     spell for itself, and one past the end must not read the page as empty."""
-    events.record("fixed", path="/a.mkv")
+    events.record("modified", path="/a.mkv")
 
     entries, cursor = events.read(before=10_000_000)
 
@@ -432,7 +432,7 @@ def at(ts: str, path: str) -> None:
     stamps with the clock."""
     os.makedirs(config.STATE_DIR, exist_ok=True)
     with open(events.path(), "a") as history:
-        history.write(json.dumps({"ts": ts, "event": "fixed", "path": path}) + "\n")
+        history.write(json.dumps({"ts": ts, "event": "modified", "path": path}) + "\n")
 
 
 def test_read_stops_at_the_near_edge_of_a_window():

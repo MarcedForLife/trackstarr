@@ -264,10 +264,10 @@ def _handle(job: Job) -> None:
         )
     # The library reads verdicts from the cache, not the history.
     sweep.remember(job.path, key, result)
-    if result.status is Status.WOULD_FIX and result.plan:
+    if result.status is Status.PENDING and result.plan:
         # No pending.tsv row for a webhook, so the history is the only record.
         events.record(
-            "would-fix",
+            "pending",
             run=job.run,
             source="webhook",
             config_id=result.plan.policy.digest(),

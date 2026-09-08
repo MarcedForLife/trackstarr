@@ -6,10 +6,11 @@
 import { describe, expect, test } from 'vitest';
 import { fileRows, fileStatus, progressLabel, remaining, verdicts } from '$lib/runs';
 import type { Activity, Run, Stage } from '$lib/runs';
-import { pip, VERDICTS, verdictLabel } from '$lib/library';
+import { asVerdict, FILTERS, pip, tint, VERDICTS, verdictLabel } from '$lib/library';
 import type { Shelf, Summary, TitleDetail } from '$lib/library';
 import { chips, detail, details, headline, verdicts as counted } from '$lib/events';
 import type { EventPage } from '$lib/events';
+import type { Hold } from '$lib/holds';
 import type { SettingsSnapshot } from '$lib/settings';
 import { SERVICES } from '$lib/connections';
 import type { ConnectionResult } from '$lib/connections';
@@ -22,6 +23,7 @@ import libraryJson from './fixtures/library.json';
 import summaryJson from './fixtures/summary.json';
 import titleJson from './fixtures/title.json';
 import eventsJson from './fixtures/events.json';
+import holdsJson from './fixtures/holds.json';
 import settingsJson from './fixtures/settings.json';
 import connectionJson from './fixtures/connection.json';
 import vocabulary from './fixtures/vocabulary.json';
@@ -47,6 +49,7 @@ const shelf = spelled(libraryJson);
 const summary = spelled(summaryJson);
 const title = spelled(titleJson);
 const page = spelled(eventsJson);
+const held = spelled(holdsJson);
 const settings = spelled(settingsJson);
 const connection = spelled(connectionJson);
 
@@ -87,10 +90,26 @@ const activity = pins<Activity>()({
 		seen: 0
 	}))
 });
-pins<Shelf>()(shelf);
-pins<Summary>()(summary);
-pins<TitleDetail>()(title);
-pins<EventPage>()(page);
+
+// A card's verdict is narrower than the string it arrives as too, and the
+// fetchers narrow it the same way. A word the service has that the union has
+// not falls back here rather than failing, so the test below holds them equal.
+const verdicted = <Item extends { state: string }>(card: Item) => ({
+	...card,
+	state: asVerdict(card.state)
+});
+
+const shelved = pins<Shelf>()({ ...shelf, titles: shelf.titles.map(verdicted) });
+const summarised = pins<Summary>()({ ...summary, head: summary.head.map(verdicted) });
+pins<TitleDetail>()({
+	...title,
+	files: title.files.map((file) => ({ ...file, status: asVerdict(file.status) }))
+});
+pins<EventPage>()({
+	...page,
+	titles: Object.fromEntries(Object.entries(page.titles).map(([id, card]) => [id, verdicted(card)]))
+});
+pins<{ holds: Hold[] }>()(held);
 pins<SettingsSnapshot>()(settings);
 pins<ConnectionResult>()(connection);
 
@@ -129,22 +148,46 @@ describe('the library', () => {
 	};
 
 	test('counts the shelf to the summary the service counted', () => {
-		expect(tally(shelf.titles)).toEqual(summary.counts);
-		expect(shelf.titles).toHaveLength(summary.titles);
+		expect(tally(shelved.titles)).toEqual(summarised.counts);
+		expect(shelved.titles).toHaveLength(summarised.titles);
 	});
 
 	test('keeps the shelf in the order the strip is cut from', () => {
-		const ordered = sift(shelf.titles, view).map((card) => card.id);
-		expect(ordered).toHaveLength(shelf.titles.length);
-		expect(ordered.slice(0, summary.head.length)).toEqual(summary.head.map((card) => card.id));
+		const ordered = sift(shelved.titles, view).map((card) => card.id);
+		expect(ordered).toHaveLength(shelved.titles.length);
+		expect(ordered.slice(0, summarised.head.length)).toEqual(
+			summarised.head.map((card) => card.id)
+		);
+	});
+
+	// The narrowing above falls back rather than failing, so a verdict the
+	// service has and the Verdict union has not would go unnoticed otherwise.
+	test('has the union for every verdict the service wrote', () => {
+		for (const state of [...vocabulary.states, vocabulary.mixed, ...vocabulary.filters]) {
+			expect(asVerdict(state)).toBe(state);
+		}
+		for (const card of shelf.titles) expect(asVerdict(card.state)).toBe(card.state);
+		for (const file of title.files) expect(asVerdict(file.status)).toBe(file.status);
+		// A run says words the library never stores, so its counts are their own
+		// list.
+		for (const run of activity.runs)
+			for (const word of Object.keys(run.counts)) expect(asVerdict(word)).toBe(word);
 	});
 
 	test('has a word and a colour for every state', () => {
-		for (const state of vocabulary.states) {
+		// The states a file can be in, the word a mixed card leads with, and the
+		// one filter that is not a verdict at all.
+		for (const state of [...vocabulary.states, vocabulary.mixed, ...FILTERS]) {
 			expect(pip).toHaveProperty(state);
 			// `unchecked` is the one state said as Unknown on purpose.
-			if (state !== 'unchecked') expect(verdictLabel(state)).not.toBe('Unknown');
+			if (state !== 'unchecked') expect(verdictLabel(asVerdict(state))).not.toBe('Unknown');
 		}
+	});
+
+	// Every chip is drawn from `tint`, so one without an entry is an unstyled
+	// button the moment something lands in that state.
+	test('has a switched-on colour for every chip the grid offers', () => {
+		for (const state of FILTERS) expect(tint).toHaveProperty(state);
 	});
 });
 
@@ -169,6 +212,10 @@ describe('the history', () => {
 describe('the vocabulary', () => {
 	test('says the verdicts in the order the service sorts them', () => {
 		expect(VERDICTS).toEqual(vocabulary.states);
+	});
+
+	test('offers the same chips the service counts', () => {
+		expect(FILTERS).toEqual(vocabulary.filters);
 	});
 
 	test('names the same services', () => {

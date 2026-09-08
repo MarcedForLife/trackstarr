@@ -7,7 +7,7 @@
 	import Toggle from '$lib/components/Toggle.svelte';
 	import { refusalText } from '$lib/api';
 	import { button, danger, field, noteBox, picker } from '$lib/controls';
-	import { SettingsDraft } from '$lib/draft.svelte';
+	import { provideSettings, SettingsDraft } from '$lib/draft.svelte';
 	import { ago } from '$lib/events';
 	import { clearVerdicts, refreshRatings } from '$lib/library';
 	import { PRESETS, checkSweep, runLabel, type ScheduleCheck } from '$lib/sweep';
@@ -23,12 +23,13 @@
 		ordered: new Set(['MEDIA_DIRS']),
 		readOnly: () => readOnly
 	});
+	// The rows below name a setting and read the rest off the draft.
+	provideSettings(settings);
 	// Both records are mutated in place, so these read the live objects after a
 	// save.
 	const draft = settings.draft;
 	const baseline = settings.baseline;
 	const envLocked = (name: string) => settings.envLocked(name);
-	const desc = (name: string, fallback: string) => settings.desc(name, fallback);
 
 	const schedule = $derived(((draft.SWEEP_AT as string) ?? '').trim());
 	const scheduled = $derived(!!schedule);
@@ -113,7 +114,7 @@
 		if (scoresPending) return 'Save the switch above first.';
 		if (!scoresOn) return 'Switch the scores on to fetch them.';
 		if (!scores) return 'The score count is not known yet.';
-		if (!scores.fetched) return 'Nothing fetched yet; the next daily pass will do it.';
+		if (!scores.fetched) return 'Nothing fetched yet. The next daily pass will do it.';
 		const when = ago(new Date(scores.fetched * 1000).toISOString());
 		return `${scores.scored.toLocaleString()} titles scored, last fetched ${when}. Refreshed once a day on its own.`;
 	});
@@ -196,12 +197,9 @@
 				</a>.
 			</p>
 			<SettingRow
+				name="SWEEP_AT"
 				label="Scheduled sweep"
-				desc={desc(
-					'SWEEP_AT',
-					'Off, the library is only swept by hand with trackstarr sweep. Webhook imports are rewritten as they land regardless.'
-				)}
-				env={!!baseline.SWEEP_AT?.env}
+				desc="Off, the library is only swept by hand with trackstarr sweep. Webhook imports are rewritten as they land regardless."
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					<Toggle
@@ -214,13 +212,10 @@
 				{/snippet}
 			</SettingRow>
 			<SettingRow
+				name="SWEEP_AT"
 				label="Runs at"
 				align="start"
-				desc={desc(
-					'SWEEP_AT',
-					'A five-field cron schedule: minute, hour, day of month, month, day of week. Pick one from the list or write your own.'
-				)}
-				env={!!baseline.SWEEP_AT?.env}
+				desc="A five-field cron schedule: minute, hour, day of month, month, day of week. Pick one from the list or write your own."
 				nested
 				dim={!scheduled}
 				stack
@@ -300,13 +295,10 @@
 		<section class="mt-8">
 			<p class="pb-2 text-[13px] font-semibold">Library</p>
 			<SettingRow
+				name="MEDIA_DIRS"
 				label="Media directories"
 				align="start"
-				desc={desc(
-					'MEDIA_DIRS',
-					'Where the sweep walks, as paths inside this container. Everything under each is judged.'
-				)}
-				env={!!baseline.MEDIA_DIRS?.env}
+				desc="Where the sweep walks, as paths inside this container. Everything under each is judged."
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
@@ -320,12 +312,9 @@
 		<section class="mt-8">
 			<p class="pb-2 text-[13px] font-semibold">Title scores</p>
 			<SettingRow
+				name="IMDB_RATINGS"
 				label="Fetch IMDb ratings"
-				desc={desc(
-					'IMDB_RATINGS',
-					"IMDb's ratings table, so a title's sheet can show its score. One file a day covering every rated title, licensed by IMDb for personal, non-commercial use."
-				)}
-				env={!!baseline.IMDB_RATINGS?.env}
+				desc="IMDb's ratings table, so a title's sheet can show its score. One file a day covering every rated title, licensed by IMDb for personal, non-commercial use."
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					<Toggle

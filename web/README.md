@@ -39,8 +39,13 @@ reactive statements.
 A page seeds state from the loader in one of two ways. A value the page later
 reassigns is `let x = $derived(data.x)`, so a loader re-run re-seeds it. A
 value a class consumes once at construction (`new SettingsDraft(...)`,
-`new Recheck(...)`, the rows of `DirList`) is read under
+`new Snapshot(...)`, the rows of `DirList`) is read under
 `svelte-ignore state_referenced_locally`, since the read really is once.
+
+A page that watches what the service is doing builds one `Snapshot` and hands
+it to every reader (`ServicePanel`, `new Recheck(...)`), so one stream message
+costs one `/api/runs` request. Each reader keeps its own state and asks the
+snapshot for its own pace; the soonest wins.
 
 Page titles come from `Page.svelte`, which sets `{title} · Trackstarr` and
 carries the `wide` prop the settings pages leave off. `version` in

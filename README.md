@@ -24,7 +24,7 @@ answer for a change worth having but not worth a 60GB rewrite of its own.
 | `sdh`           | `alongside` | Drop an SDH subtitle when the same language keeps a full one. Forced subtitles are always kept                                                                                             |
 | `regenerate`    | `never`     | Rebuild downmixes whose settings have moved on; see `REGENERATE_SCOPE`. Matroska only                                                                                                      |
 | `cover_art`     | `always`    | Drop embedded artwork, which players read as a second video track                                                                                                                          |
-| `junk_titles`   | `alongside` | Clear release junk from track and container titles                                                                                                                                        |
+| `release_tags`  | `alongside` | Clear release tags from track and container titles                                                                                                                                        |
 | `stray_streams` | `alongside` | Drop data and timecode streams nothing plays                                                                                                                                              |
 | `order`         | `always`    | Video, then audio in `AUDIO_LAYOUTS` order, then subtitles, then attachments                                                                                                              |
 | `remux`         | `never`     | Rewrite MP4 and M4V into Matroska, where every rule works. `alongside` converts a file something else is already rewriting                                                                 |
@@ -65,7 +65,7 @@ refuses two entries of one count for the same reason, `4.2` and `5.1` included.
 
 Downmixing and removing have no `RULE_` of their own. The entry is the whole
 switch, and both always act, since making or removing a mix is worth its own
-rewrite where a junk title is not. The written order is the audio track order:
+rewrite where a release tag is not. The written order is the audio track order:
 2.0 first means a disposition-blind player lands on stereo.
 
 Removing is the one thing here you cannot take back. Every other rule adds a
@@ -166,7 +166,7 @@ only once its duration and stream count verify, so an interrupted job leaves
 the library untouched. A file that changes mid-rewrite is deferred to the next
 webhook or sweep. If an enabled *arr cannot be reached, an applying sweep
 downgrades itself to report-only, since without original languages a foreign
-film's own track would look like junk to drop.
+film's own track would look like one to drop.
 
 **Media servers.** Configure Plex or Jellyfin (Emby speaks the same API) and
 each rewrite nudges the server to refresh that file. The nudge names a path,
@@ -240,7 +240,7 @@ key nothing reads is warned about at startup as the typo it usually is.
 | `LANGUAGES`                 | `original,eng`   | every language named, in downmix source order, each with what happens to it; see above             |
 | `RULE_LANGUAGES` and so on  | see above        | one per rule: `never`, `alongside` or `always`                                                     |
 | `ALLOWED_EXTS`              | `.mkv,.mp4,.m4v` | containers a rewrite may touch                                                                     |
-| `COMMENTARY_PATTERN`        | see `config.py`  | regex; likewise `SDH_PATTERN`, `FORCED_PATTERN` and `JUNK_TITLE_PATTERN`                           |
+| `COMMENTARY_PATTERN`        | see `config.py`  | regex; likewise `SDH_PATTERN`, `FORCED_PATTERN` and `RELEASE_TAG_PATTERN`                          |
 
 ### Audio
 

@@ -53,13 +53,13 @@ def test_deferred_rewrite_is_not_a_failure(stub_rewrite):
     assert "source changed" in result.detail
 
 
-def test_fixed_file_notifies_media_servers(monkeypatch, stub_rewrite):
+def test_a_rewritten_file_notifies_media_servers(monkeypatch, stub_rewrite):
     stub_rewrite(needed_plan())
     refreshed = []
     monkeypatch.setattr(processing, "refresh_servers", refreshed.append)
 
     result = processing.process(Job("/x.mkv"), dry_run=False)
-    assert result.status == "fixed"
+    assert result.status == "modified"
     assert refreshed == ["/x.mkv"]
 
 
@@ -93,7 +93,7 @@ def test_report_mode_bottoms_out_in_process(monkeypatch):
         processing, "apply_plan", lambda plan: pytest.fail("report mode must not rewrite")
     )
     result = processing.process(Job("/x.mkv"), dry_run=False)
-    assert result.status == "would-fix"
+    assert result.status == "pending"
 
 
 def test_a_held_file_is_planned_and_reported_but_never_rewritten(monkeypatch):
@@ -107,7 +107,7 @@ def test_a_held_file_is_planned_and_reported_but_never_rewritten(monkeypatch):
         processing, "apply_plan", lambda plan: pytest.fail("a hold must not rewrite")
     )
     result = process(Job("/data/media/movies/Dune (2024)/Dune (2024).mkv"), dry_run=False)
-    assert result.status is Status.WOULD_FIX
+    assert result.status is Status.PENDING
     # The row and pending.tsv say why this one is not being rewritten, since
     # the plan's own reasons would read as work about to happen.
     assert "held by marc" in result.detail
@@ -119,7 +119,7 @@ def test_a_hold_on_one_title_leaves_the_rest_alone(monkeypatch, stub_rewrite):
     holds.place("/data/media/movies/Dune (2024)", by="marc")
     stub_rewrite(needed_plan(path="/data/media/movies/Arrival (2016)/Arrival (2016).mkv"))
     result = process(Job("/data/media/movies/Arrival (2016)/Arrival (2016).mkv"), dry_run=False)
-    assert result.status is Status.FIXED
+    assert result.status is Status.MODIFIED
 
 
 def held_slot():
@@ -263,7 +263,7 @@ def test_a_probe_failure_during_a_rewrite_is_reported_not_raised(tmp_path, monke
     assert "moov atom not found" in result.detail
 
 
-def test_a_fixed_file_asks_its_arr_to_rescan(tmp_path, monkeypatch, stub_rewrite):
+def test_a_rewritten_file_asks_its_arr_to_rescan(tmp_path, monkeypatch, stub_rewrite):
     """Otherwise Radarr keeps reporting the old size and media info."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
     path = tmp_path / "f.mkv"
@@ -275,7 +275,7 @@ def test_a_fixed_file_asks_its_arr_to_rescan(tmp_path, monkeypatch, stub_rewrite
     stub_rewrite(needed_plan(str(path)))
 
     result = process(Job(str(path), "eng", 12, arr), dry_run=False)
-    assert result.status is Status.FIXED
+    assert result.status is Status.MODIFIED
     assert rescanned == [12]
 
 

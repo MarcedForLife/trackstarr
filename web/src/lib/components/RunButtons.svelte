@@ -16,6 +16,9 @@
 		busy = '',
 		// Whether the pair fills its width on a phone, and wraps as one.
 		fill = false,
+		// Whether the pair takes two columns of a grid the caller lays out, one
+		// each, at every width. For a row where a third button must match them.
+		columns = false,
 		onrun
 	}: {
 		mayRewrite: boolean;
@@ -23,11 +26,12 @@
 		disabled?: boolean;
 		busy?: '' | RunMode;
 		fill?: boolean;
+		columns?: boolean;
 		onrun: (mode: RunMode) => void;
 	} = $props();
 
 	// A share of the line below sm, natural width from sm up.
-	const spread = $derived(fill ? 'flex-1 sm:flex-none' : 'flex-none');
+	const spread = $derived(columns ? 'w-full' : fill ? 'flex-1 sm:flex-none' : 'flex-none');
 
 	const off = $derived(disabled || !!refuses || !!busy);
 
@@ -62,12 +66,16 @@
 <!-- Accent on Plan, not Process: the loud one should be safe to press without
      thinking. -->
 <div
-	class={`relative flex items-center ${
-		fill
-			? // The caller's own gap, so a pair that has wrapped under another pair
-				// lines up with it column for column instead of by a few pixels.
-				'min-w-fit flex-1 gap-3 sm:min-w-0 sm:flex-initial'
-			: 'min-w-0 gap-2 sm:gap-3'
+	class={`relative items-center ${
+		columns
+			? // Two of the caller's columns, split by the caller's gap, so each button
+				// comes out the width of a column beside them.
+				'col-span-2 grid grid-cols-2 gap-3'
+			: fill
+				? // The caller's own gap, so a pair that has wrapped under another pair
+					// lines up with it column for column instead of by a few pixels.
+					'flex min-w-fit flex-1 gap-3 sm:min-w-0 sm:flex-initial'
+				: 'flex min-w-0 gap-2 sm:gap-3'
 	}`}
 	bind:this={box}
 >

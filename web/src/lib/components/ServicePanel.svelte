@@ -5,6 +5,7 @@
 	import Glyph from '$lib/components/Glyph.svelte';
 	import RunButtons from '$lib/components/RunButtons.svelte';
 	import RunCard from '$lib/components/RunCard.svelte';
+	import type { Landed, Snapshot } from '$lib/activity.svelte';
 	import { refusalText } from '$lib/api';
 	import { button, danger, glyph, primary } from '$lib/controls';
 	import { ago, headline, type Event } from '$lib/events';
@@ -12,11 +13,9 @@
 	import { lift, type Hold } from '$lib/holds';
 	import type { RunMode } from '$lib/library';
 	import { keyboard } from '$lib/modal';
-	import { poll } from '$lib/poll';
 	import {
 		doing,
 		duration,
-		getActivity,
 		pause,
 		resume,
 		skipFile,
@@ -31,19 +30,18 @@
 
 	// What the service is doing, as a transport bar: the state in a word, the
 	// controls, the runs underneath, and what it last did along the bottom. Owns
-	// the live half of the overview: the snapshot, its poll, the buttons and the
-	// rows of runs that just ended. The page holds the history and hands in the
-	// last sweep summary and an ended run's lines.
+	// the buttons and the rows of runs that just ended; the page owns the snapshot
+	// this reads, the history, and the last sweep summary it hands in.
 	let {
-		seed,
+		snapshot,
 		admin = false,
 		recent,
 		swept,
 		onmoved,
 		onpressed
 	}: {
-		/** The snapshot the loader read; the poll carries on from it. */
-		seed: Activity;
+		/** What the service is doing, read for the page rather than here. */
+		snapshot: Snapshot;
 		admin?: boolean;
 		/** The last few history lines, for the numbers an ended run left. */
 		recent: Event[];
@@ -56,12 +54,11 @@
 		onpressed: () => void;
 	} = $props();
 
-	// Seeded from the loader, written over by the poll.
-	let activity = $derived(seed);
-	// Kept apart: a refusal is a sentence to read, a lost connection is a
-	// condition the next poll clears. In one string the poll wiped the refusal.
+	const activity = $derived(snapshot.current);
+	// Kept apart from the snapshot's own `offline`: a refusal is a sentence to
+	// read, a lost connection is a condition the next look clears. In one string
+	// the poll wiped the refusal.
 	let refusal = $state('');
-	let offline = $state('');
 	let busy = $state('');
 	// Which irreversible press is waiting for its second one.
 	let armed = $state<'' | 'rewrite' | 'abort'>('');
@@ -155,8 +152,8 @@
 		return activity.next_sweep ? `Next sweep ${soon(activity.next_sweep)}.` : '';
 	});
 
-	// The fallback poll rate, and the pace the stream's messages are held to. A
-	// run is a readout being watched; an idle service is a page left on a desk.
+	// The fallback poll rate this panel asks the snapshot for. A run is a readout
+	// being watched; an idle service is a page left on a desk.
 	const BUSY_MS = 2000;
 	const IDLE_MS = 15000;
 
@@ -169,7 +166,7 @@
 	// Read as the chain re-arms, not watched: a reactive read would rebuild the
 	// timer on every answer.
 	function pace(): number {
-		return told(activity.runs.length || Date.now() < expecting ? BUSY_MS : IDLE_MS);
+		return told(snapshot.current.runs.length || Date.now() < expecting ? BUSY_MS : IDLE_MS);
 	}
 
 	function dismiss(run: string) {
@@ -192,49 +189,36 @@
 
 	// News about a run, not a tick of one: the rows draw clocks and bars from the
 	// last snapshot and its age.
-	async function ask() {
+	function saw({ now: fresh, before, missed }: Landed) {
+		// A new stamp is a restart, which no run survives. Both looks can succeed
+		// either side of one, which is the half `missed` cannot see.
+		const restarted = !!before.up_since && fresh.up_since !== before.up_since;
+		const alive = new Set(fresh.runs.map((entry) => entry.id));
 		// By id, not count: one run ending as another starts leaves the count
 		// unchanged.
-		const before = activity.runs;
-		// Whether the last look failed, so a missing run may have been cut off
-		// rather than finished.
-		const blind = !!offline;
-		try {
-			const fresh = await getActivity();
-			// A new stamp is a restart, which no run survives. Both polls can
-			// succeed either side of one, which is the half `blind` cannot see.
-			const restarted = !!activity.up_since && fresh.up_since !== activity.up_since;
-			activity = fresh;
-			offline = '';
-			const alive = new Set(activity.runs.map((entry) => entry.id));
-			const gone = before.filter((entry) => !alive.has(entry.id));
-			if (gone.length) {
-				// A run that left on its own finished, and its row is a receipt. One
-				// that vanished across an outage or restart did not.
-				if (!blind && !restarted) {
-					// Newest first.
-					finished = [
-						...gone.map((run) => ({ run, at: Date.now(), cut: run.stopping })),
-						...finished
-					];
-				}
-				// The run has just written its summary.
-				onmoved(true);
-			} else {
-				// A delivery can start and finish between two polls without ever
-				// showing here.
-				onmoved(false);
+		const gone = before.runs.filter((entry) => !alive.has(entry.id));
+		if (gone.length) {
+			// A run that left on its own finished, and its row is a receipt. One that
+			// vanished across an outage or restart did not.
+			if (!missed && !restarted) {
+				// Newest first.
+				finished = [
+					...gone.map((run) => ({ run, at: Date.now(), cut: run.stopping })),
+					...finished
+				];
 			}
-		} catch {
-			offline = 'Could not reach the service.';
+			// The run has just written its summary.
+			onmoved(true);
+		} else {
+			// A delivery can start and finish between two looks without ever showing
+			// here.
+			onmoved(false);
 		}
 	}
 
-	// A run beginning or ending is worth asking on at once; `progress` arrives as
-	// fast as a sweep books files, and the gap holds it to a readable rate.
-	const runs = poll({ ask, pace, gap: BUSY_MS, kinds: ['runs', 'progress'] });
-
-	onDestroy(runs.stop);
+	// Read once: the page hands in the same snapshot for the life of the panel.
+	// svelte-ignore state_referenced_locally
+	onDestroy(snapshot.watch({ pace, saw }));
 
 	// Every button goes through here: names what is under way, keeps a refusal's
 	// words, and refreshes rather than guessing.
@@ -248,14 +232,15 @@
 			// An answer with a run id has started one before any snapshot shows it.
 			if ('run' in told) expecting = Date.now() + SETTLE_MS;
 			// Pause and resume answer with the snapshot; the rest need a fresh one.
-			activity = 'runs' in told ? (answer as Activity) : await getActivity();
+			if ('runs' in told) snapshot.take(answer as Activity);
+			else await snapshot.look();
 		} catch (error) {
 			refusal = refusalText(error);
 		} finally {
 			busy = '';
-			// The panel is now this moment's, and a just-started sweep polls fast
+			// The snapshot is now this moment's, and a just-started sweep polls fast
 			// from here.
-			runs.mark();
+			snapshot.mark();
 			// Pausing and resuming are history events.
 			onpressed();
 		}
@@ -390,7 +375,7 @@
 						onclick={() => act('pause', pause)}
 						disabled={!!busy}
 						aria-label="Pause"
-						title="Pause. Files already started finish; nothing new starts."
+						title="Pause. Files already started finish and nothing new starts."
 						class={named ? `flex-1 sm:flex-none ${button}` : `flex-none ${glyph}`}
 					>
 						<Glyph name="pause" />
@@ -440,9 +425,9 @@
 		<p role="alert" class="border-t border-line px-4 py-2.5 text-[12.5px] text-danger">
 			{refusal}
 		</p>
-	{:else if offline}
+	{:else if snapshot.offline}
 		<p role="status" class="border-t border-line px-4 py-2.5 text-[12.5px] text-danger">
-			{offline}
+			{snapshot.offline}
 		</p>
 	{/if}
 

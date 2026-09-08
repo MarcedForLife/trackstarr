@@ -95,7 +95,7 @@
 			],
 			"planned": [],
 			"why": {},
-			"fixed": {
+			"modified": {
 				"at": "2026-02-28T12:00:00+13:00",
 				"bytes_before": 2147483648,
 				"bytes_after": 2251799813,

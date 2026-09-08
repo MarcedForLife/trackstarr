@@ -2,11 +2,22 @@
 	import { resolve } from '$app/paths';
 	import EventRow from '$lib/components/EventRow.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
-	import { key, type Event } from '$lib/events';
+	import { key, THREAD, type Event } from '$lib/events';
+	import type { Card } from '$lib/library';
 
 	// The last few lines of history. Holds only how much is shown and which lines
 	// are open; the page reads the history.
-	let { entries }: { entries: Event[] } = $props();
+	let {
+		entries,
+		// The cards for the titles these lines name, so a line can carry its
+		// poster and take a press to the sheet the page owns.
+		titles = {},
+		onopen
+	}: {
+		entries: Event[];
+		titles?: Record<string, Card>;
+		onopen?: (card: Card) => void;
+	} = $props();
 
 	// Which lines are open, keyed by content: an arriving line used to carry every
 	// open panel down one.
@@ -29,8 +40,12 @@
 <section class="min-w-0">
 	<h2 class="text-[11px] font-semibold tracking-wider text-faint uppercase">Activity</h2>
 	{#if rows.length}
-		<!-- overflow-anchor: none, or scroll anchoring fights an expanding row. -->
-		<ol class="mt-2.5 flex flex-col gap-2.5 [overflow-anchor:none]">
+		<!-- The page's width, like the two panels above it: capped to keep the time
+		     near its line, the feed read as a column that had failed to fill.
+		     overflow-anchor: none, or scroll anchoring fights an expanding row. -->
+		<ol class="relative isolate mt-2.5 flex flex-col gap-2.5 [overflow-anchor:none]">
+			<!-- With the column it threads, which is from lg. -->
+			<span aria-hidden="true" class={`hidden lg:block ${THREAD}`}></span>
 			{#each rows as { entry, id }, at (id)}
 				<li class={at >= PHONE_ROWS + extra ? 'hidden lg:block' : ''}>
 					<EventRow
@@ -38,6 +53,8 @@
 						{entry}
 						id={`activity-${at}`}
 						open={!!opened[id]}
+						card={entry.title ? titles[entry.title] : undefined}
+						{onopen}
 						ontoggle={() => (opened = { ...opened, [id]: !opened[id] })}
 					/>
 				</li>

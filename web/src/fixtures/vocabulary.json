@@ -1,10 +1,21 @@
 {
 	"states": [
 		"failed",
-		"would-fix",
+		"pending",
 		"skip",
 		"unsupported",
 		"conform",
+		"unchecked",
+		"missing"
+	],
+	"mixed": "mixed",
+	"filters": [
+		"failed",
+		"pending",
+		"skip",
+		"unsupported",
+		"conform",
+		"modified",
 		"unchecked",
 		"missing"
 	],

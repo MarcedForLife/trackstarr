@@ -13,10 +13,11 @@ class Status(enum.StrEnum):
     #: verdict because the reader can act on it, by changing ALLOWED_EXTS.
     UNSUPPORTED = "unsupported"
     CONFORM = "conform"
-    WOULD_FIX = "would-fix"
-    FIXED = "fixed"
+    #: A file the rules would rewrite, with nothing written yet.
+    PENDING = "pending"
+    MODIFIED = "modified"
     DEFERRED = "deferred"
     FAILED = "failed"
 
-    #: So logs and count dicts read "would-fix", not <Status.WOULD_FIX: ...>.
+    #: So logs and count dicts read "pending", not <Status.PENDING: ...>.
     __repr__ = str.__repr__

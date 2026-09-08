@@ -20,9 +20,9 @@
 			"default": "always",
 			"summary": "Drop embedded cover art."
 		},
-		"junk_titles": {
+		"release_tags": {
 			"default": "alongside",
-			"summary": "Clear release junk from track and container titles."
+			"summary": "Clear release tags from track and container titles."
 		},
 		"stray_streams": {
 			"default": "alongside",
@@ -311,7 +311,7 @@
 			"value": "\\bforced\\b",
 			"env": false
 		},
-		"JUNK_TITLE_PATTERN": {
+		"RELEASE_TAG_PATTERN": {
 			"value": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b",
 			"env": false
 		},
@@ -394,7 +394,7 @@
 			"value": "always",
 			"env": false
 		},
-		"RULE_JUNK_TITLES": {
+		"RULE_RELEASE_TAGS": {
 			"value": "alongside",
 			"env": false
 		},

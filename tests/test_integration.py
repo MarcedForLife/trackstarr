@@ -388,7 +388,7 @@ def test_sdh_subtitle_dropped_end_to_end(make_file):
     assert not build_plan(path, "eng").needed
 
 
-def test_junk_titles_cleared_end_to_end(make_file):
+def test_release_tags_cleared_end_to_end(make_file):
     path = make_file(
         "f.mkv", [(6, "eng", "DTS-HD MA 5.1 @ 1509kbps"), (2, "eng", "Commentary")]
     )
@@ -408,9 +408,9 @@ def test_fix_command_end_to_end(make_file, capsys):
     rewrite under the slot locks, and the cli-sourced event."""
     path = make_file("f.mkv", COMMENTARY_CASE)
     assert cli_main(["--log-level", "WARNING", "fix", "--original", "eng", path]) == 0
-    assert capsys.readouterr().out.startswith("fixed")
+    assert capsys.readouterr().out.startswith("modified")
     assert sorted(stream["channels"] for stream in streams_of(path, "audio")) == [2, 2, 6]
-    (entry,) = [event for event in read_events() if event["event"] == "fixed"]
+    (entry,) = [event for event in read_events() if event["event"] == "modified"]
     assert entry["source"] == "cli"
     # Idempotent like every other source: a second run conforms.
     assert cli_main(["--log-level", "WARNING", "fix", "--original", "eng", path]) == 0
@@ -460,23 +460,23 @@ def test_seed_release_invalidates_cached_hardlink_skip(
     assert len(swept_library) == 0
 
     seed.unlink()
-    assert sweep(dry_run=True)["would-fix"] == 1
+    assert sweep(dry_run=True)["pending"] == 1
     assert len(swept_library) == 1
 
 
-def test_report_only_sweep_reuses_would_fix_verdicts(make_file, swept_library, tmp_path):
+def test_report_only_sweep_reuses_pending_verdicts(make_file, swept_library, tmp_path):
     """Report-only sweeps re-emit their rows without re-probing, but an applying
-    sweep must not trust a cached would-fix."""
+    sweep must not trust a cached pending verdict."""
     make_file("f.mkv", COMMENTARY_CASE)
 
-    assert sweep(dry_run=True)["would-fix"] == 1
-    assert sweep(dry_run=True)["would-fix"] == 1
+    assert sweep(dry_run=True)["pending"] == 1
+    assert sweep(dry_run=True)["pending"] == 1
     assert len(swept_library) == 1
     report = (tmp_path / "state" / "pending.tsv").read_text()
-    assert "would-fix" in report
+    assert "pending" in report
 
     counts = sweep(dry_run=False)
-    assert counts["fixed"] == 1
+    assert counts["modified"] == 1
     # Two more probes: the plan's, and the re-judge of what it wrote; see
     # :func:`trackstarr.processing._rejudged`.
     assert len(swept_library) == 3
@@ -485,15 +485,15 @@ def test_report_only_sweep_reuses_would_fix_verdicts(make_file, swept_library, t
     assert entry["status"] == "conform"
     # Passed from here on, so what the rewrite did rides on the verdict; the
     # library has nothing else to tell this file from one we never touched.
-    assert entry["fixed"]["at"]
-    assert entry["fixed"]["bytes_after"] == entry["size"]
+    assert entry["modified"]["at"]
+    assert entry["modified"]["bytes_after"] == entry["size"]
     # The two columns the sheet draws it in. `added` is a position in the file
     # as it now stands, so it is read against the re-probed tracks: nothing
     # else proves the record and the file agree.
-    was = entry["fixed"]["was"]
+    was = entry["modified"]["was"]
     assert [track["index"] for track in was] == [0, 1, 2]
-    assert "dropped" not in entry["fixed"]
-    (added,) = entry["fixed"]["added"]
+    assert "dropped" not in entry["modified"]
+    (added,) = entry["modified"]["added"]
     assert entry["tracks"][added]["channels"] == 2
     assert len(entry["tracks"]) == len(was) + 1
 

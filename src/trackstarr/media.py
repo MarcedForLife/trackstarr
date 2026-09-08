@@ -146,10 +146,10 @@ def title_is_load_bearing(stream: dict, policy: Policy) -> bool:
     return is_commentary(stream, policy) or is_sdh(stream, policy) or is_forced(stream, policy)
 
 
-def is_junk_title(title: str, policy: Policy) -> bool:
-    """Whether a title is release junk. A pure pattern test; callers clearing
+def matches_release_tags(title: str, policy: Policy) -> bool:
+    """Whether a title carries release tags. A pure pattern test; callers clearing
     titles must check title_is_load_bearing first."""
-    return bool(title) and bool(policy.junk_title_re.search(title))
+    return bool(title) and bool(policy.release_tag_re.search(title))
 
 
 def track_summary(stream: dict, policy: Policy) -> dict:

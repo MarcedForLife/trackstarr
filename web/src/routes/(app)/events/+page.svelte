@@ -1,12 +1,16 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import EventRow from '$lib/components/EventRow.svelte';
-	import { button } from '$lib/controls';
+	import Glyph from '$lib/components/Glyph.svelte';
 	import Page from '$lib/components/Page.svelte';
 	import Segmented from '$lib/components/Segmented.svelte';
 	import TitleSheet from '$lib/components/TitleSheet.svelte';
-	import { count, CUSTOM, dot, key, said, SPANS, type Event } from '$lib/events';
-	import { control, quiet, radius } from '$lib/controls';
+	import { Snapshot } from '$lib/activity.svelte';
+	import { count, CUSTOM, key, said, SPANS, THREAD, type Event } from '$lib/events';
+	import { button, control, glyph, quiet, radius } from '$lib/controls';
 	import { History } from '$lib/history.svelte';
+	import type { Card } from '$lib/library';
+	import { Recheck } from '$lib/recheck.svelte';
 	import { whenNear } from '$lib/reveal';
 	import type { PageProps } from './$types';
 
@@ -23,13 +27,47 @@
 		}
 	});
 
-	// A poster opens the library's own sheet, with its Open in buttons.
+	// Only an admin may run anything, so only an admin is offered the buttons.
+	const admin = $derived(page.data.user?.role === 'admin');
+
+	// A poster opens the library's own sheet, runs and all: the same sheet should
+	// not offer less for having been opened from here.
 	let sheet: TitleSheet;
+	// An open sheet is a reason to keep asking whether a run may start.
+	let sheetUp = $state(false);
+
+	// What the service is doing, seeded from the load so the sheet's buttons have
+	// an answer before the first look. Only the re-check reads it here.
+	// svelte-ignore state_referenced_locally
+	const snapshot = new Snapshot(data.activity);
+
+	const recheck: Recheck = new Recheck(snapshot, {
+		asking: () => sheetUp,
+		// A run wrote verdicts, and every one of them is a line here.
+		onwritten: () => history.refresh(),
+		// The sheet shows what the run came to in its own panel, and one already
+		// shut has nowhere on this page to show it.
+		ondone: () => {}
+	});
+
+	function look(card: Card) {
+		sheetUp = true;
+		sheet.open(card);
+		// Whether a run can start is the service's to answer.
+		recheck.prod();
+	}
+
+	// The sheet has gone; a run it started carries on without it.
+	function sheetShut() {
+		sheetUp = false;
+		recheck.sheetShut();
+	}
+
 	let filter = $state('all');
 
 	const FILTERS: { value: string; label: string; kinds: string[] }[] = [
 		{ value: 'all', label: 'All', kinds: [] },
-		{ value: 'rewrites', label: 'Rewrites', kinds: ['fixed', 'would-fix'] },
+		{ value: 'rewrites', label: 'Rewrites', kinds: ['modified', 'pending'] },
 		// Not Failures: the tab holds `deferred` too, which is Waiting.
 		{ value: 'issues', label: 'Issues', kinds: ['failed', 'deferred'] },
 		{
@@ -86,16 +124,34 @@
 
 <!-- wide: release names and paths wrapped onto a third line at 42rem. -->
 <Page wide title="Events" lead="Every sweep, import and rewrite, newest first.">
-	<!-- A grid, so Refresh is last in source (a button between the switches read
-	     as a label on a phone) and still beside the first row from sm up. -->
-	<div class="mt-6 grid gap-3 sm:grid-cols-[auto_1fr] sm:items-center">
-		<div class="sm:col-start-1 sm:row-start-1">
-			<Segmented options={FILTERS} value={filter} onchange={choose} />
+	<!-- Two questions, a row each: what happened, and how far back. Each row is a
+	     track and one button, so both rows start and end on one edge on a phone.
+	     Refresh rides with the kinds rather than at the page's right edge, where
+	     a wide screen left it stranded a screen away from what it reloads. -->
+	<div class="mt-6 flex flex-col gap-3">
+		<div class="flex items-center gap-2">
+			<div class="min-w-0 flex-1 sm:flex-none">
+				<Segmented options={FILTERS} value={filter} onchange={choose} />
+			</div>
+			<button
+				onclick={() => history.refresh()}
+				disabled={history.busy}
+				aria-label="Refresh"
+				title="Read the history again"
+				class={`flex-none ${glyph}`}
+			>
+				<Glyph name="refresh" />
+				<!-- The word from sm up, where the row has room for it. -->
+				<span class="hidden sm:inline">{history.busy ? 'Reading…' : 'Refresh'}</span>
+			</button>
 		</div>
-		<!-- Under the kinds: nine segments is more than a phone fits, and the two
-		     are different questions. Custom range sits outside the track, set
-		     apart by the gap; with it held Segmented hides its thumb on -1. -->
-		<div class="flex min-w-0 items-center gap-2 sm:col-start-1 sm:row-start-2">
+
+		<!-- Nine segments is more than a phone fits, and a hand-picked range is a
+		     different kind of answer (between when and when), so it stands outside
+		     the track as the toggle it is: the app's pressed chip with a chevron
+		     that turns, not a sixth segment. With it held Segmented hides its
+		     thumb on -1. -->
+		<div class="flex min-w-0 items-center gap-2">
 			<div class="min-w-0 flex-1 sm:flex-none">
 				<Segmented
 					options={SPANS}
@@ -107,63 +163,70 @@
 			</div>
 			<button
 				aria-pressed={history.span === CUSTOM}
+				aria-expanded={history.span === CUSTOM}
 				aria-label="A range you pick"
 				onclick={() => history.look(history.span === CUSTOM ? 'all' : CUSTOM)}
-				class={`${control} ${radius} flex-none border border-line-strong px-3 text-[13px] whitespace-nowrap transition-colors ${
+				class={`${control} ${radius} flex flex-none items-center gap-1.5 border px-3 text-[13px] whitespace-nowrap transition-colors ${
 					history.span === CUSTOM
-						? 'bg-raised font-semibold text-fg shadow-sm'
-						: 'bg-sunken font-medium text-dim hover:text-fg'
+						? 'border-line-strong bg-raised font-semibold text-fg'
+						: 'border-line font-medium text-dim hover:text-fg'
 				}`}
 			>
 				Range
+				<span
+					class={`text-faint transition-transform duration-200 ${
+						history.span === CUSTOM ? 'rotate-90' : ''
+					}`}
+				>
+					<Glyph name="chevron" size={11} />
+				</span>
 			</button>
 		</div>
+
 		{#if history.span === CUSTOM}
-			<!-- Native pickers: the platform's wheel beats anything drawn here, and
+			<!-- A panel of its own, so two fields and a way to empty them read as
+			     what the button opened rather than as controls loose in the page.
+			     Native pickers: the platform's wheel beats anything drawn here, and
 			     the value is local wall-clock. -->
-			<div
-				class="flex flex-col gap-2 sm:col-start-1 sm:row-start-3 sm:flex-row sm:items-center sm:gap-3"
-			>
-				{#each [{ id: 'from', label: 'From' }, { id: 'to', label: 'To' }] as end (end.id)}
-					<label class="flex min-w-0 flex-1 items-center gap-2.5 sm:flex-none">
-						<span class="w-10 flex-none text-[13px] font-medium text-dim sm:w-auto">
-							{end.label}
-						</span>
-						<input
-							type="datetime-local"
-							value={end.id === 'from' ? history.from : history.to}
-							onchange={(picked) => {
-								const value = picked.currentTarget.value;
-								if (end.id === 'from') history.from = value;
-								else history.to = value;
-								history.refresh();
-							}}
-							class={`${control} ${radius} w-full min-w-0 border border-line-strong bg-field px-3 text-base sm:w-auto sm:text-[13px]`}
-						/>
-					</label>
-				{/each}
-				<!-- Both ends at once: an empty end is an open one, which the row
-				     cannot otherwise reach, and Android's picker has no clear. -->
-				<button
-					onclick={() => {
-						history.from = '';
-						history.to = '';
-						history.refresh();
-					}}
-					disabled={!history.from && !history.to}
-					class={`${quiet} self-start sm:self-auto`}
-				>
-					Clear
-				</button>
+			<!-- Hugs its fields from sm up, or Clear ended up a screen away from the
+			     end it clears on a wide one. -->
+			<div class="rounded-xl border border-line bg-sunken p-3 sm:self-start">
+				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+					{#each [{ id: 'from', label: 'From' }, { id: 'to', label: 'To' }] as end (end.id)}
+						<label class="flex min-w-0 items-center gap-2.5 sm:flex-none">
+							<span class="w-9 flex-none text-[12.5px] font-medium text-dim sm:w-auto">
+								{end.label}
+							</span>
+							<input
+								type="datetime-local"
+								value={end.id === 'from' ? history.from : history.to}
+								onchange={(picked) => {
+									const value = picked.currentTarget.value;
+									if (end.id === 'from') history.from = value;
+									else history.to = value;
+									history.refresh();
+								}}
+								class={`${control} ${radius} min-w-0 flex-1 border border-line-strong bg-field px-3 text-base sm:flex-none sm:text-[13px]`}
+							/>
+						</label>
+					{/each}
+					<!-- Both ends at once: an empty end is an open one, which the row
+					     cannot otherwise reach, and Android's picker has no clear.
+					     Last in the row, and last on its own line on a phone. -->
+					<button
+						onclick={() => {
+							history.from = '';
+							history.to = '';
+							history.refresh();
+						}}
+						disabled={!history.from && !history.to}
+						class={`${quiet} self-end sm:self-auto`}
+					>
+						Clear
+					</button>
+				</div>
 			</div>
 		{/if}
-		<button
-			onclick={() => history.refresh()}
-			disabled={history.busy}
-			class="justify-self-start text-[13px] font-medium text-dim hover:text-fg disabled:opacity-50 sm:col-start-2 sm:row-start-1 sm:justify-self-end"
-		>
-			Refresh
-		</button>
 	</div>
 
 	{#if history.failure}
@@ -186,32 +249,24 @@
 			{/if}
 		</p>
 	{:else}
-		<!-- overflow-anchor: none, or scroll anchoring carries a tapped row out
-		     from under the finger as it expands. -->
-		<ol class="mt-6 [overflow-anchor:none]">
-			{#each shown as { entry, at, id }, index (id)}
+		<!-- The thread rather than a rail in a column of its own with a dot of its
+		     own; see THREAD. overflow-anchor: none, or scroll anchoring carries a
+		     tapped row out from under the finger as it expands. -->
+		<ol class="relative isolate mt-6 [overflow-anchor:none]">
+			<span aria-hidden="true" class={THREAD}></span>
+			{#each shown as { entry, at, id } (id)}
 				<!-- Rows off screen are skipped whole. 5rem is the guess for an unseen
 				     row. -->
-				<li
-					class="relative flex gap-3.5 pb-5 [contain-intrinsic-size:auto_5rem] [content-visibility:auto]"
-				>
-					<!-- The rail, stopped short on the last row. -->
-					{#if index < shown.length - 1}
-						<span aria-hidden="true" class="absolute top-3.5 bottom-0 left-[3.5px] w-px bg-line"
-						></span>
-					{/if}
-					<span class={`relative mt-1.5 h-2 w-2 flex-none rounded-full ${dot(entry)}`}></span>
-					<div class="min-w-0 flex-1">
-						<EventRow
-							{entry}
-							id={`event-${at}`}
-							open={!!open[id]}
-							before={entry.event === 'config' ? earlierConfig(at) : undefined}
-							card={entry.title ? history.titles[entry.title] : undefined}
-							onopen={(chosen) => sheet.open(chosen)}
-							ontoggle={() => toggle(id)}
-						/>
-					</div>
+				<li class="pb-5 [contain-intrinsic-size:auto_5rem] [content-visibility:auto]">
+					<EventRow
+						{entry}
+						id={`event-${at}`}
+						open={!!open[id]}
+						before={entry.event === 'config' ? earlierConfig(at) : undefined}
+						card={entry.title ? history.titles[entry.title] : undefined}
+						onopen={look}
+						ontoggle={() => toggle(id)}
+					/>
 				</li>
 			{/each}
 		</ol>
@@ -245,5 +300,5 @@
 	</div>
 </Page>
 
-<!-- No runner: this page owns no poll or progress bar. -->
-<TitleSheet bind:this={sheet} />
+<!-- The library's own sheet, runs and all. -->
+<TitleSheet bind:this={sheet} runner={admin ? recheck.runner : undefined} onshut={sheetShut} />

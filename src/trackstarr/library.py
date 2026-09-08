@@ -27,6 +27,7 @@ from . import config, ratings, state, sweep_cache
 from .arr import Arr, all_arrs, innermost, original_of
 from .client import API_ERRORS, fetch
 from .policy import Policy
+from .status import Status
 
 log = logging.getLogger(__name__)
 
@@ -47,11 +48,61 @@ _LOCAL_COVERS = ("poster.jpg", "folder.jpg", "cover.jpg", "poster.png")
 #: restart.
 _INDEX_TTL = 300.0
 
-#: Worst first: a card shows the worst state any of its files is in. The last
-#: two are the absence of a verdict, and "missing" (nothing downloaded) is not
-#: work outstanding. "unsupported" sits below "skip" because a skip is usually
-#: momentary and an unsupported container is permanent.
-STATES = ("failed", "would-fix", "skip", "unsupported", "conform", "unchecked", "missing")
+#: Files no sweep has reached, or a rewrite nothing has looked at since.
+#: Computed here, so it is no :class:`trackstarr.status.Status`.
+UNCHECKED = "unchecked"
+
+#: A title the *arrs track with nothing downloaded. Computed here too.
+MISSING = "missing"
+
+#: Worst first: where a card ranks, and the word it leads with while anything is
+#: outstanding. The last two are the absence of a verdict, and "missing"
+#: (nothing downloaded) is not work outstanding. "unsupported" sits below "skip"
+#: because a skip is usually momentary and an unsupported container is
+#: permanent. Neither remaining Status is here on purpose: a modified or
+#: deferred file is outside :data:`trackstarr.sweep.CACHEABLE_STATUSES`, so
+#: nothing stores one for a card to count.
+STATES = (
+    Status.FAILED,
+    Status.PENDING,
+    Status.SKIP,
+    Status.UNSUPPORTED,
+    Status.CONFORM,
+    UNCHECKED,
+    MISSING,
+)
+
+#: The verdicts that mean work outstanding. One file in either decides its
+#: card's word: the grid is a triage queue before it is a report.
+ACTIONABLE = (Status.FAILED, Status.PENDING)
+
+#: What a card reads once nothing is outstanding and its files still disagree.
+#: Not a verdict: no file is ever in it, and no chip offers it, since a mixed
+#: title is reachable under each state it holds.
+MIXED = "mixed"
+
+#: Titles a rewrite of ours has been through. A rewritten file passes, so the
+#: count of them is the only place a title says any of its files are ours.
+MODIFIED = Status.MODIFIED
+
+#: The card field holding that count, which :func:`summary` reads back. Spelt
+#: like :data:`MODIFIED` and not the same thing: a wire key the frontend reads
+#: as ``Card.modified``, so renaming the verdict must not move it. A file's own
+#: ``modified`` record is a third key again; see :func:`_file`.
+_MODIFIED_FIELD = "modified"
+
+#: What a chip row cuts the grid by. Hiding reads :data:`STATES` instead, since
+#: it goes on the word a card leads with and neither of the two above is one.
+FILTERS = (
+    Status.FAILED,
+    Status.PENDING,
+    Status.SKIP,
+    Status.UNSUPPORTED,
+    Status.CONFORM,
+    MODIFIED,
+    UNCHECKED,
+    MISSING,
+)
 
 #: Where fetched posters are kept, under STATE_DIR. Written once per title:
 #: a poster does not change under its id.
@@ -360,15 +411,30 @@ class Rollup:
     #: How many of its files trackstarr has rewritten, as they now stand. Its
     #: own tally because a rewritten file passes, and a card saying only
     #: "Passed" cannot tell that from a file the rules never touched.
-    fixed: int = 0
+    modified: int = 0
     #: When its most recently judged file was judged, in epoch seconds; 0 with
     #: no verdicts. See ``judged`` in :func:`trackstarr.sweep_cache._entry`.
     judged: float = 0.0
 
     @property
-    def state(self) -> str:
+    def worst(self) -> str:
         """The worst verdict any of its files reached."""
-        return next((state for state in STATES if self.counts.get(state)), "unchecked")
+        return next((state for state in STATES if self.counts.get(state)), UNCHECKED)
+
+    @property
+    def state(self) -> str:
+        """The word its card leads with.
+
+        The worst verdict while anything is outstanding, since one pending file
+        among thirty passes is still a rewrite owed. Once nothing is, a title
+        whose files disagree reads :data:`MIXED` rather than taking the name of
+        its one skipped file.
+        """
+        worst = self.worst
+        if worst in ACTIONABLE:
+            return worst
+        judged = sum(1 for state in STATES if self.counts.get(state))
+        return MIXED if judged > 1 else worst
 
 
 class Changes(NamedTuple):
@@ -436,10 +502,10 @@ def _tally(entries: dict[str, dict], folders: dict[str, Title]) -> dict[str, Rol
         stamp = entry.get("judged")
         if isinstance(stamp, int | float) and not isinstance(stamp, bool):
             rollup.judged = max(rollup.judged, stamp)
-        status = str(entry.get("status") or "unchecked")
+        status = str(entry.get("status") or UNCHECKED)
         rollup.counts[status] = rollup.counts.get(status, 0) + 1
-        if entry.get("fixed"):
-            rollup.fixed += 1
+        if entry.get("modified"):
+            rollup.modified += 1
         if entry.get("planned"):
             changes = _changes(entry)
             rollup.adds.update(changes.adds)
@@ -478,7 +544,7 @@ def _card(title: Title, rollup: Rollup | None) -> dict:
         "adds": sorted(rollup.adds),
         "rebuilds": sorted(rollup.rebuilds),
         "drops": rollup.drops,
-        "fixed": rollup.fixed,
+        _MODIFIED_FIELD: rollup.modified,
         "weight": round(_weight(rollup), 2),
         # The newest verdict, which a rewrite stamps by re-judging what it
         # wrote; see :func:`trackstarr.processing._rejudged`.
@@ -487,16 +553,31 @@ def _card(title: Title, rollup: Rollup | None) -> dict:
     # No verdict means either nothing downloaded (a wishlist entry) or files
     # no sweep has reached (work outstanding). Only the *arr can tell them
     # apart. Verdicts on disk beat what the *arr believes.
-    state = rollup.state
-    if state == "unchecked" and not title.on_disk:
-        state = "missing"
+    verdict = rollup.state
+    if verdict == UNCHECKED and not title.on_disk:
+        verdict = MISSING
     return {
         "id": title.id,
         "name": title.name,
         "kind": title.kind,
-        "state": state,
+        "state": verdict,
         **{name: value for name, value in optional.items() if value not in (None, 0, {}, [])},
     }
+
+
+def _rank(card: dict) -> int:
+    """Where a card sits in the worst-first order.
+
+    On the worst verdict its files reached rather than the word it leads with,
+    so a mixed title sits with the state that made it one, not in a block of its
+    own.
+    """
+    counts = card.get("counts") or {}
+    if not counts:
+        # Nothing to rank on: whichever of the two _card settled on.
+        state = card["state"]
+        return STATES.index(state) if state in STATES else len(STATES)
+    return next((at for at, state in enumerate(STATES) if counts.get(state)), len(STATES))
 
 
 class _Built(NamedTuple):
@@ -535,7 +616,7 @@ def shelf() -> dict:
     folders = {title.folder: title for title in found.titles}
     rollups = _tally(stored.files, folders)
     cards = [_card(title, rollups.get(title.id)) for title in found.titles]
-    cards.sort(key=lambda card: (STATES.index(card["state"]), card["name"].lower()))
+    cards.sort(key=lambda card: (_rank(card), card["name"].lower()))
     answer = {
         "titles": cards,
         "complete": found.complete,
@@ -562,7 +643,7 @@ _ORDERS: dict[str, Callable[[dict], tuple]] = {
     "year": lambda card: (-(card.get("year") or 0),),
     "size": lambda card: (-card.get("bytes", 0),),
     "changes": lambda card: (-card.get("weight", 0.0),),
-    "worst": lambda card: (STATES.index(card["state"]),),
+    "worst": lambda card: (_rank(card),),
 }
 
 #: The strip's default order. Not worst-first, which showed the same stuck
@@ -588,11 +669,20 @@ def summary(head: int = HEAD, order: str = DEFAULT_ORDER) -> dict:
 
     Cut from :func:`shelf` so it cannot disagree with the grid. The saving is
     on the wire, not in compute.
+
+    Counted by membership, as the grid's chips are: a title with files in two
+    states falls under each, so the tally sums past ``titles``. A count promises
+    what pressing its chip lands on.
     """
     full = shelf()
     counts: dict[str, int] = {}
     for card in full["titles"]:
-        counts[card["state"]] = counts.get(card["state"], 0) + 1
+        held = card.get("counts") or {}
+        for verdict in STATES:
+            if held.get(verdict) if held else card["state"] == verdict:
+                counts[verdict] = counts.get(verdict, 0) + 1
+        if card.get(_MODIFIED_FIELD):
+            counts[MODIFIED] = counts.get(MODIFIED, 0) + 1
     return {
         "titles": len(full["titles"]),
         "counts": counts,
@@ -612,31 +702,31 @@ def _find(title_id: str, stored: sweep_cache.Stored) -> Title | None:
 #: a settled title has to read, and :data:`MAX_FILES` would otherwise cut them
 #: off a long series entirely.
 def _file_rank(entry: dict) -> tuple[int, int, str]:
-    status = str(entry.get("status") or "unchecked")
+    status = str(entry.get("status") or UNCHECKED)
     rank = STATES.index(status) if status in STATES else len(STATES)
-    return (rank, 0 if entry.get("fixed") else 1, entry.get("path", ""))
+    return (rank, 0 if entry.get("modified") else 1, entry.get("path", ""))
 
 
 def _file(entry: dict) -> dict:
     """One file as the sheet reads it: its verdict, what the probe saw and what
     a rewrite would leave.
 
-    ``fixed`` is only on a file trackstarr has rewritten, and is resolved by
-    :func:`_fixed` before the sort. The verdict says what the file is now,
-    which for a rewritten one is Passed like any other, so without this the
-    sheet could not tell the two apart.
+    ``modified`` is only on a file trackstarr has rewritten, and is resolved by
+    :func:`trackstarr.processing._modified` before the sort. The verdict says
+    what the file is now, which for a rewritten one is Passed like any other,
+    so without this the sheet could not tell the two apart.
     """
-    fixed = entry.get("fixed")
+    modified = entry.get("modified")
     return {
         "path": entry["path"],
         "name": os.path.basename(entry["path"]),
-        "status": entry.get("status") or "unchecked",
+        "status": entry.get("status") or UNCHECKED,
         "bytes": entry.get("size") or 0,
         "lang": entry.get("lang"),
         "tracks": entry.get("tracks") or [],
         "planned": entry.get("planned") or [],
         "why": entry.get("why") or {},
-        **({"fixed": fixed} if fixed else {}),
+        **({"modified": modified} if modified else {}),
     }
 
 

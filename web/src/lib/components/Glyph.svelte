@@ -1,16 +1,29 @@
+<script module lang="ts">
+	// Named here so a lookup elsewhere can hold a mark's name and still be
+	// checked, as the events feed's per-kind marks are.
+	export type GlyphName =
+		| 'play'
+		| 'pause'
+		| 'stop'
+		| 'doc'
+		| 'open'
+		| 'next'
+		| 'arrow'
+		| 'cross'
+		| 'chevron'
+		| 'refresh'
+		| 'sliders';
+</script>
+
 <script lang="ts">
 	// Small marks. The transport three are filled: at 12px a stroked triangle is
 	// a smudge. `doc` is stroked so Plan reads apart from Process beside it.
 	// `next` and `arrow` are drawn because neither font carries U+2192. `cross`
 	// empties a field or drops a row; `chevron` is `next` a shade lighter, for a
-	// row that opens.
-	let {
-		name,
-		size = 12
-	}: {
-		name: 'play' | 'pause' | 'stop' | 'doc' | 'open' | 'next' | 'arrow' | 'cross' | 'chevron';
-		size?: number;
-	} = $props();
+	// row that opens. `refresh` is an arc left open where its tick goes, since a
+	// closed ring with an arrowhead on it is a blot this small. `sliders` says
+	// settings without a gear, whose teeth are mud at 12px.
+	let { name, size = 12 }: { name: GlyphName; size?: number } = $props();
 </script>
 
 <svg
@@ -83,6 +96,28 @@
 		>
 			<path d="M2.6 8h9.2"></path>
 			<path d="M8.8 4.6 12.4 8l-3.6 3.4"></path>
+		</g>
+	{:else if name === 'sliders'}
+		<!-- Two rails, each with its knob at a different stop. The knob is filled
+		     rather than ringed: a 3px ring at this size closes up into a dot
+		     anyway. -->
+		<g stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+			<path d="M3 6.2h10" fill="none"></path>
+			<path d="M3 10.6h10" fill="none"></path>
+			<circle cx="6.2" cy="6.2" r="1.6"></circle>
+			<circle cx="10" cy="10.6" r="1.6"></circle>
+		</g>
+	{:else if name === 'refresh'}
+		<!-- The tick is the arc's own end turned square, as a compass needle is. -->
+		<g
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.6"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<path d="M12.4 9.6A4.8 4.8 0 1 1 12.2 5.2"></path>
+			<path d="M8.8 5.2h3.6V1.8"></path>
 		</g>
 	{:else if name === 'cross'}
 		<!-- Half the box, centred: six pixels of stroke at 12px. -->

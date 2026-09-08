@@ -14,21 +14,21 @@
 				"conform": 1,
 				"failed": 1
 			},
-			"fixed": 1,
+			"modified": 1,
 			"processed": 1772233500
 		},
 		{
 			"id": "arr:radarr:7",
 			"name": "Dune",
 			"kind": "movie",
-			"state": "would-fix",
+			"state": "pending",
 			"year": 2024,
 			"lang": "eng",
 			"added": 1709285400,
 			"files": 1,
 			"bytes": 58720256000,
 			"counts": {
-				"would-fix": 1
+				"pending": 1
 			},
 			"adds": [
 				"Stereo"
@@ -40,12 +40,13 @@
 			"id": "dir:/data/media/movies/Home Videos",
 			"name": "Home Videos",
 			"kind": "folder",
-			"state": "unsupported",
+			"state": "mixed",
 			"added": 1737759600,
-			"files": 1,
-			"bytes": 734003200,
+			"files": 2,
+			"bytes": 1807745024,
 			"counts": {
-				"unsupported": 1
+				"unsupported": 1,
+				"conform": 1
 			},
 			"processed": 1772233500
 		},
@@ -61,5 +62,5 @@
 	],
 	"complete": true,
 	"current": true,
-	"swept": 4
+	"swept": 5
 }

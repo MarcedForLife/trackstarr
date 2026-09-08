@@ -5,7 +5,7 @@ import { request } from '$lib/api';
 import { mark } from '$lib/clock.svelte';
 import { duration, named, soon, titled } from '$lib/format';
 import type { Hold } from '$lib/holds';
-import { pip, verdictHint, verdictLabel } from '$lib/library';
+import { asVerdict, pip, verdictHint, verdictLabel, type Verdict } from '$lib/library';
 // Re-exported so a page reads this module's answers from one import.
 export { duration, named, titled };
 
@@ -262,7 +262,7 @@ export type FileRow = {
 	waiting: WaitingFile | null;
 	// Set once released. Empty on a live or waiting row and for the poll before
 	// the verdict lands.
-	verdict: string;
+	verdict: Verdict | '';
 	detail: string;
 	// Taken off this run, whether or not the thread holding it has noticed.
 	skipped: boolean;
@@ -288,7 +288,7 @@ export function fileRows(run: Run): FileRow[] {
 
 function rowsFor(run: Run): FileRow[] {
 	return [
-		...run.active.map((file) => ({
+		...run.active.map((file): FileRow => ({
 			path: file.path,
 			seconds: file.seconds,
 			live: file,
@@ -297,7 +297,7 @@ function rowsFor(run: Run): FileRow[] {
 			detail: '',
 			skipped: !!file.skipped
 		})),
-		...(run.upcoming ?? []).map((file) => ({
+		...(run.upcoming ?? []).map((file): FileRow => ({
 			path: file.path,
 			seconds: 0,
 			live: null,
@@ -306,12 +306,14 @@ function rowsFor(run: Run): FileRow[] {
 			detail: '',
 			skipped: !!file.skipped
 		})),
-		...(run.recent ?? []).map((done) => ({
+		...(run.recent ?? []).map((done): FileRow => ({
 			path: done.path,
 			seconds: done.seconds,
 			live: null,
 			waiting: null,
-			verdict: done.status,
+			// The run's own answer, narrowed like the library's; a run reports one
+			// word per file and the words are the same ones.
+			verdict: done.status ? asVerdict(done.status) : '',
 			detail: done.detail,
 			skipped: false
 		}))
@@ -367,13 +369,23 @@ export function fileStatus(file: ActiveFile, age = 0): string {
 
 // Reading order: what changed, what needs a look, then the untouched majority.
 // The same order the events page uses.
-const VERDICTS = ['fixed', 'would-fix', 'failed', 'deferred', 'conform', 'skip', 'unsupported'];
+const VERDICTS: Verdict[] = [
+	'modified',
+	'pending',
+	'failed',
+	'deferred',
+	'conform',
+	'skip',
+	'unsupported'
+];
 
 // Carries the palette's one warning colour. Not `deferred`: most deferrals are
 // a download client still holding a hardlink.
 const TROUBLE = new Set(['failed']);
 
-export type Verdict = {
+// One verdict as a run draws it. The word itself is $lib/library's Verdict; this
+// is the row around it.
+export type VerdictRow = {
 	state: string;
 	label: string;
 	hint: string;
@@ -384,22 +396,22 @@ export type Verdict = {
 
 /** A count of verdicts in reading order, with $lib/library's words and colours
  * so the run and its history summary agree. */
-export function tally(counts: Record<string, number>): Verdict[] {
+export function tally(counts: Record<string, number>): VerdictRow[] {
 	return VERDICTS.filter((verdict) => counts[verdict]).map((verdict) => ({
 		state: verdict,
 		label: verdictLabel(verdict),
 		hint: verdictHint(verdict),
 		count: counts[verdict],
-		dot: pip[verdict] ?? 'bg-faint',
+		dot: pip[verdict],
 		trouble: TROUBLE.has(verdict)
 	}));
 }
 
-export function verdicts(run: Run): Verdict[] {
+export function verdicts(run: Run): VerdictRow[] {
 	return tally(run.counts);
 }
 
 /** The count on one line, for where a row is too much. */
-export function phrase(verdict: Verdict): string {
+export function phrase(verdict: VerdictRow): string {
 	return `${verdict.count.toLocaleString()} ${verdict.label.toLowerCase()}`;
 }

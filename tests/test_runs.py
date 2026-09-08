@@ -158,9 +158,9 @@ def test_a_finished_file_keeps_its_row_and_gains_its_verdict():
     (waiting,) = runs.snapshot()["runs"][0]["recent"]
     assert (waiting["path"], waiting["status"]) == ("/data/a.mkv", "")
 
-    runs.tally("r#1", "would-fix", path="/data/a.mkv", detail="add 2.0 downmix")
+    runs.tally("r#1", "pending", path="/data/a.mkv", detail="add 2.0 downmix")
     (settled,) = runs.snapshot()["runs"][0]["recent"]
-    assert settled["status"] == "would-fix"
+    assert settled["status"] == "pending"
     assert settled["detail"] == "add 2.0 downmix"
 
 
@@ -212,10 +212,10 @@ def test_the_same_file_twice_keeps_both_verdicts_apart():
         runs.begin("r#1", "/data/a.mkv")
         runs.finish("r#1", "/data/a.mkv")
     runs.tally("r#1", "failed", path="/data/a.mkv")
-    runs.tally("r#1", "fixed", path="/data/a.mkv")
+    runs.tally("r#1", "modified", path="/data/a.mkv")
     # Newest first out of the snapshot, so the second pass reads at the top.
     assert [row["status"] for row in runs.snapshot()["runs"][0]["recent"]] == [
-        "fixed",
+        "modified",
         "failed",
     ]
 
@@ -234,7 +234,7 @@ def test_a_workers_log_lines_are_kept_with_the_file_it_had_in_hand(caplog):
     assert [line.split("INFO")[-1].strip() for line in kept] == ["ffmpeg -i a.mkv"]
     # Still readable once the file is done with, which is when somebody has a
     # verdict to explain.
-    runs.tally("r#1", "fixed", path="/data/a.mkv")
+    runs.tally("r#1", "modified", path="/data/a.mkv")
     assert runs.lines("r#1", "/data/a.mkv") == kept
     assert runs.lines("r#1", "/data/never-touched.mkv") == []
 
@@ -287,7 +287,7 @@ def test_an_import_retires_itself_once_its_last_file_is_done():
     runs.add_file("r#1")
     runs.seal("r#1")
 
-    runs.tally("r#1", "fixed")
+    runs.tally("r#1", "modified")
     assert runs.snapshot()["runs"], "one file still to go"
     runs.tally("r#1", "conform")
     assert runs.snapshot()["runs"] == []
@@ -298,12 +298,12 @@ def test_an_import_stays_while_its_files_are_still_arriving():
     stay one run, not close and reopen as two."""
     runs.open_run("r#1", runs.IMPORT, label="radarr", filling=True)
     runs.add_file("r#1")
-    runs.tally("r#1", "fixed")
+    runs.tally("r#1", "modified")
     assert runs.snapshot()["runs"], "still being handed files"
 
     runs.add_file("r#1")
     runs.seal("r#1")
-    runs.tally("r#1", "fixed")
+    runs.tally("r#1", "modified")
     assert runs.snapshot()["runs"] == []
 
 
@@ -320,7 +320,7 @@ def test_a_run_with_no_id_is_booked_against_nothing():
     the same guard."""
     runs.begin(None, "/data/a.mkv")
     runs.queue(None, "/data/a.mkv", 300.0)
-    runs.tally(None, "fixed")
+    runs.tally(None, "modified")
     runs.finish(None, "/data/a.mkv")
     assert runs.snapshot()["runs"] == []
 
@@ -381,7 +381,7 @@ def test_a_file_the_run_has_reached_a_verdict_on_cannot_be_skipped():
     runs.open_run("r#1", runs.SWEEP)
     runs.begin("r#1", "/data/f.mkv")
     runs.finish("r#1", "/data/f.mkv")
-    runs.tally("r#1", "fixed", path="/data/f.mkv")
+    runs.tally("r#1", "modified", path="/data/f.mkv")
     assert runs.skip("r#1", "/data/f.mkv") == ""
 
 
@@ -493,7 +493,7 @@ def test_bookkeeping_for_a_run_that_has_already_finished_is_dropped():
     runs.add_file("gone")
     runs.begin("gone", "/data/a.mkv")
     runs.finish("gone", "/data/a.mkv")
-    runs.tally("gone", "fixed")
+    runs.tally("gone", "modified")
     runs.seal("gone")
     runs.close_run("gone")
     assert runs.snapshot()["runs"] == []
@@ -543,7 +543,7 @@ def test_a_dropped_file_leaves_the_run_able_to_retire():
     runs.open_run("i#1", runs.IMPORT, filling=True)
     for _ in range(3):
         runs.add_file("i#1")
-    runs.tally("i#1", "fixed")
+    runs.tally("i#1", "modified")
     runs.seal("i#1")
     assert runs.workload() == (2, 0)
 

@@ -1,6 +1,7 @@
 import { beforeEach, expect, test, vi } from 'vitest';
+import { Snapshot } from '$lib/activity.svelte';
 import { Recheck } from '$lib/recheck.svelte';
-import type { Event } from '$lib/events';
+import type { Event, EventPage } from '$lib/events';
 import type { Card } from '$lib/library';
 import type { Activity, Run } from '$lib/runs';
 
@@ -8,9 +9,9 @@ import type { Activity, Run } from '$lib/runs';
 //: snapshot is given before a snapshot without it reads as it having ended.
 const WARMING_MS = 5000;
 
-// The poller is a timer and a stream subscription, neither of which says
-// anything about what the class does with an answer. Held here so a test can
-// make the look itself, one at a time and in its own order.
+// The poller under the snapshot is a timer and a stream subscription, neither of
+// which says anything about what the class does with an answer. Held here so a
+// test can make the look itself, one at a time and in its own order.
 const harness = vi.hoisted(() => ({ watches: [] as { ask: () => Promise<void> }[] }));
 
 vi.mock('$lib/poll', () => ({
@@ -32,8 +33,8 @@ vi.mock('$lib/library', async (original) => ({
 	runTitles: vi.fn()
 }));
 
-// The class registers its poller's stop during component init, and there is no
-// component here.
+// The classes register a stop during component init, and there is no component
+// here.
 vi.mock('svelte', async (original) => ({
 	...(await original<typeof import('svelte')>()),
 	onDestroy: () => {}
@@ -84,7 +85,7 @@ function summaryOf(over: Partial<Event> = {}): Event {
 		version: '1',
 		run: 'r1',
 		files: 4,
-		counts: { fixed: 1 },
+		counts: { modified: 1 },
 		...over
 	};
 }
@@ -94,15 +95,23 @@ function snapshot(runs: Run[]) {
 	vi.mocked(getActivity).mockResolvedValue(activity(runs));
 }
 
-/** Make the look the poller would have made. */
-const look = () => harness.watches[harness.watches.length - 1].ask();
+/** Let the readers finish what a landing set off, which the snapshot does not
+ * wait for. */
+const settle = () => vi.advanceTimersByTimeAsync(0);
+
+/** Make the look the poller would have made, and let this class read it. */
+const look = async () => {
+	await harness.watches[harness.watches.length - 1].ask();
+	await settle();
+};
 
 let written: number;
 let done: number;
 
-/** A Recheck seeded with this snapshot, counting what it tells the page. */
+/** A Recheck watching a snapshot seeded with these runs, counting what it tells
+ * the page. */
 function watching(runs: Run[] = []): Recheck {
-	return new Recheck(activity(runs), {
+	return new Recheck(new Snapshot(activity(runs)), {
 		asking: () => false,
 		onwritten: () => (written += 1),
 		ondone: () => (done += 1)
@@ -195,6 +204,33 @@ test('a summary the history cannot be reached for leaves the posters to say it',
 	snapshot([]);
 	await look();
 	expect(written).toBe(1);
+	expect(done).toBe(0);
+});
+
+test('a receipt does not land on a run adopted while the history was read', async () => {
+	// Two snapshots can be in the air at once, since a button looks as well as
+	// the poll.
+	snapshot([run()]);
+	const recheck = watching([run()]);
+	await look();
+	expect(recheck.running?.id).toBe('r1');
+
+	// The history the ended run's summary comes from, held until the test hands
+	// it over.
+	let hand: (page: EventPage) => void = () => {};
+	vi.mocked(getEvents).mockReturnValueOnce(new Promise((resolve) => (hand = resolve)));
+	snapshot([]);
+	await look();
+
+	// A run adopted while the history was still out.
+	snapshot([run({ id: 'r2' })]);
+	await look();
+	expect(recheck.running?.id).toBe('r2');
+
+	hand({ events: [summaryOf()], next: null });
+	await settle();
+	// The run on the bar is not the one the summary is about.
+	expect(recheck.summary).toBeNull();
 	expect(done).toBe(0);
 });
 

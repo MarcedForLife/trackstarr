@@ -106,6 +106,7 @@ export async function serve(port, shape, answers = {}) {
 		'/api/library/title': shape.title,
 		'/api/library/links': [],
 		'/api/events': shape.events,
+		'/api/holds': shape.holds,
 		'/api/settings': shape.settings,
 		...answers
 	};
