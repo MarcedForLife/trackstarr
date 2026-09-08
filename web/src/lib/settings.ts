@@ -26,6 +26,16 @@ export type SettingsSnapshot = {
 	zones: string[];
 	// Every extension ALLOWED_EXTS may hold.
 	containers: string[];
+	// What a layout row may be set to: add, keep or remove.
+	actions: string[];
+	// A language row's, narrower: the languages rule does the dropping.
+	lang_actions: string[];
+	// The reserved LANGUAGES name for the title's own language.
+	original_lang: string;
+	// What a new row of each size is made at, as [encoder, rate].
+	stock: Record<string, string[]>;
+	// The rates each size is offered at, low to high. Not a limit.
+	rates: Record<string, string[]>;
 	// The encoders the layout rows offer, in order.
 	codecs: Codec[];
 	// Names whose value is withheld. An empty field means "leave it alone", so

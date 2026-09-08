@@ -715,7 +715,7 @@ def test_a_shelf_says_when_the_rules_have_moved_on(media, monkeypatch):
     stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
     cache((f"{media}/Dune/d.mkv", would_fix()))
     assert library.shelf()["current"] is True
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
+    monkeypatch.setattr(config, "AUDIO_LAYOUTS", ("2.0",))
     library.forget()
     assert library.shelf()["current"] is False
 
@@ -1212,7 +1212,7 @@ def test_a_running_walk_is_current_over_a_file_it_is_replacing(media, monkeypatc
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
     cache((f"{folder}/dune.mkv", would_fix()))
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
+    monkeypatch.setattr(config, "AUDIO_LAYOUTS", ("2.0",))
     library.forget()
     assert library.shelf()["current"] is False
 

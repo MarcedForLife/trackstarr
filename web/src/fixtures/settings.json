@@ -2,7 +2,7 @@
 	"rules": {
 		"languages": {
 			"default": "always",
-			"summary": "Keep audio and subtitle tracks that are untagged, in ALWAYS_KEEP_LANGS (English by default) or in the title's original language while KEEP_ORIGINAL_LANG is on. Drop the rest."
+			"summary": "Drop audio and subtitle tracks in a language LANGUAGES does not name. Untagged tracks always stay."
 		},
 		"commentary": {
 			"default": "never",
@@ -11,10 +11,6 @@
 		"sdh": {
 			"default": "alongside",
 			"summary": "Drop an SDH (deaf and hard-of-hearing) subtitle when the same language keeps a full one. Forced subtitles always stay."
-		},
-		"downmix": {
-			"default": "always",
-			"summary": "Guarantee a non-commentary track for each layout in DOWNMIX_LAYOUTS (2.0 and 5.1 by default), in the title's original language (DOWNMIX_ORIGINAL_LANG) and in each language in DOWNMIX_LANGS, downmixed from the best surviving bigger track of that language. A layout no named language can fill gets one track from the best source in any language. Nothing is upmixed."
 		},
 		"regenerate": {
 			"default": "never",
@@ -34,7 +30,7 @@
 		},
 		"order": {
 			"default": "always",
-			"summary": "Order streams: video, audio in DOWNMIX_LAYOUTS order then other sizes by channel count, subtitles, attachments."
+			"summary": "Order streams: video, audio in AUDIO_LAYOUTS order then other sizes by channel count, subtitles, attachments."
 		},
 		"remux": {
 			"default": "never",
@@ -111,6 +107,71 @@
 		".mkv",
 		".mp4"
 	],
+	"actions": [
+		"downmix",
+		"keep",
+		"remove"
+	],
+	"lang_actions": [
+		"downmix",
+		"keep"
+	],
+	"original_lang": "original",
+	"stock": {
+		"1.0": [
+			"aac",
+			"160k"
+		],
+		"2.0": [
+			"aac",
+			"320k"
+		],
+		"5.1": [
+			"ac3",
+			"640k"
+		],
+		"6.1": [
+			"aac",
+			"704k"
+		],
+		"7.1": [
+			"aac",
+			"768k"
+		]
+	},
+	"rates": {
+		"1.0": [
+			"96k",
+			"128k",
+			"160k",
+			"192k"
+		],
+		"2.0": [
+			"128k",
+			"192k",
+			"256k",
+			"320k",
+			"384k"
+		],
+		"5.1": [
+			"384k",
+			"448k",
+			"512k",
+			"640k"
+		],
+		"6.1": [
+			"512k",
+			"640k",
+			"704k",
+			"768k"
+		],
+		"7.1": [
+			"512k",
+			"640k",
+			"768k",
+			"896k"
+		]
+	},
 	"codecs": [
 		{
 			"name": "aac",
@@ -184,29 +245,18 @@
 			"value": "imports",
 			"env": false
 		},
-		"ALWAYS_KEEP_LANGS": {
+		"LANGUAGES": {
 			"value": [
+				"original",
 				"eng"
 			],
 			"env": false
 		},
-		"KEEP_ORIGINAL_LANG": {
-			"value": true,
-			"env": false
-		},
-		"DOWNMIX_LAYOUTS": {
+		"AUDIO_LAYOUTS": {
 			"value": [
 				"2.0",
 				"5.1"
 			],
-			"env": false
-		},
-		"DOWNMIX_ORIGINAL_LANG": {
-			"value": true,
-			"env": false
-		},
-		"DOWNMIX_LANGS": {
-			"value": [],
 			"env": false
 		},
 		"REGENERATE_SCOPE": {
@@ -214,7 +264,7 @@
 			"env": false
 		},
 		"REGENERATE_BELOW_PERCENT": {
-			"value": "50",
+			"value": "80",
 			"env": false
 		},
 		"ALLOWED_EXTS": {
@@ -336,10 +386,6 @@
 			"value": "alongside",
 			"env": false
 		},
-		"RULE_DOWNMIX": {
-			"value": "always",
-			"env": false
-		},
 		"RULE_REGENERATE": {
 			"value": "never",
 			"env": false
@@ -364,23 +410,7 @@
 			"value": "never",
 			"env": false
 		},
-		"AUDIO_CODEC_2_0": {
-			"value": "aac",
-			"env": false
-		},
-		"AUDIO_CODEC_5_1": {
-			"value": "ac3",
-			"env": false
-		},
-		"AUDIO_BITRATE_2_0": {
-			"value": "320k",
-			"env": false
-		},
-		"AUDIO_BITRATE_5_1": {
-			"value": "640k",
-			"env": false
-		},
-		"SONARR_API_KEY": {
+		"JELLYFIN_API_KEY": {
 			"value": "",
 			"env": false,
 			"set": false
@@ -390,12 +420,12 @@
 			"env": false,
 			"set": true
 		},
-		"JELLYFIN_API_KEY": {
+		"RADARR_API_KEY": {
 			"value": "",
 			"env": false,
 			"set": false
 		},
-		"RADARR_API_KEY": {
+		"SONARR_API_KEY": {
 			"value": "",
 			"env": false,
 			"set": false

@@ -4,7 +4,17 @@ import json
 import os
 from datetime import datetime
 
-from conftest import audio, needed_plan, probe_data, read_events, set_rules, subtitle, video
+from conftest import (
+    audio,
+    needed_plan,
+    probe_data,
+    read_events,
+    set_langs,
+    set_layouts,
+    set_rules,
+    subtitle,
+    video,
+)
 from trackstarr import __version__, config, events, policy, processing, webhook
 from trackstarr.executor import Outcome
 from trackstarr.planner import OutStream, Plan, new_plan, plan_from_probe
@@ -99,7 +109,15 @@ def test_the_rules_a_plan_can_name_are_exactly_the_vocabulary(monkeypatch):
     """Both directions matter. A key invented at a call site reaches the history
     as a name nothing else knows; one in RULE_NAMES that nothing emits
     promises a breakdown the data will never contain."""
-    set_rules(monkeypatch, regenerate="always", commentary="always", remux="always")
+    set_rules(
+        monkeypatch,
+        regenerate="always",
+        commentary="always",
+        remux="always",
+    )
+    # No mode of their own; the row is the switch.
+    set_layouts(monkeypatch, "2.0", "5.1", "7.1:remove")
+    set_langs(monkeypatch, "original", "eng")
     monkeypatch.setattr(config, "REGENERATE_SCOPE", "all")
 
     named = _named(
@@ -223,7 +241,7 @@ def test_sweep_leaves_a_summary_event(monkeypatch, tmp_path):
     assert entry["dry_run"] is True
     assert entry["files"] == 0
     assert entry["library_bytes"] == 0
-    assert entry["config"]["downmix_layouts"] == ["2.0:aac:320k", "5.1:ac3:640k"]
+    assert entry["config"]["audio_layouts"] == ["2.0:downmix:aac:320k", "5.1:downmix:ac3:640k"]
     assert entry["counts"]["fixed"] == 0
     assert entry["seconds"] >= 0
 
@@ -243,7 +261,10 @@ def test_a_rewrites_config_id_resolves_against_the_sweeps_config(
 
     fixed, summary = read_events()
     assert fixed["config_id"] == summary["config_id"]
-    assert summary["config"]["downmix_layouts"] == ["2.0:aac:320k", "5.1:ac3:640k"]
+    assert summary["config"]["audio_layouts"] == [
+        "2.0:downmix:aac:320k",
+        "5.1:downmix:ac3:640k",
+    ]
 
 
 def test_a_webhook_only_install_can_still_resolve_its_config_ids(monkeypatch):
@@ -259,7 +280,10 @@ def test_a_webhook_only_install_can_still_resolve_its_config_ids(monkeypatch):
     startup, would_fix = read_events()
     assert startup["event"] == "config"
     assert would_fix["config_id"] == startup["config_id"]
-    assert startup["config"]["downmix_layouts"] == ["2.0:aac:320k", "5.1:ac3:640k"]
+    assert startup["config"]["audio_layouts"] == [
+        "2.0:downmix:aac:320k",
+        "5.1:downmix:ac3:640k",
+    ]
 
 
 def test_a_restart_under_unchanged_rules_records_nothing(monkeypatch):

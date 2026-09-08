@@ -15,7 +15,6 @@ import time
 import zoneinfo
 
 from . import ENV_TZ, cron, keystore
-from .langs import norm_lang
 
 #: Parse failures, reported by errors(). The bad setting keeps its default.
 _LOAD_ERRORS: list[str] = []
@@ -175,6 +174,11 @@ def rule_variable(rule: str) -> str:
     return RULE_PREFIX + rule.upper()
 
 
+#: Prefixes scanned for rather than read by name, and so not in _READ_NAMES.
+#: The settings API's allow-list asks the same question.
+SCANNED_PREFIXES = (RULE_PREFIX,)
+
+
 def _rule_modes() -> dict[str, str]:
     """Rule name -> the mode its variable states.
 
@@ -323,13 +327,6 @@ def _path_map(name: str) -> list[tuple[str, str]]:
     return pairs
 
 
-def _langs(name: str, default: str) -> set[str]:
-    """Languages normalised to ISO 639-2/B like every track tag, so "en",
-    "English" and "eng" all mean the same. Unrecognised entries pass through
-    and are reported at startup."""
-    return {code for entry in _set(name, default) if (code := norm_lang(entry))}
-
-
 #: The zone the deploy stated, or empty. :data:`trackstarr.ENV_TZ` is the
 #: environment at process start, before a saved zone is written into TZ. A
 #: .env line counts too.
@@ -413,83 +410,22 @@ JELLYFIN_PATH_MAP = _path_map("JELLYFIN_PATH_MAP")
 #: dataset for personal, non-commercial use.
 IMDB_RATINGS = _bool("IMDB_RATINGS", "true")
 
-#: Languages kept regardless of the title's original language.
-ALWAYS_KEEP_LANGS = _langs("ALWAYS_KEEP_LANGS", "eng")
-
-#: Keep the title's original language, as the *arrs report it, on top of
-#: ALWAYS_KEEP_LANGS. Off is for a library watched entirely dubbed.
-KEEP_ORIGINAL_LANG = _bool("KEEP_ORIGINAL_LANG", "true")
+#: Every language this install keeps, in written order, which is which source a
+#: downmix is taken from. Each entry says whether layouts are made in it;
+#: tracks.parse_lang has the forms. "original" is the title's own language, as
+#: the *arrs report it. RULE_LANGUAGES drops everything unlisted.
+LANGUAGES = _ordered("LANGUAGES", "original,eng")
 
 #: What each rule may do: never, alongside a rewrite something else ordered, or
 #: always. Only rules whose variable is set appear; the rest keep policy.RULES'
 #: default.
 RULE_MODES = _rule_modes()
 
-#: Layouts the downmix rule guarantees. A missing one is made from the best
-#: surviving bigger track, never upmixed. The written order is also the track
-#: order: 2.0 first means a disposition-blind player lands on stereo.
-DOWNMIX_LAYOUTS = _ordered("DOWNMIX_LAYOUTS", "2.0,5.1")
-
-#: Guarantee every layout in the title's original language rather than in
-#: whichever language the best source is in.
-DOWNMIX_ORIGINAL_LANG = _bool("DOWNMIX_ORIGINAL_LANG", "true")
-
-#: Languages guaranteed every layout besides the original. A language no
-#: surviving track speaks generates nothing. See planner._choose_downmixes.
-DOWNMIX_LANGS = _langs("DOWNMIX_LANGS", "")
-
-#: Defaults for the two shipped layouts. AAC is what every phone and browser
-#: decodes, and 320k is past transparency for ffmpeg's encoder; AC-3 is what
-#: every receiver takes over HDMI, at the rate discs ship it. layouts.py says
-#: why each layout carries its own.
-_DEFAULT_CODECS = {"2.0": "aac", "5.1": "ac3"}
-_DEFAULT_BITRATES = {"2.0": "320k", "5.1": "640k"}
-
-#: AUDIO_CODEC_5_1 and AUDIO_BITRATE_5_1 set 5.1's encoder and rate. Dots
-#: become underscores in a variable name.
-CODEC_PREFIX = "AUDIO_CODEC_"
-BITRATE_PREFIX = "AUDIO_BITRATE_"
-
-#: For the unread-name check and the settings API's allow-list, which can only
-#: ask whether a name is per-layout since the set follows DOWNMIX_LAYOUTS.
-LAYOUT_PREFIXES = (CODEC_PREFIX, BITRATE_PREFIX)
-
-#: Prefixes scanned for rather than read by name, and so not in _READ_NAMES.
-SCANNED_PREFIXES = (*LAYOUT_PREFIXES, RULE_PREFIX)
-
-
-def codec_variable(name: str) -> str:
-    """Which variable states a layout's encoder, for the startup report."""
-    return CODEC_PREFIX + name.replace(".", "_")
-
-
-def bitrate_variable(name: str) -> str:
-    """Which variable states a layout's rate, for the startup report."""
-    return BITRATE_PREFIX + name.replace(".", "_")
-
-
-def _per_layout(prefix: str, defaults: dict[str, str]) -> dict[str, str]:
-    """Layout name -> what its ``prefix`` variable states.
-
-    Scans both sources so a value for a layout nothing asks for reaches
-    warnings(). The environment scans second, so it wins.
-    """
-    values = dict(defaults)
-    for source in (_SETTINGS, os.environ):
-        for variable, value in source.items():
-            if variable.startswith(prefix) and (stated := value.strip()):
-                values[variable.removeprefix(prefix).replace("_", ".").lower()] = stated
-    return values
-
-
-def _stated(variable: str) -> bool:
-    """Whether either source names the variable, for the half-edit check."""
-    return variable in os.environ or variable in _SETTINGS
-
-
-#: One AUDIO_CODEC_ and one AUDIO_BITRATE_ per layout; layouts.py says why.
-AUDIO_CODECS = _per_layout(CODEC_PREFIX, _DEFAULT_CODECS)
-AUDIO_BITRATES = _per_layout(BITRATE_PREFIX, _DEFAULT_BITRATES)
+#: Every audio layout this install has an opinion about, in written order,
+#: which is also the track order: 2.0 first means a disposition-blind player
+#: lands on stereo. Each entry carries what happens to its size and, where one
+#: is made, how; tracks.split_entry has the forms.
+AUDIO_LAYOUTS = _ordered("AUDIO_LAYOUTS", "2.0,5.1")
 
 #: How far the regenerate rule reaches. "generated" rebuilds our own tracks
 #: whose settings changed; "all" also replaces a real track well below its
@@ -497,9 +433,9 @@ AUDIO_BITRATES = _per_layout(BITRATE_PREFIX, _DEFAULT_BITRATES)
 REGENERATE_SCOPE = _raw("REGENERATE_SCOPE", "generated").strip().lower()
 
 #: How far under its layout's rate, in percent, a real track must be before
-#: "all" calls it low-bitrate. A 448k AC-3 5.1 must not read as low against
-#: 640k.
-REGENERATE_BELOW_PERCENT = _int("REGENERATE_BELOW_PERCENT", "50")
+#: "all" calls it low-bitrate. planner._has_more_to_give is what protects a
+#: decent track, so this can sit high.
+REGENERATE_BELOW_PERCENT = _int("REGENERATE_BELOW_PERCENT", "80")
 
 #: Its valid range. At 100 every variable-rate track reads as low; near 0
 #: none does.
@@ -631,18 +567,6 @@ def errors() -> list[str]:
     # hour and every stamp agrees with it.
     if TZ and (problem := _tz_error(TZ)):
         problems.append(problem)
-    # The file's names are a closed set, so an unread key is a typo silently
-    # meaning its default. The full path and the fix are spelled out because
-    # nobody can reach the settings pages to correct this one.
-    if ignored := sorted(
-        name
-        for name in _SETTINGS
-        if name not in _READ_NAMES and not name.startswith(SCANNED_PREFIXES)
-    ):
-        problems.append(
-            f"{_settings_path()} names settings nothing reads: {', '.join(ignored)}; "
-            "remove or rename them"
-        )
     # Below one: the slot pool hangs, the probe pool refuses to start, and
     # every ffmpeg run times out.
     for name, value in (
@@ -672,29 +596,21 @@ def errors() -> list[str]:
 
 
 def warnings() -> list[str]:
-    """Probable mistakes that must not refuse startup.
-
-    A missing MEDIA_DIRS entry may be a library mounted late. An encoder or
-    rate for a layout nothing asks for is usually half an edit.
-    """
+    """Probable mistakes that must not refuse startup. Library checks are in
+    :func:`media_dir_warnings`, which only the commands reading it run."""
     problems = list(_SEALED_ERRORS)
-    problems += [
-        f"MEDIA_DIRS entry {media_dir} does not exist; the sweep will find nothing there"
-        for media_dir in MEDIA_DIRS
-        if not os.path.isdir(media_dir)
-    ]
-    problems += [
-        f"{variable(name)} is set but DOWNMIX_LAYOUTS does not ask for {name}, "
-        "so nothing reads it"
-        for values, variable in (
-            (AUDIO_CODECS, codec_variable),
-            (AUDIO_BITRATES, bitrate_variable),
+    # An unread key is a typo silently meaning its default. Not fatal, since
+    # everything else still applies. The settings pages write known names only,
+    # so the line carries the path and the fix.
+    if ignored := sorted(
+        name
+        for name in _SETTINGS
+        if name not in _READ_NAMES and not name.startswith(SCANNED_PREFIXES)
+    ):
+        problems.append(
+            f"{_settings_path()} names settings nothing reads: {', '.join(ignored)}; "
+            "remove or rename them"
         )
-        for name in sorted(values)
-        # The variable, not the entry: 2.0 and 5.1 are always present as
-        # defaults.
-        if name not in DOWNMIX_LAYOUTS and _stated(variable(name))
-    ]
     problems += [
         f"{set_name} is set but {unset_name} is not, so that service stays switched off"
         for url_name, key_name in _CREDENTIALLED
@@ -702,3 +618,12 @@ def warnings() -> list[str]:
         if globals()[set_name] and not globals()[unset_name]
     ]
     return problems
+
+
+def media_dir_warnings() -> list[str]:
+    """A missing entry may be a library mounted late, so it is not fatal."""
+    return [
+        f"MEDIA_DIRS entry {media_dir} does not exist; the sweep will find nothing there"
+        for media_dir in MEDIA_DIRS
+        if not os.path.isdir(media_dir)
+    ]

@@ -1217,7 +1217,7 @@ def test_settings_read_for_any_session_written_by_admins(listener, fast_scrypt, 
 
     status, shot, _ = api(listener, "GET", "/api/settings", cookie=viewer_cookie)
     assert status == 200
-    assert shot["settings"]["AUDIO_CODEC_2_0"]["value"] == "aac"
+    assert shot["settings"]["AUDIO_LAYOUTS"]["value"] == ["2.0", "5.1"]
 
     change = {"RULE_COMMENTARY": "always"}
     assert api(listener, "POST", "/api/settings", change, cookie=viewer_cookie)[0] == 403

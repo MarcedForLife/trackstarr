@@ -17,6 +17,7 @@ from trackstarr.policy import Policy
 from trackstarr.processing import ProcessResult
 from trackstarr.status import Status
 from trackstarr.sweep_cache import read
+from trackstarr.tracks import Lang
 
 
 @pytest.mark.parametrize(
@@ -25,7 +26,7 @@ from trackstarr.sweep_cache import read
         # A typo would silently leave the rule doing what it did before.
         ("RULE_MODES", {"langauges": "never"}),
         # A typo would silently drop the layout.
-        ("DOWNMIX_LAYOUTS", ("surround",)),
+        ("AUDIO_LAYOUTS", ("surround",)),
         # A typo (or a bare "true") would silently regenerate nothing.
         ("REGENERATE_SCOPE", "true"),
     ],
@@ -169,7 +170,7 @@ def test_fix_still_matches_arr_items_when_original_is_given(startup_ok, monkeypa
 
 
 def test_fix_refuses_when_an_arr_cannot_answer(startup_ok, monkeypatch, caplog):
-    """lang=None would judge against ALWAYS_KEEP_LANGS alone and drop a foreign
+    """lang=None would leave the original row unresolved and drop a foreign
     film's own track. A one-shot command can wait, or be told the language."""
     monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: LibraryIndex({}, False))
     monkeypatch.setattr(
@@ -181,9 +182,9 @@ def test_fix_refuses_when_an_arr_cannot_answer(startup_ok, monkeypatch, caplog):
 
 
 def test_fix_proceeds_when_the_policy_never_asks_the_language(startup_ok, monkeypatch):
-    """ALWAYS_KEEP_LANGS is the whole keep-list here, so the outage withholds
-    nothing a verdict needed and the fix runs without --original."""
-    monkeypatch.setattr(config, "KEEP_ORIGINAL_LANG", False)
+    """No row names the original language, so the outage withholds nothing a
+    verdict needed and the fix runs without --original."""
+    monkeypatch.setattr(config, "LANGUAGES", ("eng",))
     monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: LibraryIndex({}, False))
     jobs = []
     monkeypatch.setattr(
@@ -259,15 +260,17 @@ def _planned(monkeypatch, plan):
 def test_plan_prints_the_policy_it_judged_under(startup_ok, monkeypatch, capsys):
     """The summary is how a user works out why a file was left alone, so the
     policy belongs on screen beside the verdict, not inferred from env."""
-    plan = Plan(path="f.mkv", original_lang="jpn", keep_langs={"jpn", "eng"})
+    plan = Plan(
+        path="f.mkv", original_lang="jpn", langs=(Lang("jpn", "add"), Lang("eng", "keep"))
+    )
     _planned(monkeypatch, plan)
 
     assert main(["plan", "f.mkv"]) == 0
     out = capsys.readouterr().out
     assert "original language : jpn" in out
-    assert "keeping languages : eng, jpn" in out
-    # Every configured layout, with the bitrate each would be encoded at.
-    assert "downmix layouts" in out
+    assert "languages         : jpn (add), eng (keep)" in out
+    # Every named layout, with the bitrate each added one is encoded at.
+    assert "audio layouts" in out
     assert "conforms, no action" in out
 
 

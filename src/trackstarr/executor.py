@@ -16,9 +16,9 @@ from typing import IO
 
 from . import config
 from .command import ffmpeg_args
-from .layouts import resolved_layouts
 from .media import duration, probe
 from .planner import Plan, SourceSignature
+from .tracks import resolved_layouts
 
 log = logging.getLogger(__name__)
 
@@ -370,8 +370,8 @@ def audio_codec_errors() -> list[str]:
     if encoders is None:
         return []
     return [
-        f"{config.codec_variable(layout.name)}={layout.codec!r} is not an audio encoder "
-        "this ffmpeg provides (see ffmpeg -encoders)"
+        f"AUDIO_LAYOUTS makes {layout.name} with {layout.codec!r}, which is not an audio "
+        "encoder this ffmpeg provides (see ffmpeg -encoders)"
         for layout in resolved_layouts()
         if layout.codec not in encoders
     ]

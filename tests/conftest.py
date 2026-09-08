@@ -203,6 +203,18 @@ def set_rules(monkeypatch, **modes: str) -> None:
     monkeypatch.setattr(config, "RULE_MODES", dict(config.RULE_MODES) | modes)
 
 
+def set_layouts(monkeypatch, *entries: str) -> None:
+    """AUDIO_LAYOUTS in order, each entry as the service reads it:
+    ``set_layouts(monkeypatch, "2.0", "5.1:eac3:448k", "7.1:remove")``."""
+    monkeypatch.setattr(config, "AUDIO_LAYOUTS", tuple(entries))
+
+
+def set_langs(monkeypatch, *entries: str) -> None:
+    """LANGUAGES in order, each entry as the service reads it:
+    ``set_langs(monkeypatch, "original", "eng:keep", "hin:remove")``."""
+    monkeypatch.setattr(config, "LANGUAGES", tuple(entries))
+
+
 def fake_run(returncode: int = 0, stdout: str = "", stderr: str = ""):
     """A subprocess.run result double, for tests that monkeypatch it."""
     return types.SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)

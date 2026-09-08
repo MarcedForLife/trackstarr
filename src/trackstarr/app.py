@@ -67,10 +67,10 @@ def serve() -> None:  # pragma: no cover
     threading.Thread(target=register_webhooks, daemon=True, name="register").start()
     log.info("listening on %s:%s", config.LISTEN_ADDR, config.LISTEN_PORT)
     log.info(
-        "arrs=[%s] servers=[%s] always_keep=%s sweep_at=%s mode=%s",
+        "arrs=[%s] servers=[%s] languages=%s sweep_at=%s mode=%s",
         ", ".join(f"{arr.name}={'on' if arr.enabled else 'off'}" for arr in all_arrs()),
         ", ".join(f"{name}={'on' if on else 'off'}" for name, on in server_status().items()),
-        sorted(config.ALWAYS_KEEP_LANGS),
+        list(config.LANGUAGES),
         config.SWEEP_AT or "disabled",
         config.REWRITE_MODE,
     )

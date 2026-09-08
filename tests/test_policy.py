@@ -6,10 +6,10 @@ import re
 
 import pytest
 
-from conftest import set_rules
-from trackstarr import config, policy
-from trackstarr.layouts import encode_settings, resolved_layouts
+from conftest import set_langs, set_layouts, set_rules
+from trackstarr import config, policy, tracks
 from trackstarr.policy import Policy
+from trackstarr.tracks import Lang, encode_settings, resolved_langs, resolved_layouts
 
 
 def test_fingerprint_covers_every_field():
@@ -24,15 +24,12 @@ def test_fingerprint_covers_every_field():
 #: field needs an entry here (the parametrize fails loudly without one),
 #: which is the moment to make sure from_config actually populates it.
 _FIELD_CHANGES = {
-    "always_keep": ("ALWAYS_KEEP_LANGS", {"eng", "fre"}),
-    "keep_original_lang": ("KEEP_ORIGINAL_LANG", False),
+    "languages": ("LANGUAGES", ("eng", "fre:keep")),
     "allowed_exts": ("ALLOWED_EXTS", {".mkv"}),
     "rule_modes": ("RULE_MODES", {"sdh": "never"}),
     "regenerate_scope": ("REGENERATE_SCOPE", "all"),
     "regenerate_below": ("REGENERATE_BELOW_PERCENT", 40),
-    "downmix_layouts": ("DOWNMIX_LAYOUTS", ("2.0", "7.1")),
-    "downmix_original_lang": ("DOWNMIX_ORIGINAL_LANG", False),
-    "downmix_langs": ("DOWNMIX_LANGS", {"fre"}),
+    "audio_layouts": ("AUDIO_LAYOUTS", ("2.0", "7.1")),
     "skip_hardlinks": ("SKIP_HARDLINKS", False),
     "commentary_re": ("COMMENTARY_RE", re.compile("changed", re.IGNORECASE)),
     "sdh_re": ("SDH_RE", re.compile("changed", re.IGNORECASE)),
@@ -62,7 +59,7 @@ def test_the_digest_identifies_the_policy_it_was_taken_from(monkeypatch):
     two; unchanged across an edit and the trace lies."""
     assert Policy.from_config().digest() == Policy.from_config().digest()
     before = Policy.from_config().digest()
-    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "libfdk_aac", "5.1": "ac3"})
+    set_layouts(monkeypatch, "2.0:libfdk_aac:320k", "5.1:ac3:640k")
     assert Policy.from_config().digest() != before
 
 
@@ -84,11 +81,11 @@ def test_the_tag_is_written_even_for_a_rate_nothing_can_parse():
 
 
 def test_fingerprint_tracks_the_bitrate_through_resolved_layouts(monkeypatch):
-    """The layout rates reach the fingerprint through downmix_layouts rather than
+    """The layout rates reach the fingerprint through audio_layouts rather than
     a field of their own, and still have to invalidate on change, or a sweep
     keeps serving verdicts judged at the old rate."""
     before = Policy.from_config().fingerprint()
-    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "128k", "5.1": "640k"})
+    set_layouts(monkeypatch, "2.0:aac:128k", "5.1:ac3:640k")
     assert Policy.from_config().fingerprint() != before
 
 
@@ -157,13 +154,20 @@ def test_every_rule_riding_along_is_a_warning(monkeypatch):
 
 
 def test_invalid_layouts_catch_typos(monkeypatch):
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0", "surround", "5:1", "0.0"))
+    monkeypatch.setattr(config, "AUDIO_LAYOUTS", ("2.0", "surround", "5:1", "0.0"))
     errors = policy.errors()
     assert len(errors) == 1
     assert all(bad in errors[0] for bad in ("surround", "5:1", "0.0"))
     # A name that is not a layout is never asked for a rate: it has no
     # variable to set, so saying it lacks one would send nobody anywhere.
     assert [(layout.name, layout.channels) for layout in resolved_layouts()] == [("2.0", 2)]
+
+
+def test_every_size_offers_the_rate_it_is_shipped_at():
+    """The page selects a chip by value, so a stock rate missing from its size's
+    notches would land a new row on nothing selected."""
+    for name, (_, bitrate) in tracks.STOCK.items():
+        assert bitrate in tracks.RATES[name], name
 
 
 def test_the_shipped_layout_defaults_resolve_as_documented():
@@ -178,7 +182,7 @@ def test_the_shipped_layout_defaults_resolve_as_documented():
 def test_resolved_layouts_keep_the_configured_order(monkeypatch):
     """Not sorted: the order rule reads this list straight, so sorting it here
     would quietly overrule the setting."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("5.1", "2.0"))
+    monkeypatch.setattr(config, "AUDIO_LAYOUTS", ("5.1", "2.0"))
     assert [layout.name for layout in resolved_layouts()] == ["5.1", "2.0"]
 
 
@@ -187,61 +191,52 @@ def test_one_rate_has_one_spelling(monkeypatch, rate):
     """The resolved rate goes into the file as a stream tag a later pass compares
     for equality, so two spellings would read as a settings change and
     regenerate every track we have made."""
-    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": rate})
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
+    set_layouts(monkeypatch, f"2.0:aac:{rate}")
     assert [layout.bitrate for layout in resolved_layouts()] == ["320k"]
 
 
 def test_a_layout_with_no_rate_is_refused_at_startup(monkeypatch):
     """Nothing is derived from anything else, so a layout past the two shipped
     defaults needs a rate. Skipping it would drop the layout just asked for."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0", "7.1"))
-    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "aac", "7.1": "aac"})
+    set_layouts(monkeypatch, "2.0:aac:320k", "7.1:aac:")
     errors = policy.errors()
     assert len(errors) == 1
-    assert "7.1 with no rate" in errors[0]
-    assert "AUDIO_BITRATE_7_1" in errors[0]
+    assert "'7.1:aac:' states no rate" in errors[0]
 
 
 def test_a_layout_with_no_encoder_is_refused_at_startup(monkeypatch):
     """Same as the rate beside it: a layout past the two shipped defaults names
     its own encoder, and skipping it would drop the layout just asked for."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0", "7.1"))
-    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "7.1": "768k"})
+    set_layouts(monkeypatch, "2.0:aac:320k", "7.1::768k")
     errors = policy.errors()
     assert len(errors) == 1
-    assert "7.1 with no encoder" in errors[0]
-    assert "AUDIO_CODEC_7_1" in errors[0]
+    assert "'7.1::768k' states no encoder" in errors[0]
 
 
 def test_an_encoder_that_cannot_reach_the_layouts_channels_is_refused(monkeypatch):
     """AC-3 tops out at 5.1, and ffmpeg fails outright on the -ac 8 a 7.1 layout
     asks it for. Caught here, or every rewrite of one fails hours later."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("7.1",))
-    monkeypatch.setattr(config, "AUDIO_CODECS", {"7.1": "ac3"})
-    monkeypatch.setattr(config, "AUDIO_BITRATES", {"7.1": "768k"})
+    set_layouts(monkeypatch, "7.1:ac3:768k")
     errors = policy.errors()
     assert len(errors) == 1
-    assert "AUDIO_CODEC_7_1=ac3" in errors[0]
-    assert "at most 6 channels" in errors[0]
+    assert "asks ac3 for 8 channels" in errors[0]
+    assert "it encodes at most 6" in errors[0]
 
 
 def test_an_encoder_the_configured_containers_cannot_hold_is_refused(monkeypatch):
     """Opus into MP4 produces a file the players this is all for decline."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
-    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "libopus"})
+    set_layouts(monkeypatch, "2.0:libopus:320k")
     monkeypatch.setattr(config, "ALLOWED_EXTS", {".mkv", ".mp4"})
     errors = policy.errors()
     assert len(errors) == 1
-    assert "AUDIO_CODEC_2_0=libopus" in errors[0]
+    assert "'2.0:libopus:320k' cannot be written into .mp4" in errors[0]
     assert ".mp4" in errors[0]
 
 
 def test_remuxing_lets_a_matroska_only_encoder_through(monkeypatch):
     """Every rewrite lands as .mkv once the remux rule runs at all, so refusing
     Opus for an MP4 that will not exist on the way out would be wrong."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
-    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "libopus"})
+    set_layouts(monkeypatch, "2.0:libopus:320k")
     monkeypatch.setattr(config, "ALLOWED_EXTS", {".mkv", ".mp4"})
     set_rules(monkeypatch, remux="alongside")
     assert policy.errors() == []
@@ -251,8 +246,7 @@ def test_an_encoder_outside_the_table_is_taken_as_typed(monkeypatch):
     """CODECS is what is known, not what is allowed. An ffmpeg carrying
     something exotic must not be refused for it being unlisted; whether the
     binary really has it is executor.audio_codec_errors' question."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
-    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "libsomething"})
+    set_layouts(monkeypatch, "2.0:libsomething:320k")
     assert policy.errors() == []
     assert [layout.codec for layout in resolved_layouts()] == ["libsomething"]
 
@@ -260,31 +254,26 @@ def test_an_encoder_outside_the_table_is_taken_as_typed(monkeypatch):
 def test_a_lossless_encoder_warns_that_the_rate_does_nothing(monkeypatch):
     """FLAC takes the rate and ignores it, leaving a number on the settings page
     that sizes nothing. Legitimate, so a warning rather than an error."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
-    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "flac"})
+    set_layouts(monkeypatch, "2.0:flac:320k")
     (problem,) = policy.warnings()
-    assert "AUDIO_CODEC_2_0=flac is lossless" in problem
-    assert "AUDIO_BITRATE_2_0" in problem
+    assert "makes 2.0 with flac, which is lossless" in problem
 
 
 def test_a_layout_rate_that_is_not_a_bitrate_is_refused(monkeypatch):
     """Named separately from the layout, so the report says which is wrong."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("5.1",))
-    monkeypatch.setattr(config, "AUDIO_BITRATES", {"5.1": "loud"})
+    set_layouts(monkeypatch, "5.1:ac3:loud")
     errors = policy.errors()
     assert len(errors) == 1
-    assert "AUDIO_BITRATE_5_1='loud'" in errors[0]
+    assert "states 'loud', which is not a bitrate" in errors[0]
 
 
 def test_duplicate_channel_counts_are_refused_at_startup(monkeypatch):
     """Two entries for one channel count generate identical tracks and leave the
     rules judging against an arbitrary rate."""
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("4.2", "5.1"))
-    monkeypatch.setattr(config, "AUDIO_CODECS", {"4.2": "ac3", "5.1": "ac3"})
-    monkeypatch.setattr(config, "AUDIO_BITRATES", {"4.2": "640k", "5.1": "640k"})
+    set_layouts(monkeypatch, "4.2:ac3:640k", "5.1:ac3:640k")
     errors = policy.errors()
     assert len(errors) == 1
-    assert "4.2, 5.1" in errors[0]
+    assert "4.2:ac3:640k, 5.1:ac3:640k are all 6 channels" in errors[0]
 
 
 # What policy.warnings() says about a rule that reads as on and cannot fire.
@@ -292,22 +281,20 @@ def test_duplicate_channel_counts_are_refused_at_startup(monkeypatch):
 # and each is otherwise invisible, since the rule just never appears in a plan.
 
 
-def test_the_original_language_downmix_needs_the_languages_rule_to_keep_it(monkeypatch):
-    """The downmix is made from a surviving track, so dropping that language
-    first leaves the guarantee generating nothing at all."""
-    monkeypatch.setattr(config, "DOWNMIX_ORIGINAL_LANG", True)
-    monkeypatch.setattr(config, "KEEP_ORIGINAL_LANG", False)
+def test_an_empty_list_while_the_rule_drops_the_rest_is_a_warning(monkeypatch):
+    """Only untagged tracks would survive, which is a file nobody asked for."""
+    set_langs(monkeypatch)
+    set_rules(monkeypatch, languages="always")
     (problem,) = policy.warnings()
-    assert "DOWNMIX_ORIGINAL_LANG" in problem
-    assert "KEEP_ORIGINAL_LANG" in problem
+    assert "LANGUAGES" in problem
+    assert "untagged" in problem
     assert policy.errors() == []
 
 
-def test_no_warning_when_the_languages_rule_is_off_entirely(monkeypatch):
-    """Nothing is dropped over language, so the original track survives to be
-    downmixed whatever KEEP_ORIGINAL_LANG says."""
-    monkeypatch.setattr(config, "DOWNMIX_ORIGINAL_LANG", True)
-    monkeypatch.setattr(config, "KEEP_ORIGINAL_LANG", False)
+def test_no_warning_when_the_languages_rule_keeps_the_unlisted(monkeypatch):
+    """Nothing is dropped for being unnamed, so an empty list is just "keep
+    everything"."""
+    set_langs(monkeypatch)
     set_rules(monkeypatch, languages="never")
     assert policy.warnings() == []
 
@@ -330,6 +317,167 @@ def test_regenerating_needs_a_container_that_keeps_the_tag(monkeypatch):
     (problem,) = policy.warnings()
     assert "RULE_REGENERATE" in problem
     assert ".mkv" in problem
+    assert policy.errors() == []
+
+
+def test_a_layout_cannot_be_added_and_removed_at_once(monkeypatch):
+    """One row per size is what makes that unrepresentable. Two rows naming one
+    count would make the track every rewrite and take it away the next."""
+    set_layouts(monkeypatch, "2.0", "5.1", "4.2:remove")
+    (error,) = policy.errors()
+    assert "AUDIO_LAYOUTS entries 4.2:remove, 5.1 are all 6 channels" in error
+
+
+def test_an_unrecognised_layout_action_is_refused(monkeypatch):
+    set_layouts(monkeypatch, "2.0", "7.1:delete")
+    (error,) = policy.errors()
+    assert (
+        "entry '7.1:delete' says 'delete', which is not one of: downmix, keep, remove" in error
+    )
+
+
+def test_a_removed_layout_needs_no_encoder_or_rate(monkeypatch):
+    """Nothing is made at that size, so demanding a codec for it would refuse
+    startup over a field nothing reads."""
+    set_layouts(monkeypatch, "2.0", "7.1:remove")
+    assert policy.errors() == []
+
+
+def test_the_list_changes_name_themselves_in_the_history_without_a_mode():
+    """No RULE_ to set, so they are out of RULES; the events breakdown and the
+    title sheet still tag them, so they are in RULE_NAMES."""
+    for name in ("downmix", "drop_layouts"):
+        assert name not in policy.RULES
+        assert name in policy.RULE_NAMES
+
+
+def test_a_rule_variable_for_a_layout_change_is_refused(monkeypatch):
+    monkeypatch.setattr(config, "RULE_MODES", {"drop_layouts": "always"})
+    (error,) = policy.errors()
+    assert "RULE_DROP_LAYOUTS names no rule" in error
+
+
+def test_removing_a_source_leaves_regeneration_nothing_to_rebuild_from(monkeypatch):
+    """The two undo each other, and only in the future: the rate change that
+    reaches nothing comes months after the sweep that trimmed the file."""
+    set_rules(monkeypatch, regenerate="always")
+    set_layouts(monkeypatch, "2.0", "5.1", "7.1:remove")
+    (problem,) = policy.warnings()
+    assert "AUDIO_LAYOUTS removes tracks" in problem
+    assert "RULE_REGENERATE" in problem
+    assert policy.errors() == []
+
+
+def test_removing_below_the_added_layouts_costs_regeneration_nothing(monkeypatch):
+    """A 2.0 is nobody's rebuild source, so the pair is no warning at all."""
+    set_rules(monkeypatch, regenerate="always")
+    set_layouts(monkeypatch, "2.0:remove", "5.1")
+    assert policy.warnings() == []
+    assert policy.errors() == []
+
+
+# LANGUAGES, the same grammar on the other axis. No remove: RULE_LANGUAGES
+# already drops everything unlisted.
+
+
+@pytest.mark.parametrize(
+    ("entry", "expected"),
+    [
+        ("eng", "eng"),  # already 639-2/B
+        ("en", "eng"),  # 639-1
+        ("English", "eng"),  # an *arr-style name
+        ("fra", "fre"),  # 639-2/T
+        ("original", "original"),  # the reserved name, not a code
+        ("klingon", "klingon"),  # unrecognised: kept verbatim, matches nothing
+        ("und", ""),  # a tag meaning no language at all
+    ],
+)
+def test_a_language_entry_normalises_to_639_2b(entry, expected):
+    assert tracks.lang_name(entry) == expected
+
+
+def test_a_bare_language_adds_and_an_action_is_read_beside_it(monkeypatch):
+    set_langs(monkeypatch, "original", "eng", "fre:keep")
+    assert resolved_langs() == [
+        Lang("original", "downmix"),
+        Lang("eng", "downmix"),
+        Lang("fre", "keep"),
+    ]
+    assert policy.errors() == []
+
+
+def test_a_language_cannot_be_removed(monkeypatch):
+    """The list is what survives, so a row saying otherwise would be a second
+    way to spell what RULE_LANGUAGES already does."""
+    set_langs(monkeypatch, "eng", "hin:remove")
+    (error,) = policy.errors()
+    assert "entry 'hin:remove' says 'remove', which is not one of: downmix, keep" in error
+    assert "RULE_LANGUAGES drops everything the list does not name" in error
+
+
+def test_the_shipped_language_defaults_resolve_as_documented():
+    """The default guarantees every layout in the title's own language and in
+    English, and drops nothing else by itself."""
+    assert resolved_langs() == [Lang("original", "downmix"), Lang("eng", "downmix")]
+
+
+def test_an_entry_naming_no_language_is_refused(monkeypatch):
+    set_langs(monkeypatch, "eng", "und")
+    (error,) = policy.errors()
+    assert "LANGUAGES entry 'und' names no language" in error
+
+
+def test_an_unrecognised_language_action_is_refused(monkeypatch):
+    set_langs(monkeypatch, "eng", "fre:bin")
+    (error,) = policy.errors()
+    assert "entry 'fre:bin' says 'bin', which is not one of: downmix, keep" in error
+
+
+def test_a_language_entry_of_no_usable_shape_is_refused(monkeypatch):
+    set_langs(monkeypatch, "eng:keep:320k")
+    (error,) = policy.errors()
+    assert "entry 'eng:keep:320k' is not a language or a language and an action" in error
+
+
+def test_a_language_cannot_be_named_twice(monkeypatch):
+    """Two spellings of one code are two opinions about one set of tracks."""
+    set_langs(monkeypatch, "eng", "English:keep")
+    (error,) = policy.errors()
+    assert "LANGUAGES entries English:keep, eng are all eng" in error
+
+
+def test_an_explicit_row_beats_the_original_one(monkeypatch):
+    """original is the fallback for a language nothing names, so it never
+    doubles a row that does."""
+    set_langs(monkeypatch, "original:keep", "eng")
+    resolved = Policy.from_config().resolve("eng")
+    assert resolved == (Lang("eng", "downmix"),)
+
+
+def test_the_original_row_resolves_to_the_titles_language(monkeypatch):
+    set_langs(monkeypatch, "original", "eng:keep")
+    assert Policy.from_config().resolve("kor") == (Lang("kor", "downmix"), Lang("eng", "keep"))
+
+
+def test_an_unknown_original_language_drops_its_row(monkeypatch):
+    """An *arr outage leaves nothing to substitute, so the row cannot act."""
+    set_langs(monkeypatch, "original", "eng:keep")
+    assert Policy.from_config().resolve(None) == (Lang("eng", "keep"),)
+
+
+def test_only_a_list_naming_original_waits_for_the_arrs(monkeypatch):
+    set_langs(monkeypatch, "original", "eng")
+    assert Policy.from_config().needs_original_lang() is True
+    set_langs(monkeypatch, "eng")
+    assert Policy.from_config().needs_original_lang() is False
+
+
+def test_a_list_that_only_orders_is_a_warning(monkeypatch):
+    """Legitimate for a library that only reorders, and also what a list edited
+    a row at a time ends up as."""
+    set_layouts(monkeypatch, "2.0:keep", "5.1:keep")
+    (problem,) = policy.warnings()
+    assert "adds and removes no layout" in problem
     assert policy.errors() == []
 
 

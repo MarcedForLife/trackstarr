@@ -1,11 +1,11 @@
-// One height for every inline control so they line up: 44px for a thumb, 36
-// from sm up.
+// One height for every inline control so they line up: 44px for a thumb, 40
+// from sm up. A settings control is 336 wide there, and 36 read as a slot.
 
-export const control = 'h-11 sm:h-9';
+export const control = 'h-11 sm:h-10';
 
 // One radius scaled with the height, so the corner cuts the same share of the
 // side. Anything nested subtracts its own padding.
-export const radius = 'rounded-xl sm:rounded-[10px]';
+export const radius = 'rounded-xl sm:rounded-[11px]';
 
 // The box for every inline text control. 16px on a phone, or iOS Safari zooms
 // the page on focus.
@@ -17,22 +17,30 @@ const filled = `${box} border border-line-strong bg-field disabled:opacity-50`;
 // contents are copied rather than written.
 export const field = `${filled} w-full px-2.5 font-mono`;
 
-// A cell in a row of them, sized by the caller and right-aligned on the digits.
-export const cell = `${filled} flex-none px-2.5 text-right font-mono`;
+// A cell in a row of them, right-aligned on the digits. The caller says how it
+// takes its width, since one of these fills the slack in its row.
+export const cell = `${filled} px-2.5 text-right font-mono`;
 
 // A select, in prose with its native arrow.
 export const picker = `${filled} w-full px-2`;
 
-// A chip in a row of cells: a code shown rather than typed. The caller pads it.
-export const chip = `${filled} flex flex-none items-center font-mono`;
+// A select in a row of cells: mono like them, read from the left since a name
+// is not a number, and tight on the right so the arrow keeps its room.
+export const selectCell = `${filled} pr-1 pl-2.5 text-left font-mono`;
+
+// A chip in a row of cells: a code shown rather than typed. The caller pads it
+// and says how it takes its width, since one of these fills its row.
+export const chip = `${filled} flex items-center font-mono`;
 
 // The empty box at the end of a row where the next entry is typed: dashed, so
 // it reads as a place rather than a value.
-export const ghost = `${box} flex-none border border-dashed border-line-strong bg-transparent px-2.5 font-mono placeholder:text-faint disabled:opacity-50`;
+export const ghost = `${box} border border-dashed border-line-strong bg-transparent px-2.5 font-mono placeholder:text-faint disabled:opacity-50`;
 
-// The cross that removes a row. The padding is the target; the negative margin
-// keeps it from pushing the row around.
-export const removeButton = '-m-2 rounded p-4 text-faint hover:text-danger disabled:opacity-40';
+// The cross that removes a row: 28 wide by 44 tall. Narrow, so the glyph sits
+// one gap off the control beside it rather than adrift in a square, and flush
+// right, so a row ends where a rule row's control does.
+export const removeButton =
+	'-my-2 -ml-2 rounded px-2 py-4 text-faint hover:text-danger disabled:opacity-40';
 
 // A note about the value held, sunken under its row.
 export const noteBox = 'rounded-lg border border-line bg-sunken px-3 py-2 text-[12.5px]';

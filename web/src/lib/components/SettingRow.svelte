@@ -53,7 +53,10 @@
 
 <div
 	class={[
-		'grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_1fr] items-center gap-x-4 border-t border-line py-4 sm:gap-x-8 sm:py-3.5',
+		// One control column from sm, so every description wraps at one width
+		// rather than at whatever sits beside it. Below sm a stacked control has
+		// its own row and an inline one needs the room.
+		'grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_1fr] items-center gap-x-4 border-t border-line py-4 sm:grid-cols-[minmax(0,1fr)_21rem] sm:gap-x-8 sm:py-3.5',
 		// The left rule is the row's own border, so nested rows join into one line.
 		nested && 'border-l pl-3.5 sm:pl-5',
 		dim && 'opacity-50'

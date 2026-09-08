@@ -25,18 +25,16 @@ def read_settings_file() -> dict:
 
 def test_snapshot_reports_defaults_and_sources(settings_state):
     shot = settings.snapshot()
-    assert shot["settings"]["DOWNMIX_LAYOUTS"] == {"value": ["2.0", "5.1"], "env": False}
-    assert shot["settings"]["AUDIO_BITRATE_2_0"] == {"value": "320k", "env": False}
-    assert shot["settings"]["AUDIO_CODEC_2_0"] == {"value": "aac", "env": False}
-    assert shot["settings"]["AUDIO_CODEC_5_1"] == {"value": "ac3", "env": False}
+    assert shot["settings"]["AUDIO_LAYOUTS"] == {"value": ["2.0", "5.1"], "env": False}
+    # The stock table is what a bare entry is made at, so the page can seed a
+    # new row without keeping a second copy of it.
+    assert shot["stock"]["5.1"] == ["ac3", "640k"]
     assert shot["settings"]["REGENERATE_SCOPE"]["value"] == "generated"
     assert shot["settings"]["RULE_LANGUAGES"] == {"value": "always", "env": False}
     assert shot["settings"]["RULE_SDH"]["value"] == "alongside"
     assert shot["settings"]["RULE_REMUX"]["value"] == "never"
-    assert shot["settings"]["ALWAYS_KEEP_LANGS"]["value"] == ["eng"]
-    assert shot["settings"]["KEEP_ORIGINAL_LANG"]["value"] is True
-    assert shot["settings"]["DOWNMIX_ORIGINAL_LANG"]["value"] is True
-    assert shot["settings"]["DOWNMIX_LANGS"]["value"] == []
+    assert shot["settings"]["LANGUAGES"]["value"] == ["original", "eng"]
+    assert shot["original_lang"] == "original"
     assert set(shot["rules"]) == set(policy.RULES)
     assert shot["rules"]["sdh"]["default"] == "alongside"
     assert shot["modes"] == list(policy.MODES)
@@ -53,20 +51,23 @@ def test_snapshot_offers_languages_by_name(settings_state):
 
 
 def test_update_applies_live_and_records_the_config(settings_state):
-    changes = {"RULE_COMMENTARY": "always", "ALWAYS_KEEP_LANGS": ["eng", "jpn"]}
+    changes = {"RULE_COMMENTARY": "always", "LANGUAGES": ["original", "jpn:keep"]}
     assert settings.update(changes) == []
     assert config.RULE_MODES["commentary"] == "always"
-    assert {"eng"} | {"jpn"} == config.ALWAYS_KEEP_LANGS
+    assert config.LANGUAGES == ("original", "jpn:keep")
     assert read_settings_file() == {
         "RULE_COMMENTARY": "always",
-        "ALWAYS_KEEP_LANGS": "eng,jpn",
+        "LANGUAGES": "original,jpn:keep",
     }
     # The save, then the rules it put in force: the change is the cause and
     # the new fingerprint is what it did.
     saved, applied = read_events()
     assert saved["event"] == "settings"
     assert saved["changed"]["RULE_COMMENTARY"] == {"from": "never", "to": "always"}
-    assert saved["changed"]["ALWAYS_KEEP_LANGS"] == {"from": ["eng"], "to": ["eng", "jpn"]}
+    assert saved["changed"]["LANGUAGES"] == {
+        "from": ["original", "eng"],
+        "to": ["original", "jpn:keep"],
+    }
     assert applied["event"] == "config"
     assert ["commentary", "always"] in applied["config"]["rule_modes"]
 
@@ -109,41 +110,22 @@ def test_a_credential_change_is_recorded_without_the_credential(settings_state):
 
 
 def test_a_new_name_is_recorded_as_arriving_rather_than_as_null(settings_state):
-    """A layout brings its own bitrate setting, which had no value before,
-    and the history says so by leaving the near side out."""
+    """A setting with no value before says so by leaving the near side out,
+    rather than a null the page would read as a value."""
     started()
-    layouts = {
-        "DOWNMIX_LAYOUTS": ["2.0", "5.1", "7.1"],
-        "AUDIO_CODEC_7_1": "aac",
-        "AUDIO_BITRATE_7_1": "640k",
-    }
-    assert settings.update(layouts) == []
-    _, saved, _ = read_events()
-    assert saved["changed"]["AUDIO_BITRATE_7_1"] == {"to": "640k"}
+    assert settings.update({"SWEEP_AT": "0 4 * * *"}) == []
+    saved = [entry for entry in read_events() if entry["event"] == "settings"][-1]
+    assert saved["changed"]["SWEEP_AT"] == {"from": "", "to": "0 4 * * *"}
 
 
 def test_a_name_that_goes_away_is_recorded_as_leaving(settings_state):
-    """And the mirror: the layout is dropped, so its bitrate has a near side
-    and no far one rather than a null the page would read as a value."""
+    """And the mirror: a null removes the entry, so the history gives it a near
+    side and no far one rather than a null the page would read as a value."""
     started()
-    assert (
-        settings.update(
-            {
-                "DOWNMIX_LAYOUTS": ["2.0", "5.1", "7.1"],
-                "AUDIO_CODEC_7_1": "aac",
-                "AUDIO_BITRATE_7_1": "640k",
-            }
-        )
-        == []
-    )
-    dropped = {
-        "DOWNMIX_LAYOUTS": ["2.0", "5.1"],
-        "AUDIO_CODEC_7_1": None,
-        "AUDIO_BITRATE_7_1": None,
-    }
-    assert settings.update(dropped) == []
+    assert settings.update({"SWEEP_AT": "0 4 * * *"}) == []
+    assert settings.update({"SWEEP_AT": None}) == []
     saved = [entry for entry in read_events() if entry["event"] == "settings"][-1]
-    assert saved["changed"]["AUDIO_BITRATE_7_1"] == {"from": "640k"}
+    assert saved["changed"]["SWEEP_AT"] == {"from": "0 4 * * *", "to": ""}
 
 
 def test_a_change_startup_would_refuse_is_rolled_back_whole(settings_state):
@@ -164,15 +146,18 @@ def test_null_unsets_a_name(settings_state):
 
 
 def test_an_env_pinned_name_is_refused(settings_state):
-    os.environ["AUDIO_CODEC_2_0"] = "libfdk_aac"
+    os.environ["AUDIO_LAYOUTS"] = "2.0:libfdk_aac:320k"
     try:
         importlib.reload(config)
         shot = settings.snapshot()
-        assert shot["settings"]["AUDIO_CODEC_2_0"] == {"value": "libfdk_aac", "env": True}
-        (problem,) = settings.update({"AUDIO_CODEC_2_0": "aac"})
+        assert shot["settings"]["AUDIO_LAYOUTS"] == {
+            "value": ["2.0:libfdk_aac:320k"],
+            "env": True,
+        }
+        (problem,) = settings.update({"AUDIO_LAYOUTS": ["2.0"]})
         assert "environment" in problem
     finally:
-        os.environ.pop("AUDIO_CODEC_2_0", None)
+        os.environ.pop("AUDIO_LAYOUTS", None)
     # settings_state's teardown reloads config with the variable gone.
 
 
@@ -209,16 +194,16 @@ def test_a_mode_nobody_spells_that_way_is_rolled_back(settings_state):
 def test_layout_order_survives_the_round_trip(settings_state):
     """The UI's drag writes the order it was given, and reads it back; a
     snapshot that sorted like the other lists would undo every drag."""
-    assert settings.update({"DOWNMIX_LAYOUTS": ["5.1", "2.0"]}) == []
-    assert read_settings_file() == {"DOWNMIX_LAYOUTS": "5.1,2.0"}
-    assert config.DOWNMIX_LAYOUTS == ("5.1", "2.0")
-    assert settings.snapshot()["settings"]["DOWNMIX_LAYOUTS"]["value"] == ["5.1", "2.0"]
+    assert settings.update({"AUDIO_LAYOUTS": ["5.1", "2.0"]}) == []
+    assert read_settings_file() == {"AUDIO_LAYOUTS": "5.1,2.0"}
+    assert config.AUDIO_LAYOUTS == ("5.1", "2.0")
+    assert settings.snapshot()["settings"]["AUDIO_LAYOUTS"]["value"] == ["5.1", "2.0"]
 
 
 def test_the_low_bitrate_threshold_saves_and_is_held_to_its_band(settings_state):
     """The rules page's own field: it saves as the string the file holds, and a
     percent outside the band the page offers is rolled back whole."""
-    assert settings.snapshot()["settings"]["REGENERATE_BELOW_PERCENT"]["value"] == "50"
+    assert settings.snapshot()["settings"]["REGENERATE_BELOW_PERCENT"]["value"] == "80"
     assert settings.update({"REGENERATE_BELOW_PERCENT": "75"}) == []
     assert config.REGENERATE_BELOW_PERCENT == 75
     (problem,) = settings.update({"REGENERATE_BELOW_PERCENT": "99"})
@@ -375,22 +360,18 @@ def test_a_path_map_round_trips_as_the_pairs_it_was_written_as(settings_state):
     assert shot["value"] == ["/data/media=/srv/media"]
 
 
-def test_a_new_layout_needs_its_encoder_and_rate(settings_state):
-    """Both, and named separately, so the page can say which box is empty."""
-    problems = settings.update({"DOWNMIX_LAYOUTS": ["2.0", "5.1", "7.1"]})
-    assert any("7.1 with no rate" in problem for problem in problems)
-    assert any("7.1 with no encoder" in problem for problem in problems)
-    assert (
-        settings.update(
-            {
-                "DOWNMIX_LAYOUTS": ["2.0", "5.1", "7.1"],
-                "AUDIO_CODEC_7_1": "aac",
-                "AUDIO_BITRATE_7_1": "768k",
-            }
-        )
-        == []
-    )
-    assert config.AUDIO_BITRATES["7.1"] == "768k"
+def test_a_layout_off_the_stock_table_needs_its_own_encoder_and_rate(settings_state):
+    """A size nothing ships an opinion for has to state one, and the refusal
+    says how to write it."""
+    (problem,) = settings.update({"AUDIO_LAYOUTS": ["2.0", "5.1", "4.0"]})
+    assert "4.0:ENCODER:RATE" in problem
+    assert settings.update({"AUDIO_LAYOUTS": ["2.0", "5.1", "4.0:aac:384k"]}) == []
+    assert config.AUDIO_LAYOUTS == ("2.0", "5.1", "4.0:aac:384k")
+
+
+def test_a_bare_layout_the_table_knows_is_taken_as_shipped(settings_state):
+    """7.1 has a stock encoder and rate, so naming it alone is enough."""
+    assert settings.update({"AUDIO_LAYOUTS": ["2.0", "5.1", "7.1"]}) == []
 
 
 @pytest.mark.parametrize(
@@ -449,18 +430,18 @@ def test_a_codec_this_ffmpeg_lacks_is_rolled_back(settings_state, monkeypatch):
     """The page accepted any string, and a typo surfaced as every rewrite
     failing. Checked only on a save that names a codec, since it shells out."""
     monkeypatch.setattr(executor, "audio_encoders", lambda: frozenset({"aac", "ac3"}))
-    (problem,) = settings.update({"AUDIO_CODEC_2_0": "acc"})
+    (problem,) = settings.update({"AUDIO_LAYOUTS": ["2.0:acc:320k", "5.1"]})
     assert "acc" in problem
-    assert config.AUDIO_CODECS["2.0"] == "aac"
-    assert settings.update({"AUDIO_CODEC_2_0": "ac3"}) == []
-    assert config.AUDIO_CODECS["2.0"] == "ac3"
+    assert config.AUDIO_LAYOUTS == ("2.0", "5.1")
+    assert settings.update({"AUDIO_LAYOUTS": ["2.0:ac3:320k", "5.1"]}) == []
+    assert config.AUDIO_LAYOUTS == ("2.0:ac3:320k", "5.1")
 
 
 def test_an_ffmpeg_that_cannot_be_asked_refuses_nothing(settings_state, monkeypatch):
     """A build whose encoder list could not be read is nobody's typo, and a
     save it blocked would be unfixable from the page."""
     monkeypatch.setattr(executor, "audio_encoders", lambda: None)
-    assert settings.update({"AUDIO_CODEC_2_0": "whatever"}) == []
+    assert settings.update({"AUDIO_LAYOUTS": ["2.0:whatever:320k"]}) == []
 
 
 def test_an_unrelated_save_never_asks_ffmpeg_anything(settings_state, monkeypatch):

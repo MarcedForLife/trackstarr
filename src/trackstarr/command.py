@@ -4,10 +4,10 @@ decides, this renders, :mod:`trackstarr.executor` runs, which is what lets
 
 import os
 
-from .layouts import encode_settings
 from .media import GENERATED_TAG
 from .planner import Plan
 from .policy import MUXERS
+from .tracks import encode_settings
 
 
 def ffmpeg_args(plan: Plan, dest: str) -> list[str]:

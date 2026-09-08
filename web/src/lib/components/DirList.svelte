@@ -82,7 +82,7 @@
 			<!-- An unmounted path is legitimate; one with a colon cannot be saved. -->
 			{#if answer && answer.state !== 'ok'}
 				<p
-					class={`pr-9 text-[12.5px] ${answer.state === 'invalid' ? 'text-danger' : 'text-faint'}`}
+					class={`pr-7 text-[12.5px] ${answer.state === 'invalid' ? 'text-danger' : 'text-faint'}`}
 				>
 					{answer.detail}
 				</p>

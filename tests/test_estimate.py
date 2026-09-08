@@ -32,7 +32,7 @@ def test_a_plans_shape_is_the_downmixes_it_makes():
 
 def test_a_shape_is_what_the_file_needs_rather_than_what_the_rules_ask_for():
     """A file that already has its 5.1 and only wants a stereo track is a
-    one-encode rewrite, whatever DOWNMIX_LAYOUTS names."""
+    one-encode rewrite, whatever AUDIO_LAYOUTS names."""
     assert shape(_generated("2.0")) == ("2.0",)
 
 

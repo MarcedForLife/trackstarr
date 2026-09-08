@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import read_events, set_rules
+from conftest import read_events, set_layouts, set_rules
 from trackstarr import config, executor, planner, sweep_cache
 from trackstarr.cli import main as cli_main
 from trackstarr.executor import Outcome, apply_plan
@@ -78,7 +78,7 @@ def test_regenerate_downmix_end_to_end(make_file, monkeypatch):
     path = make_file("f.mkv", COMMENTARY_CASE)
     assert rewrite(build_plan(path, "eng")) is Outcome.APPLIED
 
-    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "128k", "5.1": "640k"})
+    set_layouts(monkeypatch, "2.0:aac:128k", "5.1:ac3:640k")
     assert not build_plan(path, "eng").needed
 
     set_rules(monkeypatch, regenerate="always")
@@ -247,15 +247,31 @@ def test_cover_art_is_removed(make_file):
     assert [stream["codec_name"] for stream in streams_of(path, "video")] == ["h264"]
 
 
-def test_korean_original_downmixes_from_korean(make_file):
+def test_the_dropped_layout_is_really_gone_and_its_downmixes_are_really_there(
+    make_file, monkeypatch
+):
+    """The one change that deletes something a re-rip is the only way back
+    from, so it is worth proving against a real file rather than a probe."""
+    set_layouts(monkeypatch, "2.0", "5.1", "7.1:remove")
+    path = make_file("f.mkv", [(8, "eng", "")])
+    plan = build_plan(path, "eng")
+    assert rewrite(plan) is Outcome.APPLIED
+
+    audio = streams_of(path, "audio")
+    assert [stream["channels"] for stream in audio] == [2, 6]
+    assert not build_plan(path, "eng").needed
+
+
+def test_korean_original_downmixes_from_korean_and_english(make_file):
+    """The default list adds both, so the kept English dub gets a stereo track
+    of its own rather than leaving the Korean one to answer for it."""
     path = make_file("f.mkv", [(6, "kor", ""), (6, "eng", ""), (2, "fre", "")])
     plan = build_plan(path, "kor")
     assert rewrite(plan) is Outcome.APPLIED
 
     assert "fre" not in langs_of(path, "audio")
     stereo = [stream for stream in streams_of(path, "audio") if stream["channels"] == 2]
-    assert len(stereo) == 1
-    assert stereo[0]["tags"]["language"] == "kor"
+    assert {stream["tags"]["language"] for stream in stereo} == {"kor", "eng"}
 
 
 def test_rewrite_is_idempotent(make_file):

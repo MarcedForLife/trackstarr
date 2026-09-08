@@ -19,15 +19,14 @@ answer for a change worth having but not worth a 60GB rewrite of its own.
 
 | Rule            | Unset       |                                                                                                                                                                                            |
 | --------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `languages`     | `always`    | Keep audio and subtitles in `ALWAYS_KEEP_LANGS` (English by default), the title's original language, or untagged. Drop the rest. The original language comes from Radarr or Sonarr, so no TMDB key is needed |
+| `languages`     | `always`    | Drop audio and subtitles in a language `LANGUAGES` does not name. Untagged tracks always stay                                                                                              |
 | `commentary`    | `never`     | Drop commentary, described-audio and isolated-score tracks. They are never downmix sources either way                                                                                      |
 | `sdh`           | `alongside` | Drop an SDH subtitle when the same language keeps a full one. Forced subtitles are always kept                                                                                             |
-| `downmix`       | `always`    | Guarantee a non-commentary track for every layout in `DOWNMIX_LAYOUTS` (2.0 and 5.1), made from the best surviving bigger track of the same language. AAC at 320k and AC-3 at 640k out of the box |
 | `regenerate`    | `never`     | Rebuild downmixes whose settings have moved on; see `REGENERATE_SCOPE`. Matroska only                                                                                                      |
 | `cover_art`     | `always`    | Drop embedded artwork, which players read as a second video track                                                                                                                          |
 | `junk_titles`   | `alongside` | Clear release junk from track and container titles                                                                                                                                        |
 | `stray_streams` | `alongside` | Drop data and timecode streams nothing plays                                                                                                                                              |
-| `order`         | `always`    | Video, then audio in `DOWNMIX_LAYOUTS` order, then subtitles, then attachments                                                                                                            |
+| `order`         | `always`    | Video, then audio in `AUDIO_LAYOUTS` order, then subtitles, then attachments                                                                                                              |
 | `remux`         | `never`     | Rewrite MP4 and M4V into Matroska, where every rule works. `alongside` converts a file something else is already rewriting                                                                 |
 
 Every rule is idempotent, so a sweep is safe to run as often as you like. A rule
@@ -35,6 +34,76 @@ riding along never causes a rewrite, even indirectly: what the others would do
 is decided first, with the ride-alongs held back. Trackstarr never transcodes
 video, never upmixes, and never touches a file whose every audio track would
 fail the language test.
+
+## Audio layouts
+
+`AUDIO_LAYOUTS` is one ordered list of every size this library has an opinion
+about, each entry carrying that opinion. Out of the box it is `2.0,5.1`, both
+downmixed at the rates below.
+
+```
+AUDIO_LAYOUTS: 2.0:libopus:192k,5.1:eac3:448k,7.1:remove
+```
+
+An entry is read by how many colon-separated fields it holds:
+
+| Entry           | |
+| --------------- | ------------------------------------------------------------------------------------------------------ |
+| `5.1`           | Downmix, at the encoder and rate shipped for that size: 1.0, 2.0, 5.1, 6.1 and 7.1 have one             |
+| `5.1:eac3:448k` | Downmix, at that encoder and rate. Any other size has to say, since nothing is guessed                  |
+| `7.1:remove`    | Delete every track this size, wherever a file has one                                                   |
+| `7.1:keep`      | Leave the size alone. Worth naming for the order alone, which is the whole list's                       |
+
+Downmix guarantees a non-commentary track this size exists, made from the best
+surviving bigger track of the same language. It is the only action that encodes
+anything, so it is the only one carrying an encoder and rate, and a size with
+nothing bigger above it is simply not made.
+
+One entry per channel count, so a size cannot be downmixed and removed at once:
+that pair would have every rewrite make a track the next takes away. Startup
+refuses two entries of one count for the same reason, `4.2` and `5.1` included.
+
+Downmixing and removing have no `RULE_` of their own. The entry is the whole
+switch, and both always act, since making or removing a mix is worth its own
+rewrite where a junk title is not. The written order is the audio track order:
+2.0 first means a disposition-blind player lands on stereo.
+
+Removing is the one thing here you cannot take back. Every other rule adds a
+track or drops something a re-rip would restore; a removed mix is gone, and
+nothing can be downmixed or regenerated from it afterwards. It runs after the
+downmix, so a track on its way out is still the source for the ones replacing
+it, and it never takes a file's last audio track. Both directions are useful:
+removing 7.1 keeps the source mixes off the disk once their downmixes exist,
+and downmixing only 5.1 while removing 2.0 suits a house that plays through a
+receiver and nothing else.
+
+## Languages
+
+`LANGUAGES` is the same list on the other axis: every language the library
+keeps, and which of them layouts are made in. A track is generated where a row
+of each says downmix, the one action both lists share. Out of the box it is
+`original,eng`.
+
+```
+LANGUAGES: original,eng,fre:keep
+```
+
+| Entry      | |
+| ---------- | ------------------------------------------------------------- |
+| `eng`      | Downmix: keep it, and guarantee every downmixed layout in it   |
+| `fre:keep` | Keep it, generate nothing                                     |
+
+There is no `remove`, because everything the list does not name is already
+dropped by `RULE_LANGUAGES`: `never` keeps them, `always` drops them,
+`alongside` drops them only on a file something else is already rewriting.
+
+`original` is whatever Radarr or Sonarr reports the title was made in, so no
+TMDB key is needed. It applies only to a language no row names explicitly, and
+where the *arrs cannot answer, the row does not act.
+
+Names normalise as track tags do, so `en`, `eng` and `English` all mean the
+same. The written order is which language a downmix is taken from when none of
+the downmixed ones has a track to use.
 
 ## Quick start
 
@@ -152,7 +221,7 @@ $ trackstarr plan --original eng "Tears of Steel (2012).mkv"
 Tears of Steel (2012).mkv
   original language : eng
   keeping languages : eng
-  downmix layouts   : 2.0 (aac 320k), 5.1 (ac3 640k)
+  audio layouts     : 2.0 (aac 320k), 5.1 (ac3 640k)
   - add 2.0 downmix from stream 3 (6ch eng)
   ffmpeg -i ... -map 0:0 -map 0:3 -map 0:1 -map 0:2 -map 0:3 ...
 ```
@@ -162,29 +231,24 @@ Tears of Steel (2012).mkv
 Every setting is an environment variable, and all but the service settings
 marked below can also live in `/config/settings.json`, which is the file the
 settings pages write. The environment wins where both name a setting, and a
-key nothing reads refuses startup as the typo it usually is.
+key nothing reads is warned about at startup as the typo it usually is.
 
 ### Rules
 
 | Variable                    | Default          |                                                                                                    |
 | --------------------------- | ---------------- | -------------------------------------------------------------------------------------------------- |
-| `ALWAYS_KEEP_LANGS`         | `eng`            | comma-separated; `en`, `eng` and `English` all work                                                |
-| `KEEP_ORIGINAL_LANG`        | `true`           | also keep the title's own language                                                                 |
+| `LANGUAGES`                 | `original,eng`   | every language named, in downmix source order, each with what happens to it; see above             |
 | `RULE_LANGUAGES` and so on  | see above        | one per rule: `never`, `alongside` or `always`                                                     |
 | `ALLOWED_EXTS`              | `.mkv,.mp4,.m4v` | containers a rewrite may touch                                                                     |
 | `COMMENTARY_PATTERN`        | see `config.py`  | regex; likewise `SDH_PATTERN`, `FORCED_PATTERN` and `JUNK_TITLE_PATTERN`                           |
 
-### Downmix
+### Audio
 
 | Variable                     | Default         |                                                                                                      |
 | ---------------------------- | --------------- | ---------------------------------------------------------------------------------------------------- |
-| `DOWNMIX_LAYOUTS`            | `2.0,5.1`       | layouts guaranteed to exist, in output order; each needs a codec and bitrate below                   |
-| `AUDIO_CODEC_2_0` / `_5_1`   | `aac` / `ac3`   | one encoder per layout; `eac3`, `libopus`, `flac` or anything your ffmpeg carries                    |
-| `AUDIO_BITRATE_2_0` / `_5_1` | `320k` / `640k` | one rate per layout                                                                                  |
-| `DOWNMIX_ORIGINAL_LANG`      | `true`          | guarantee each layout in the title's own language                                                    |
-| `DOWNMIX_LANGS`              | (unset)         | more languages guaranteed each layout                                                                |
+| `AUDIO_LAYOUTS`              | `2.0,5.1`       | every layout named, in output order, each with what happens to it; see above                         |
 | `REGENERATE_SCOPE`           | `generated`     | how far `RULE_REGENERATE` reaches: `generated` rebuilds this tool's own tracks when their settings change, `all` also replaces low-bitrate real tracks |
-| `REGENERATE_BELOW_PERCENT`   | `50`            | how far under its layout's rate a track must report before `all` replaces it; 10 to 90               |
+| `REGENERATE_BELOW_PERCENT`   | `80`            | how far under its layout's rate a track must report before `all` replaces it; 10 to 90               |
 
 ### Connections
 

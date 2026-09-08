@@ -108,6 +108,7 @@
 		<SettingRow label="Theme" desc="System follows the operating system." stack>
 			{#snippet children({ labelledBy, describedBy })}
 				<Segmented
+					fill
 					{options}
 					{labelledBy}
 					{describedBy}
@@ -119,7 +120,7 @@
 
 		<SettingRow
 			label="Palette"
-			desc="The colours everything is drawn in. Each has a light and a dark version; the theme above picks which."
+			desc="The colours everything is drawn in. Each has a light and a dark version, and Theme picks which."
 			align="start"
 			stack
 		>
@@ -152,13 +153,14 @@
 
 		<SettingRow
 			label="Tilt spread"
-			desc="How far the lean spreads to neighbouring posters. Narrow turns the next ones a little; Wide moves the whole row."
+			desc="How far the lean spreads to neighbouring posters. Narrow turns the next ones a little. Wide moves the whole row."
 			nested
 			dim={display.effects === 'off'}
 			stack
 		>
 			{#snippet children({ labelledBy, describedBy })}
 				<Segmented
+					fill
 					options={spreadOptions}
 					{labelledBy}
 					{describedBy}
@@ -171,13 +173,14 @@
 
 		<SettingRow
 			label="Sheen"
-			desc="The highlight a poster catches as it turns. Gloss is plain; Foil adds one band of colour, Holo several. Each is a blended layer the compositor must keep, so None is the steadiest."
+			desc="The highlight a poster catches as it turns. Gloss is plain, Foil adds one band of colour and Holo several. Each is a blended layer the compositor must keep, so None is the steadiest."
 			nested
 			dim={display.effects === 'off'}
 			stack
 		>
 			{#snippet children({ labelledBy, describedBy })}
 				<Segmented
+					fill
 					options={sheenOptions}
 					{labelledBy}
 					{describedBy}
@@ -195,6 +198,7 @@
 		>
 			{#snippet children({ labelledBy, describedBy })}
 				<Segmented
+					fill
 					options={artOptions}
 					{labelledBy}
 					{describedBy}
@@ -209,7 +213,7 @@
 		<!-- No counts: there is no shelf on this page. -->
 		<SettingRow
 			label="Library filter"
-			desc="The verdicts the grid opens filtered to. None selected means All. The row above the grid still changes it for a visit; this is the starting point."
+			desc="The verdicts the grid opens filtered to. None selected means All. The row above the grid still changes it for a visit. This is the starting point."
 			full
 		>
 			{#snippet children({ labelledBy, describedBy })}
@@ -225,11 +229,12 @@
 
 		<SettingRow
 			label="Missing titles"
-			desc="Whether the grid shows titles Radarr or Sonarr track with nothing downloaded. Hidden shows the library as it is on disk; the Missing filter still reaches them."
+			desc="Whether the grid shows titles Radarr or Sonarr track with nothing downloaded. Hidden shows the library as it is on disk. The Missing filter still reaches them."
 			stack
 		>
 			{#snippet children({ labelledBy, describedBy })}
 				<Segmented
+					fill
 					options={shownOptions}
 					{labelledBy}
 					{describedBy}
@@ -241,11 +246,12 @@
 
 		<SettingRow
 			label="Unsupported titles"
-			desc="Whether the grid shows titles whose files are all in a container the rules never rewrite, such as AVI. Nothing here can change them; the Unsupported filter still reaches them."
+			desc="Whether the grid shows titles whose files are all in a container the rules never rewrite, such as AVI. Nothing here can change them. The Unsupported filter still reaches them."
 			stack
 		>
 			{#snippet children({ labelledBy, describedBy })}
 				<Segmented
+					fill
 					options={shownOptions}
 					{labelledBy}
 					{describedBy}
@@ -257,7 +263,7 @@
 
 		<SettingRow
 			label="Library order"
-			desc="The order the grid opens in. The menu above the grid still changes it for a visit; this is the starting point."
+			desc="The order the grid opens in. The menu above the grid still changes it for a visit. This is the starting point."
 			stack
 		>
 			{#snippet children({ labelledBy, describedBy })}
@@ -273,12 +279,13 @@
 
 		<SettingRow
 			label="Direction"
-			desc="Which way that order runs. Descending leads with the most of whatever it sorts on: the newest, the biggest, the worst. Changing the order above resets this to that order's default."
+			desc="Which way that order runs. Descending leads with the most of whatever it sorts on: the newest, the biggest, the worst. Changing Library order resets this to that order's default."
 			nested
 			stack
 		>
 			{#snippet children({ labelledBy, describedBy })}
 				<Segmented
+					fill
 					options={flowOptions}
 					{labelledBy}
 					{describedBy}

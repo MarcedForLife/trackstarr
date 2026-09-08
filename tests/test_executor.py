@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import fake_run, needed_plan
+from conftest import fake_run, needed_plan, set_layouts
 from trackstarr import config, executor
 from trackstarr.executor import Outcome, apply_plan, audio_codec_errors, work_dir_errors
 from trackstarr.planner import OutStream, Plan, SourceSignature
@@ -352,22 +352,25 @@ def test_an_audio_codec_ffmpeg_cannot_encode_is_refused(monkeypatch, codec):
     """A bad codec has to fail the restart that introduced it, not the first
     rewrite hours later."""
     _fake_encoders(monkeypatch)
-    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "aac", "5.1": codec})
+    set_layouts(monkeypatch, "2.0:aac:320k", f"5.1:{codec}:640k")
     errors = audio_codec_errors()
     assert len(errors) == 1
     assert repr(codec) in errors[0]
     # Named by the variable to go and fix, not by the encoder, since each
     # layout states its own and only one of them is wrong.
-    assert "AUDIO_CODEC_5_1" in errors[0]
+    assert "makes 5.1 with" in errors[0]
 
 
 def test_every_layout_missing_an_encoder_is_named(monkeypatch):
     """One line each: two layouts on a typo'd encoder are two variables to fix."""
     _fake_encoders(monkeypatch)
-    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "acc", "5.1": "acc"})
+    set_layouts(monkeypatch, "2.0:acc:320k", "5.1:acc:640k")
     errors = audio_codec_errors()
     assert len(errors) == 2
-    assert {"AUDIO_CODEC_2_0", "AUDIO_CODEC_5_1"} == {error.split("=")[0] for error in errors}
+    assert {error.split(" with ")[0] for error in errors} == {
+        "AUDIO_LAYOUTS makes 2.0",
+        "AUDIO_LAYOUTS makes 5.1",
+    }
 
 
 def test_missing_ffmpeg_is_not_this_checks_problem(monkeypatch):

@@ -135,7 +135,7 @@ def test_unreadable_file_is_never_cached(cache_path, tmp_path):
 @pytest.mark.parametrize(
     ("module", "attribute", "changed"),
     [
-        (config, "ALWAYS_KEEP_LANGS", {"eng", "fre"}),
+        (config, "LANGUAGES", ("eng", "fre")),
         (policy, "__version__", "0.0.0-test"),
     ],
     ids=["a rule setting", "the package version"],
@@ -459,7 +459,7 @@ def test_update_leaves_a_cache_judged_under_other_rules_alone(state_cache, media
     saved_cache(str(state_cache), (media, cache_key(media, "eng"), CONFORM))
     before = state_cache.read_text()
 
-    stale = fingerprint() | {"always_keep": ["fre"]}
+    stale = fingerprint() | {"languages": ["fre:add"]}
     sweep_cache.update(media, cache_key(media, "eng"), Verdict(Status.WOULD_FIX), stale)
     assert state_cache.read_text() == before
 
@@ -599,7 +599,7 @@ def test_a_view_is_refused_to_rules_it_was_not_judged_under(cache_path, media):
     cache.record(media, cache_key(media, "eng"), CONFORM)
     cache.publish_view()
     with sweep_cache.live(cache):
-        assert sweep_cache.live_view(fingerprint() | {"always_keep": ["fre"]}) is None
+        assert sweep_cache.live_view(fingerprint() | {"languages": ["fre:add"]}) is None
 
 
 def test_a_second_walk_takes_the_slot_and_says_so(cache_path, media, caplog):

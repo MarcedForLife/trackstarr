@@ -152,12 +152,19 @@ def cmd_plan(files: list[str], original: str | None) -> int:
         # One row per policy fact, blank values omitted.
         rows = [
             ("original language", plan.original_lang or "unknown"),
-            ("keeping languages", ", ".join(sorted(plan.keep_langs)) or "(none)"),
+            # One row per list, each entry saying what happens to it. Languages
+            # are the resolved ones, so "original" reads as the code it meant.
             (
-                "downmix layouts",
+                "languages",
+                ", ".join(f"{lang.name} ({lang.action})" for lang in plan.langs) or "(none)",
+            ),
+            (
+                "audio layouts",
                 ", ".join(
                     f"{layout.name} ({layout.codec} {layout.bitrate})"
-                    for layout in plan.policy.downmix_layouts
+                    if layout.downmixes
+                    else f"{layout.name} ({layout.action})"
+                    for layout in plan.policy.audio_layouts
                 ),
             ),
             # Grouped by mode, strongest first.
@@ -199,8 +206,8 @@ def cmd_fix(files: list[str], original: str | None) -> int:
     # One run per invocation, so a multi-file fix groups in the history.
     jobs, arrs_answered = _resolve_jobs(files, original, match_items=True, run=events.run_id())
     if not arrs_answered and not original and policy.Policy.from_config().needs_original_lang():
-        # lang=None would judge against ALWAYS_KEEP_LANGS alone and drop a
-        # foreign film's own track.
+        # lang=None leaves the original row unresolved, dropping a foreign
+        # film's own track.
         log.error(
             "a *arr library could not be listed, so original languages are unknown; "
             "pass --original or retry once it answers"
@@ -325,7 +332,7 @@ COMMANDS = {
 }
 
 
-#: The commands that walk MEDIA_DIRS, and so want config.warnings().
+#: The commands that walk MEDIA_DIRS, and so want config.media_dir_warnings().
 LIBRARY_COMMANDS = frozenset({"serve", "sweep"})
 
 
@@ -377,11 +384,10 @@ def main(argv: list[str] | None = None) -> int:
         for message in problems:
             log.error("%s", message)
         return 1
-    # config's warnings are about the library; policy's are about rules that
-    # cannot fire, worth saying to anything that runs the rules.
-    messages = policy.warnings() if checks else []
+    # A setting nothing reads, or a rule that cannot fire, changes the plan.
+    messages = config.warnings() + policy.warnings() if checks else []
     if args.cmd in LIBRARY_COMMANDS:
-        messages = config.warnings() + messages
+        messages += config.media_dir_warnings()
     for message in messages:
         log.warning("%s", message)
     return handler(args)

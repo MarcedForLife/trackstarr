@@ -131,6 +131,7 @@
 				{#snippet children({ labelledBy, describedBy })}
 					<div class="flex w-full flex-col gap-2 sm:w-72">
 						<Segmented
+							fill
 							options={MODES}
 							{labelledBy}
 							describedBy={MODE_NOTES[mode] ? `${describedBy} ${modeNote}` : describedBy}

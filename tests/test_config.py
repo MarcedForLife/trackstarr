@@ -41,13 +41,13 @@ def test_a_boolean_typo_keeps_the_default_and_records_an_error(monkeypatch):
     """SKIP_HARDLINKS read as false by a typo is among the worst misreads
     config could make: every rewrite breaks a seeding torrent's hard link and
     the file costs disk twice."""
-    monkeypatch.setenv("DOWNMIX_ORIGINAL_LANG", "enalbed")
+    monkeypatch.setenv("IMDB_RATINGS", "enalbed")
     monkeypatch.setenv("SKIP_HARDLINKS", "ture")
-    assert config._bool("DOWNMIX_ORIGINAL_LANG") is False
+    assert config._bool("IMDB_RATINGS") is False
     assert config._bool("SKIP_HARDLINKS", "true") is True
     errors = config.errors()
     assert len(errors) == 2
-    assert "DOWNMIX_ORIGINAL_LANG" in errors[0]
+    assert "IMDB_RATINGS" in errors[0]
     assert "SKIP_HARDLINKS" in errors[1]
 
 
@@ -66,30 +66,20 @@ def test_every_spelling_of_false_reads_as_false(monkeypatch, raw):
 
 
 def test_an_empty_boolean_reads_as_its_default(monkeypatch):
-    """A leftover ``DOWNMIX_ORIGINAL_LANG: ${DOWNMIX_ORIGINAL_LANG}`` in a compose
+    """A leftover ``IMDB_RATINGS: ${IMDB_RATINGS}`` in a compose
     file expands to empty, which is a leftover, not a typo, and must not block
     startup."""
-    monkeypatch.setenv("DOWNMIX_ORIGINAL_LANG", "")
+    monkeypatch.setenv("IMDB_RATINGS", "")
     monkeypatch.setenv("SKIP_HARDLINKS", " ")
-    assert config._bool("DOWNMIX_ORIGINAL_LANG") is False
+    assert config._bool("IMDB_RATINGS") is False
     assert config._bool("SKIP_HARDLINKS", "true") is True
     assert config.errors() == []
 
 
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("eng", {"eng"}),  # already 639-2/B
-        ("en", {"eng"}),  # 639-1
-        ("English", {"eng"}),  # an *arr-style name
-        ("fra", {"fre"}),  # 639-2/T
-        ("en,Japanese,kor", {"eng", "jpn", "kor"}),
-        ("klingon", {"klingon"}),  # unrecognised: kept verbatim, matches nothing
-    ],
-)
-def test_always_keep_entries_normalise_to_639_2b(monkeypatch, raw, expected):
-    monkeypatch.setenv("ALWAYS_KEEP_LANGS", raw)
-    assert config._langs("ALWAYS_KEEP_LANGS", "eng") == expected
+def test_the_language_list_keeps_its_written_order(monkeypatch):
+    """Order is the downmix source preference, so it cannot be a set."""
+    monkeypatch.setenv("LANGUAGES", "original, jpn:keep ,eng")
+    assert config._ordered("LANGUAGES", "") == ("original", "jpn:keep", "eng")
 
 
 @pytest.mark.parametrize("variable", ["RADARR_API_KEY_FILE", "FILE__RADARR_API_KEY"])
@@ -207,99 +197,18 @@ def test_a_missing_media_dir_is_a_warning_not_an_error(monkeypatch, tmp_path):
     """Quiet otherwise: the sweep says so as it walks, hours later, and an install
     with no SWEEP_AT never walks at all."""
     monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path), str(tmp_path / "absent")])
-    warnings = config.warnings()
+    warnings = config.media_dir_warnings()
     assert len(warnings) == 1
     assert str(tmp_path / "absent") in warnings[0]
     # A library mounted late, or a webhook-only install, must still start.
     assert config.errors() == []
 
 
-def test_a_rate_for_a_layout_nobody_asked_for_is_a_warning(monkeypatch, tmp_path):
-    """Half an edit: the variable added, the layout not. Silent otherwise."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
-    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "7.1": "1280k"})
-    monkeypatch.setenv("AUDIO_BITRATE_7_1", "1280k")
-    warnings = config.warnings()
-    assert len(warnings) == 1
-    assert "AUDIO_BITRATE_7_1" in warnings[0]
-
-
-def test_an_encoder_for_a_layout_nobody_asked_for_is_a_warning(monkeypatch, tmp_path):
-    """The same half-edit as the rate, and just as silent: nothing reads it."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
-    monkeypatch.setattr(config, "AUDIO_CODECS", {"2.0": "aac", "7.1": "aac"})
-    monkeypatch.setenv("AUDIO_CODEC_7_1", "aac")
-    warnings = config.warnings()
-    assert len(warnings) == 1
-    assert "AUDIO_CODEC_7_1" in warnings[0]
-
-
-def test_dropping_a_default_layout_is_not_a_leftover(monkeypatch, tmp_path):
-    """2.0 and 5.1 always carry a rate, so running one would otherwise report the
-    other's default as an orphan every startup."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
-    monkeypatch.delenv("AUDIO_BITRATE_5_1", raising=False)
-    assert config.warnings() == []
-
-
-def _bitrates() -> dict[str, str]:
-    return config._per_layout(config.BITRATE_PREFIX, config._DEFAULT_BITRATES)
-
-
-def _codecs() -> dict[str, str]:
-    return config._per_layout(config.CODEC_PREFIX, config._DEFAULT_CODECS)
-
-
-@pytest.mark.parametrize(
-    ("variable", "name"),
-    [("AUDIO_BITRATE_2_0", "2.0"), ("AUDIO_BITRATE_7_1", "7.1")],
-)
-def test_a_layout_rate_is_read_from_its_own_variable(monkeypatch, variable, name):
-    """A dot is not allowed in an environment variable name, so the layout is
-    spelled with underscores and mapped back here."""
-    monkeypatch.setenv(variable, "448k")
-    assert config.bitrate_variable(name) == variable
-    assert _bitrates()[name] == "448k"
-
-
-@pytest.mark.parametrize(
-    ("variable", "name"),
-    [("AUDIO_CODEC_2_0", "2.0"), ("AUDIO_CODEC_7_1", "7.1")],
-)
-def test_a_layout_encoder_is_read_from_its_own_variable(monkeypatch, variable, name):
-    """The same spelling as the rate beside it, and the same scan: the encoder is
-    per layout because stereo and surround are guaranteed for different players."""
-    monkeypatch.setenv(variable, "eac3")
-    assert config.codec_variable(name) == variable
-    assert _codecs()[name] == "eac3"
-
-
-def test_the_shipped_rates_apply_when_nothing_states_one(monkeypatch):
-    monkeypatch.delenv("AUDIO_BITRATE_2_0", raising=False)
-    monkeypatch.delenv("AUDIO_BITRATE_5_1", raising=False)
-    assert _bitrates() == {"2.0": "320k", "5.1": "640k"}
-
-
-def test_the_shipped_encoders_apply_when_nothing_states_one(monkeypatch):
-    """AAC for the layout a phone falls back to, AC-3 for the one a receiver
-    takes. A fresh install names neither and still gets both right."""
-    monkeypatch.delenv("AUDIO_CODEC_2_0", raising=False)
-    monkeypatch.delenv("AUDIO_CODEC_5_1", raising=False)
-    assert _codecs() == {"2.0": "aac", "5.1": "ac3"}
-
-
-def test_the_layout_prefixes_do_not_collide(monkeypatch):
-    """AUDIO_CODEC_5_1 and AUDIO_BITRATE_5_1 are scanned by prefix, and the
-    encoder prefix is a prefix of nothing else."""
-    monkeypatch.setattr(
-        config, "_SETTINGS", {"AUDIO_CODEC_5_1": "eac3", "AUDIO_BITRATE_5_1": "448k"}
-    )
-    assert _codecs()["5.1"] == "eac3"
-    assert _bitrates()["5.1"] == "448k"
-    assert config.errors() == []
+def test_a_layout_carries_its_own_encoder_and_rate(monkeypatch):
+    """One variable holds the whole audio policy, so a rate cannot be left
+    beside a layout nothing makes."""
+    monkeypatch.setenv("AUDIO_LAYOUTS", "2.0:libopus:192k,7.1:remove")
+    assert config._ordered("AUDIO_LAYOUTS", "") == ("2.0:libopus:192k", "7.1:remove")
 
 
 def _write_settings(tmp_path, monkeypatch, text: str) -> None:
@@ -364,17 +273,17 @@ def test_no_path_map_is_no_mapping(monkeypatch):
 
 
 def test_an_ordered_setting_keeps_what_was_written(monkeypatch):
-    """DOWNMIX_LAYOUTS is read in the order it was written, since that order
+    """AUDIO_LAYOUTS is read in the order it was written, since that order
     is what the order rule lays the audio tracks out in."""
-    monkeypatch.setenv("DOWNMIX_LAYOUTS", " 5.1 , 2.0 ,7.1")
-    assert config._ordered("DOWNMIX_LAYOUTS", "") == ("5.1", "2.0", "7.1")
+    monkeypatch.setenv("AUDIO_LAYOUTS", " 5.1 , 2.0 ,7.1")
+    assert config._ordered("AUDIO_LAYOUTS", "") == ("5.1", "2.0", "7.1")
 
 
 def test_an_ordered_setting_keeps_a_repeat_where_it_first_appeared(monkeypatch):
     """Two spellings of one position mean nothing; the later would win the
     dicts built from this and silently move the track."""
-    monkeypatch.setenv("DOWNMIX_LAYOUTS", "5.1,2.0,5.1")
-    assert config._ordered("DOWNMIX_LAYOUTS", "") == ("5.1", "2.0")
+    monkeypatch.setenv("AUDIO_LAYOUTS", "5.1,2.0,5.1")
+    assert config._ordered("AUDIO_LAYOUTS", "") == ("5.1", "2.0")
 
 
 def test_settings_numbers_and_booleans_read_as_their_literals(tmp_path, monkeypatch):
@@ -482,56 +391,26 @@ def test_an_unreadable_dotenv_is_refused(tmp_path):
     assert config.ENV_FILE in errors[0]
 
 
-def test_a_settings_key_nothing_reads_refuses_startup(monkeypatch):
-    """The file's names are a closed set, so an unread key is a typo silently
-    meaning its default. An error, so plan and fix report it too."""
+def test_a_settings_key_nothing_reads_is_a_warning_not_an_error(monkeypatch):
+    """An unread key is a typo silently meaning its default, but everything else
+    still applies. A name retired under a running install would otherwise refuse
+    every start."""
     monkeypatch.setattr(config, "_SETTINGS", {"MEDIA_DIRZ": "/data"})
-    errors = config.errors()
-    assert len(errors) == 1
-    assert "MEDIA_DIRZ" in errors[0]
-    # The one error nobody can reach the settings pages to fix, so the line has
-    # to carry the file's whole path and what to do with it.
-    assert config._settings_path() in errors[0]
-    assert "remove or rename them" in errors[0]
-
-
-def test_a_settings_file_bitrate_is_read_and_not_flagged_unread(monkeypatch):
-    """AUDIO_BITRATE_ names are read by prefix scan rather than by asking, so
-    the unread-key check has to know they count as read."""
-    monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_BITRATE_7_1": "1280k"})
-    assert _bitrates()["7.1"] == "1280k"
     assert config.errors() == []
+    (problem,) = config.warnings()
+    assert "MEDIA_DIRZ" in problem
+    # The settings pages write known names only, so they cannot clear this one:
+    # the line has to carry the file's whole path and what to do with it.
+    assert config._settings_path() in problem
+    assert "remove or rename them" in problem
 
 
-def test_a_settings_file_encoder_is_read_and_not_flagged_unread(monkeypatch):
-    """The same prefix scan as the rate, so the unread-key check has to know
-    both prefixes count as read."""
-    monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_CODEC_7_1": "aac"})
-    assert _codecs()["7.1"] == "aac"
+def test_a_settings_file_layout_list_is_read_and_not_flagged_unread(monkeypatch):
+    """One name holds the whole audio policy now, so the unread-key check sees
+    it asked for like any other setting."""
+    monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_LAYOUTS": "2.0,7.1:aac:1280k"})
+    assert config._ordered("AUDIO_LAYOUTS", "") == ("2.0", "7.1:aac:1280k")
     assert config.errors() == []
-
-
-def test_an_environment_bitrate_beats_the_settings_file(monkeypatch):
-    monkeypatch.setenv("AUDIO_BITRATE_5_1", "448k")
-    monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_BITRATE_5_1": "768k"})
-    assert _bitrates()["5.1"] == "448k"
-
-
-def test_an_environment_encoder_beats_the_settings_file(monkeypatch):
-    monkeypatch.setenv("AUDIO_CODEC_5_1", "eac3")
-    monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_CODEC_5_1": "ac3"})
-    assert _codecs()["5.1"] == "eac3"
-
-
-def test_a_file_rate_for_a_layout_nobody_asked_for_is_a_warning(monkeypatch, tmp_path):
-    """The same half-edit the environment check catches, stated in the file."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
-    monkeypatch.setattr(config, "DOWNMIX_LAYOUTS", ("2.0",))
-    monkeypatch.setattr(config, "AUDIO_BITRATES", {"2.0": "320k", "7.1": "1280k"})
-    monkeypatch.setattr(config, "_SETTINGS", {"AUDIO_BITRATE_7_1": "1280k"})
-    warnings = config.warnings()
-    assert len(warnings) == 1
-    assert "AUDIO_BITRATE_7_1" in warnings[0]
 
 
 def test_a_secret_can_come_from_the_settings_file(monkeypatch):
@@ -592,7 +471,6 @@ def test_half_a_service_is_a_warning_naming_both_halves(monkeypatch, set_name, u
     """Either half alone leaves the service silently off. A warning rather
     than an error: clearing an address is how one is switched off."""
     monkeypatch.setattr(config, set_name, "set")
-    monkeypatch.setattr(config, "MEDIA_DIRS", [])
     (problem,) = config.warnings()
     assert set_name in problem
     assert unset_name in problem

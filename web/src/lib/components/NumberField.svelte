@@ -32,7 +32,7 @@
 	const described = $derived(problem || note ? `${describedBy} ${lineId}` : describedBy);
 
 	// Narrow: three or four digits.
-	const box = `${cell} w-24 sm:w-20`;
+	const box = `${cell} w-24 flex-none sm:w-20`;
 </script>
 
 <div class="flex flex-col items-end gap-1.5">

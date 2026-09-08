@@ -2,13 +2,18 @@ import { describe, expect, test } from 'vitest';
 import {
 	belowNote,
 	belowProblem,
-	bitrateName,
 	channelsOf,
-	codecName,
 	codecNotes,
+	formatLang,
+	formatRow,
 	langCode,
 	langLabel,
-	rateBps
+	parseLang,
+	parseRow,
+	placeRow,
+	rateBps,
+	rateNotches,
+	sameRate
 } from '$lib/rules';
 import type { Codec } from '$lib/settings';
 
@@ -23,10 +28,98 @@ const FLAC: Codec = { name: 'flac', max_channels: 8, containers: ['.mkv'], lossl
 
 const LANGUAGES: Record<string, string> = { eng: 'English', fre: 'French', mao: 'Māori' };
 
-describe('setting names', () => {
-	test('spells a layout the way the environment does', () => {
-		expect(bitrateName('5.1')).toBe('AUDIO_BITRATE_5_1');
-		expect(codecName('2.0')).toBe('AUDIO_CODEC_2_0');
+const STOCK: Record<string, string[]> = { '2.0': ['aac', '320k'], '5.1': ['ac3', '640k'] };
+
+describe('parseRow', () => {
+	test('reads a bare name as a downmix at its stock spec', () => {
+		expect(parseRow('5.1', STOCK)).toEqual({
+			name: '5.1',
+			action: 'downmix',
+			codec: 'ac3',
+			bitrate: '640k'
+		});
+	});
+
+	test('reads two fields as an action, which encodes nothing', () => {
+		expect(parseRow('7.1:remove', STOCK)).toEqual({
+			name: '7.1',
+			action: 'remove',
+			codec: '',
+			bitrate: ''
+		});
+	});
+
+	test('reads three fields as a downmix at that encoder and rate', () => {
+		expect(parseRow('5.1:eac3:448k', STOCK)).toEqual({
+			name: '5.1',
+			action: 'downmix',
+			codec: 'eac3',
+			bitrate: '448k'
+		});
+	});
+
+	test('leaves a size the stock table has no opinion about unspecified', () => {
+		expect(parseRow('4.0', STOCK)).toEqual({
+			name: '4.0',
+			action: 'downmix',
+			codec: '',
+			bitrate: ''
+		});
+	});
+});
+
+describe('formatRow', () => {
+	test('writes a downmix out in full, so the stock table cannot move it later', () => {
+		expect(formatRow(parseRow('5.1', STOCK))).toBe('5.1:ac3:640k');
+	});
+
+	test('writes an action without an encoder it would never read', () => {
+		expect(formatRow(parseRow('7.1:remove', STOCK))).toBe('7.1:remove');
+	});
+
+	test('round-trips a spelled-out downmix', () => {
+		expect(formatRow(parseRow('2.0:libopus:192k', STOCK))).toBe('2.0:libopus:192k');
+	});
+});
+
+describe('placeRow', () => {
+	const entries = ['2.0:aac:320k', '5.1:ac3:640k', '7.1:remove'];
+
+	test('rewrites in place while the row stays on its side of the boundary', () => {
+		expect(placeRow(entries, 0, '2.0:aac:320k', 'downmix', 'keep', 2)).toEqual([
+			'2.0:aac:320k',
+			'5.1:ac3:640k',
+			'7.1:remove'
+		]);
+	});
+
+	test('sends a row joining the removals to the bottom', () => {
+		expect(placeRow(entries, 0, '2.0:remove', 'downmix', 'remove', 2)).toEqual([
+			'5.1:ac3:640k',
+			'7.1:remove',
+			'2.0:remove'
+		]);
+	});
+
+	test('lands a row leaving the removals at the end of the block above', () => {
+		expect(placeRow(entries, 2, '7.1:aac:768k', 'remove', 'downmix', 2)).toEqual([
+			'2.0:aac:320k',
+			'5.1:ac3:640k',
+			'7.1:aac:768k'
+		]);
+	});
+});
+
+describe('language rows', () => {
+	test('reads a bare name as a downmix, and an action beside it', () => {
+		expect(parseLang('eng')).toEqual({ name: 'eng', action: 'downmix' });
+		expect(parseLang('original')).toEqual({ name: 'original', action: 'downmix' });
+		expect(parseLang('fre:keep')).toEqual({ name: 'fre', action: 'keep' });
+	});
+
+	test('writes a downmix bare, since there is no spec to pin', () => {
+		expect(formatLang({ name: 'eng', action: 'downmix' })).toBe('eng');
+		expect(formatLang({ name: 'fre', action: 'keep' })).toBe('fre:keep');
 	});
 });
 
@@ -42,6 +135,42 @@ describe('channelsOf', () => {
 	test('has nothing to say about a name it cannot read', () => {
 		expect(channelsOf('stereo')).toBe(0);
 		expect(channelsOf('5.1.2')).toBe(0);
+	});
+});
+
+describe('rateNotches', () => {
+	const stereo = ['128k', '192k', '256k', '320k', '384k'];
+
+	test('offers the size its own rates when the row holds one of them', () => {
+		expect(rateNotches(stereo, '320k')).toEqual(stereo);
+		// Spelled differently, still the same notch.
+		expect(rateNotches(stereo, '320000')).toEqual(stereo);
+	});
+
+	test('folds an unlisted rate in at its place, so it stays selectable', () => {
+		expect(rateNotches(stereo, '224k')).toEqual(['128k', '192k', '224k', '256k', '320k', '384k']);
+	});
+
+	test('leaves a rate it cannot read at the front rather than dropping it', () => {
+		expect(rateNotches(stereo, '0.2M')).toEqual(['0.2M', ...stereo]);
+	});
+
+	test('has nothing to fold in for an empty rate', () => {
+		expect(rateNotches(stereo, '')).toEqual(stereo);
+	});
+});
+
+describe('sameRate', () => {
+	test('compares what two rates mean, not how they are written', () => {
+		expect(sameRate('640k', '640000')).toBe(true);
+		expect(sameRate('1m', '1000k')).toBe(true);
+		expect(sameRate('640k', '448k')).toBe(false);
+	});
+
+	// Both read as 0 bps, which would otherwise make every junk rate equal.
+	test('two rates it cannot read are the same only written the same', () => {
+		expect(sameRate('0.2M', '0.2M')).toBe(true);
+		expect(sameRate('0.2M', 'nonsense')).toBe(false);
 	});
 });
 

@@ -15,21 +15,17 @@ import os
 import threading
 import zoneinfo
 
-from . import config, events, keystore, langs, layouts, policy
+from . import config, events, keystore, langs, policy, tracks
 from .executor import audio_codec_errors
 from .state import write_json
 
-#: What the UI edits, on top of the scanned prefixes (AUDIO_CODEC_*,
-#: AUDIO_BITRATE_* and RULE_*).
+#: What the UI edits, on top of the scanned RULE_* prefix.
 EDITABLE = frozenset(
     {
         "TZ",
         "REWRITE_MODE",
-        "ALWAYS_KEEP_LANGS",
-        "KEEP_ORIGINAL_LANG",
-        "DOWNMIX_LAYOUTS",
-        "DOWNMIX_ORIGINAL_LANG",
-        "DOWNMIX_LANGS",
+        "LANGUAGES",
+        "AUDIO_LAYOUTS",
         "REGENERATE_SCOPE",
         "REGENERATE_BELOW_PERCENT",
         "ALLOWED_EXTS",
@@ -117,12 +113,9 @@ def _values() -> dict[str, object]:
     values: dict[str, object] = {
         "TZ": config.TZ,
         "REWRITE_MODE": config.REWRITE_MODE,
-        "ALWAYS_KEEP_LANGS": sorted(config.ALWAYS_KEEP_LANGS),
-        "KEEP_ORIGINAL_LANG": config.KEEP_ORIGINAL_LANG,
-        # Not sorted, unlike the sets above: the order is the setting.
-        "DOWNMIX_LAYOUTS": list(config.DOWNMIX_LAYOUTS),
-        "DOWNMIX_ORIGINAL_LANG": config.DOWNMIX_ORIGINAL_LANG,
-        "DOWNMIX_LANGS": sorted(config.DOWNMIX_LANGS),
+        # Not sorted, unlike the sets below: the order is the setting.
+        "LANGUAGES": list(config.LANGUAGES),
+        "AUDIO_LAYOUTS": list(config.AUDIO_LAYOUTS),
         "REGENERATE_SCOPE": config.REGENERATE_SCOPE,
         # Whole numbers travel as the strings the file holds; _serialise takes
         # no numbers.
@@ -158,10 +151,6 @@ def _values() -> dict[str, object]:
     # Every rule's effective mode, not only the stated ones.
     for rule, mode in policy.resolved_modes().items():
         values[config.rule_variable(rule)] = mode
-    for layout, codec in sorted(config.AUDIO_CODECS.items()):
-        values[config.codec_variable(layout)] = codec
-    for layout, rate in sorted(config.AUDIO_BITRATES.items()):
-        values[config.bitrate_variable(layout)] = rate
     return values
 
 
@@ -171,8 +160,9 @@ def snapshot() -> dict:
     entries = {
         name: {"value": value, "env": env_pinned(name)} for name, value in values.items()
     }
-    # Set-or-not in place of the value.
-    for name in SECRETS:
+    # Set-or-not in place of the value. Sorted, or a frozenset's iteration
+    # order reshuffles the contract fixture on every run.
+    for name in sorted(SECRETS):
         entries[name] = {
             "value": "",
             "env": env_pinned(name),
@@ -190,6 +180,16 @@ def snapshot() -> dict:
         # Empty on a build with no tzdata; the field still takes one.
         "zones": zones(),
         "containers": sorted(policy.MUXERS),
+        # What a layout row may be set to, in the page's order.
+        "actions": list(tracks.ACTIONS),
+        # A language row's, narrower: RULE_LANGUAGES does the dropping.
+        "lang_actions": list(tracks.LANG_ACTIONS),
+        # The reserved LANGUAGES name for the title's own language.
+        "original_lang": tracks.ORIGINAL,
+        # What a row added in the page is made at, so it keeps no second copy.
+        "stock": {name: list(spec) for name, spec in tracks.STOCK.items()},
+        # The rates each size is offered at, low to high.
+        "rates": {name: list(rates) for name, rates in tracks.RATES.items()},
         # Not a closed list: an unlisted encoder is checked against ffmpeg.
         "codecs": [
             {
@@ -198,7 +198,7 @@ def snapshot() -> dict:
                 "containers": sorted(codec.containers),
                 "lossless": codec.lossless,
             }
-            for codec in layouts.CODECS.values()
+            for codec in tracks.CODECS.values()
         ],
         # So the page knows an empty field means "leave it alone".
         "secrets": sorted(SECRETS),
@@ -346,10 +346,9 @@ def update(changes: dict, by: str | None = None) -> list[str]:
             _seal_secrets(merged)
         except (ValueError, OSError) as err:
             return [f"the credentials could not be sealed ({err})"]
-        # DOWNMIX_LAYOUTS counts: adding a layout brings an encoder into use.
-        check_codec = "DOWNMIX_LAYOUTS" in serialised or any(
-            name.startswith(config.CODEC_PREFIX) for name in serialised
-        )
+        # Every layout's encoder is in the list now, so one name says whether
+        # the save could bring a new one into use.
+        check_codec = "AUDIO_LAYOUTS" in serialised
         known = _problems(check_codec)
         was = _recorded()
         _write(merged)

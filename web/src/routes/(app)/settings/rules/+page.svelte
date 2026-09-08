@@ -1,32 +1,24 @@
 <script lang="ts">
-	import LanguagePicker from '$lib/components/LanguagePicker.svelte';
+	import LangList from '$lib/components/LangList.svelte';
 	import LayoutList from '$lib/components/LayoutList.svelte';
 	import Page from '$lib/components/Page.svelte';
 	import SaveBar from '$lib/components/SaveBar.svelte';
 	import Section from '$lib/components/Section.svelte';
 	import Segmented from '$lib/components/Segmented.svelte';
 	import SettingRow from '$lib/components/SettingRow.svelte';
-	import Toggle from '$lib/components/Toggle.svelte';
 	import { box, cell } from '$lib/controls';
 	import { SettingsDraft } from '$lib/draft.svelte';
-	import {
-		belowNote,
-		belowProblem,
-		bitrateName,
-		codecName,
-		codecNotes,
-		langLabel
-	} from '$lib/rules';
+	import { belowNote, belowProblem, codecNotes, parseLang, parseRow } from '$lib/rules';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
 
 	const readOnly = $derived(data.user?.role !== 'admin');
 
-	// DOWNMIX_LAYOUTS is the one setting here whose written order matters.
+	// AUDIO_LAYOUTS is the one setting here whose written order matters.
 	// svelte-ignore state_referenced_locally
 	const settings = new SettingsDraft(data.snapshot.settings, {
-		ordered: new Set(['DOWNMIX_LAYOUTS']),
+		ordered: new Set(['AUDIO_LAYOUTS']),
 		readOnly: () => readOnly
 	});
 	// Both records are mutated in place, so these read the live objects after a
@@ -37,10 +29,15 @@
 	const envLocked = (name: string) => settings.envLocked(name);
 	const desc = (name: string, fallback: string) => settings.desc(name, fallback);
 
-	const langs = $derived((draft.ALWAYS_KEEP_LANGS as string[]) ?? []);
 	const exts = $derived((draft.ALLOWED_EXTS as string[]) ?? []);
-	const downmixLangs = $derived((draft.DOWNMIX_LANGS as string[]) ?? []);
-	const layouts = $derived((draft.DOWNMIX_LAYOUTS as string[]) ?? []);
+	// One entry per language, carrying whether layouts are made in it.
+	const langRows = $derived(((draft.LANGUAGES as string[]) ?? []).map(parseLang));
+	// One entry per size, carrying what happens to it and, for an add, how.
+	const rows = $derived(
+		((draft.AUDIO_LAYOUTS as string[]) ?? []).map((entry) => parseRow(entry, data.snapshot.stock))
+	);
+	const downmixed = $derived(rows.filter((row) => row.action === 'downmix'));
+	const removed = $derived(rows.filter((row) => row.action === 'remove'));
 
 	// The names the pickers offer. An alias like `en` saves fine and comes back
 	// normalised.
@@ -60,51 +57,21 @@
 		data.snapshot.modes.map((value) => ({ value, label: MODE_LABELS[value] ?? value }))
 	);
 
-	// The rows under a rule go inert with it. A ride-along still reads them.
-	function langLocked(name: string): boolean {
-		return envLocked(name) || !ruleOn('languages');
-	}
-
-	function downmixLocked(name: string): boolean {
-		return envLocked(name) || !ruleOn('downmix');
-	}
-
-	// An empty list with the original language off keeps nothing, so the planner
-	// skips every file.
-	const keepDesc = $derived.by(() => {
-		const base = desc('ALWAYS_KEEP_LANGS', 'Languages kept in every file.');
-		if (!ruleOn('languages') || langs.length || draft.KEEP_ORIGINAL_LANG) return base;
-		return `${base} Nothing is listed, so every file with tagged tracks would be skipped.`;
-	});
-
-	// A downmix in a language nothing keeps looks applied and does nothing.
-	const downmixLangsDesc = $derived.by(() => {
+	// Only untagged tracks would survive an empty list.
+	const langsDesc = $derived.by(() => {
 		const base = desc(
-			'DOWNMIX_LANGS',
-			'Extra languages guaranteed every layout, each from the best surviving bigger track of that language.'
+			'LANGUAGES',
+			'Every language this library keeps, in the order a downmix source is picked. Downmix makes every layout in it, Keep leaves what the file has, and Original is whatever Radarr or Sonarr reports.'
 		);
-		const unkept = ruleOn('languages') ? downmixLangs.filter((code) => !langs.includes(code)) : [];
-		if (!unkept.length) return base;
-		return `${base} Not kept by the languages rule: ${unkept.map((code) => langLabel(languages, code)).join(', ')}.`;
-	});
-
-	// The original-language downmix needs a surviving track in that language.
-	const downmixOriginalDesc = $derived.by(() => {
-		const base = desc(
-			'DOWNMIX_ORIGINAL_LANG',
-			'Guarantee every layout in the language the title was made in.'
-		);
-		if (!draft.DOWNMIX_ORIGINAL_LANG || !ruleOn('languages') || draft.KEEP_ORIGINAL_LANG) {
-			return base;
-		}
-		return `${base} Keep original language is off above, so that language is dropped before anything can be downmixed from it.`;
+		if (langRows.length || !ruleOn('languages')) return base;
+		return `${base} This is empty and the rule below drops the rest, so only untagged tracks would survive.`;
 	});
 
 	// Both read as on while the containers row decides whether they can fire.
 	const remuxDesc = $derived.by(() => {
 		const base = desc(
 			ruleVar('remux'),
-			'Rewrite MP4 into Matroska so every rule applies. MP4 direct-plays on more devices, so Alongside is the usual choice: convert only files another rule is already rewriting.'
+			'Rewrite MP4 into Matroska so every rule applies. MP4 direct-plays on more devices, so Alongside is the usual choice.'
 		);
 		const convertible = exts.filter((ext) => ext !== '.mkv');
 		if (!ruleOn('remux') || convertible.length) return base;
@@ -137,7 +104,7 @@
 	const lowNote = $derived(
 		belowNote(
 			belowPercent,
-			layouts.map((layout) => ({ layout, rate: String(draft[bitrateName(layout)] ?? '') }))
+			downmixed.map((row) => ({ layout: row.name, rate: row.bitrate }))
 		)
 	);
 
@@ -162,17 +129,20 @@
 	// encoder only Matroska holds is fine.
 	const outputExts = $derived(ruleOn('remux') ? ['.mkv'] : exts);
 
-	// The row says what each encoder is for; nobody arrives knowing. In the
-	// service's order.
+	// The row says what each encoder is for; nobody arrives knowing. Notes come
+	// only from downmixed rows, since nothing else is encoded.
 	const layoutsDesc = $derived.by(() => {
 		const base = desc(
-			'DOWNMIX_LAYOUTS',
-			'Each layout is encoded with the encoder and rate beside it. aac plays everywhere and suits stereo; ac3 is what receivers take over HDMI and stops at 5.1; libopus is best per bit and worst for direct play. Drag to set the audio track order.'
+			'AUDIO_LAYOUTS',
+			'Every size this library has an opinion about, in the audio track order. Downmix guarantees one exists, made from the best bigger track, Keep leaves it alone and Remove deletes it.'
 		);
-		const notes = layouts.flatMap((layout) =>
-			codecNotes(layout, codecOf.get((draft[codecName(layout)] as string) ?? ''), outputExts)
+		const notes = downmixed.flatMap((row) =>
+			codecNotes(row.name, codecOf.get(row.codec), outputExts)
 		);
-		return notes.length ? `${base} ${notes.join(' ')}` : base;
+		const warning = removed.length
+			? ' Removing is the one thing here you cannot undo: the mix is gone from the file, and nothing can be downmixed or rebuilt from it again.'
+			: '';
+		return `${base}${notes.length ? ` ${notes.join(' ')}` : ''}${warning}`;
 	});
 
 	const scopeOptions = [
@@ -221,18 +191,25 @@
 	const lowLine = `${id}-low`;
 
 	// The longest page in the app, so its groups fold; each shows its count shut.
-	// "Junk" is what a rewrite throws out unasked: artwork read as a second video,
-	// streams nothing plays, release tags. "Container" is what it does to the file
-	// holding it all.
-	const KEEP_RULES = ['languages', 'commentary', 'sdh'];
-	const DOWNMIX_RULES = ['downmix', 'regenerate'];
-	const JUNK_RULES = ['cover_art', 'junk_titles', 'stray_streams', 'order'];
+	const TITLE_RULES = ['junk_titles', 'cover_art'];
+	const STREAM_RULES = ['stray_streams', 'order'];
 
 	// Alongside counts as on. No group is named for a rule inside it.
 	const ruleNote = (rules: string[]) => `${rules.filter(ruleOn).length} of ${rules.length} on`;
 
-	// One rule and one list, so a count would read 1 of 1; it says what the group
-	// settles instead.
+	// The two lists are one grid, so this group's note is what the grid makes
+	// rather than how many of its four rules are on.
+	const tracksNote = $derived(
+		[
+			`${langRows.length} ${langRows.length === 1 ? 'language' : 'languages'}`,
+			downmixed.length ? `${downmixed.length} downmixed` : '',
+			removed.length ? `${removed.length} removed` : '',
+			ruleOn('regenerate') ? 'regenerate' : ''
+		]
+			.filter(Boolean)
+			.join(' · ')
+	);
+
 	const containerNote = $derived(
 		`${exts.length} ${exts.length === 1 ? 'container' : 'containers'}${
 			ruleOn('remux') ? ' · remux' : ''
@@ -245,6 +222,7 @@
 	<SettingRow {label} desc={desc(ruleVar(rule), text)} env={!!baseline[ruleVar(rule)]?.env} stack>
 		{#snippet children({ labelledBy, describedBy })}
 			<Segmented
+				fill
 				options={modeOptions}
 				{labelledBy}
 				{describedBy}
@@ -268,116 +246,47 @@
 			Alongside acts only on a file another rule is already rewriting.
 		</p>
 
-		<Section heading="Keep and drop" note={ruleNote(KEEP_RULES)} open>
+		<Section heading="Languages and audio" note={tracksNote} open>
+			<SettingRow
+				label="Languages"
+				align="start"
+				desc={langsDesc}
+				env={!!baseline.LANGUAGES?.env}
+				stack
+			>
+				{#snippet children({ labelledBy, describedBy })}
+					<LangList
+						{settings}
+						{languages}
+						actions={data.snapshot.lang_actions}
+						originalName={data.snapshot.original_lang}
+						{labelledBy}
+						{describedBy}
+					/>
+				{/snippet}
+			</SettingRow>
 			{@render ruleRow({
 				rule: 'languages',
-				label: 'Languages',
-				text: "Drop audio and subtitles in a language the two rows below don't keep. Untagged tracks always stay."
+				label: 'Unlisted languages',
+				text: 'Drop audio and subtitles in a language the list above does not name. Untagged tracks always stay.'
 			})}
-			<SettingRow
-				label="Keep original language"
-				desc={desc(
-					'KEEP_ORIGINAL_LANG',
-					'Keep the language the title was made in, as Radarr and Sonarr report it. Off keeps only the languages listed below.'
-				)}
-				env={!!baseline.KEEP_ORIGINAL_LANG?.env}
-				nested
-				dim={!ruleOn('languages')}
-			>
-				{#snippet children({ labelledBy, describedBy })}
-					<Toggle
-						on={draft.KEEP_ORIGINAL_LANG as boolean}
-						disabled={langLocked('KEEP_ORIGINAL_LANG')}
-						onchange={(on) => (draft.KEEP_ORIGINAL_LANG = on)}
-						{labelledBy}
-						{describedBy}
-					/>
-				{/snippet}
-			</SettingRow>
-			<SettingRow
-				label="Always keep"
-				desc={keepDesc}
-				env={!!baseline.ALWAYS_KEEP_LANGS?.env}
-				nested
-				dim={!ruleOn('languages')}
-				stack
-			>
-				{#snippet children({ labelledBy, describedBy })}
-					<LanguagePicker
-						values={langs}
-						{languages}
-						label="Add a language to always keep"
-						{labelledBy}
-						{describedBy}
-						locked={langLocked('ALWAYS_KEEP_LANGS')}
-						onchange={(codes) => (draft.ALWAYS_KEEP_LANGS = codes)}
-					/>
-				{/snippet}
-			</SettingRow>
-			{@render ruleRow({
-				rule: 'commentary',
-				label: 'Commentary',
-				text: 'Drop commentary, described-audio and isolated-score tracks in every language. They are never downmix sources either way.'
-			})}
-			{@render ruleRow({
-				rule: 'sdh',
-				label: 'SDH subtitles',
-				text: 'Drop an SDH subtitle when the same language keeps a full one. Forced subtitles always stay.'
-			})}
-		</Section>
-
-		<Section heading="Downmix and rebuild" note={ruleNote(DOWNMIX_RULES)}>
-			{@render ruleRow({
-				rule: 'downmix',
-				label: 'Downmix',
-				text: 'Guarantee a non-commentary track for each layout below, downmixed from the best surviving bigger track. Nothing is upmixed.'
-			})}
-			<SettingRow
-				label="Original language"
-				desc={downmixOriginalDesc}
-				env={!!baseline.DOWNMIX_ORIGINAL_LANG?.env}
-				nested
-				dim={!ruleOn('downmix')}
-			>
-				{#snippet children({ labelledBy, describedBy })}
-					<Toggle
-						on={draft.DOWNMIX_ORIGINAL_LANG as boolean}
-						disabled={downmixLocked('DOWNMIX_ORIGINAL_LANG')}
-						onchange={(on) => (draft.DOWNMIX_ORIGINAL_LANG = on)}
-						{labelledBy}
-						{describedBy}
-					/>
-				{/snippet}
-			</SettingRow>
-			<SettingRow
-				label="Other languages"
-				desc={downmixLangsDesc}
-				env={!!baseline.DOWNMIX_LANGS?.env}
-				nested
-				dim={!ruleOn('downmix')}
-				stack
-			>
-				{#snippet children({ labelledBy, describedBy })}
-					<LanguagePicker
-						values={downmixLangs}
-						{languages}
-						label="Add a language to downmix"
-						{labelledBy}
-						{describedBy}
-						locked={downmixLocked('DOWNMIX_LANGS')}
-						onchange={(codes) => (draft.DOWNMIX_LANGS = codes)}
-					/>
-				{/snippet}
-			</SettingRow>
 			<SettingRow
 				label="Layouts"
 				align="start"
 				desc={layoutsDesc}
-				env={!!baseline.DOWNMIX_LAYOUTS?.env}
+				env={!!baseline.AUDIO_LAYOUTS?.env}
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
-					<LayoutList {settings} {codecs} {labelledBy} {describedBy} />
+					<LayoutList
+						{settings}
+						{codecs}
+						actions={data.snapshot.actions}
+						stock={data.snapshot.stock}
+						rates={data.snapshot.rates}
+						{labelledBy}
+						{describedBy}
+					/>
 				{/snippet}
 			</SettingRow>
 			<SettingRow
@@ -388,6 +297,7 @@
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					<Segmented
+						fill
 						options={modeOptions}
 						{labelledBy}
 						{describedBy}
@@ -410,6 +320,7 @@
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					<Segmented
+						fill
 						options={scopeOptions}
 						{labelledBy}
 						{describedBy}
@@ -432,7 +343,7 @@
 				dim={!allScope()}
 			>
 				{#snippet children({ labelledBy, describedBy })}
-					<div class="flex flex-col items-start gap-1.5 sm:items-end">
+					<div class="flex w-full flex-col items-start gap-1.5 sm:items-end">
 						<div class="flex items-center gap-2">
 							<input
 								value={belowPercent}
@@ -444,7 +355,7 @@
 								aria-labelledby={labelledBy}
 								aria-describedby={lowProblem || lowNote ? `${describedBy} ${lowLine}` : describedBy}
 								disabled={belowLocked()}
-								class={`${cell} w-[4.5rem] sm:w-16`}
+								class={`${cell} w-[4.5rem] flex-none sm:w-16`}
 							/>
 							<span class="text-[13px] text-faint">% of its rate</span>
 						</div>
@@ -456,19 +367,32 @@
 					</div>
 				{/snippet}
 			</SettingRow>
+			{@render ruleRow({
+				rule: 'commentary',
+				label: 'Commentary',
+				text: 'Drop commentary, described-audio and isolated-score tracks in every language. They are never downmix sources either way.'
+			})}
+			{@render ruleRow({
+				rule: 'sdh',
+				label: 'SDH subtitles',
+				text: 'Drop an SDH subtitle when the same language keeps a full one. Forced subtitles always stay.'
+			})}
 		</Section>
 
-		<Section heading="Junk and order" note={ruleNote(JUNK_RULES)}>
-			{@render ruleRow({
-				rule: 'cover_art',
-				label: 'Cover art',
-				text: 'Strip embedded artwork that players read as a second video track.'
-			})}
+		<Section heading="Titles and artwork" note={ruleNote(TITLE_RULES)}>
 			{@render ruleRow({
 				rule: 'junk_titles',
 				label: 'Junk titles',
 				text: 'Clear release junk from track and container titles, as the pattern below matches it.'
 			})}
+			{@render ruleRow({
+				rule: 'cover_art',
+				label: 'Cover art',
+				text: 'Strip embedded artwork that players read as a second video track.'
+			})}
+		</Section>
+
+		<Section heading="Streams and order" note={ruleNote(STREAM_RULES)}>
 			{@render ruleRow({
 				rule: 'stray_streams',
 				label: 'Stray streams',
@@ -477,7 +401,7 @@
 			{@render ruleRow({
 				rule: 'order',
 				label: 'Track order',
-				text: 'Video first, then audio in the layout order above with other sizes after by channel count, then subtitles.'
+				text: 'Video first, then audio in the Layouts order with other sizes after by channel count, then subtitles.'
 			})}
 		</Section>
 
@@ -517,6 +441,7 @@
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					<Segmented
+						fill
 						options={modeOptions}
 						{labelledBy}
 						{describedBy}
@@ -528,7 +453,7 @@
 			</SettingRow>
 		</Section>
 
-		<Section heading="Title patterns" note="{PATTERNS.length} regexes">
+		<Section heading="Patterns" note="{PATTERNS.length} regexes">
 			<p class="pb-1 text-[13px] text-dim">
 				Matched against track titles when the container's disposition flags are unset, as most rips
 				leave them. Case-insensitive Python regular expressions; clear one to restore the built-in.
@@ -542,7 +467,7 @@
 					stack
 				>
 					{#snippet children({ labelledBy, describedBy })}
-						<div class="flex w-full flex-col gap-2 sm:w-96">
+						<div class="flex w-full flex-col gap-2">
 							<!-- A textarea: the junk-title default is 200 characters. -->
 							<textarea
 								value={String(draft[pattern.name] ?? '')}

@@ -130,16 +130,10 @@ def test_an_arr_outage_downgrades_an_applying_sweep(monkeypatch, tmp_path, caplo
     assert entry["dry_run"] is True
 
 
-@pytest.mark.parametrize(
-    ("setting", "value"),
-    [("KEEP_ORIGINAL_LANG", False), ("RULE_MODES", {"languages": "never"})],
-)
-def test_an_arr_outage_stops_nothing_a_policy_never_asked(
-    monkeypatch, tmp_path, caplog, setting, value
-):
-    """Neither policy reads a title's original language, so the outage takes no
-    verdict with it and an applying sweep goes on applying."""
-    monkeypatch.setattr(config, setting, value)
+def test_an_arr_outage_stops_nothing_a_policy_never_asked(monkeypatch, tmp_path, caplog):
+    """No row names the original language, so the outage takes no verdict with
+    it and an applying sweep goes on applying."""
+    monkeypatch.setattr(config, "LANGUAGES", ("eng",))
     _library(tmp_path, monkeypatch, 1)
     monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, False))
     judged_dry = []

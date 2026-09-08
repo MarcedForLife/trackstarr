@@ -3,7 +3,8 @@
 Pure given ffprobe output, so the rules are testable without media;
 :func:`build_plan` is the only thing that reads from disk. The rules are named
 in :data:`trackstarr.policy.RULES`, each set to never, alongside another rule's
-rewrite, or always. Every rule is idempotent: apply, re-plan, get an empty plan.
+rewrite, or always. What an AUDIO_LAYOUTS or LANGUAGES row says has no mode and
+always acts. Every rule is idempotent: apply, re-plan, get an empty plan.
 
 :mod:`trackstarr.command` renders a plan into an ffmpeg command and
 :mod:`trackstarr.executor` runs it.
@@ -15,7 +16,6 @@ from dataclasses import dataclass, field
 from typing import NamedTuple
 
 from . import config
-from .layouts import Layout, bitrate_bps, encode_settings
 from .media import (
     ProbeError,
     container_title,
@@ -34,14 +34,23 @@ from .media import (
     track_summary,
     unpreserved_bitrate,
 )
-from .policy import ALONGSIDE, ALWAYS, TAG_PRESERVING_EXTS, VIDEO_EXTS, Policy
+from .policy import (
+    ALONGSIDE,
+    ALWAYS,
+    DOWNMIX_RULE,
+    DROP_LAYOUTS_RULE,
+    TAG_PRESERVING_EXTS,
+    VIDEO_EXTS,
+    Policy,
+)
 from .status import Status
+from .tracks import Lang, Layout, bitrate_bps, encode_settings
 
 
 def channel_rank(channels: int | None, order: Sequence[int] = ()) -> tuple[int, bool, int]:
     """Sort key for an audio track of this size.
 
-    ``order`` is DOWNMIX_LAYOUTS' channel counts in written order; those come
+    ``order`` is AUDIO_LAYOUTS' channel counts in written order; those come
     first, then the rest by ascending count, mono and unknown last.
     """
     if channels in order:
@@ -105,7 +114,8 @@ class Plan:
     rules: set[str] = field(default_factory=set)
     incidental_rules: set[str] = field(default_factory=set)
     original_lang: str | None = None
-    keep_langs: set[str] = field(default_factory=set)
+    #: policy.languages with ORIGINAL substituted for this title.
+    langs: tuple[Lang, ...] = ()
     #: Every input stream as a :func:`trackstarr.media.track_summary`, so the
     #: sweep cache can double as a library index. Empty when never probed.
     tracks: list[dict] = field(default_factory=list)
@@ -245,7 +255,7 @@ def new_plan(path: str, original_lang: str | None) -> Plan:
         path=path,
         policy=policy,
         original_lang=original_lang,
-        keep_langs=policy.keep_langs(original_lang),
+        langs=policy.resolve(original_lang),
     )
 
 
@@ -302,7 +312,7 @@ def _for_pass(plan: Plan, acting: frozenset[str], alongside: frozenset[str]) -> 
         path=plan.path,
         policy=plan.policy,
         original_lang=plan.original_lang,
-        keep_langs=plan.keep_langs,
+        langs=plan.langs,
         src_signature=plan.src_signature,
         acting=acting,
         alongside=alongside,
@@ -328,11 +338,13 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
         plan.remuxing = True
         _record(plan, "remux", f"remux to mkv ({config.rule_variable('remux')})")
 
+    listed = {lang.name for lang in plan.langs}
+
     def keep_track(stream: dict, what: str) -> bool:
-        if not plan.acts("languages"):
+        # Untagged always stays: a file of them is a file with nothing to judge.
+        if (lang := stream_lang(stream)) is None:
             return True
-        lang = stream_lang(stream)
-        if lang is None or lang in plan.keep_langs:
+        if lang in listed or not plan.acts("languages"):
             return True
         _record(plan, "languages", f"drop {what} {_stream_label(stream, lang)}")
         return False
@@ -351,6 +363,22 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     kept_audio, rebuild_langs, replacing = _drop_stale_downmixes(plan, kept_audio)
     kept_subs = _drop_redundant_sdh(plan, kept_subs)
 
+    downmixes = _choose_downmixes(plan, kept_audio, rebuild_langs)
+    for layout, src in downmixes:
+        made = _downmix_source(src)
+        # A track dropped for this one to replace is one change, not two.
+        if (replaced := _claim_replacement(replacing, layout, src)) is not None:
+            _record(plan, "regenerate", f"{replaced} {made}")
+        else:
+            _record(plan, DOWNMIX_RULE, f"add {layout.name} downmix {made}")
+    # Drops nothing came back for: the rebuild found no source in that
+    # language and no fallback.
+    for orphaned in replacing:
+        _record(plan, "regenerate", orphaned.reason)
+    # Last of the audio rules: the others' output replaces what it drops, and no
+    # title is cleared on a track about to go.
+    kept_audio = _drop_layouts(plan, kept_audio, downmixes)
+
     audio_out = [
         OutStream(
             src=stream["index"],
@@ -362,31 +390,22 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
         )
         for stream in kept_audio
     ]
-    for layout, src in _choose_downmixes(plan, kept_audio, rebuild_langs):
-        made = _downmix_source(src)
-        # A track dropped for this one to replace is one change, not two.
-        if (replaced := _claim_replacement(replacing, layout, src)) is not None:
-            _record(plan, "regenerate", f"{replaced} {made}")
-        else:
-            _record(plan, "downmix", f"add {layout.name} downmix {made}")
-        audio_out.append(
-            OutStream(
-                src=src["index"],
-                kind="audio",
-                encode=True,
-                channels=layout.channels,
-                lang=stream_lang(src),
-                title=layout.name,
-                codec=layout.codec,
-                bitrate=layout.bitrate,
-            )
+    audio_out += [
+        OutStream(
+            src=src["index"],
+            kind="audio",
+            encode=True,
+            channels=layout.channels,
+            lang=stream_lang(src),
+            title=layout.name,
+            codec=layout.codec,
+            bitrate=layout.bitrate,
         )
-    # Drops nothing came back for: the rebuild found no source in that
-    # language and no fallback.
-    for orphaned in replacing:
-        _record(plan, "regenerate", orphaned.reason)
-    # A generated track sorts ahead of an existing track of equal rank.
-    layout_order = [layout.channels for layout in plan.policy.downmix_layouts]
+        for layout, src in downmixes
+    ]
+    # A generated track sorts ahead of an existing track of equal rank. Every
+    # named layout, whatever happens to it: that is what Keep is for.
+    layout_order = [layout.channels for layout in plan.policy.audio_layouts]
     audio_out.sort(
         key=lambda out: (channel_rank(out.channels, layout_order), not out.encode, out.src)
     )
@@ -594,13 +613,15 @@ def _drop_stale_downmixes(
     unless a bigger track survives to rebuild from. Returns the kept tracks,
     the dropped languages (each owed a rebuild) and the pending drop reasons.
     """
-    if not plan.acts("regenerate") or not plan.acts("downmix"):
+    # Nothing to rebuild toward where no layout is added.
+    if not plan.acts("regenerate") or not plan.policy.downmixed():
         return kept_audio, set(), []
     if os.path.splitext(plan.path)[1].lower() not in TAG_PRESERVING_EXTS:
         return kept_audio, set(), []
-    # First wins, as in _choose_downmixes.
+    # Added layouts only: a rebuild is a fresh downmix, so a size nothing makes
+    # has nothing to rebuild. First wins, as in _choose_downmixes.
     layouts: dict[int | None, Layout] = {}
-    for layout in plan.policy.downmix_layouts:
+    for layout in plan.policy.downmixed():
         layouts.setdefault(layout.channels, layout)
     keep: list[dict] = []
     rebuild_langs: set[str] = set()
@@ -668,14 +689,10 @@ def _stale_reason(plan: Plan, stream: dict, layout: Layout, sources: list[dict])
 
 
 def _wanted_langs(plan: Plan, rebuild_langs: set[str]) -> list[str]:
-    """The languages every layout is guaranteed in: the original first when
-    DOWNMIX_ORIGINAL_LANG is set, then DOWNMIX_LANGS sorted."""
-    policy = plan.policy
-    wanted: list[str] = []
-    if policy.downmix_original_lang and plan.original_lang:
-        wanted.append(plan.original_lang)
-    wanted += sorted((policy.downmix_langs | rebuild_langs) - set(wanted))
-    return wanted
+    """The languages every layout is guaranteed in, in LANGUAGES order. A
+    language owed a rebuild is wanted whatever its row says."""
+    wanted = [lang.name for lang in plan.langs if lang.downmixes]
+    return wanted + sorted(rebuild_langs - set(wanted))
 
 
 def _choose_downmixes(
@@ -687,17 +704,18 @@ def _choose_downmixes(
     the best bigger track of that language. A layout no wanted language could
     fill falls back to the best source of any language. Nothing is upmixed.
     """
-    if not plan.acts("downmix"):
+    if not plan.policy.downmixed():
         return []
     real = [stream for stream in kept_audio if not is_commentary(stream, plan.policy)]
     wanted = _wanted_langs(plan, rebuild_langs or set())
+    order = [lang.name for lang in plan.langs]
     # Two layouts of one channel count would generate identical tracks, so a
     # satisfied count satisfies both. Per language: a German 2.0 does not
     # answer for a French one.
     present = {(stream.get("channels"), stream_lang(stream)) for stream in real}
     sizes = {channels for channels, _ in present}
     chosen: list[tuple[Layout, dict]] = []
-    for layout in plan.policy.downmix_layouts:
+    for layout in plan.policy.downmixed():
         covered = False
         for lang in wanted:
             if (layout.channels, lang) in present:
@@ -711,7 +729,7 @@ def _choose_downmixes(
             if not candidates:
                 continue
             # One language, so the rank reduces to channel count.
-            src = min(candidates, key=lambda stream: _downmix_rank(stream, plan.original_lang))
+            src = min(candidates, key=lambda stream: _downmix_rank(stream, order))
             chosen.append((layout, src))
             present.add((layout.channels, lang))
             sizes.add(layout.channels)
@@ -721,21 +739,48 @@ def _choose_downmixes(
         candidates = _downmix_sources(kept_audio, layout.channels, plan.policy)
         if not candidates:
             continue
-        src = min(candidates, key=lambda stream: _downmix_rank(stream, plan.original_lang))
+        src = min(candidates, key=lambda stream: _downmix_rank(stream, order))
         chosen.append((layout, src))
         present.add((layout.channels, stream_lang(src)))
         sizes.add(layout.channels)
     return chosen
 
 
-def _downmix_rank(stream: dict, original_lang: str | None) -> tuple[int, int]:
-    """Prefer the original language, then English, then the rest; within a
-    language, the most channels."""
+def _downmix_rank(stream: dict, order: list[str]) -> tuple[int, int]:
+    """Prefer languages in LANGUAGES order, unlisted last; within a language,
+    the most channels."""
     lang = stream_lang(stream)
-    if original_lang and lang == original_lang:
-        pref = 0
-    elif lang == "eng":
-        pref = 1
-    else:
-        pref = 2
+    pref = order.index(lang) if lang in order else len(order)
     return (pref, -(stream.get("channels") or 0))
+
+
+def _drop_layouts(
+    plan: Plan, kept_audio: list[dict], downmixes: list[tuple[Layout, dict]]
+) -> list[dict]:
+    """Remove every track at a size AUDIO_LAYOUTS sets to remove.
+
+    No rule mode: the row is the switch, and removing a mix is worth its own
+    rewrite. Runs after the downmix rule and takes what it will generate, so a
+    track on its way out is still the source for the ones replacing it.
+
+    Nothing goes if it would take the last audio track with it. A generated
+    downmix counts, which is what lets a 7.1-only file lose its 7.1.
+    """
+    # Widened for the lookup: a broken stream reports no channels.
+    named: dict[int | None, str] = {
+        layout.channels: layout.name for layout in plan.policy.removed()
+    }
+    if not named:
+        return kept_audio
+    keep = [stream for stream in kept_audio if stream.get("channels") not in named]
+    # The plan says nothing either: reasons are what a rewrite does.
+    if not keep and not downmixes:
+        return kept_audio
+    for stream in kept_audio:
+        if (layout := named.get(stream.get("channels"))) is not None:
+            _record(
+                plan,
+                DROP_LAYOUTS_RULE,
+                f"drop {layout} audio {_stream_label(stream, stream_lang(stream) or 'und')}",
+            )
+    return keep
