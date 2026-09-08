@@ -29,6 +29,7 @@ from trackstarr import (
     config,
     connections,
     events,
+    holds,
     library,
     notify,
     policy,
@@ -67,6 +68,11 @@ EPISODE_ONE = f"{SEVERANCE}/Season 01/Severance - S01E01 - Good News About Hell.
 EPISODE_TWO = f"{SEVERANCE}/Season 01/Severance - S01E02 - Half Loop.mkv"
 BEAR = f"{TV}/The Bear"
 HOLIDAY = f"{MOVIES}/Home Videos/Queenstown 2019.avi"
+CONTACT = f"{MOVIES}/Contact (1997)/Contact (1997).mkv"
+
+#: The ids the *arr items below resolve to, for the holds placed on them.
+SEVERANCE_ID = "arr:sonarr:12"
+BEAR_ID = "arr:sonarr:31"
 
 SWEEP_RUN = "2026-03-01T03:00:00+13:00#a1b2"
 IMPORT_RUN = "2026-03-01T11:55:00+13:00#c3d4"
@@ -385,6 +391,18 @@ def seed_history() -> None:
         counts={"conform": 1, "failed": 1},
         seconds=41.7,
     )
+    # A title held for an evening and let go the same night: both lines, and
+    # nothing left standing from this pass. The one still on is in seed_runs.
+    holds.place(
+        SEVERANCE,
+        4 * 3600,
+        by="admin",
+        reason="watching it",
+        title=SEVERANCE_ID,
+        name="Severance",
+    )
+    holds.lift(SEVERANCE, by="admin")
+    events.record("skipped", run=LAST_SWEEP, path=EPISODE_TWO, by="admin")
     assert runs.pause(by="admin")
     assert runs.resume(by="admin")
     events.record(
@@ -418,7 +436,10 @@ def seed_runs(clock: Clock) -> None:
     runs.tally(SWEEP_RUN, "fixed", path=EPISODE_ONE, detail="add 2.0 downmix")
     runs.queue(SWEEP_RUN, DUNE_FILE, 9330.0)
     runs.queue(SWEEP_RUN, f"{MOVIES}/Blade Runner (1982)/Blade Runner (1982).mkv", 7020.0)
-    runs.queue(SWEEP_RUN, f"{MOVIES}/Contact (1997)/Contact (1997).mkv", 0.0)
+    runs.queue(SWEEP_RUN, CONTACT, 0.0)
+    # One of the queued files taken off this sweep, and a title held past it.
+    assert runs.skip(SWEEP_RUN, CONTACT) == "waiting"
+    holds.place(BEAR, 0, by="admin", reason="not until I say", title=BEAR_ID, name="The Bear")
     clock.now = NOW - 1500
     runs.begin(SWEEP_RUN, DUNE_FILE)
     runs.stage(SWEEP_RUN, DUNE_FILE, runs.ENCODING, 9330.0)

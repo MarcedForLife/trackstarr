@@ -30,6 +30,7 @@ from . import (
     config,
     connections,
     events,
+    holds,
     library,
     links,
     notify,
@@ -219,6 +220,17 @@ def _handle(job: Job) -> None:
         # twenty files already queued".
         runs.drop(job.run)
         log.info("run %s is stopping, dropping %s", job.run, job.path)
+        return
+    if runs.skipped(job.run, job.path):
+        # Booked rather than dropped: somebody asked for this one by name and
+        # the delivery's row should say what became of it.
+        log.info("%s was skipped, leaving it", job.path)
+        runs.tally(
+            job.run,
+            str(Status.DEFERRED),
+            path=job.path,
+            detail="skipped, so this delivery left it alone",
+        )
         return
     job = _resolve_lang(job)
     if parking_enabled() and hardlinked(job.path):
@@ -506,7 +518,50 @@ def _queue_status() -> dict:
         "parked": parked,
         "may_rewrite": not effective_dry_run(False),
         "next_sweep": sweep.next_scheduled(),
+        # Small and set by hand, so it rides the snapshot every page already
+        # polls rather than needing a fetch of its own.
+        "holds": holds.as_json(),
     }
+
+
+#: Longest reason kept with a hold. A sentence, not a note.
+_REASON_MAX = 120
+
+
+def _under_media(path: str) -> bool:
+    """Whether a path lies in a swept library.
+
+    A hold is matched by prefix, so one on ``/`` would quietly stop the whole
+    library being rewritten.
+    """
+    candidate = os.path.normpath(path)
+    return any(
+        candidate == root or candidate.startswith(os.path.join(root, ""))
+        for root in (os.path.normpath(media) for media in config.MEDIA_DIRS)
+    )
+
+
+def _hold_targets(body: dict) -> tuple[list[tuple[str, str, str]], tuple[int, str] | None]:
+    """What a hold request names, as (path, title id, name), or the refusal.
+
+    Titles come from ``ids`` and resolve through the library, so an id can only
+    ever reach a folder the library knows. ``paths`` is for a single file,
+    which the overview names off a run, and is checked against MEDIA_DIRS.
+    """
+    wanted = body.get("ids")
+    ids = [str(entry) for entry in wanted if str(entry)] if isinstance(wanted, list) else []
+    named = body.get("paths")
+    paths = [str(entry) for entry in named if str(entry)] if isinstance(named, list) else []
+    if not ids and not paths:
+        return [], (400, "name the titles or files to hold")
+    found = [(title.folder, title.id, title.name) for title in library.selected(ids)]
+    if len(found) != len(ids):
+        return [], (404, "no such title")
+    for path in paths:
+        if not _under_media(path):
+            return [], (400, "that file is not in a swept library")
+        found.append((path, "", os.path.basename(path)))
+    return found, None
 
 
 def _subject(found: library.Title) -> links.Subject:
@@ -725,6 +780,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({**runs.snapshot(), **_queue_status()})
         elif path == "/api/runs/log":
             self._serve_run_log(query)
+        elif path == "/api/holds":
+            self._send_json({"holds": holds.as_json()})
         elif path == "/api/settings":
             self._send_json(settings.snapshot())
         elif path == "/api/events":
@@ -1062,6 +1119,12 @@ class Handler(BaseHTTPRequestHandler):
             self._pause(signed_in, False)
         elif path == "/api/runs/abort":
             self._abort()
+        elif path == "/api/runs/skip":
+            self._skip_file(signed_in)
+        elif path == "/api/holds":
+            self._place_hold(signed_in)
+        elif path == "/api/holds/lift":
+            self._lift_hold(signed_in)
         elif path == "/api/library/run":
             self._recheck_titles(signed_in)
         elif path == "/api/library/clear":
@@ -1359,6 +1422,82 @@ class Handler(BaseHTTPRequestHandler):
         # key for a snapshot.
         stopped = runs.stop_all()
         self._send_json({"status": "stopping", "stopped": stopped, "rewrites": runs.abort()})
+
+    def _skip_file(self, signed_in: users.Account) -> None:
+        """Leave one of a run's files alone, killing its rewrite if it has one.
+
+        A skip lasts as long as the run. Nothing stops the next sweep reaching
+        the file, which is what :mod:`trackstarr.holds` is for.
+        """
+        body = self._read_json()
+        if body is None:
+            return
+        run = str(body.get("run") or "")
+        path = str(body.get("path") or "")
+        if not run or not path:
+            self._reply(400, "name the run and the file to skip")
+            return
+        where = runs.skip(run, path)
+        if not where:
+            self._reply(404, "that run is not going to reach that file")
+            return
+        # Signalled once the skip is on the record, so a page refetching
+        # mid-kill is told why the file stopped.
+        killed = runs.abort(path) if where == "active" else 0
+        events.record("skipped", run=run, path=path, by=signed_in.name)
+        log.info("%s skipped by %s", path, signed_in.name)
+        self._send_json({"status": "skipped", "where": where, "rewrites": killed})
+
+    def _place_hold(self, signed_in: users.Account) -> None:
+        """Leave a title or a file alone until it lapses or somebody lifts it.
+
+        Files are still probed, planned and reported while held; only the
+        rewrite waits. ``seconds`` is how long, 0 for a hold only a person
+        ends.
+        """
+        body = self._read_json()
+        if body is None:
+            return
+        seconds = body.get("seconds") or 0
+        if not isinstance(seconds, int | float) or isinstance(seconds, bool) or seconds < 0:
+            self._reply(400, "seconds is how long to hold it for, 0 for no end")
+            return
+        targets, refusal = _hold_targets(body)
+        if refusal:
+            self._reply(*refusal)
+            return
+        if holds.full():
+            self._reply(409, f"{holds.MAX_HOLDS} things are already held; lift one first")
+            return
+        reason = str(body.get("reason") or "")[:_REASON_MAX]
+        try:
+            for path, title, name in targets:
+                holds.place(path, float(seconds), signed_in.name, reason, title, name)
+        except OSError as err:
+            log.error("could not write the holds: %s", err)
+            self._reply(500, "could not store the hold")
+            return
+        self._send_json({"status": "held", "holds": holds.as_json()})
+
+    def _lift_hold(self, signed_in: users.Account) -> None:
+        """Let a held title or file be rewritten again. The next sweep reaches
+        it; nothing is started here."""
+        body = self._read_json()
+        if body is None:
+            return
+        targets, refusal = _hold_targets(body)
+        if refusal:
+            self._reply(*refusal)
+            return
+        try:
+            lifted = [
+                path for path, _, _ in targets if holds.lift(path, signed_in.name) is not None
+            ]
+        except OSError as err:
+            log.error("could not write the holds: %s", err)
+            self._reply(500, "could not lift the hold")
+            return
+        self._send_json({"status": "lifted", "lifted": len(lifted), "holds": holds.as_json()})
 
     def _change_password(self, signed_in: users.Account) -> None:
         """Replace the caller's password after proving the current one.

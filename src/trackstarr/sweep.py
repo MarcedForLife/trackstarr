@@ -14,10 +14,10 @@ import time
 import zoneinfo
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
-from . import config, cron, estimate, events, notify, runs, sweep_cache
+from . import config, cron, estimate, events, holds, notify, runs, sweep_cache
 from .arr import LibraryIndex, all_arrs, match_path, path_index
 from .executor import drop_staged, is_staged_file
 from .policy import Policy
@@ -468,10 +468,12 @@ def _rewrite(
     Judged again from scratch: discovery's plan can be hours old by the time a
     slot frees, and a probe is cheap beside an encode. ``force`` must come from
     the walk, or a re-check would meet the failure ceiling here. A run stopped
-    before this got a slot keeps discovery's would-fix.
+    or a file skipped before this got a slot keeps discovery's would-fix.
     """
     if not runs.hold(run):
         return found
+    if runs.skipped(run, found.job.path):
+        return replace(found, detail="skipped for this run")
     return _judge(found.job.path, index, cache, dry_run=False, run=run, force=force)
 
 
@@ -589,7 +591,12 @@ def _walk_files(run: str, ready: _Ready, walk: Walk) -> _Totals:
                 continue
             if judged.key:
                 totals.library_bytes += judged.key.size
-            if not dry_run and judged.verdict.status is Status.WOULD_FIX:
+            wanted = not dry_run and judged.verdict.status is Status.WOULD_FIX
+            # A held file is booked as discovery judged it rather than queued:
+            # the rewrite would latch to report anyway, having spent a slot and
+            # a second probe getting there.
+            hold = holds.held(judged.job.path) if wanted else None
+            if wanted and hold is None:
                 # Stored now so the library shows the work while it waits;
                 # counted once the rewrite answers.
                 _stash(judged, cache)
@@ -605,6 +612,11 @@ def _walk_files(run: str, ready: _Ready, walk: Walk) -> _Totals:
             else:
                 if judged.cached:
                     totals.cached += 1
+                # Said here as well as in process(), which a verdict answered
+                # from the cache never reached, so the row and the report give
+                # the reason either way.
+                if hold is not None:
+                    judged = replace(judged, detail=hold.describe())
                 _book(judged, totals, cache, run)
             outstanding = _settle(finished, outstanding, totals, cache, run)
             if i % 500 == 0:

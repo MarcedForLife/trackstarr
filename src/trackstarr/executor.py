@@ -113,8 +113,9 @@ DURATION_DRIFT_FLOOR = 1.0
 #: is.
 _STDERR_TAIL = 500
 
-#: The ffmpeg runs this process has going, so an abort can reach them.
-_running_ffmpeg: set[subprocess.Popen] = set()
+#: The ffmpeg runs this process has going and the file each is rewriting, so an
+#: abort can reach them all and a skip can reach one.
+_running_ffmpeg: dict[subprocess.Popen, str] = {}
 _running_lock = threading.Lock()
 
 
@@ -125,14 +126,19 @@ def running_count() -> int:
         return len(_running_ffmpeg)
 
 
-def terminate_running() -> int:
-    """SIGTERM every running ffmpeg; how many were signalled.
+def terminate_running(path: str = "") -> int:
+    """SIGTERM every running ffmpeg, or only the one rewriting ``path``; how
+    many were signalled.
 
     Safe at any moment: a rewrite is staged and published only once verified,
-    so a kill costs the encode and never the library file.
+    so a kill costs the encode and never the library file. A signalled rewrite
+    ends as :data:`Outcome.DEFERRED`, so nothing counts it as a failure of the
+    file.
     """
     with _running_lock:
-        procs = list(_running_ffmpeg)
+        procs = [
+            proc for proc, rewriting in _running_ffmpeg.items() if not path or rewriting == path
+        ]
     for proc in procs:
         # Gone between the snapshot and here is the normal race, not an error.
         with contextlib.suppress(OSError):
@@ -170,14 +176,15 @@ def _watch_progress(readout: IO[str], on_progress: ProgressCallback) -> None:
 
 
 def _run_ffmpeg(
-    args: list[str], on_progress: ProgressCallback | None = None
+    args: list[str], on_progress: ProgressCallback | None = None, rewriting: str = ""
 ) -> tuple[int, str]:
     """Run ffmpeg to completion; its exit code and stderr.
 
     Not subprocess.run, which hides the Popen from :func:`terminate_running`.
     Raises TimeoutExpired like run() does, having killed the process.
     ``on_progress`` gets the readout down a pipe of its own, leaving
-    ``communicate`` the standard streams.
+    ``communicate`` the standard streams. ``rewriting`` is the library file
+    this call is for, which is how a skip finds the one process to signal.
     """
     read_fd = write_fd = -1
     if on_progress is not None:
@@ -207,7 +214,7 @@ def _run_ffmpeg(
                 target=_watch_progress, args=(readout, on_progress), daemon=True
             ).start()
         with _running_lock:
-            _running_ffmpeg.add(proc)
+            _running_ffmpeg[proc] = rewriting
     except BaseException:
         if proc is not None:
             proc.kill()
@@ -226,7 +233,7 @@ def _run_ffmpeg(
         raise
     finally:
         with _running_lock:
-            _running_ffmpeg.discard(proc)
+            _running_ffmpeg.pop(proc, None)
     return proc.returncode, stderr or ""
 
 
@@ -279,7 +286,7 @@ def apply_plan(
     args = ffmpeg_args(plan, tmp)
     log.info("ffmpeg %s", " ".join(args[1:]))
     try:
-        code, stderr = _run_ffmpeg(args, on_progress)
+        code, stderr = _run_ffmpeg(args, on_progress, plan.path)
         if on_encoded is not None:
             on_encoded()
         if code < 0:

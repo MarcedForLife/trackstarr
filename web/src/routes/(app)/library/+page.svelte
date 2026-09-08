@@ -16,7 +16,15 @@
 	import { control, noteBox, primary, radius } from '$lib/controls';
 	import { display, setScale, type Scale } from '$lib/display.svelte';
 	import { tiltField } from '$lib/field';
-	import { getShelf, verdictLabel, type Card, type Verdict } from '$lib/library';
+	import {
+		getShelf,
+		kindLabel,
+		kindName,
+		verdictLabel,
+		type Card,
+		type Kind,
+		type Verdict
+	} from '$lib/library';
 	import { moving } from '$lib/motion.svelte';
 	import { FLOW, order, SORTS, type Flow, type Sort } from '$lib/order.svelte';
 	import { poll } from '$lib/poll';
@@ -24,7 +32,16 @@
 	import { whenNear } from '$lib/reveal';
 	import { startSweep } from '$lib/runs';
 	import { Selection } from '$lib/selection.svelte';
-	import { elsewhere, everything, sift, tally, waiting } from '$lib/shelfview';
+	import {
+		elsewhere,
+		everything,
+		kindsOn,
+		ofKind,
+		otherKinds,
+		sift,
+		tally,
+		waiting
+	} from '$lib/shelfview';
 	import { told } from '$lib/stream';
 	import type { PageProps } from './$types';
 
@@ -38,6 +55,10 @@
 	// default and changes for the visit, not for good, like the order below.
 	let filters = $state<Verdict[]>(display.filters);
 
+	// Films or series, empty being both. For the visit, like the search: a cut
+	// this coarse is one press to undo and is named on screen while it holds.
+	let kind = $state<Kind>('');
+
 	let sort = $state<Sort>(order.grid);
 	// Which way that order runs: the reader turning an order over.
 	let flow = $state<Flow>(order.gridFlow);
@@ -46,7 +67,7 @@
 	const needle = $derived(search.trim().toLowerCase());
 
 	// Everything $lib/shelfview needs to cut the shelf.
-	const view = $derived({ filters, hidden: display.hidden, needle, sort, flow });
+	const view = $derived({ filters, hidden: display.hidden, kind, needle, sort, flow });
 
 	// How many posters go in before the reader scrolls. A whole library at once
 	// is a second or two of layout before the page appears.
@@ -80,6 +101,30 @@
 	// One state only, for the "Found under" buttons.
 	const only = (state: Verdict) => filter([state]);
 
+	function pickKind(next: Kind) {
+		kind = next;
+		// A verdict the new kind holds none of loses its chip below, which would
+		// leave an empty grid with nothing left to unpress.
+		const left = tally(shelf.titles.filter((card) => ofKind(card, next)));
+		filters = filters.filter((state) => left[state]);
+		fromTheTop();
+	}
+
+	// Only the kinds the shelf holds, so a Radarr-only install is offered no
+	// control rather than a dead Series segment.
+	const kinds = $derived(kindsOn(shelf.titles));
+
+	// All is the empty cut, as it is on the chips above.
+	const kindOptions = $derived([
+		{ value: '', label: 'All' },
+		...kinds.map((each) => ({ value: each, label: kindLabel(each) }))
+	]);
+
+	// One of the "Found under" buttons: a place the search did land, in the shape
+	// of the chips above without their colour.
+	const hint =
+		'rounded-full border border-line px-2.5 py-0.5 font-medium text-fg transition-colors hover:bg-raised';
+
 	// Single letters, beside the search box; the group carries the word.
 	const SIZES = [
 		{ value: 'small', label: 'S' },
@@ -104,20 +149,29 @@
 		easing: cubicOut
 	});
 
-	// How many titles each verdict holds, and how many All stands for.
-	const counts = $derived(tally(shelf.titles));
-	const allCount = $derived(everything(counts, shelf.titles.length, display.hidden));
+	// How many titles each verdict holds, and how many All stands for. Both count
+	// the kind on screen, so a chip never promises titles the type filter then
+	// withholds.
+	const inKind = $derived(kind ? shelf.titles.filter((card) => ofKind(card, kind)) : shelf.titles);
+	const counts = $derived(tally(inKind));
+	const allCount = $derived(everything(counts, inKind.length, display.hidden));
+
+	// The whole library's tally, for the wall below: that is the shelf's state
+	// rather than the filter's.
+	const shelfCounts = $derived(kind ? tally(shelf.titles) : counts);
 
 	// What All promises, naming the setting that narrows it.
 	const allHint = $derived.by(() => {
-		if (!display.hidden.length) return 'Every title Radarr or Sonarr knows about, in any state.';
+		const noun = kind ? kindName(kind).toLowerCase() : 'title';
+		if (!display.hidden.length) return `Every ${noun} in the library, in any state.`;
 		const kept = display.hidden.map(verdictLabel).join(' and ');
-		return `Every title except the ${kept} ones Appearance hides. Their own chips still reach them.`;
+		return `Every ${noun} except the ${kept} ones Appearance hides. Their own chips still reach them.`;
 	});
 
 	// Where a failed search would have landed without the filters. Counted only
-	// once the list is empty, since it walks the whole shelf.
+	// once the list is empty, since each walks the whole shelf.
 	const found = $derived(shown.length ? [] : elsewhere(shelf.titles, view));
+	const foundKinds = $derived(shown.length ? [] : otherKinds(shelf.titles, view));
 
 	// The sheet a poster raises.
 	let sheet: TitleSheet;
@@ -216,7 +270,7 @@
 	// The wall of Unknown a fresh install or a cleared cache opens to, and the
 	// press that clears it.
 
-	const wall = $derived(waiting(counts, shelf.titles.length));
+	const wall = $derived(waiting(shelfCounts, shelf.titles.length));
 
 	// Only a sweep clears it; somebody else's re-check does not.
 	const sweeping = $derived(recheck.otherRun?.kind === 'sweep');
@@ -305,17 +359,36 @@
 		/>
 	</div>
 
-	<!-- How the grid is shown. One line from sm up; on a phone the search box
-	     takes its own line, since shared it was too narrow for its placeholder. -->
-	<div class="mt-2.5 flex min-w-0 flex-col gap-2 sm:mt-3 sm:flex-row sm:items-center sm:gap-3">
-		<input
-			bind:value={search}
-			oninput={fromTheTop}
-			type="search"
-			placeholder="Find a title"
-			aria-label="Find a title"
-			class={`${control} ${radius} w-full min-w-0 border border-line-strong bg-field px-3 text-base placeholder:text-faint sm:w-auto sm:max-w-52 sm:flex-1 sm:text-[13px]`}
-		/>
+	<!-- How the grid is shown: what the reader is looking for on one line, how it
+	     is laid out on the other. The two sit side by side once there is room and
+	     wrap back apart rather than squeezing the search past its placeholder. -->
+	<div
+		class="mt-2.5 flex min-w-0 flex-col gap-2 sm:mt-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
+	>
+		<!-- The box keeps room for its placeholder, so a shelf with folders in it as
+		     well drops the types to their own line rather than crushing the search. -->
+		<div class="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+			<input
+				bind:value={search}
+				oninput={fromTheTop}
+				type="search"
+				placeholder="Find a title"
+				aria-label="Find a title"
+				class={`${control} ${radius} min-w-36 flex-1 border border-line-strong bg-field px-3 text-base placeholder:text-faint sm:max-w-52 sm:text-[13px]`}
+			/>
+			{#if kinds.length > 1}
+				<!-- Beside the search, not among the verdict chips: the two of them are
+				     what the reader is after, where a verdict is what state it is in. -->
+				<div class="flex-none">
+					<Segmented
+						label="Filter by type"
+						options={kindOptions}
+						value={kind}
+						onchange={(next) => pickKind(next as Kind)}
+					/>
+				</div>
+			{/if}
+		</div>
 		<div class="flex min-w-0 items-center gap-2 sm:gap-3">
 			<!-- The menu takes whatever the fixed controls leave, so the row ends
 			     at the screen's edge. -->
@@ -389,16 +462,19 @@
 		</p>
 	{:else if !shown.length}
 		<p class="mt-8 text-sm text-dim">No title matches that.</p>
-		{#if found.length}
-			<!-- Named and tappable rather than described. -->
+		{#if found.length || foundKinds.length}
+			<!-- Named and tappable rather than described. The kind first: it is the
+			     coarser cut, and pressing it is what makes the verdicts below real. -->
 			<p class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-dim">
 				<span>Found under</span>
+				{#each foundKinds as hit (hit.kind)}
+					<button type="button" onclick={() => pickKind(hit.kind)} class={hint}>
+						{kindLabel(hit.kind)}
+						<span class="text-faint tabular-nums">{hit.count.toLocaleString()}</span>
+					</button>
+				{/each}
 				{#each found as hit (hit.state)}
-					<button
-						type="button"
-						onclick={() => only(hit.state)}
-						class="rounded-full border border-line px-2.5 py-0.5 font-medium text-fg transition-colors hover:bg-raised"
-					>
+					<button type="button" onclick={() => only(hit.state)} class={hint}>
 						{verdictLabel(hit.state)}
 						<span class="text-faint tabular-nums">{hit.count.toLocaleString()}</span>
 					</button>

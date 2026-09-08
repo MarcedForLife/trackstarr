@@ -9,7 +9,7 @@ import time
 import pytest
 
 from conftest import configured_arr, needed_plan
-from trackstarr import config, processing
+from trackstarr import config, holds, processing
 from trackstarr.executor import Outcome
 from trackstarr.media import ProbeError
 from trackstarr.planner import OutStream, Plan
@@ -94,6 +94,32 @@ def test_report_mode_bottoms_out_in_process(monkeypatch):
     )
     result = processing.process(Job("/x.mkv"), dry_run=False)
     assert result.status == "would-fix"
+
+
+def test_a_held_file_is_planned_and_reported_but_never_rewritten(monkeypatch):
+    """The whole point: a title somebody is watching goes on being judged, so
+    the library still shows the work, and nothing touches the file."""
+    holds.place("/data/media/movies/Dune (2024)", by="marc", reason="watching it")
+    monkeypatch.setattr(config, "MEDIA_DIRS", ["/data/media/movies"])
+    plan = needed_plan()
+    monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
+    monkeypatch.setattr(
+        processing, "apply_plan", lambda plan: pytest.fail("a hold must not rewrite")
+    )
+    result = process(Job("/data/media/movies/Dune (2024)/Dune (2024).mkv"), dry_run=False)
+    assert result.status is Status.WOULD_FIX
+    # The row and pending.tsv say why this one is not being rewritten, since
+    # the plan's own reasons would read as work about to happen.
+    assert "held by marc" in result.detail
+    assert "watching it" in result.detail
+
+
+def test_a_hold_on_one_title_leaves_the_rest_alone(monkeypatch, stub_rewrite):
+    """A hold is not a pause; everything else goes on being rewritten."""
+    holds.place("/data/media/movies/Dune (2024)", by="marc")
+    stub_rewrite(needed_plan(path="/data/media/movies/Arrival (2016)/Arrival (2016).mkv"))
+    result = process(Job("/data/media/movies/Arrival (2016)/Arrival (2016).mkv"), dry_run=False)
+    assert result.status is Status.FIXED
 
 
 def held_slot():

@@ -29,7 +29,20 @@
 					"stage": "encoding",
 					"duration": 9330.0,
 					"done": 1800.0,
-					"speed": 1.5
+					"speed": 1.5,
+					"skipped": false
+				}
+			],
+			"upcoming": [
+				{
+					"path": "/data/media/movies/Blade Runner (1982)/Blade Runner (1982).mkv",
+					"expected": 7020.0,
+					"skipped": false
+				},
+				{
+					"path": "/data/media/movies/Contact (1997)/Contact (1997).mkv",
+					"expected": 0.0,
+					"skipped": true
 				}
 			],
 			"recent": [
@@ -68,9 +81,11 @@
 					"stage": "waiting",
 					"duration": 0.0,
 					"done": 0.0,
-					"speed": 0.0
+					"speed": 0.0,
+					"skipped": false
 				}
 			],
+			"upcoming": [],
 			"recent": []
 		},
 		{
@@ -88,6 +103,7 @@
 			"rewrite_seconds": null,
 			"stopping": true,
 			"active": [],
+			"upcoming": [],
 			"recent": []
 		}
 	],
@@ -96,5 +112,17 @@
 	"rewrites": 0,
 	"parked": 0,
 	"may_rewrite": true,
-	"next_sweep": "2026-03-02T03:00:00+13:00"
+	"next_sweep": "2026-03-02T03:00:00+13:00",
+	"holds": [
+		{
+			"path": "/data/media/tv/The Bear",
+			"seconds": null,
+			"until": null,
+			"by": "admin",
+			"reason": "not until I say",
+			"at": "2026-03-01T11:17:00+13:00",
+			"title": "arr:sonarr:31",
+			"name": "The Bear"
+		}
+	]
 }

@@ -40,6 +40,11 @@ def timestamp() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
+def at(when: float) -> str:
+    """An epoch moment in the same format, for a stamp that is not now."""
+    return datetime.fromtimestamp(when).astimezone().isoformat(timespec="seconds")
+
+
 def run_id() -> str:
     """A run id: the start time, made unique by a suffix, so runs sort by when
     they began."""

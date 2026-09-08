@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 
-from . import config, events, runs
+from . import config, events, holds, runs
 from .arr import Arr, LibraryItem
 from .executor import Outcome, apply_plan
 from .media import ProbeError
@@ -248,10 +248,13 @@ def downmixed_names(plan: Plan) -> list[str]:
     return [stream.title for stream in plan.streams if stream.encode]
 
 
-def effective_dry_run(dry_run: bool) -> bool:
-    """Whether a run is dry, given the caller and REWRITE_MODE. ``report``
-    latches over every caller, ``sweep --apply`` included."""
-    return dry_run or config.REWRITE_MODE == "report"
+def effective_dry_run(dry_run: bool, path: str = "") -> bool:
+    """Whether a run is dry, given the caller, REWRITE_MODE and any hold.
+
+    ``report`` latches over every caller, ``sweep --apply`` included, and a
+    hold does the same for the one title; see :mod:`trackstarr.holds`.
+    """
+    return dry_run or config.REWRITE_MODE == "report" or holds.held(path) is not None
 
 
 def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
@@ -260,7 +263,8 @@ def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
     ``source`` labels the history entry a rewrite attempt leaves. Probe
     failures leave none: they would recur every sweep.
     """
-    dry_run = effective_dry_run(dry_run)
+    hold = holds.held(job.path)
+    dry_run = effective_dry_run(dry_run, job.path)
     try:
         plan = build_plan(job.path, job.lang)
     except ProbeError as err:
@@ -275,6 +279,12 @@ def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
     if not plan.needed:
         return ProcessResult(Status.CONFORM, plan)
     if dry_run:
+        # A held file is a would-fix nothing picked up, which is what a
+        # reporting run already produces. The detail is the only difference,
+        # and it is what the run row and pending.tsv say instead of the plan.
+        if hold:
+            log.info("not rewriting %s: %s", job.path, hold.describe())
+            return ProcessResult(Status.WOULD_FIX, plan, hold.describe())
         log.info("would fix %s: %s", job.path, describe(plan))
         return ProcessResult(Status.WOULD_FIX, plan)
 

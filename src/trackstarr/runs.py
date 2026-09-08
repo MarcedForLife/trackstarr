@@ -16,7 +16,6 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
 
 from . import config, estimate, events, notify
 from .executor import running_count, terminate_running
@@ -51,6 +50,10 @@ ENCODING = "encoding"
 #: How many released files a run keeps, so the overview can show what each
 #: came to.
 _RECENT_FILES = 40
+
+#: How many waiting files a snapshot names. Enough to reach past the ones a
+#: reader can see without carrying a whole night's queue in every poll.
+_UPCOMING = 20
 
 #: How much of a verdict's detail a row carries. The rest is in the history.
 _DETAIL_MAX = 160
@@ -125,6 +128,9 @@ class Run:
     #: Asked to stop and winding down. Stays in the registry until it closes so
     #: the page can say why it is emptying.
     stopping: bool = False
+    #: Files somebody took off this run. Dies with it: a skip is "not in this
+    #: pass", where :mod:`trackstarr.holds` is "not for a while".
+    skipped: set[str] = field(default_factory=set)
     #: Still being handed files. Without it a delivery whose first file
     #: finished before its third was queued would close and reopen as two runs.
     filling: bool = False
@@ -596,6 +602,45 @@ def stop(run_id: str) -> bool:
     return True
 
 
+def skip(run_id: str, path: str) -> str:
+    """Take one file off a run: ``active`` where a thread has it this second,
+    ``waiting`` where none has yet, or ``""`` where there is nothing to skip.
+
+    Only recorded here. An active file's rewrite is killed by the caller, which
+    is the whole difference between skipping it and waiting for it.
+    """
+    with _lock:
+        run = _runs.get(run_id)
+        if run is None:
+            return ""
+        if path in run.active:
+            where = "active"
+        elif path in run.queued:
+            where = "waiting"
+        elif any(done.path == path and done.status for done in run.recent):
+            # A verdict is the run finished with it, and the skip would sit in
+            # the set until the run closed. A released file with none yet is a
+            # sweep between the probe and the slot, which is still ahead.
+            return ""
+        else:
+            # A delivery's queue, which lives in the work queue rather than
+            # here, or that gap between a probe and a slot.
+            where = "waiting"
+        run.skipped.add(path)
+    notify.publish(notify.RUNS)
+    log.info("%s skipped on run %s", path, run_id)
+    return where
+
+
+def skipped(run_id: str | None, path: str) -> bool:
+    """Whether this file was taken off the run before a worker reached it."""
+    if run_id is None:
+        return False
+    with _lock:
+        run = _runs.get(run_id)
+        return bool(run and path in run.skipped)
+
+
 def stop_all() -> int:
     """Ask every run to stop; how many were asked. Each still stops between
     files."""
@@ -671,21 +716,22 @@ def rewrites() -> int:
     return running_count()
 
 
-def abort() -> int:
-    """Kill every rewrite under way; how many were signalled.
+def abort(path: str = "") -> int:
+    """Kill every rewrite under way, or only the one rewriting ``path``; how
+    many were signalled.
 
     Rewrites are staged in WORK_DIR and published by an atomic rename once
     verified, so this costs the encode and never the library file.
     """
-    killed = terminate_running()
+    killed = terminate_running(path)
     if killed:
-        log.warning("aborted %d rewrite(s) under way", killed)
+        log.warning("aborted %d rewrite(s) under way%s", killed, f" on {path}" if path else "")
     return killed
 
 
 def stamp(when: float) -> str:
     """A moment in the history's ``ts`` format."""
-    return datetime.fromtimestamp(when).astimezone().isoformat(timespec="seconds")
+    return events.at(when)
 
 
 def _still_to_go(active: Active, now: float) -> float:
@@ -740,8 +786,18 @@ def _as_json(run: Run, now: float) -> dict:
                 "duration": round(active.total, 1),
                 "done": round(active.done, 1),
                 "speed": round(active.speed, 2),
+                # Asked for but not yet given up: the kill and the thread
+                # noticing are two moments.
+                "skipped": path in run.skipped,
             }
             for path, active in sorted(run.active.items(), key=lambda item: item[1].since)
+        ],
+        # The head of the queue in the order it will be reached, so a page has
+        # something to name when somebody wants one of them left alone. Bounded:
+        # a first-night sweep queues thousands and the page shows a handful.
+        "upcoming": [
+            {"path": path, "expected": round(seconds, 1), "skipped": path in run.skipped}
+            for path, seconds in list(run.queued.items())[:_UPCOMING]
         ],
         # Newest first.
         "recent": [

@@ -122,6 +122,7 @@ describe('the library', () => {
 	const view: View = {
 		filters: [],
 		hidden: [],
+		kind: '',
 		needle: '',
 		sort: 'processed',
 		flow: FLOW.processed

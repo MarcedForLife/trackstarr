@@ -1,27 +1,37 @@
 <script lang="ts">
+	import { page } from '$app/state';
 	import Glyph from '$lib/components/Glyph.svelte';
 	import RunButtons from '$lib/components/RunButtons.svelte';
 	import RunProgress from '$lib/components/RunProgress.svelte';
 	import ServiceIcon from '$lib/components/ServiceIcon.svelte';
 	import Sheet, { SLIDE } from '$lib/components/Sheet.svelte';
+	import { refusalText } from '$lib/api';
 	import { MARKS, type MarkName } from '$lib/connections';
 	import { button } from '$lib/controls';
 	import { ago } from '$lib/events';
+	import { duration } from '$lib/format';
+	import {
+		forTitle,
+		getHolds,
+		lift as liftHold,
+		place as placeHold,
+		SPANS,
+		type Hold
+	} from '$lib/holds';
 	import {
 		coverUrl,
 		describe,
 		getLinks,
 		getTitle,
-		pair,
-		paired,
+		kindName,
+		listing,
 		rate,
 		size,
 		verdictLabel,
 		verdictText,
 		type Card,
 		type Fixed,
-		type LibraryFile,
-		type Pairing,
+		type Row,
 		type RunMode,
 		type TitleDetail,
 		type TitleLink,
@@ -77,7 +87,19 @@
 	// the buttons stand greyed in the row rather than landing under the thumb.
 	let links = $state<TitleLink[] | null>(null);
 
-	// A long series is two hundred files with two track lists each.
+	// Whether this title is being left alone for now, and the choices for
+	// putting it that way. Owned here rather than passed in: the sheet opens
+	// from two pages and already fetches for itself.
+	const admin = $derived(page.data.user?.role === 'admin');
+	let holds = $state<Hold[]>([]);
+	// The durations are showing, rather than the one button that raises them.
+	let choosing = $state(false);
+	let holdBusy = $state('');
+	let holdError = $state('');
+	const hold = $derived(opened ? forTitle(holds, opened.id) : undefined);
+	const left = $derived(hold?.seconds ? `${duration(hold.seconds)} left` : 'until lifted');
+
+	// A long series is two hundred files with a track list each.
 	const FILE_PAGE = 12;
 	let files = $state(FILE_PAGE);
 
@@ -104,9 +126,13 @@
 		files = FILE_PAGE;
 		failure = '';
 		links = null;
+		holds = [];
+		choosing = false;
+		holdError = '';
 		loading = true;
 		// Alongside the verdicts: neither should wait on the other.
 		find(card);
+		lookUpHolds();
 		try {
 			const found = await getTitle(card.id);
 			// A second tap while the first was under way.
@@ -127,6 +153,43 @@
 			found = [];
 		}
 		if (opened?.id === card.id) links = found;
+	}
+
+	// Quietly: a title that cannot be read for holds still shows its files, and
+	// the row is simply not offered.
+	async function lookUpHolds() {
+		try {
+			holds = await getHolds();
+		} catch {
+			holds = [];
+		}
+	}
+
+	async function keep(seconds: number) {
+		if (!opened) return;
+		holdBusy = String(seconds);
+		holdError = '';
+		try {
+			holds = await placeHold({ ids: [opened.id] }, seconds);
+			choosing = false;
+		} catch (error) {
+			holdError = refusalText(error);
+		} finally {
+			holdBusy = '';
+		}
+	}
+
+	async function release() {
+		if (!opened) return;
+		holdBusy = 'lift';
+		holdError = '';
+		try {
+			holds = await liftHold({ ids: [opened.id] });
+		} catch (error) {
+			holdError = refusalText(error);
+		} finally {
+			holdBusy = '';
+		}
 	}
 
 	// Narrowing, not a cast: a name with no mark keeps its button and loses its
@@ -174,39 +237,6 @@
 		!runner ? '' : runner.refuses || 'Reads every file here again, whatever the last sweep said.'
 	);
 
-	// The two track lists a file is worth showing side by side, and what to call
-	// them. Null where there is only the one, which is most of a swept library.
-	type Compare = {
-		left: string;
-		right: string;
-		before: Track[];
-		after: Track[];
-		// Which of `before` survives and which of `after` is new, so a row can be
-		// struck or accented.
-		mark: Pairing;
-	};
-
-	// A plan wins over a rewrite already made: what the file is about to become
-	// is the more useful answer, and only a rules change leaves a file with both.
-	function compare(file: LibraryFile): Compare | null {
-		if (file.planned.length) {
-			return {
-				left: 'Now',
-				right: 'After',
-				before: file.tracks,
-				after: file.planned,
-				mark: pair(file)
-			};
-		}
-		const was = file.fixed?.was ?? [];
-		const mark = file.fixed && was.length ? paired(file.fixed) : null;
-		if (!mark) return null;
-		// The right column is the file as it was probed after the rewrite, not the
-		// plan's word for what it would be. Both are in output order, so the
-		// generated positions still land on the right rows.
-		return { left: 'Was', right: 'Now', before: was, after: file.tracks, mark };
-	}
-
 	const KIND_LETTER: Record<string, string> = {
 		video: 'V',
 		audio: 'A',
@@ -217,6 +247,13 @@
 	function badges(track: Track): string[] {
 		// "generated" is said by the row's colour.
 		return (track.flags ?? []).filter((flag) => flag !== 'generated' && flag !== 'default');
+	}
+
+	// The number the row leads with, padded to the width of the longest a file is
+	// likely to reach so the kind letters line up beneath each other. Blank for a
+	// track the rewrite drops, which is what having no place looks like.
+	function place(row: Row): string {
+		return (row.position === null ? '' : `[${row.position}]`).padStart(4);
 	}
 
 	// One change per line; run together they were a paragraph nobody finished.
@@ -253,7 +290,7 @@
 					<p class="mt-0.5 text-[12.5px] text-dim">
 						{[
 							opened.year,
-							opened.kind === 'series' ? 'Series' : opened.kind === 'movie' ? 'Film' : 'Folder',
+							kindName(opened.kind),
 							detail?.lang ?? opened.lang,
 							// Last, and named: the one thing here about the film rather than our
 							// copy of it.
@@ -298,6 +335,57 @@
 						{/if}
 					{/each}
 				</div>
+			{/if}
+
+			<!-- Whether this title is being left alone, and how to say so. Above the
+			     run buttons: it is the answer to "not now", and pressing Process
+			     while it is held would rewrite nothing. -->
+			{#if hold || admin}
+				<div class="mt-4 flex flex-wrap items-center gap-2">
+					{#if hold}
+						<span class="min-w-0 flex-1 text-[12.5px] text-dim">
+							{[`Held${hold.by ? ` by ${hold.by}` : ''}`, left, hold.reason]
+								.filter(Boolean)
+								.join(' · ')}
+						</span>
+						{#if admin}
+							<button onclick={release} disabled={!!holdBusy} class={`${button} flex-none`}>
+								{holdBusy === 'lift' ? 'Lifting…' : 'Lift the hold'}
+							</button>
+						{/if}
+					{:else if choosing}
+						<!-- The choices themselves, since "how long" is the only question a
+						     hold asks, and a way back out of having asked it. -->
+						{#each SPANS as span (span.seconds)}
+							<button
+								onclick={() => keep(span.seconds)}
+								disabled={!!holdBusy}
+								class={`${button} ${spread}`}
+							>
+								{span.label}
+							</button>
+						{/each}
+						<button
+							onclick={() => (choosing = false)}
+							disabled={!!holdBusy}
+							class={`${button} ${spread}`}
+						>
+							Cancel
+						</button>
+					{:else}
+						<button
+							onclick={() => (choosing = true)}
+							title="Leave this title alone. It is still judged, just not rewritten."
+							class={`${button} ${spread}`}
+						>
+							<Glyph name="pause" />
+							Hold
+						</button>
+					{/if}
+				</div>
+				{#if holdError}
+					<p role="alert" class="mt-1.5 text-[12px] text-danger">{holdError}</p>
+				{/if}
 			{/if}
 
 			{#if runner}
@@ -359,7 +447,7 @@
 
 				<ul class="mt-5 flex flex-col gap-4">
 					{#each rows as file (file.path)}
-						{@const both = compare(file)}
+						{@const shown = listing(file)}
 						<li class="rounded-xl border border-line bg-sunken p-3">
 							<div class="flex items-baseline gap-2">
 								<p class="min-w-0 flex-1 truncate text-[13px] font-medium" title={file.name}>
@@ -389,50 +477,14 @@
 								{/if}
 							</p>
 
-							{#if file.tracks.length}
-								{#if both}
-									<!-- Side by side: what this file is about to become, or what we
-									     made of it. -->
-									<div class="mt-3 grid grid-cols-2 gap-x-3">
-										{@render heading(both.left)}
-										{@render heading(both.right)}
-										{@render lane(both.before, both.mark.kept, null)}
-										{@render lane(both.after, null, both.mark.added)}
-									</div>
-								{:else}
-									<!-- Nothing to compare it with, so the width goes on the one
-									     list rather than on a second column repeating it. -->
-									<div class="mt-3">
-										{@render heading('Tracks')}
-										{@render lane(file.tracks, null, null)}
-									</div>
-								{/if}
-
-								<!-- What the two lines above had no room for. -->
-								{#if file.tracks.some((track) => track.title || badges(track).length)}
-									<dl class="mt-2.5 flex flex-col gap-0.5 text-[11px]">
-										{#each file.tracks.filter((track) => track.title || badges(track).length) as track (track.index)}
-											<div class="flex gap-1.5">
-												<dt class="flex-none font-mono text-faint">
-													{KIND_LETTER[track.kind] ?? '·'}{track.index}
-												</dt>
-												<dd class="min-w-0 flex-1 truncate text-dim">
-													{track.title}
-													{#each badges(track) as flag (flag)}
-														<span
-															class="ml-1 rounded border border-line px-1 text-[10px] text-faint"
-														>
-															{flag}
-														</span>
-													{/each}
-												</dd>
-												{#if track.bitrate}
-													<dd class="flex-none font-mono text-faint">{rate(track.bitrate)}</dd>
-												{/if}
-											</div>
-										{/each}
-									</dl>
-								{/if}
+							{#if shown.rows.length}
+								<!-- One list, the whole width, in the order the file ends up in.
+								     A rewrite copies far more than it touches, so two columns were
+								     mostly the same list twice. -->
+								<div class="mt-3">
+									{@render heading(shown.label)}
+									{@render list(shown.rows)}
+								</div>
 							{/if}
 
 							{#if file.why.skip}
@@ -469,29 +521,47 @@
 	{/if}
 </Sheet>
 
-<!-- A column's label, over its list. -->
+<!-- What the list's numbering is of, over it. -->
 {#snippet heading(text: string)}
 	<p class="pb-1 text-[10.5px] font-semibold tracking-wider text-faint uppercase">{text}</p>
 {/snippet}
 
-<!-- One column of tracks. `kept` strikes what is not in it and `added` accents
-     what is; either is null for a column with nothing to say that way. -->
-{#snippet lane(tracks: Track[], kept: Set<number> | null, added: Set<number> | null)}
+<!-- The file's tracks, one row each. The number is the place the track takes in
+     the file the rewrite leaves; a dropped row has none and is struck through,
+     a generated one is accented. Title and flags go on a second line under the
+     track they belong to, indented by the grid rather than by a guessed width. -->
+{#snippet list(shown: Row[])}
 	<ul class="flex flex-col gap-1">
-		{#each tracks as track (track.index)}
-			{@const gone = kept !== null && !kept.has(track.index)}
-			{@const fresh = added !== null && added.has(track.index)}
+		{#each shown as row, at (at)}
+			{@const track = row.track}
+			{@const gone = row.state === 'dropped'}
+			{@const fresh = row.state === 'added'}
 			<li
-				class={`flex items-baseline gap-1.5 font-mono text-[11px] ${
-					gone ? 'text-faint line-through' : fresh ? 'font-semibold text-accent' : 'text-dim'
+				class={`grid grid-cols-[auto_1fr] gap-x-1.5 font-mono text-[11px] ${
+					gone ? 'text-faint' : fresh ? 'text-accent' : 'text-dim'
 				}`}
 			>
-				<span class={`flex-none ${fresh ? 'text-accent' : 'text-faint'}`}>
-					{KIND_LETTER[track.kind] ?? '·'}
+				<span class="whitespace-pre text-faint">{place(row)} {KIND_LETTER[track.kind] ?? '·'}</span>
+				<span class="flex min-w-0 items-baseline gap-1.5">
+					<span
+						class={`min-w-0 truncate ${gone ? 'line-through' : ''} ${fresh ? 'font-semibold' : ''}`}
+					>
+						{describe(track)}
+					</span>
+					{#if fresh}
+						<span class="flex-none text-[10px] tracking-wide">NEW</span>
+					{/if}
+					{#if track.bitrate}
+						<span class="ml-auto flex-none pl-2 text-faint">{rate(track.bitrate)}</span>
+					{/if}
 				</span>
-				<span class="min-w-0 truncate">{describe(track)}</span>
-				{#if fresh}
-					<span class="flex-none text-[10px] tracking-wide">NEW</span>
+				{#if track.title || badges(track).length}
+					<span class="col-start-2 flex min-w-0 items-baseline gap-1.5 text-faint">
+						<span class="min-w-0 truncate">{track.title}</span>
+						{#each badges(track) as flag (flag)}
+							<span class="flex-none rounded border border-line px-1 text-[10px]">{flag}</span>
+						{/each}
+					</span>
 				{/if}
 			</li>
 		{/each}

@@ -54,6 +54,9 @@ export type Event = {
 	// absent rather than null.
 	changed?: Record<string, { from?: unknown; to?: unknown }>;
 	by?: string;
+	// Why a title was held. `seconds` is how long the hold was placed for, and
+	// is absent on one with no end.
+	reason?: string;
 };
 
 // `next` is the cursor for the next page, null once the oldest event is handed
@@ -202,6 +205,12 @@ export function headline(entry: Event): string {
 			return 'Processing paused';
 		case 'resumed':
 			return 'Processing resumed';
+		case 'held':
+			return `Held ${named(entry.path).name}`;
+		case 'lifted':
+			return `Hold lifted on ${named(entry.path).name}`;
+		case 'skipped':
+			return `Skipped ${named(entry.path).name}`;
 		case 'webhook': {
 			// Counted even for one, since a release file name truncates at any
 			// width. The name goes on the second line.
@@ -273,7 +282,20 @@ export function detail(entry: Event): string {
 			return [count(entry.files, 'file'), ...verdicts(entry)].join(' · ');
 		case 'paused':
 		case 'resumed':
+		case 'lifted':
 			return entry.by ? `By ${entry.by}.` : '';
+		case 'held':
+			return [
+				`Not rewritten ${entry.seconds ? `for ${duration(entry.seconds)}` : 'until it is lifted'}`,
+				entry.reason,
+				entry.by && `by ${entry.by}`
+			]
+				.filter(Boolean)
+				.join(' · ');
+		case 'skipped':
+			// The run it was taken off is in the opened row; a skip lasts no
+			// longer than that run.
+			return entry.by ? `Left alone for that run by ${entry.by}.` : '';
 		case 'webhook': {
 			// What the headline counted, by name. Whole, since this line wraps and
 			// two episodes of one series otherwise read as one name twice.
@@ -387,6 +409,13 @@ export function details(entry: Event, before?: Event): Detail[] {
 		}
 		case 'settings':
 			add('Changed', moved(entry));
+			add('By', [entry.by]);
+			break;
+		case 'held':
+		case 'lifted':
+		case 'skipped':
+			add('File', [entry.path], true);
+			add('Reason', [entry.reason]);
 			add('By', [entry.by]);
 			break;
 	}

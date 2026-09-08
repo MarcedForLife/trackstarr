@@ -4,6 +4,7 @@
 import { request } from '$lib/api';
 import { mark } from '$lib/clock.svelte';
 import { duration, named, soon, titled } from '$lib/format';
+import type { Hold } from '$lib/holds';
 import { pip, verdictHint, verdictLabel } from '$lib/library';
 // Re-exported so a page reads this module's answers from one import.
 export { duration, named, titled };
@@ -21,6 +22,17 @@ export type ActiveFile = {
 	duration: number;
 	done: number;
 	speed: number;
+	// Asked for but not given up yet: the kill and the thread noticing are two
+	// moments.
+	skipped?: boolean;
+};
+
+// One file a run has found work for and not reached. The estimate is what the
+// service expects the rewrite to take, or zero where nothing estimated.
+export type WaitingFile = {
+	path: string;
+	expected: number;
+	skipped?: boolean;
 };
 
 // One file a run has finished with, and what it came to.
@@ -58,6 +70,9 @@ export type Run = {
 	rewrite_seconds?: number | null;
 	stopping: boolean;
 	active: ActiveFile[];
+	// The head of the queue in the order it will be reached, bounded by the
+	// service. Absent from older builds.
+	upcoming?: WaitingFile[];
 	// Files it worked on, newest first. Cached verdicts are not here. Absent from
 	// older builds.
 	recent?: DoneFile[];
@@ -83,6 +98,10 @@ export type Activity = {
 	rewrites: number;
 	// Files a download client still hard-links, waiting for it to let go.
 	parked: number;
+	// Titles and files nobody wants rewritten yet. Small and set by hand, so it
+	// rides the snapshot rather than needing a fetch of its own. Absent from
+	// older builds.
+	holds?: Hold[];
 	// Whether REWRITE_MODE lets this install rewrite. When false the page must not
 	// offer a rewrite, since it would be silently downgraded.
 	may_rewrite: boolean;
@@ -118,6 +137,11 @@ export const stopRun = (run: string) => control('stop', { run });
 // Every run asked to stop and every rewrite under way killed.
 export const stopEverything = () =>
 	control('abort') as Promise<{ stopped: number; rewrites: number }>;
+
+// One file taken off a run, and its rewrite killed where a thread already had
+// it. Lasts as long as the run; $lib/holds is the longer-lived answer.
+export const skipFile = (run: string, path: string) =>
+	control('skip', { run, path }) as Promise<{ where: 'active' | 'waiting'; rewrites: number }>;
 
 /** A run's name: "Sweep", "Radarr import", "Re-check: <title or count>". */
 export function source(run: Run): string {
@@ -227,35 +251,69 @@ export function remaining(run: Run, paused = false, age = 0): string {
 	return until((seconds / run.done) * left, 'about');
 }
 
-// One line under a run: a file being worked on, or one finished with. One
-// shape for both moments.
+// One line under a run: a file being worked on, one waiting its turn, or one
+// finished with. One shape for all three moments.
 export type FileRow = {
 	path: string;
 	seconds: number;
 	// Set while a thread still has it, which draws the bar.
 	live: ActiveFile | null;
-	// Set once released. Empty on a live row and for the poll before the
-	// verdict lands.
+	// Set while it is still in the queue. Never set at the same time as `live`.
+	waiting: WaitingFile | null;
+	// Set once released. Empty on a live or waiting row and for the poll before
+	// the verdict lands.
 	verdict: string;
 	detail: string;
+	// Taken off this run, whether or not the thread holding it has noticed.
+	skipped: boolean;
 };
 
-/** The files under a run: live first, then finished newest first. */
+/**
+ * The files under a run in reading order: what it is doing, what it will do
+ * next, then what it has finished with, newest first.
+ *
+ * One file at a time: a sweep releases a file after the probe and picks it up
+ * again for the rewrite, so a path can hold a released row and a queued one at
+ * once, and two released ones. The first is the most recent, and the rest are
+ * the same file said again.
+ */
 export function fileRows(run: Run): FileRow[] {
+	const seen = new Set<string>();
+	return rowsFor(run).filter((row) => {
+		if (seen.has(row.path)) return false;
+		seen.add(row.path);
+		return true;
+	});
+}
+
+function rowsFor(run: Run): FileRow[] {
 	return [
 		...run.active.map((file) => ({
 			path: file.path,
 			seconds: file.seconds,
 			live: file,
+			waiting: null,
 			verdict: '',
-			detail: ''
+			detail: '',
+			skipped: !!file.skipped
+		})),
+		...(run.upcoming ?? []).map((file) => ({
+			path: file.path,
+			seconds: 0,
+			live: null,
+			waiting: file,
+			verdict: '',
+			detail: '',
+			skipped: !!file.skipped
 		})),
 		...(run.recent ?? []).map((done) => ({
 			path: done.path,
 			seconds: done.seconds,
 			live: null,
+			waiting: null,
 			verdict: done.status,
-			detail: done.detail
+			detail: done.detail,
+			skipped: false
 		}))
 	];
 }

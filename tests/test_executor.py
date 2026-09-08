@@ -40,14 +40,16 @@ def _fresh_encoder_list():
 #: What _run_ffmpeg hands back. The rewrites patch that rather than
 #: subprocess.run, which apply_plan no longer uses; the encoder list does.
 def _ffmpeg_says(monkeypatch, code: int = 0, stderr: str = "") -> None:
-    monkeypatch.setattr(executor, "_run_ffmpeg", lambda args, on_progress=None: (code, stderr))
+    monkeypatch.setattr(
+        executor, "_run_ffmpeg", lambda args, on_progress=None, rewriting="": (code, stderr)
+    )
 
 
 def _no_ffmpeg(monkeypatch):
     monkeypatch.setattr(
         executor,
         "_run_ffmpeg",
-        lambda args, on_progress=None: pytest.fail("ffmpeg must not run"),
+        lambda args, on_progress=None, rewriting="": pytest.fail("ffmpeg must not run"),
     )
 
 
@@ -55,7 +57,7 @@ def _capture_staged(monkeypatch) -> list[str]:
     """Collect the temp path each rewrite hands ffmpeg, stopping it there."""
     staged: list[str] = []
 
-    def capture(args, on_progress=None):
+    def capture(args, on_progress=None, rewriting=""):
         # The last argument is the temp path ffmpeg was told to write.
         staged.append(args[-1])
         raise _StopError
@@ -279,7 +281,9 @@ def test_matching_source_passes_the_staleness_check(tmp_path, monkeypatch):
 
     ran = []
     monkeypatch.setattr(
-        executor, "_run_ffmpeg", lambda args, on_progress=None: ran.append(args) or (1, "boom")
+        executor,
+        "_run_ffmpeg",
+        lambda args, on_progress=None, rewriting="": ran.append(args) or (1, "boom"),
     )
     outcome, detail = apply_plan(plan)
     assert ran, "the rewrite should have been attempted"
@@ -420,7 +424,7 @@ def test_an_ffmpeg_timeout_is_a_failure_naming_the_limit(tmp_path, monkeypatch):
     """A wedged encode on one file must not stall a whole sweep silently."""
     monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 900)
 
-    def hang(args, on_progress=None):
+    def hang(args, on_progress=None, rewriting=""):
         raise executor.subprocess.TimeoutExpired(cmd="ffmpeg", timeout=900)
 
     monkeypatch.setattr(executor, "_run_ffmpeg", hang)
@@ -616,7 +620,7 @@ def test_a_child_nothing_could_reach_is_killed_rather_than_left_writing(monkeypa
     with pytest.raises(RuntimeError):
         executor._run_ffmpeg(["sleep", "30"], on_progress=lambda done, speed: None)
 
-    assert executor._running_ffmpeg == set()
+    assert executor._running_ffmpeg == {}
     assert _open_fds() == before
 
 
@@ -626,7 +630,7 @@ def test_a_wedged_process_is_killed_at_the_timeout(monkeypatch):
     monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 0.2)
     with pytest.raises(executor.subprocess.TimeoutExpired):
         executor._run_ffmpeg(["sleep", "30"])
-    assert executor._running_ffmpeg == set(), "and it is no longer abortable"
+    assert executor._running_ffmpeg == {}, "and it is no longer abortable"
 
 
 def test_the_progress_readout_reaches_the_callback():

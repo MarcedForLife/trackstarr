@@ -20,7 +20,7 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 import trackstarr
-from trackstarr import config, processing, runs, users, webhook
+from trackstarr import config, holds, processing, runs, users, webhook
 from trackstarr.arr import Arr, radarr, sonarr
 from trackstarr.executor import Outcome
 from trackstarr.planner import Plan
@@ -94,6 +94,8 @@ def _isolated_state(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setattr(config, "_SETTINGS", {})
     monkeypatch.setattr(config, "WEB_DIR", "")
+    # Memoised on the file's mark, which two tmp dirs can share.
+    holds.forget()
 
 
 #: Environment names settings_state scrubs so a config reload cannot pick up

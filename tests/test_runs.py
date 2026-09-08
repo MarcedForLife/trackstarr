@@ -357,11 +357,101 @@ def test_runs_are_listed_oldest_first():
     assert [run["id"] for run in runs.snapshot()["runs"]] == ["r#1", "r#2"]
 
 
+def test_a_waiting_file_can_be_taken_off_a_run():
+    """The sweep asks before it starts each queued file, so a skip lands before
+    a slot is spent on it."""
+    runs.open_run("r#1", runs.SWEEP)
+    runs.queue("r#1", "/data/f.mkv", 90.0)
+    assert runs.skip("r#1", "/data/f.mkv") == "waiting"
+    assert runs.skipped("r#1", "/data/f.mkv")
+    assert not runs.skipped("r#1", "/data/other.mkv")
+
+
+def test_skipping_a_file_a_thread_already_has_says_so():
+    """The caller kills that one encode; there is nothing else that separates
+    skipping a file from waiting for it."""
+    runs.open_run("r#1", runs.SWEEP)
+    runs.begin("r#1", "/data/f.mkv")
+    assert runs.skip("r#1", "/data/f.mkv") == "active"
+
+
+def test_a_file_the_run_has_reached_a_verdict_on_cannot_be_skipped():
+    """Otherwise the page offers Skip on a row that has already been rewritten,
+    and the answer says it worked."""
+    runs.open_run("r#1", runs.SWEEP)
+    runs.begin("r#1", "/data/f.mkv")
+    runs.finish("r#1", "/data/f.mkv")
+    runs.tally("r#1", "fixed", path="/data/f.mkv")
+    assert runs.skip("r#1", "/data/f.mkv") == ""
+
+
+def test_a_file_between_its_probe_and_its_slot_can_still_be_skipped():
+    """An applying sweep releases a file after the probe and queues it for a
+    rewrite, so it is on the released list with no verdict while still being
+    the next thing the run will do."""
+    runs.open_run("r#1", runs.SWEEP)
+    runs.begin("r#1", "/data/f.mkv")
+    runs.finish("r#1", "/data/f.mkv")
+    runs.queue("r#1", "/data/f.mkv", 90.0)
+    assert runs.skip("r#1", "/data/f.mkv") == "waiting"
+
+
+def test_a_delivery_queued_file_can_be_skipped():
+    """An import's queue is the work queue, which the registry never sees, so
+    there is nothing here to match it against."""
+    runs.open_run("r#1", runs.IMPORT, label="radarr", filling=True)
+    runs.add_file("r#1")
+    assert runs.skip("r#1", "/data/f.mkv") == "waiting"
+
+
+def test_skipping_a_run_that_has_gone_says_so():
+    assert runs.skip("r#gone", "/data/f.mkv") == ""
+
+
+def test_a_skip_dies_with_its_run():
+    """A skip is "not in this pass". Anything longer-lived is a hold."""
+    runs.open_run("r#1", runs.SWEEP)
+    runs.queue("r#1", "/data/f.mkv", 0.0)
+    runs.skip("r#1", "/data/f.mkv")
+    runs.close_run("r#1")
+    runs.open_run("r#1", runs.SWEEP)
+    assert not runs.skipped("r#1", "/data/f.mkv")
+
+
+def test_the_snapshot_names_the_files_still_waiting():
+    """Nothing can be skipped that the page cannot name."""
+    runs.open_run("r#1", runs.SWEEP)
+    runs.queue("r#1", "/data/first.mkv", 90.0)
+    runs.queue("r#1", "/data/second.mkv", 30.0)
+    runs.skip("r#1", "/data/second.mkv")
+    upcoming = runs.snapshot()["runs"][0]["upcoming"]
+    # In the order the sweep will reach them.
+    assert [file["path"] for file in upcoming] == ["/data/first.mkv", "/data/second.mkv"]
+    assert [file["skipped"] for file in upcoming] == [False, True]
+
+
+def test_the_waiting_list_is_bounded():
+    """A first-night sweep queues thousands; every open tab polls this."""
+    runs.open_run("r#1", runs.SWEEP)
+    for at in range(runs._UPCOMING + 5):
+        runs.queue("r#1", f"/data/{at}.mkv", 0.0)
+    run = runs.snapshot()["runs"][0]
+    assert len(run["upcoming"]) == runs._UPCOMING
+    assert run["queued"] == runs._UPCOMING + 5, "and the count is still the whole queue"
+
+
+def test_aborting_one_file_signals_only_its_rewrite(monkeypatch):
+    signalled: list[str] = []
+    monkeypatch.setattr(runs, "terminate_running", lambda path="": signalled.append(path) or 1)
+    assert runs.abort("/data/f.mkv") == 1
+    assert signalled == ["/data/f.mkv"]
+
+
 def test_aborting_signals_every_rewrite_in_flight(monkeypatch):
     signalled: list[str] = []
-    monkeypatch.setattr(runs, "terminate_running", lambda: signalled.append("term") or 2)
+    monkeypatch.setattr(runs, "terminate_running", lambda path="": signalled.append(path) or 2)
     assert runs.abort() == 2
-    assert signalled == ["term"]
+    assert signalled == [""], "every rewrite, not one named file"
 
 
 def test_a_pause_that_cannot_be_written_still_pauses(monkeypatch, caplog):
@@ -410,7 +500,7 @@ def test_bookkeeping_for_a_run_that_has_already_finished_is_dropped():
 
 
 def test_aborting_with_nothing_running_says_nothing(monkeypatch, caplog):
-    monkeypatch.setattr(runs, "terminate_running", lambda: 0)
+    monkeypatch.setattr(runs, "terminate_running", lambda path="": 0)
     assert runs.abort() == 0
     assert "aborted" not in caplog.text
 

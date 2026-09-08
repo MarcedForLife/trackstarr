@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fileStatus, progressLabel, remaining } from '$lib/runs';
+import { fileRows, fileStatus, progressLabel, remaining } from '$lib/runs';
 import type { ActiveFile, Run } from '$lib/runs';
 
 function run(over: Partial<Run> = {}): Run {
@@ -123,5 +123,43 @@ describe('fileStatus', () => {
 
 	test('never reads past the end of the file', () => {
 		expect(fileStatus(file({ duration: 3600, done: 3500, speed: 2 }), 600)).toBe('100%');
+	});
+});
+
+describe('fileRows', () => {
+	// A sweep releases a file after the probe and picks it up again for the
+	// rewrite, so one path holds a released row and a queued one at once, and
+	// the run's key was the path.
+	test('says each file once, at the newest thing it is doing', () => {
+		const rows = fileRows(
+			run({
+				active: [file({ path: '/data/a.mkv' })],
+				upcoming: [{ path: '/data/b.mkv', expected: 90 }],
+				recent: [
+					{ path: '/data/b.mkv', status: '', seconds: 2, detail: '' },
+					{ path: '/data/a.mkv', status: '', seconds: 1, detail: '' },
+					{ path: '/data/c.mkv', status: 'fixed', seconds: 30, detail: 'added 2.0' }
+				]
+			})
+		);
+
+		expect(rows.map((row) => row.path)).toEqual(['/data/a.mkv', '/data/b.mkv', '/data/c.mkv']);
+		expect(rows[0].live).not.toBeNull();
+		expect(rows[1].waiting).not.toBeNull();
+		expect(rows[2].verdict).toBe('fixed');
+	});
+
+	test('keeps the newest of two released rows for one file', () => {
+		const rows = fileRows(
+			run({
+				recent: [
+					{ path: '/data/a.mkv', status: 'fixed', seconds: 30, detail: 'added 2.0' },
+					{ path: '/data/a.mkv', status: '', seconds: 1, detail: '' }
+				]
+			})
+		);
+
+		expect(rows).toHaveLength(1);
+		expect(rows[0].verdict).toBe('fixed');
 	});
 });

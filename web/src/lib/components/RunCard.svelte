@@ -27,6 +27,7 @@
 		ended = false,
 		cut = false,
 		onstop,
+		onskip,
 		ondismiss
 	}: {
 		run: Run;
@@ -39,6 +40,8 @@
 		// Ended because somebody stopped it, so its counts are part of the job.
 		cut?: boolean;
 		onstop?: (run: Run) => void;
+		// One file taken off this run. Offered on the same terms as Stop.
+		onskip?: (run: Run, path: string) => void;
 		// Take an ended row off the page now.
 		ondismiss?: () => void;
 	} = $props();
@@ -197,7 +200,10 @@
 					{age}
 					id={`file-${run.id}-${row.path}`}
 					open={!!opened[row.path]}
+					skippable={stoppable && !!onskip && (!!row.live || !!row.waiting) && !row.skipped}
+					{busy}
 					ontoggle={() => (opened = { ...opened, [row.path]: !opened[row.path] })}
+					onskip={() => onskip?.(run, row.path)}
 				/>
 			{/each}
 		</ul>

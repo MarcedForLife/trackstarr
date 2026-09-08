@@ -8,15 +8,18 @@
 	import { refusalText } from '$lib/api';
 	import { button, danger, glyph, primary } from '$lib/controls';
 	import { ago, headline, type Event } from '$lib/events';
-	import { size, soon, stamp } from '$lib/format';
+	import { size, soon, stamp, titled } from '$lib/format';
+	import { lift, type Hold } from '$lib/holds';
 	import type { RunMode } from '$lib/library';
 	import { keyboard } from '$lib/modal';
 	import { poll } from '$lib/poll';
 	import {
 		doing,
+		duration,
 		getActivity,
 		pause,
 		resume,
+		skipFile,
 		startSweep,
 		stopEverything,
 		stopRun,
@@ -262,6 +265,23 @@
 		act(`stop-${entry.id}`, () => stopRun(entry.id));
 	}
 
+	// One file off one run. No confirm: nothing is lost but the encode, and the
+	// next sweep still reaches the file.
+	function skip(entry: Run, path: string) {
+		act(`skip-${path}`, () => skipFile(entry.id, path));
+	}
+
+	// What is being left alone for now, and how long is left of each.
+	const held = $derived(activity.holds ?? []);
+
+	function until(hold: Hold): string {
+		return hold.seconds ? `${duration(hold.seconds)} left` : 'until lifted';
+	}
+
+	function release(hold: Hold) {
+		act(`lift-${hold.path}`, () => lift({ paths: [hold.path] }));
+	}
+
 	// A plan goes on one press. Processing asks first: nothing puts the old file
 	// back.
 	const run = (mode: RunMode) => act(`start-${mode}`, () => startSweep(mode));
@@ -439,6 +459,7 @@
 						ended={entry.ended}
 						cut={entry.cut}
 						onstop={stop}
+						onskip={admin ? skip : undefined}
 						ondismiss={entry.ended ? () => dismiss(entry.run.id) : undefined}
 					/>
 				</li>
@@ -446,9 +467,10 @@
 		</ol>
 	{/if}
 
-	<!-- The last sweep's tally, unless one is running now. Parked files sit here
-	     too: neither waiting nor working, and only news when not zero. -->
-	{#if (swept && !sweeping) || activity.parked}
+	<!-- The last sweep's tally, unless one is running now. Held titles and parked
+	     files sit here too: neither waiting nor working, and only news when not
+	     zero. -->
+	{#if (swept && !sweeping) || activity.parked || held.length}
 		<div class="flex flex-col gap-1.5 border-t border-line px-4 py-3 text-[12.5px]">
 			{#if swept && !sweeping}
 				<ul class={tallyList}>
@@ -462,6 +484,30 @@
 					{#if swept.library_bytes}
 						<li class="text-faint">{size(swept.library_bytes)}</li>
 					{/if}
+				</ul>
+			{/if}
+			{#if held.length}
+				<!-- Named, not counted: the point of a hold is knowing which title it
+				     is on, and it is the only thing here with a control. -->
+				<ul class="flex flex-col gap-1">
+					{#each held as hold (hold.path)}
+						<li class="flex items-baseline gap-2">
+							<span class="min-w-0 flex-1 truncate text-dim" title={hold.reason}>
+								Holding {hold.name || titled(hold.path)}
+							</span>
+							<span class="flex-none text-faint">{until(hold)}</span>
+							{#if admin}
+								<!-- The ::after is the tap target around a small pill. -->
+								<button
+									onclick={() => release(hold)}
+									disabled={!!busy}
+									class="relative flex-none rounded border border-line-strong px-1.5 py-0.5 text-[10.5px] leading-none font-medium text-faint transition-colors after:absolute after:-inset-3 after:content-[''] hover:text-fg disabled:opacity-50"
+								>
+									{busy === `lift-${hold.path}` ? 'Lifting…' : 'Lift'}
+								</button>
+							{/if}
+						</li>
+					{/each}
 				</ul>
 			{/if}
 			{#if activity.parked}

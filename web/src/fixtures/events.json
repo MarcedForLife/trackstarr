@@ -1,7 +1,16 @@
 {
 	"events": [
 		{
-			"ts": "2026-03-01T11:12:00+13:00",
+			"ts": "2026-03-01T11:18:00+13:00",
+			"event": "held",
+			"version": "0.0.0",
+			"path": "/data/media/tv/The Bear",
+			"title": "arr:sonarr:31",
+			"reason": "not until I say",
+			"by": "admin"
+		},
+		{
+			"ts": "2026-03-01T11:16:00+13:00",
 			"event": "webhook",
 			"version": "0.0.0",
 			"run": "2026-03-01T11:55:00+13:00#c3d4",
@@ -12,7 +21,7 @@
 			]
 		},
 		{
-			"ts": "2026-03-01T11:11:00+13:00",
+			"ts": "2026-03-01T11:15:00+13:00",
 			"event": "settings",
 			"version": "0.0.0",
 			"changed": {
@@ -27,15 +36,42 @@
 			"by": "admin"
 		},
 		{
-			"ts": "2026-03-01T11:10:00+13:00",
+			"ts": "2026-03-01T11:14:00+13:00",
 			"event": "resumed",
 			"version": "0.0.0",
 			"by": "admin"
 		},
 		{
-			"ts": "2026-03-01T11:09:00+13:00",
+			"ts": "2026-03-01T11:13:00+13:00",
 			"event": "paused",
 			"version": "0.0.0",
+			"by": "admin"
+		},
+		{
+			"ts": "2026-03-01T11:11:00+13:00",
+			"event": "skipped",
+			"version": "0.0.0",
+			"run": "2026-02-28T03:00:00+13:00#9f8e",
+			"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
+			"by": "admin",
+			"title": "arr:sonarr:12"
+		},
+		{
+			"ts": "2026-03-01T11:10:00+13:00",
+			"event": "lifted",
+			"version": "0.0.0",
+			"path": "/data/media/tv/Severance",
+			"title": "arr:sonarr:12",
+			"by": "admin"
+		},
+		{
+			"ts": "2026-03-01T11:09:00+13:00",
+			"event": "held",
+			"version": "0.0.0",
+			"path": "/data/media/tv/Severance",
+			"title": "arr:sonarr:12",
+			"seconds": 14400,
+			"reason": "watching it",
 			"by": "admin"
 		},
 		{
@@ -317,6 +353,32 @@
 		}
 	],
 	"titles": {
+		"arr:sonarr:31": {
+			"id": "arr:sonarr:31",
+			"name": "The Bear",
+			"kind": "series",
+			"state": "missing",
+			"year": 2022,
+			"lang": "eng",
+			"added": 1772180100
+		},
+		"arr:sonarr:12": {
+			"id": "arr:sonarr:12",
+			"name": "Severance",
+			"kind": "series",
+			"state": "failed",
+			"year": 2022,
+			"lang": "eng",
+			"added": 1737144000,
+			"files": 2,
+			"bytes": 4399283461,
+			"counts": {
+				"conform": 1,
+				"failed": 1
+			},
+			"fixed": 1,
+			"processed": 1772233500
+		},
 		"arr:radarr:7": {
 			"id": "arr:radarr:7",
 			"name": "Dune",
@@ -335,23 +397,6 @@
 			],
 			"weight": 1.0,
 			"processed": 1772146800
-		},
-		"arr:sonarr:12": {
-			"id": "arr:sonarr:12",
-			"name": "Severance",
-			"kind": "series",
-			"state": "failed",
-			"year": 2022,
-			"lang": "eng",
-			"added": 1737144000,
-			"files": 2,
-			"bytes": 4399283461,
-			"counts": {
-				"conform": 1,
-				"failed": 1
-			},
-			"fixed": 1,
-			"processed": 1772233500
 		}
 	},
 	"next": null

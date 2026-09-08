@@ -1778,7 +1778,7 @@ def test_stopping_everything_ends_every_run_and_kills_the_rewrites(
     running: a sweep, a delivery and a re-check are all what this machine is
     doing. Each still stops between files, so each writes its own summary."""
     users.add("admin", "right password", "admin")
-    monkeypatch.setattr(webhook.runs, "terminate_running", lambda: 2)
+    monkeypatch.setattr(webhook.runs, "terminate_running", lambda path="": 2)
     clean_registry.open_run("s#1", runs.SWEEP)
     clean_registry.open_run("i#1", runs.IMPORT)
 
@@ -1797,6 +1797,177 @@ def test_stopping_everything_ends_every_run_and_kills_the_rewrites(
         listener, "POST", "/api/runs/abort", {}, cookie=sign_in(listener, "admin")
     )
     assert (again["stopped"], again["rewrites"]) == (0, 2)
+
+
+def test_skipping_an_active_file_kills_that_rewrite_and_no_other(
+    listener, fast_scrypt, clean_registry, monkeypatch
+):
+    """Stop all is the blunt instrument. This one is for the film somebody has
+    just sat down to watch while the sweep is halfway through it."""
+    users.add("admin", "right password", "admin")
+    signalled: list[str] = []
+    monkeypatch.setattr(
+        webhook.runs, "terminate_running", lambda path="": signalled.append(path)
+    )
+    clean_registry.open_run("r#1", runs.SWEEP)
+    clean_registry.begin("r#1", "/data/f.mkv")
+
+    body = {"run": "r#1", "path": "/data/f.mkv"}
+    status, answer, _ = api(
+        listener, "POST", "/api/runs/skip", body, cookie=sign_in(listener, "admin")
+    )
+    assert (status, answer["where"]) == (200, "active")
+    assert signalled == ["/data/f.mkv"], "by name, not every encode on the machine"
+    assert clean_registry.skipped("r#1", "/data/f.mkv")
+
+
+def test_skipping_a_file_the_run_will_not_reach_is_refused(
+    listener, fast_scrypt, clean_registry
+):
+    users.add("admin", "right password", "admin")
+    cookie = sign_in(listener, "admin")
+    clean_registry.open_run("r#1", runs.SWEEP)
+
+    assert api(listener, "POST", "/api/runs/skip", {"run": "r#1"}, cookie=cookie)[0] == 400
+    body = {"run": "r#9", "path": "/data/f.mkv"}
+    assert api(listener, "POST", "/api/runs/skip", body, cookie=cookie)[0] == 404
+
+
+def test_a_skipped_import_is_booked_rather_than_rewritten(clean_registry, monkeypatch):
+    """The delivery's row has to say what became of the file, or a run whose
+    total never comes in stays on the page for ever."""
+    monkeypatch.setattr(
+        webhook, "process", lambda job, dry_run: pytest.fail("must not rewrite")
+    )
+    # Still being handed files, so the delivery is here to read afterwards; a
+    # sealed one with nothing left retires the moment this is booked.
+    clean_registry.open_run("r#1", runs.IMPORT, label="radarr", filling=True)
+    clean_registry.add_file("r#1")
+    clean_registry.skip("r#1", "/data/f.mkv")
+
+    webhook._handle(Job("/data/f.mkv", run="r#1"))
+    (run,) = clean_registry.snapshot()["runs"]
+    assert run["counts"] == {"deferred": 1}
+    assert "skipped" in run["recent"][0]["detail"]
+
+
+def test_a_hold_is_placed_by_path_and_listed_back(listener, fast_scrypt, monkeypatch):
+    users.add("admin", "right password", "admin")
+    monkeypatch.setattr(config, "MEDIA_DIRS", ["/data/media/movies"])
+    cookie = sign_in(listener, "admin")
+    body = {
+        "paths": ["/data/media/movies/Dune (2024)"],
+        "seconds": 7200,
+        "reason": "watching it",
+    }
+
+    status, answer, _ = api(listener, "POST", "/api/holds", body, cookie=cookie)
+    assert status == 200
+    (placed,) = answer["holds"]
+    assert (placed["by"], placed["reason"], placed["seconds"]) == ("admin", "watching it", 7200)
+    # The countdown, not a stamp: a browser in another zone reads it the same
+    # way this one does.
+    assert placed["until"] is not None
+
+    _, listed, _ = api(listener, "GET", "/api/holds", cookie=cookie)
+    assert listed["holds"] == answer["holds"]
+
+
+def test_a_hold_outside_the_library_is_refused(listener, fast_scrypt, monkeypatch):
+    """A hold is matched by prefix, so one on / would quietly stop everything
+    being rewritten."""
+    users.add("admin", "right password", "admin")
+    monkeypatch.setattr(config, "MEDIA_DIRS", ["/data/media/movies"])
+    cookie = sign_in(listener, "admin")
+
+    assert api(listener, "POST", "/api/holds", {"paths": ["/"]}, cookie=cookie)[0] == 400
+    assert api(listener, "POST", "/api/holds", {}, cookie=cookie)[0] == 400
+    assert (
+        api(listener, "POST", "/api/holds", {"ids": ["arr:radarr:9"]}, cookie=cookie)[0] == 404
+    )
+    body = {"paths": ["/data/media/movies/f.mkv"], "seconds": -1}
+    assert api(listener, "POST", "/api/holds", body, cookie=cookie)[0] == 400
+
+
+def test_lifting_a_hold_says_how_many_went(listener, fast_scrypt, monkeypatch):
+    users.add("admin", "right password", "admin")
+    monkeypatch.setattr(config, "MEDIA_DIRS", ["/data/media/movies"])
+    cookie = sign_in(listener, "admin")
+    body = {"paths": ["/data/media/movies/Dune (2024)"]}
+    api(listener, "POST", "/api/holds", body, cookie=cookie)
+
+    status, answer, _ = api(listener, "POST", "/api/holds/lift", body, cookie=cookie)
+    assert (status, answer["lifted"], answer["holds"]) == (200, 1, [])
+    # Pressed twice, or lifted from another tab first.
+    _, again, _ = api(listener, "POST", "/api/holds/lift", body, cookie=cookie)
+    assert again["lifted"] == 0
+
+
+@pytest.mark.parametrize("path", ["/api/runs/skip", "/api/holds", "/api/holds/lift"])
+def test_an_unreadable_body_is_a_400(listener, fast_scrypt, path):
+    """The body still has to leave the socket: the connection is reused and the
+    next request reads from where this one stopped."""
+    users.add("admin", "right password", "admin")
+    headers = {"Content-Type": "application/json", "Cookie": sign_in(listener, "admin")}
+
+    status, _ = request(listener, "POST", path, b"{not json", headers)
+    assert status == 400
+
+
+def test_a_hold_that_cannot_be_stored_is_refused_rather_than_believed(
+    listener, fast_scrypt, monkeypatch
+):
+    """A hold the page shows and nothing enforces is worse than a refusal: the
+    file it was meant to protect would be rewritten anyway."""
+    users.add("admin", "right password", "admin")
+    monkeypatch.setattr(config, "MEDIA_DIRS", ["/data/media/movies"])
+    cookie = sign_in(listener, "admin")
+
+    def refuse(*args, **kwargs):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(webhook.holds, "_save", refuse)
+    body = {"paths": ["/data/media/movies/Dune (2024)"]}
+    assert api(listener, "POST", "/api/holds", body, cookie=cookie)[0] == 500
+
+    # And the same on the way back out, where a lift nothing wrote would read
+    # as the title being free again.
+    monkeypatch.setattr(webhook.holds, "lift", refuse)
+    assert api(listener, "POST", "/api/holds/lift", body, cookie=cookie)[0] == 500
+
+
+def test_a_lift_still_has_to_name_something(listener, fast_scrypt):
+    users.add("admin", "right password", "admin")
+    cookie = sign_in(listener, "admin")
+    assert api(listener, "POST", "/api/holds/lift", {}, cookie=cookie)[0] == 400
+
+
+def test_a_full_store_refuses_another_hold(listener, fast_scrypt, monkeypatch):
+    """A hold is placed by hand, so the ceiling bounds a mistake: a script
+    holding the whole library would stop every rewrite silently."""
+    users.add("admin", "right password", "admin")
+    monkeypatch.setattr(config, "MEDIA_DIRS", ["/data/media/movies"])
+    monkeypatch.setattr(webhook.holds, "full", lambda: True)
+    body = {"paths": ["/data/media/movies/Dune (2024)"]}
+
+    status, answer, _ = api(
+        listener, "POST", "/api/holds", body, cookie=sign_in(listener, "admin")
+    )
+    assert (status, "already held" in answer["status"]) == (409, True)
+
+
+def test_holding_and_skipping_are_an_admins(listener, fast_scrypt, clean_registry):
+    """A viewer watches; both of these change what the machine does."""
+    users.add("admin", "right password", "admin")
+    users.add("watcher", "right password", "viewer")
+    cookie = sign_in(listener, "watcher")
+
+    assert api(listener, "POST", "/api/holds", {"paths": ["/x"]}, cookie=cookie)[0] == 403
+    assert api(listener, "POST", "/api/holds/lift", {"paths": ["/x"]}, cookie=cookie)[0] == 403
+    skip = {"run": "r#1", "path": "/x"}
+    assert api(listener, "POST", "/api/runs/skip", skip, cookie=cookie)[0] == 403
+    # Reading what is held is not.
+    assert api(listener, "GET", "/api/holds", cookie=cookie)[0] == 200
 
 
 def test_a_delivery_is_one_run_on_the_activity_page(listener, media_root, clean_registry):

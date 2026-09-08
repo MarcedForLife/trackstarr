@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from conftest import read_events
-from trackstarr import config, estimate, library, notify, runs, sweep_cache
+from trackstarr import config, estimate, holds, library, notify, runs, sweep_cache
 from trackstarr import sweep as sweep_mod
 from trackstarr.arr import LibraryIndex
 from trackstarr.policy import Policy
@@ -960,6 +960,46 @@ def test_the_report_gives_a_file_its_final_verdict_and_only_that(monkeypatch, tm
     # One row each, and the one the rewrite reached rather than the one the
     # walk queued. Their order is the walk's; see the test above.
     assert sorted(Path(row.split("\t")[2]).name for row in rows) == sorted(names)
+
+
+def test_an_applying_sweep_leaves_a_held_title_where_the_walk_found_it(monkeypatch, tmp_path):
+    """A held file is booked as discovery judged it rather than queued: the
+    rewrite would latch to report anyway, having spent a slot and a second
+    probe getting there."""
+    _library(tmp_path, monkeypatch, 3)
+    holds.place(str(tmp_path / "library"), by="marc", reason="watching one of them")
+    monkeypatch.setattr(
+        "trackstarr.sweep.process",
+        lambda job, dry_run, source="sweep": ProcessResult(
+            Status.WOULD_FIX if dry_run else Status.FIXED, None
+        ),
+    )
+    counts = sweep(dry_run=False)
+    assert counts[Status.WOULD_FIX] == 3
+    assert counts[Status.FIXED] == 0, "nothing reached the rewrite pool"
+    # The reason on every row, including the ones a warm cache answered, which
+    # never pass through process() to say it themselves.
+    rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
+    assert all("held by marc" in row for row in rows)
+    assert all("watching one of them" in row for row in rows)
+
+
+def test_a_file_skipped_mid_sweep_keeps_the_verdict_the_walk_gave_it(monkeypatch, tmp_path):
+    """Skipping is "not in this pass": the file keeps its would-fix, so the
+    library still shows the work and the next sweep picks it up."""
+    _library(tmp_path, monkeypatch, 1)
+    monkeypatch.setattr(
+        "trackstarr.sweep.process",
+        lambda job, dry_run, source="sweep": ProcessResult(
+            Status.WOULD_FIX if dry_run else Status.FIXED, None
+        ),
+    )
+    monkeypatch.setattr(runs, "skipped", lambda run, path: True)
+    counts = sweep(dry_run=False, run="r#1")
+    assert counts[Status.WOULD_FIX] == 1
+    assert counts[Status.FIXED] == 0
+    rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
+    assert "skipped for this run" in rows[0]
 
 
 def test_a_queued_file_reads_as_pending_while_it_waits_for_its_rewrite(monkeypatch, tmp_path):

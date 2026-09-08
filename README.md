@@ -86,6 +86,12 @@ default, rewrites what the *arrs deliver and leaves the sweep writing
 `/config/pending.tsv`. `all` lets the sweep rewrite the existing library too.
 Read `pending.tsv` before going to `all`.
 
+**Holds.** A title can be held from its page in the UI, for a few hours or
+until you lift it, which is the answer for something you are part way through
+watching. A held file is still probed, planned and reported, so the library
+goes on showing the work; only the rewrite waits. Holds are kept in
+`/config/holds.json` and survive a restart, and each one lapses on its own.
+
 **Safety.** A rewrite is staged in `WORK_DIR` and published over the original
 only once its duration and stream count verify, so an interrupted job leaves
 the library untouched. A file that changes mid-rewrite is deferred to the next
@@ -103,10 +109,11 @@ so when the server mounts the library elsewhere, map the difference with
 - **Overview.** The running sweep or import with per-file progress and time
   remaining, the queue behind it, and the controls: sweep now, stop after the
   current file, pause all processing (survives a restart), and stop
-  everything.
+  everything. Any one file can be skipped, which takes it off the run it is in
+  and kills its rewrite where one is under way.
 - **Library.** Every title as a poster, filtered by verdict and sorted by
   name, size, last processed and more. Open a title to see its files and
-  their plans, or select titles to plan or rewrite them now.
+  their plans, hold it, or select titles to plan or rewrite them now.
 - **Events.** Every rewrite, failure, deferral, sweep and settings change,
   read back from `events.jsonl` with the settings it was judged under.
 - **Settings.** General, Rules, Sweep and Connections edit every setting live,

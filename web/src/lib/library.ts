@@ -35,7 +35,7 @@ export type Why = {
 
 // What a rewrite did, kept on the file it left behind. `at` is when, as the
 // history spells its stamps. The reasons in prose are the history page's; here
-// the two track lists are the account.
+// the tracks it moved are the account. See unify().
 export type Fixed = {
 	at: string;
 	bytes_before?: number;
@@ -52,10 +52,14 @@ export type Fixed = {
 export type Verdict =
 	'would-fix' | 'conform' | 'skip' | 'unsupported' | 'failed' | 'unchecked' | 'missing' | string;
 
+// What a title is: the *arr's own word for what it tracks, or a folder the
+// sweep found under a media dir that neither Radarr nor Sonarr claims.
+export type Kind = 'movie' | 'series' | 'folder' | string;
+
 export type Card = {
 	id: string;
 	name: string;
-	kind: 'movie' | 'series' | 'folder' | string;
+	kind: Kind;
 	// The worst verdict any of its files reached.
 	state: Verdict;
 	year?: number;
@@ -241,7 +245,7 @@ export type Pairing = {
 	added: Set<number>;
 };
 
-export function pair(file: { tracks: Track[]; planned: Track[] }): Pairing {
+function pair(file: { tracks: Track[]; planned: Track[] }): Pairing {
 	// No plan means every track is kept.
 	if (!file.planned.length) {
 		return { kept: new Set(file.tracks.map((track) => track.index)), added: new Set() };
@@ -260,16 +264,82 @@ export function pair(file: { tracks: Track[]; planned: Track[] }): Pairing {
  * kept the tracks. `kept` indexes what it started from and `added` the file it
  * left, as with a plan.
  *
- * Null where the rewrite moved no track, a remux or a cleared title: the two
- * columns would be the same list twice, which says less than the one.
+ * Null where the rewrite moved no track, a remux or a cleared title: nothing
+ * was dropped and nothing is new, so the list has only itself to show.
  */
-export function paired(fixed: Fixed): Pairing | null {
+function paired(fixed: Fixed): Pairing | null {
 	if (!fixed.was?.length || !(fixed.dropped?.length || fixed.added?.length)) return null;
 	const dropped = new Set(fixed.dropped ?? []);
 	return {
 		kept: new Set(fixed.was.map((track) => track.index).filter((index) => !dropped.has(index))),
 		added: new Set(fixed.added ?? [])
 	};
+}
+
+// One track on its way through a rewrite. `position` is the place it takes in
+// the file left behind, counting from one, and null for a track that does not
+// survive to have one.
+export type Row = {
+	track: Track;
+	position: number | null;
+	state: 'kept' | 'added' | 'dropped';
+};
+
+/**
+ * Both track lists as one, in the order the rewrite leaves them.
+ *
+ * Read side by side the two lists were mostly the same list twice, since a
+ * rewrite copies far more than it touches. Here every track appears once and
+ * its place in the output is the number beside it, so what the rewrite did is
+ * the rows that have no number and the rows marked new.
+ *
+ * A dropped track follows the last survivor of its own kind rather than the
+ * position it held, which no longer exists. Where the output has none of that
+ * kind left, its tracks come last.
+ */
+export function unify(before: Track[], after: Track[], mark: Pairing): Row[] {
+	const dropped = before.filter((track) => !mark.kept.has(track.index));
+	// Where each kind's survivors run out, so its drops can follow them.
+	const ends = new Map<string, number>();
+	after.forEach((track, at) => ends.set(track.kind, at));
+
+	const rows: Row[] = [];
+	after.forEach((track, at) => {
+		rows.push({
+			track,
+			position: at + 1,
+			state: mark.added.has(track.index) ? 'added' : 'kept'
+		});
+		if (ends.get(track.kind) !== at) return;
+		for (const missing of dropped) {
+			if (missing.kind === track.kind)
+				rows.push({ track: missing, position: null, state: 'dropped' });
+		}
+	});
+	for (const missing of dropped) {
+		if (!ends.has(missing.kind)) rows.push({ track: missing, position: null, state: 'dropped' });
+	}
+	return rows;
+}
+
+// A file's tracks as one numbered list, and what the numbering is of: what a
+// run would leave, what one left, or just the file as it stands. A plan wins
+// over a rewrite already made, being the more useful answer, and only a rules
+// change leaves a file with both.
+export function listing(file: LibraryFile): { label: string; rows: Row[] } {
+	if (file.planned.length) {
+		return { label: 'After the rewrite', rows: unify(file.tracks, file.planned, pair(file)) };
+	}
+	const was = file.fixed?.was ?? [];
+	const moved = file.fixed && was.length ? paired(file.fixed) : null;
+	// The after is the file as it was probed once rewritten, not the plan's word
+	// for what it would be.
+	if (moved) return { label: 'As rewritten', rows: unify(was, file.tracks, moved) };
+	const whole = {
+		kept: new Set(file.tracks.map((track) => track.index)),
+		added: new Set<number>()
+	};
+	return { label: 'Tracks', rows: unify(file.tracks, file.tracks, whole) };
 }
 
 // Each verdict's colour as a dot. Three hues say what state the file is in:
@@ -325,6 +395,38 @@ export const VERDICTS: Verdict[] = [
 	'unchecked',
 	'missing'
 ];
+
+// The kinds a shelf can hold, in the order a filter offers them. Anything else
+// an *arr reports keeps its own place at the end; see kindsOn in $lib/shelfview.
+export const KINDS: Kind[] = ['movie', 'series', 'folder'];
+
+/** The plural a filter names a kind by, standing for a set of titles. */
+export function kindLabel(kind: Kind): string {
+	switch (kind) {
+		case 'movie':
+			return 'Films';
+		case 'series':
+			return 'Series';
+		case 'folder':
+			return 'Folders';
+		default:
+			return 'Other';
+	}
+}
+
+/** The same word for one title, as its sheet reads it. */
+export function kindName(kind: Kind): string {
+	switch (kind) {
+		case 'movie':
+			return 'Film';
+		case 'series':
+			return 'Series';
+		case 'folder':
+			return 'Folder';
+		default:
+			return 'Title';
+	}
+}
 
 // The two verdicts an Appearance setting can hide from the grid. `missing` is
 // a title with nothing downloaded, so a grid led by them is a wishlist;

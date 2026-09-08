@@ -3,7 +3,7 @@
 // where a failed search would have landed, and whether the grid is mostly
 // unswept. Pure functions, so a test can put a fixture shelf through them.
 
-import { MISSING, VERDICTS, type Card, type Verdict } from '$lib/library';
+import { KINDS, MISSING, VERDICTS, type Card, type Kind, type Verdict } from '$lib/library';
 import { FLOW, ORDER, type Flow, type Sort } from '$lib/order.svelte';
 
 /** The row of controls over the grid, as the cut below reads it. */
@@ -12,6 +12,8 @@ export type View = {
 	filters: readonly Verdict[];
 	// Which verdicts Appearance keeps out of the default view.
 	hidden: readonly Verdict[];
+	// Which kind the grid is cut to; empty is all of them.
+	kind: Kind;
 	// What is in the search box, trimmed and lowercased.
 	needle: string;
 	sort: Sort;
@@ -20,6 +22,25 @@ export type View = {
 
 /** One hit for a verdict the filters are holding back. */
 export type Hit = { state: Verdict; count: number };
+
+/** The same for a kind the type filter is holding back. */
+export type KindHit = { kind: Kind; count: number };
+
+/** Whether the kind filter would show this title. */
+export function ofKind(card: Card, kind: Kind): boolean {
+	return !kind || card.kind === kind;
+}
+
+/** The kinds the shelf holds, in the order the filter offers them. An install
+ * with only Radarr connected gets one, and no control at all. */
+export function kindsOn(titles: readonly Card[]): Kind[] {
+	const held = new Set(titles.map((card) => card.kind));
+	const known = KINDS.filter((kind) => held.has(kind));
+	// Anything an *arr reports that this build has no word for still gets a
+	// segment, after the three it does.
+	const rest = [...held].filter((kind) => !KINDS.includes(kind)).sort();
+	return [...known, ...rest];
+}
 
 /** Whether the filters would show a title in this state. With none held the
  * grid is everything less what Appearance hides; a hidden state held by name
@@ -32,7 +53,10 @@ export function holds(state: string, view: Pick<View, 'filters' | 'hidden'>): bo
 export function sift(titles: readonly Card[], view: View): Card[] {
 	const { needle, sort, flow } = view;
 	const kept = titles.filter(
-		(card) => holds(card.state, view) && (!needle || card.name.toLowerCase().includes(needle))
+		(card) =>
+			ofKind(card, view.kind) &&
+			holds(card.state, view) &&
+			(!needle || card.name.toLowerCase().includes(needle))
 	);
 	const order = ORDER[sort];
 	// The comparison reversed rather than a second comparator. Worst first has
@@ -82,13 +106,19 @@ export function waiting(counts: Record<string, number>, total: number): Waiting 
 	return { titles, judgeable };
 }
 
-/** Where a search that found nothing would have landed without the filters, so
- * "do I have this" is not answered "no" by a hidden Missing. */
+/** Where a search that found nothing would have landed without the verdict
+ * filters, so "do I have this" is not answered "no" by a hidden Missing. Only
+ * within the kind on screen, or a chip would promise titles the type filter
+ * then withholds. */
 export function elsewhere(titles: readonly Card[], view: View): Hit[] {
 	if (!view.needle) return [];
 	const counts: Record<string, number> = {};
 	for (const card of titles) {
-		if (!holds(card.state, view) && card.name.toLowerCase().includes(view.needle)) {
+		if (
+			ofKind(card, view.kind) &&
+			!holds(card.state, view) &&
+			card.name.toLowerCase().includes(view.needle)
+		) {
 			counts[card.state] = (counts[card.state] ?? 0) + 1;
 		}
 	}
@@ -96,4 +126,24 @@ export function elsewhere(titles: readonly Card[], view: View): Hit[] {
 		state,
 		count: counts[state]
 	}));
+}
+
+/** The same for the kinds the type filter is holding back: a grid cut to films
+ * should not answer "have I got this series" with no. Counted among titles the
+ * verdict filters would show, so pressing one lands on them. */
+export function otherKinds(titles: readonly Card[], view: View): KindHit[] {
+	if (!view.needle || !view.kind) return [];
+	const counts: Record<string, number> = {};
+	for (const card of titles) {
+		if (
+			!ofKind(card, view.kind) &&
+			holds(card.state, view) &&
+			card.name.toLowerCase().includes(view.needle)
+		) {
+			counts[card.kind] = (counts[card.kind] ?? 0) + 1;
+		}
+	}
+	return kindsOn(titles)
+		.filter((kind) => counts[kind])
+		.map((kind) => ({ kind, count: counts[kind] }));
 }
