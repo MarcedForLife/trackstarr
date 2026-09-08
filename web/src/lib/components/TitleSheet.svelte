@@ -10,7 +10,7 @@
 	import { arrival, coverShow, type Arrival } from '$lib/covers';
 	import { button } from '$lib/controls';
 	import { ago } from '$lib/events';
-	import { duration } from '$lib/format';
+	import { describe, duration, rate } from '$lib/format';
 	import {
 		forTitle,
 		getHolds,
@@ -21,12 +21,10 @@
 	} from '$lib/holds';
 	import {
 		coverUrl,
-		describe,
 		getLinks,
 		getTitle,
 		kindName,
 		listing,
-		rate,
 		size,
 		verdictLabel,
 		verdictText,

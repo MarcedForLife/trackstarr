@@ -89,6 +89,29 @@ def test_regenerate_downmix_end_to_end(make_file, monkeypatch):
     assert len(streams_of(path, "audio")) == 3
 
 
+def test_a_trimmed_file_re_encodes_its_own_downmix(make_file, monkeypatch):
+    """What REGENERATE_ABOVE_PERCENT is for: with the 5.1 removed, a later rate
+    change has nothing bigger to rebuild the stereo from, so the track is its
+    own source."""
+    set_layouts(monkeypatch, "2.0:aac:320k", "5.1:remove")
+    path = make_file("f.mkv", [(6, "eng", "Surround")])
+    assert rewrite(build_plan(path, "eng")) is Outcome.APPLIED
+    assert [stream["channels"] for stream in streams_of(path, "audio")] == [2]
+
+    set_layouts(monkeypatch, "2.0:aac:128k", "5.1:remove")
+    set_rules(monkeypatch, regenerate="always")
+    # The rebuild side leaves it: there is nothing left to downmix from.
+    assert not build_plan(path, "eng").needed
+
+    monkeypatch.setattr(config, "REGENERATE_ABOVE_PERCENT", 120)
+    plan = build_plan(path, "eng")
+    assert any("re-encode high-bitrate 2.0 downmix" in reason for reason in plan.reasons)
+    assert rewrite(plan) is Outcome.APPLIED
+    (stereo,) = streams_of(path, "audio")
+    assert stereo["tags"]["TRACKSTARR"] == "aac 128k"
+    assert not build_plan(path, "eng").needed
+
+
 def test_mp4_commentary_titles_are_read_and_survive(make_file):
     """MP4 reports titles as ``name`` and a plain copy drops them, so commentary
     has to be caught before the rewrite and still labelled after it."""

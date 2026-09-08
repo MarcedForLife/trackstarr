@@ -14,7 +14,7 @@
 		},
 		"regenerate": {
 			"default": "never",
-			"summary": "Rebuild trackstarr's own downmixes when their codec or bitrate no longer matches the settings (REGENERATE_SCOPE=generated). With REGENERATE_SCOPE=all, also replace any layout-sized track reported under REGENERATE_BELOW_PERCENT of its layout's rate where a surviving bigger track has more to give. Every replacement is a fresh downmix from the best surviving bigger track, never a re-encode in place."
+			"summary": "Rebuild trackstarr's own downmixes when their codec or bitrate no longer matches the settings (REGENERATE_SCOPE=generated). With REGENERATE_SCOPE=all, also replace any layout-sized track reported under REGENERATE_BELOW_PERCENT of its layout's rate where a surviving bigger track has more to give. A replacement is a fresh downmix from the best surviving bigger track; REGENERATE_ABOVE_PERCENT re-encodes a track that far over its layout's rate from itself, lossless tracks aside."
 		},
 		"cover_art": {
 			"default": "always",
@@ -265,6 +265,10 @@
 		},
 		"REGENERATE_BELOW_PERCENT": {
 			"value": "80",
+			"env": false
+		},
+		"REGENERATE_ABOVE_PERCENT": {
+			"value": "0",
 			"env": false
 		},
 		"ALLOWED_EXTS": {

@@ -227,6 +227,13 @@ def encode_settings(codec: str, bitrate: str) -> str:
     return f"{codec} {canonical_bitrate(bitrate)}"
 
 
+def settings_bitrate(recorded: str) -> int | None:
+    """The rate an :func:`encode_settings` tag records, in bits per second, or
+    None for one nothing can parse. What a generated track was made at, which
+    Matroska otherwise reports for no audio stream."""
+    return bitrate_bps(recorded.rpartition(" ")[2])
+
+
 #: The LANGUAGES name for whatever the *arrs report a title was made in, which
 #: is not an ISO code and is already a non-language to arr.original_of. Resolved
 #: per title by Policy.resolve.

@@ -24,6 +24,7 @@ from .media import (
     is_commentary,
     is_cover_art,
     is_forced,
+    is_lossless,
     is_sdh,
     matches_release_tags,
     probe,
@@ -44,7 +45,7 @@ from .policy import (
     Policy,
 )
 from .status import Status
-from .tracks import Lang, Layout, bitrate_bps, encode_settings
+from .tracks import CODECS, Lang, Layout, bitrate_bps, encode_settings, settings_bitrate
 
 
 def channel_rank(channels: int | None, order: Sequence[int] = ()) -> tuple[int, bool, int]:
@@ -75,12 +76,12 @@ class OutStream:
 
     ``title`` is the layout name on encodes and the source's title on copies,
     re-asserted because MP4 drops track names on a plain copy. ``lang``,
-    ``codec`` and ``bitrate`` are set only on generated downmixes.
+    ``codec`` and ``bitrate`` are set only on generated tracks.
     """
 
     src: int  # stream index in the input file
     kind: str  # video | audio | subtitle | attachment
-    encode: bool = False  # True only for generated downmixes
+    encode: bool = False  # a downmix, or a track re-encoded from itself
     channels: int | None = None
     lang: str | None = None
     title: str = ""
@@ -362,6 +363,9 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     # A dropped track is owed its language back, whatever the downmix settings
     # say; see _choose_downmixes.
     kept_audio, rebuild_langs, replacing = _drop_stale_downmixes(plan, kept_audio)
+    # Kept above, since a track re-encoded from itself is its own source: only
+    # its copy in the output goes.
+    reencodes = _reencode_oversized(plan, kept_audio)
     kept_subs = _drop_redundant_sdh(plan, kept_subs)
 
     downmixes = _choose_downmixes(plan, kept_audio, rebuild_langs)
@@ -376,10 +380,13 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     # language and no fallback.
     for orphaned in replacing:
         _record(plan, "regenerate", orphaned.reason)
+    # Every track the rewrite encodes: a fresh downmix, or one made from itself.
+    generated = [*downmixes, *reencodes]
     # Last of the audio rules: the others' output replaces what it drops, and no
     # title is cleared on a track about to go.
-    kept_audio = _drop_layouts(plan, kept_audio, downmixes)
+    kept_audio = _drop_layouts(plan, kept_audio, generated)
 
+    reencoded = {src["index"] for _, src in reencodes}
     audio_out = [
         OutStream(
             src=stream["index"],
@@ -390,6 +397,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
             src_bitrate=unpreserved_bitrate(stream),
         )
         for stream in kept_audio
+        if stream["index"] not in reencoded
     ]
     audio_out += [
         OutStream(
@@ -402,7 +410,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
             codec=layout.codec,
             bitrate=layout.bitrate,
         )
-        for layout, src in downmixes
+        for layout, src in generated
     ]
     # A generated track sorts ahead of an existing track of equal rank. Every
     # named layout, whatever happens to it: that is what Keep is for.
@@ -607,25 +615,38 @@ def _claim_replacement(replacing: list[Replacement], layout: Layout, src: dict) 
     return None
 
 
+def _rebuild_targets(plan: Plan) -> dict[int | None, Layout]:
+    """The layout each channel count is judged against, empty where the
+    regenerate rule cannot act at all.
+
+    Added layouts only: a rebuild is a fresh downmix, so a size nothing makes
+    has nothing to rebuild. First wins, as in :func:`_choose_downmixes`. The
+    rule knows its own tracks by a tag only some containers keep, so elsewhere
+    it would re-encode them every sweep.
+    """
+    if not plan.acts("regenerate") or not plan.policy.downmixed():
+        return {}
+    if os.path.splitext(plan.path)[1].lower() not in TAG_PRESERVING_EXTS:
+        return {}
+    targets: dict[int | None, Layout] = {}
+    for layout in plan.policy.downmixed():
+        targets.setdefault(layout.channels, layout)
+    return targets
+
+
 def _drop_stale_downmixes(
     plan: Plan, kept_audio: list[dict]
 ) -> tuple[list[dict], set[str], list[Replacement]]:
     """The regenerate rule: drop tracks the downmix rule should rebuild.
 
     :func:`_stale_reason` says what each REGENERATE_SCOPE drops. Nothing goes
-    unless a bigger track survives to rebuild from. Returns the kept tracks,
+    unless a bigger track survives to rebuild from; :func:`_reencode_oversized`
+    is what reaches a fat track with nothing above it. Returns the kept tracks,
     the dropped languages (each owed a rebuild) and the pending drop reasons.
     """
-    # Nothing to rebuild toward where no layout is added.
-    if not plan.acts("regenerate") or not plan.policy.downmixed():
+    layouts = _rebuild_targets(plan)
+    if not layouts:
         return kept_audio, set(), []
-    if os.path.splitext(plan.path)[1].lower() not in TAG_PRESERVING_EXTS:
-        return kept_audio, set(), []
-    # Added layouts only: a rebuild is a fresh downmix, so a size nothing makes
-    # has nothing to rebuild. First wins, as in _choose_downmixes.
-    layouts: dict[int | None, Layout] = {}
-    for layout in plan.policy.downmixed():
-        layouts.setdefault(layout.channels, layout)
     keep: list[dict] = []
     rebuild_langs: set[str] = set()
     replacing: list[Replacement] = []
@@ -688,6 +709,68 @@ def _stale_reason(plan: Plan, stream: dict, layout: Layout, sources: list[dict])
     return (
         f"replace low-bitrate {layout.name} track "
         f"{_stream_label(stream, f'{reported // 1000}k')} with a fresh downmix"
+    )
+
+
+def _reencode_oversized(plan: Plan, kept_audio: list[dict]) -> list[tuple[Layout, dict]]:
+    """The regenerate rule's other half: tracks made from themselves at their
+    layout's settings, paired with the layout, or empty with
+    REGENERATE_ABOVE_PERCENT unset.
+
+    Reads what :func:`_drop_stale_downmixes` kept, so a track it drops is
+    rebuilt from the bigger source rather than made from itself: a fold-down of
+    the original beats a second pass over a track that has already been through
+    an encoder. A track it does not drop is re-encoded wherever it is over the
+    line, bigger tracks beside it or not.
+    """
+    if not plan.policy.regenerate_above:
+        return []
+    layouts = _rebuild_targets(plan)
+    reencodes: list[tuple[Layout, dict]] = []
+    for stream in kept_audio:
+        layout = layouts.get(stream.get("channels"))
+        if layout is None:
+            continue
+        if (why := _oversized_reason(plan, stream, layout)) is not None:
+            _record(plan, "regenerate", why)
+            reencodes.append((layout, stream))
+    return reencodes
+
+
+def _oversized_reason(plan: Plan, stream: dict, layout: Layout) -> str | None:
+    """Why a track is re-encoded from itself, or None to leave it.
+
+    REGENERATE_ABOVE_PERCENT of the layout's rate is the line, so a track at
+    its rate is never touched and the pass is idempotent. A generated track is
+    judged by the rate its tag records, since Matroska reports none for one; a
+    real track by what it reports, and only under REGENERATE_SCOPE=all, as on
+    the low-bitrate side. A lossless layout is left alone, since re-encoding
+    into one grows the track this is here to shrink, and so is a lossless
+    track, whatever it reports.
+    """
+    target = bitrate_bps(layout.bitrate) or 0
+    encoder = CODECS.get(layout.codec)
+    if not target or (encoder and encoder.lossless):
+        return None
+    # A commentary is not the layout's track, and a master is over every line
+    # there is: a 4Mb/s DTS-HD MA 5.1 would come out as the layout's 640k, which
+    # is the one loss a re-rip cannot undo. Removing a layout is where that is
+    # asked for, in writing.
+    if is_commentary(stream, plan.policy) or is_lossless(stream):
+        return None
+    if (recorded := generated_settings(stream)) is not None:
+        rate = settings_bitrate(recorded)
+        named = f"{layout.name} downmix"
+    elif plan.policy.regenerate_scope == "all":
+        rate = stream_bitrate(stream)
+        named = f"{layout.name} track"
+    else:
+        return None
+    if rate is None or rate * 100 < target * plan.policy.regenerate_above:
+        return None
+    return (
+        f"re-encode high-bitrate {named} {_stream_label(stream, f'{rate // 1000}k')} "
+        f"from itself as {encode_settings(layout.codec, layout.bitrate)}"
     )
 
 
@@ -758,7 +841,7 @@ def _downmix_rank(stream: dict, order: list[str]) -> tuple[int, int]:
 
 
 def _drop_layouts(
-    plan: Plan, kept_audio: list[dict], downmixes: list[tuple[Layout, dict]]
+    plan: Plan, kept_audio: list[dict], generated: list[tuple[Layout, dict]]
 ) -> list[dict]:
     """Remove every track at a size AUDIO_LAYOUTS sets to remove.
 
@@ -767,7 +850,7 @@ def _drop_layouts(
     track on its way out is still the source for the ones replacing it.
 
     Nothing goes if it would take the last audio track with it. A generated
-    downmix counts, which is what lets a 7.1-only file lose its 7.1.
+    track counts, which is what lets a 7.1-only file lose its 7.1.
     """
     # Widened for the lookup: a broken stream reports no channels.
     named: dict[int | None, str] = {
@@ -777,7 +860,7 @@ def _drop_layouts(
         return kept_audio
     keep = [stream for stream in kept_audio if stream.get("channels") not in named]
     # The plan says nothing either: reasons are what a rewrite does.
-    if not keep and not downmixes:
+    if not keep and not generated:
         return kept_audio
     for stream in kept_audio:
         if (layout := named.get(stream.get("channels"))) is not None:

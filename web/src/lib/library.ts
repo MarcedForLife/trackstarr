@@ -258,31 +258,6 @@ export function coverUrl(id: string): string {
 	return `/api/library/cover?id=${encodeURIComponent(id)}`;
 }
 
-// Channel counts as layouts, so a track reads "5.1" like DOWNMIX_LAYOUTS.
-const LAYOUTS: Record<number, string> = { 1: '1.0', 2: '2.0', 3: '2.1', 6: '5.1', 8: '7.1' };
-
-export function layout(channels: number | undefined): string {
-	if (!channels) return '';
-	return LAYOUTS[channels] ?? `${channels}ch`;
-}
-
-export function rate(bitrate: number | undefined): string {
-	if (!bitrate) return '';
-	if (bitrate >= 1_000_000) return `${(bitrate / 1_000_000).toFixed(1)} Mbps`;
-	// A text subtitle runs at tens of bits a second, which rounded to "0k".
-	if (bitrate < 1000) return `${bitrate} bps`;
-	return `${Math.round(bitrate / 1000)}k`;
-}
-
-// A track on one line: codec, layout, language. The same shape for current and
-// planned tracks so the two columns compare.
-export function describe(track: Track): string {
-	const parts = [track.codec?.toUpperCase()];
-	if (track.kind === 'audio') parts.push(layout(track.channels));
-	parts.push(track.lang ?? 'und');
-	return parts.filter(Boolean).join(' · ');
-}
-
 // Which current tracks survive and which planned ones are new, paired by source
 // index so the sheet can strike a dropped row.
 export type Pairing = {

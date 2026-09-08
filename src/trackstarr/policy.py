@@ -78,8 +78,9 @@ RULES = {
         "matches the settings (REGENERATE_SCOPE=generated). With "
         "REGENERATE_SCOPE=all, also replace any layout-sized track reported "
         "under REGENERATE_BELOW_PERCENT of its layout's rate where a surviving "
-        "bigger track has more to give. Every replacement is a fresh downmix from "
-        "the best surviving bigger track, never a re-encode in place.",
+        "bigger track has more to give. A replacement is a fresh downmix from the "
+        "best surviving bigger track; REGENERATE_ABOVE_PERCENT re-encodes a track "
+        "that far over its layout's rate from itself, lossless tracks aside.",
     ),
     "cover_art": Rule(ALWAYS, "Drop embedded cover art."),
     "release_tags": Rule(ALONGSIDE, "Clear release tags from track and container titles."),
@@ -187,6 +188,9 @@ class Policy:
     regenerate_scope: str
     #: Percent of its layout's rate under which "all" calls a track low-bitrate.
     regenerate_below: int
+    #: Percent of its layout's rate over which a track is re-encoded from
+    #: itself. 0 leaves every fat track alone.
+    regenerate_above: int
     #: Every layout named, in AUDIO_LAYOUTS order, which is the audio order.
     #: Each says whether it is downmixed, kept or removed; see :data:`ACTIONS`.
     audio_layouts: tuple[Layout, ...]
@@ -204,6 +208,7 @@ class Policy:
             rule_modes=tuple(sorted(resolved_modes().items())),
             regenerate_scope=config.REGENERATE_SCOPE,
             regenerate_below=config.REGENERATE_BELOW_PERCENT,
+            regenerate_above=config.REGENERATE_ABOVE_PERCENT,
             audio_layouts=tuple(resolved_layouts()),
             skip_hardlinks=config.SKIP_HARDLINKS,
             commentary_re=config.COMMENTARY_RE,
@@ -498,7 +503,9 @@ def warnings() -> list[str]:
     losing_sources = any(
         gone.channels > made.channels for gone in removed_layouts() for made in added
     )
-    if modes["regenerate"] != NEVER and losing_sources:
+    # REGENERATE_ABOVE_PERCENT answers it: a trimmed file's own downmixes are
+    # made again from themselves, so a later rate change does reach them.
+    if modes["regenerate"] != NEVER and losing_sources and not config.REGENERATE_ABOVE_PERCENT:
         problems.append(
             f"AUDIO_LAYOUTS removes tracks {config.rule_variable('regenerate')} rebuilds "
             "downmixes from, so a later codec or rate change reaches nothing on the "

@@ -402,7 +402,7 @@ def test_a_settings_key_nothing_reads_is_a_warning_not_an_error(monkeypatch):
     # The settings pages write known names only, so they cannot clear this one:
     # the line has to carry the file's whole path and what to do with it.
     assert config._settings_path() in problem
-    assert "remove or rename them" in problem
+    assert "Remove or rename them" in problem
 
 
 def test_a_settings_file_layout_list_is_read_and_not_flagged_unread(monkeypatch):
@@ -538,4 +538,21 @@ def test_the_edges_of_the_low_bitrate_band_are_allowed(monkeypatch, percent):
     """The band the settings page offers is the band the service takes, ends
     included, or the field's own limits would refuse a save it invited."""
     monkeypatch.setattr(config, "REGENERATE_BELOW_PERCENT", percent)
+    assert config.errors() == []
+
+
+@pytest.mark.parametrize("percent", [109, 401])
+def test_a_high_bitrate_threshold_outside_the_band_is_refused(monkeypatch, percent):
+    """Under the rate itself a track is re-encoded to the rate it already has,
+    every sweep; far above it nothing is ever fat enough to reach."""
+    monkeypatch.setattr(config, "REGENERATE_ABOVE_PERCENT", percent)
+    errors = config.errors()
+    assert len(errors) == 1
+    assert "REGENERATE_ABOVE_PERCENT" in errors[0]
+
+
+@pytest.mark.parametrize("percent", [0, 110, 400])
+def test_the_edges_of_the_high_bitrate_band_are_allowed(monkeypatch, percent):
+    """0 is the setting off, and the band's ends are the page's own limits."""
+    monkeypatch.setattr(config, "REGENERATE_ABOVE_PERCENT", percent)
     assert config.errors() == []

@@ -93,6 +93,28 @@ def test_a_junk_bps_tag_does_not_mask_a_real_bit_rate():
     assert stream_bitrate({"bit_rate": "448000", "tags": {"BPS": "N/A"}}) == 448000
 
 
+@pytest.mark.parametrize(
+    ("stream", "lossless"),
+    [
+        ({"codec_name": "truehd"}, True),
+        ({"codec_name": "flac"}, True),
+        # One variant per sample format, so the family is matched by prefix.
+        ({"codec_name": "pcm_s24le"}, True),
+        # DTS-HD MA rides in a dts stream; the lossy profiles do too.
+        ({"codec_name": "dts", "profile": "DTS-HD MA"}, True),
+        ({"codec_name": "dts", "profile": "DTS-HD HRA"}, False),
+        ({"codec_name": "dts"}, False),
+        ({"codec_name": "eac3"}, False),
+        ({}, False),
+    ],
+    ids=["truehd", "flac", "pcm", "dts-hd ma", "dts-hd hra", "dts", "eac3", "nothing reported"],
+)
+def test_a_master_is_told_from_a_mix(stream, lossless):
+    """What the regenerate rule refuses to re-encode: the loss a re-rip cannot
+    undo."""
+    assert media.is_lossless(stream) is lossless
+
+
 def test_generated_settings_only_reads_our_own_tag():
     assert media.generated_settings({"tags": {media.GENERATED_TAG: "aac 192k"}}) == "aac 192k"
     assert media.generated_settings({"tags": {"title": "aac 192k"}}) is None

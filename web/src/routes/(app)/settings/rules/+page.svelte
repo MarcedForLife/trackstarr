@@ -8,7 +8,16 @@
 	import SettingRow from '$lib/components/SettingRow.svelte';
 	import { box, cell } from '$lib/controls';
 	import { provideSettings, SettingsDraft } from '$lib/draft.svelte';
-	import { belowNote, belowProblem, codecNotes, parseLang, parseRow } from '$lib/rules';
+	import {
+		ABOVE,
+		BELOW,
+		codecNotes,
+		parseLang,
+		parseRow,
+		shareNote,
+		shareProblem
+	} from '$lib/rules';
+	import type { Row, Share } from '$lib/rules';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -69,7 +78,7 @@
 	const REMUX_DESC =
 		'Rewrite MP4 into Matroska so every rule applies. MP4 direct-plays on more devices, so Alongside is the usual choice.';
 	const REGENERATE_DESC =
-		"Rebuild downmixes whose settings have changed. MKV only, the one container that keeps the tag marking trackstarr's own tracks.";
+		'Rebuild downmixes whose settings have changed. MKV only, the one container that keeps the tag marking which tracks trackstarr made.';
 
 	// Both read as on while the containers row decides whether they can fire.
 	const remuxNote = $derived(
@@ -84,26 +93,46 @@
 			: '.mkv is not selected under Containers, so nothing is regenerated.'
 	);
 
-	// A string, so what is typed goes over the wire untouched.
-	const belowPercent = $derived(String(draft.REGENERATE_BELOW_PERCENT ?? ''));
-
-	function belowLocked(): boolean {
-		return envLocked('REGENERATE_BELOW_PERCENT') || !allScope();
-	}
-
 	// The low-bitrate number is All's alone, and All means nothing while the
 	// rule itself is off.
 	function allScope(): boolean {
 		return ruleOn('regenerate') && draft.REGENERATE_SCOPE === 'all';
 	}
 
-	const lowProblem = $derived(belowProblem(belowPercent));
-	const lowNote = $derived(
-		belowNote(
-			belowPercent,
-			downmixed.map((row) => ({ layout: row.name, rate: row.bitrate }))
-		)
-	);
+	const codecs = $derived(data.snapshot.codecs);
+	const codecOf = $derived(new Map(codecs.map((codec) => [codec.name, codec])));
+
+	// The rate each downmixed size is made at, which both shares below read a
+	// track against.
+	const rated = (rows: Row[]) => rows.map((row) => ({ layout: row.name, rate: row.bitrate }));
+
+	// A lossless layout is left out of the high-bitrate note: the service never
+	// re-encodes into one, so a rate for it would be a promise.
+	const shrinkable = $derived(downmixed.filter((row) => !codecOf.get(row.codec)?.lossless));
+
+	// One row each. The value is a string, so what is typed goes over the wire
+	// untouched, and the high-bitrate share reaches the downmixes trackstarr
+	// made under either scope, so it waits on the rule alone.
+	const shares = $derived([
+		{
+			name: 'REGENERATE_BELOW_PERCENT',
+			label: 'Low bitrate below',
+			desc: "How far under its layout's rate a track must report before it is replaced. One with nothing bigger to rebuild from is left alone, since a downmix holds no more than its source.",
+			share: BELOW,
+			value: String(draft.REGENERATE_BELOW_PERCENT ?? ''),
+			rated: rated(downmixed),
+			off: !allScope()
+		},
+		{
+			name: 'REGENERATE_ABOVE_PERCENT',
+			label: 'High bitrate over',
+			desc: "How far over its layout's rate a track must sit before it is re-encoded from itself, at that layout's settings. Generated limits that to the downmixes trackstarr made. A lossless track is never touched.",
+			share: ABOVE,
+			value: String(draft.REGENERATE_ABOVE_PERCENT ?? ''),
+			rated: rated(shrinkable),
+			off: !ruleOn('regenerate')
+		}
+	]);
 
 	// In the service's order, not click order, so the row survives a save.
 	function toggleExt(ext: string, on: boolean) {
@@ -116,9 +145,6 @@
 	const extsNote = $derived(
 		exts.length ? '' : 'Nothing is selected, so no file will be rewritten.'
 	);
-
-	const codecs = $derived(data.snapshot.codecs);
-	const codecOf = $derived(new Map(codecs.map((codec) => [codec.name, codec])));
 
 	// Where a rewrite lands: with remux on at all everything is converted, so an
 	// encoder only Matroska holds is fine.
@@ -181,9 +207,9 @@
 	const area =
 		'w-full resize-y rounded-lg border border-line-strong bg-field px-2.5 py-2 font-mono text-base leading-snug field-sizing-content min-h-[calc(2lh+1rem)] max-h-[14lh] disabled:opacity-50 sm:text-xs';
 
-	// The line under the low-bitrate box, about the entry rather than the setting.
+	// The line under a bitrate box, about the entry rather than the setting.
 	const id = $props.id();
-	const lowLine = `${id}-low`;
+	const shareLine = (name: string) => `${id}-${name}`;
 
 	// The longest page in the app, so its groups fold; each shows its count shut.
 	const TITLE_RULES = ['release_tags', 'cover_art'];
@@ -196,6 +222,7 @@
 		'AUDIO_LAYOUTS',
 		'REGENERATE_SCOPE',
 		'REGENERATE_BELOW_PERCENT',
+		'REGENERATE_ABOVE_PERCENT',
 		...['languages', 'regenerate', 'commentary', 'sdh'].map(ruleVar)
 	];
 	const FORMAT_SETTINGS = ['ALLOWED_EXTS', ruleVar('remux')];
@@ -237,6 +264,57 @@
 				disabled={envLocked(ruleVar(rule))}
 				onchange={(value) => (draft[ruleVar(rule)] = value)}
 			/>
+		{/snippet}
+	</SettingRow>
+{/snippet}
+
+<!-- One percent of a layout's rate, under the regenerate rule: the number, the
+     unit and the line saying what it comes to. `off` dims and disables the row,
+     since each waits on a different part of the rule above it. -->
+{#snippet shareRow({
+	name,
+	label,
+	desc,
+	share,
+	value,
+	rated,
+	off
+}: {
+	name: string;
+	label: string;
+	desc: string;
+	share: Share;
+	value: string;
+	rated: { layout: string; rate: string }[];
+	off: boolean;
+})}
+	{@const problem = shareProblem(value, share)}
+	{@const note = problem ? '' : shareNote(value, share, rated)}
+	{@const line = shareLine(name)}
+	<SettingRow {name} {label} align="start" {desc} nested stack dim={off}>
+		{#snippet children({ labelledBy, describedBy })}
+			<div class="flex w-full flex-col items-start gap-1.5 sm:items-end">
+				<div class="flex items-center gap-2">
+					<input
+						{value}
+						oninput={(event) => (draft[name] = event.currentTarget.value)}
+						inputmode="numeric"
+						autocapitalize="none"
+						autocorrect="off"
+						spellcheck="false"
+						aria-labelledby={labelledBy}
+						aria-describedby={problem || note ? `${describedBy} ${line}` : describedBy}
+						disabled={envLocked(name) || off}
+						class={`${cell} w-[4.5rem] flex-none sm:w-16`}
+					/>
+					<span class="text-[13px] text-faint">% of its rate</span>
+				</div>
+				{#if problem}
+					<p id={line} class="text-[12.5px] text-danger">{problem}</p>
+				{:else if note}
+					<p id={line} class="text-[12.5px] text-faint">{note}</p>
+				{/if}
+			</div>
 		{/snippet}
 	</SettingRow>
 {/snippet}
@@ -320,7 +398,7 @@
 			<SettingRow
 				name="REGENERATE_SCOPE"
 				label="Rebuild which tracks"
-				desc="Generated rebuilds trackstarr's own tracks once their codec or bitrate no longer matches the settings above. All also replaces any other layout-sized track reporting under the share of its rate set below. Either way the replacement is a fresh downmix from a surviving bigger track."
+				desc="Generated rebuilds a downmix trackstarr made once its codec or bitrate no longer matches its layout. All also replaces any other layout-sized track reporting under the low-bitrate share. Either way a replacement is a fresh downmix from a surviving bigger track."
 				nested
 				stack
 				dim={!ruleOn('regenerate')}
@@ -337,40 +415,9 @@
 					/>
 				{/snippet}
 			</SettingRow>
-			<SettingRow
-				name="REGENERATE_BELOW_PERCENT"
-				label="Low bitrate below"
-				align="start"
-				desc="How far under its layout's rate a track must report before All calls it low-bitrate. A track with no bigger source is left alone, since a downmix holds no more than its source."
-				nested
-				stack
-				dim={!allScope()}
-			>
-				{#snippet children({ labelledBy, describedBy })}
-					<div class="flex w-full flex-col items-start gap-1.5 sm:items-end">
-						<div class="flex items-center gap-2">
-							<input
-								value={belowPercent}
-								oninput={(event) => (draft.REGENERATE_BELOW_PERCENT = event.currentTarget.value)}
-								inputmode="numeric"
-								autocapitalize="none"
-								autocorrect="off"
-								spellcheck="false"
-								aria-labelledby={labelledBy}
-								aria-describedby={lowProblem || lowNote ? `${describedBy} ${lowLine}` : describedBy}
-								disabled={belowLocked()}
-								class={`${cell} w-[4.5rem] flex-none sm:w-16`}
-							/>
-							<span class="text-[13px] text-faint">% of its rate</span>
-						</div>
-						{#if lowProblem}
-							<p id={lowLine} class="text-[12.5px] text-danger">{lowProblem}</p>
-						{:else if lowNote}
-							<p id={lowLine} class="text-[12.5px] text-faint">{lowNote}</p>
-						{/if}
-					</div>
-				{/snippet}
-			</SettingRow>
+			{#each shares as share (share.name)}
+				{@render shareRow(share)}
+			{/each}
 			{@render ruleRow({
 				rule: 'commentary',
 				label: 'Commentary',

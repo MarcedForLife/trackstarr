@@ -136,6 +136,21 @@ def is_sdh(stream: dict, policy: Policy) -> bool:
     )
 
 
+#: Audio codecs that carry a master rather than a mix. PCM has a variant per
+#: sample format, so it is matched by prefix, and DTS-HD MA rides in a dts
+#: stream, so it is read off the profile.
+LOSSLESS_CODECS = frozenset({"flac", "alac", "truehd", "mlp", "tta", "wavpack"})
+
+
+def is_lossless(stream: dict) -> bool:
+    """Whether the track is a lossless master, which is the one loss a re-rip
+    cannot undo. Nothing re-encodes one to save space."""
+    codec = stream.get("codec_name") or ""
+    if codec in LOSSLESS_CODECS or codec.startswith("pcm_"):
+        return True
+    return codec == "dts" and "MA" in (stream.get("profile") or "")
+
+
 def is_cover_art(stream: dict) -> bool:
     """Embedded artwork, which players otherwise read as a second video track."""
     return has_disposition(stream, "attached_pic") or (stream.get("codec_name") in IMAGE_CODECS)

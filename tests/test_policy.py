@@ -29,6 +29,7 @@ _FIELD_CHANGES = {
     "rule_modes": ("RULE_MODES", {"sdh": "never"}),
     "regenerate_scope": ("REGENERATE_SCOPE", "all"),
     "regenerate_below": ("REGENERATE_BELOW_PERCENT", 40),
+    "regenerate_above": ("REGENERATE_ABOVE_PERCENT", 120),
     "audio_layouts": ("AUDIO_LAYOUTS", ("2.0", "7.1")),
     "skip_hardlinks": ("SKIP_HARDLINKS", False),
     "commentary_re": ("COMMENTARY_RE", re.compile("changed", re.IGNORECASE)),
@@ -307,6 +308,25 @@ def test_remux_with_nothing_to_convert_from_is_a_warning(monkeypatch):
     (problem,) = policy.warnings()
     assert "RULE_REMUX" in problem
     assert policy.errors() == []
+
+
+def test_trimming_away_the_rebuild_sources_is_a_warning(monkeypatch):
+    """A file trimmed to its downmixes has nothing left to rebuild them from,
+    so a later rate change reaches it and nothing happens."""
+    set_rules(monkeypatch, regenerate="always")
+    set_layouts(monkeypatch, "2.0:aac:192k", "5.1:remove")
+    (problem,) = policy.warnings()
+    assert "RULE_REGENERATE" in problem
+    assert "already trimmed" in problem
+
+
+def test_no_trimming_warning_once_a_track_can_be_made_from_itself(monkeypatch):
+    """REGENERATE_ABOVE_PERCENT answers it: the rate change does reach those
+    files now, so the warning would be telling an owner to fix what they have."""
+    set_rules(monkeypatch, regenerate="always")
+    set_layouts(monkeypatch, "2.0:aac:192k", "5.1:remove")
+    monkeypatch.setattr(config, "REGENERATE_ABOVE_PERCENT", 120)
+    assert policy.warnings() == []
 
 
 def test_regenerating_needs_a_container_that_keeps_the_tag(monkeypatch):

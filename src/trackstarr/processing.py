@@ -244,7 +244,7 @@ def _file_size(path: str) -> int | None:
 
 
 def downmixed_names(plan: Plan) -> list[str]:
-    """Layout names of the downmixes this plan makes."""
+    """Layout names of the tracks this plan encodes, downmix or re-encode."""
     return [stream.title for stream in plan.streams if stream.encode]
 
 

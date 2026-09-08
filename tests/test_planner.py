@@ -435,6 +435,120 @@ def test_all_mode_never_replaces_commentary(monkeypatch):
     assert any("add 2.0 downmix" in reason for reason in plan.reasons)
 
 
+# The other half of the rule: a track over its rate, re-encoded from itself
+
+
+def leaner(monkeypatch, above: int = 120, scope: str = "all") -> None:
+    """The regenerate rule on with stereo wanted at 192k, so a 320k one is
+    167% of its rate and every test below states only what it varies."""
+    set_rules(monkeypatch, regenerate="always")
+    set_layouts(monkeypatch, "2.0:aac:192k", "5.1")
+    monkeypatch.setattr(config, "REGENERATE_SCOPE", scope)
+    monkeypatch.setattr(config, "REGENERATE_ABOVE_PERCENT", above)
+
+
+def test_a_fat_track_is_left_alone_until_the_setting_says_otherwise(monkeypatch):
+    """Off at 0, which is the default: this is the one rule that spends quality
+    to save space, so nobody gets it without asking."""
+    leaner(monkeypatch, above=0)
+    plan = plan_for(video(0), audio(1, 2, bitrate="320000"), audio(2, 6))
+    assert not plan.needed
+
+
+def test_a_fat_track_is_re_encoded_from_itself(monkeypatch):
+    """From itself rather than from the 5.1 beside it: the stereo in the file
+    may be a real mix rather than a fold-down, and this setting is about the
+    rate, not the source."""
+    leaner(monkeypatch)
+    plan = plan_for(video(0), audio(1, 2, bitrate="320000"), audio(2, 6))
+    assert plan.reasons == ["re-encode high-bitrate 2.0 track 1 (320k) from itself as aac 192k"]
+    (made,) = [out for out in audio_out(plan) if out.encode]
+    assert (made.src, made.channels, made.codec, made.bitrate) == (1, 2, "aac", "192k")
+    # The track is its own source: mapped as an input, gone as a copy.
+    assert 1 not in {out.src for out in audio_out(plan) if not out.encode}
+
+
+def test_the_high_bitrate_line_is_where_the_setting_puts_it(monkeypatch):
+    """A 220k stereo is 115% of its 192k target: fine at 120, fat at 110."""
+    leaner(monkeypatch)
+    assert not plan_for(video(0), audio(1, 2, bitrate="220000"), audio(2, 6)).needed
+    leaner(monkeypatch, above=110)
+    plan = plan_for(video(0), audio(1, 2, bitrate="220000"), audio(2, 6))
+    assert any("re-encode high-bitrate 2.0 track 1 (220k)" in reason for reason in plan.reasons)
+
+
+def test_a_track_at_its_layouts_rate_is_never_re_encoded(monkeypatch):
+    """What keeps the pass idempotent: the track a rewrite leaves behind reads
+    as at its rate, and the lowest line is above it."""
+    leaner(monkeypatch, above=110)
+    assert not plan_for(video(0), audio(1, 2, bitrate="192000"), audio(2, 6)).needed
+
+
+def test_a_fat_real_track_is_the_all_scopes_to_touch(monkeypatch):
+    """Generated means our own tracks, whatever the rate beside them says."""
+    leaner(monkeypatch, scope="generated")
+    assert not plan_for(video(0), audio(1, 2, bitrate="320000"), audio(2, 6)).needed
+
+
+def test_a_fat_generated_track_goes_under_either_scope(monkeypatch):
+    """The gap this fills: once a file is trimmed to its downmixes, nothing
+    bigger survives to rebuild from, so a later rate change reached nothing.
+    Matroska reports no rate for one, so the tag is what it is judged by."""
+    leaner(monkeypatch, scope="generated")
+    plan = plan_for(video(0), tagged_downmix(1, 2, "aac 320k"))
+    assert plan.reasons == [
+        "re-encode high-bitrate 2.0 downmix 1 (320k, 2.0) from itself as aac 192k"
+    ]
+    assert [out.bitrate for out in audio_out(plan) if out.encode] == ["192k"]
+
+
+def test_a_surviving_bigger_track_beats_a_re_encode(monkeypatch):
+    """A fold-down of the original beats a second pass over a track that has
+    already been through an encoder, so the rebuild side goes first."""
+    leaner(monkeypatch)
+    plan = plan_for(video(0), tagged_downmix(1, 2, "aac 320k"), audio(2, 6))
+    assert plan.reasons == [
+        "regenerate 2.0 downmix 1 (aac 320k, 2.0) as aac 192k from stream 2 (6ch eng)"
+    ]
+
+
+def test_commentary_is_never_re_encoded(monkeypatch):
+    """As on the low-bitrate side: a 2.0 commentary is not the stereo track."""
+    leaner(monkeypatch)
+    plan = plan_for(video(0), audio(1, 2, title="Commentary", bitrate="320000"), audio(2, 6))
+    assert 1 in {out.src for out in audio_out(plan) if not out.encode}
+    assert plan.reasons == ["add 2.0 downmix from stream 2 (6ch eng)"]
+
+
+def test_a_lossless_master_is_never_re_encoded(monkeypatch):
+    """A 4Mb/s DTS-HD MA 5.1 is over every line there is, and All would have
+    handed back the layout's 640k. Removing a layout is where that is asked for,
+    in writing."""
+    leaner(monkeypatch)
+    master = audio(1, 6, title="DTS-HD MA 5.1", bitrate="4000000")
+    master |= {"codec_name": "dts", "profile": "DTS-HD MA"}
+    plan = plan_for(video(0), master)
+    assert plan.reasons == ["add 2.0 downmix from stream 1 (6ch eng)"]
+    assert 1 in {out.src for out in audio_out(plan) if not out.encode}
+
+
+def test_a_fat_lossy_source_track_is_re_encoded(monkeypatch):
+    """The other side of the line: a 1.5Mb/s DTS 5.1 against a 640k layout is
+    what All plus a share is for, and it is nobody's master."""
+    leaner(monkeypatch)
+    fat = audio(1, 6, bitrate="1509000") | {"codec_name": "dts", "profile": "DTS-HD HRA"}
+    plan = plan_for(video(0), fat)
+    assert "re-encode high-bitrate 5.1 track 1 (1509k) from itself as ac3 640k" in plan.reasons
+
+
+def test_a_lossless_layout_is_never_re_encoded(monkeypatch):
+    """The rate beside a lossless encoder does nothing, so every track reads as
+    over it and re-encoding would grow the one this is here to shrink."""
+    leaner(monkeypatch)
+    set_layouts(monkeypatch, "2.0:flac:320k", "5.1")
+    assert not plan_for(video(0), audio(1, 2, bitrate="1500000"), audio(2, 6)).needed
+
+
 # The drop_layouts rule: the one drop nothing can undo
 
 

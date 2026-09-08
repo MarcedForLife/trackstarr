@@ -12,6 +12,7 @@ import functools
 import importlib
 import json
 import os
+import re
 import threading
 import zoneinfo
 
@@ -28,6 +29,7 @@ EDITABLE = frozenset(
         "AUDIO_LAYOUTS",
         "REGENERATE_SCOPE",
         "REGENERATE_BELOW_PERCENT",
+        "REGENERATE_ABOVE_PERCENT",
         "ALLOWED_EXTS",
         "SKIP_HARDLINKS",
         "HARDLINK_RECHECK",
@@ -68,6 +70,15 @@ SEPARATORS = {"MEDIA_DIRS": ":"}
 #: /api/settings is a read any session may make.
 SECRETS = frozenset({"RADARR_API_KEY", "SONARR_API_KEY", "PLEX_TOKEN", "JELLYFIN_API_KEY"})
 
+#: Settings config holds under another name, since it keeps the pattern
+#: compiled. Every other name is its own attribute.
+_ATTRIBUTES = {
+    "COMMENTARY_PATTERN": "COMMENTARY_RE",
+    "SDH_PATTERN": "SDH_RE",
+    "FORCED_PATTERN": "FORCED_RE",
+    "RELEASE_TAG_PATTERN": "RELEASE_TAG_RE",
+}
+
 #: One write (and its validate-or-roll-back) at a time.
 _WRITE_LOCK = threading.Lock()
 
@@ -107,47 +118,38 @@ def _pairs(mapping: list[tuple[str, str]]) -> list[str]:
     return [f"{local}={remote}" for local, remote in mapping]
 
 
+def _held(name: str) -> object:
+    """One setting as the page reads it, from the running config.
+
+    Shaped by type rather than by name: config's parser already chose it, so a
+    tuple's order is part of the setting and a set has none of its own.
+    """
+    held = getattr(config, _ATTRIBUTES.get(name, name))
+    if isinstance(held, re.Pattern):
+        return held.pattern
+    # Before the int test, which a bool passes: the page wants a boolean.
+    if isinstance(held, bool):
+        return held
+    # Whole numbers travel as the strings the file holds; _serialise takes no
+    # numbers.
+    if isinstance(held, int):
+        return str(held)
+    # Sorted: a set's own order is a hash order, so the answer would move.
+    if isinstance(held, set | frozenset):
+        return sorted(held)
+    if isinstance(held, tuple | list):
+        # A path map holds pairs; every other list keeps its written order.
+        return _pairs(held) if held and isinstance(held[0], tuple) else list(held)
+    return held
+
+
 def _values() -> dict[str, object]:
     """Every setting the UI edits, as the running config holds it. Credentials
-    are left out; each caller adds its own form."""
-    values: dict[str, object] = {
-        "TZ": config.TZ,
-        "REWRITE_MODE": config.REWRITE_MODE,
-        # Not sorted, unlike the sets below: the order is the setting.
-        "LANGUAGES": list(config.LANGUAGES),
-        "AUDIO_LAYOUTS": list(config.AUDIO_LAYOUTS),
-        "REGENERATE_SCOPE": config.REGENERATE_SCOPE,
-        # Whole numbers travel as the strings the file holds; _serialise takes
-        # no numbers.
-        "REGENERATE_BELOW_PERCENT": str(config.REGENERATE_BELOW_PERCENT),
-        "ALLOWED_EXTS": sorted(config.ALLOWED_EXTS),
-        "SKIP_HARDLINKS": config.SKIP_HARDLINKS,
-        "HARDLINK_RECHECK": str(config.HARDLINK_RECHECK),
-        "MAX_CONCURRENT_REWRITES": str(config.MAX_CONCURRENT_REWRITES),
-        "PROBE_WORKERS": str(config.PROBE_WORKERS),
-        "FFMPEG_TIMEOUT": str(config.FFMPEG_TIMEOUT),
-        "PROBE_TIMEOUT": str(config.PROBE_TIMEOUT),
-        # Named for the variable, not the compiled attribute.
-        "COMMENTARY_PATTERN": config.COMMENTARY_RE.pattern,
-        "SDH_PATTERN": config.SDH_RE.pattern,
-        "FORCED_PATTERN": config.FORCED_RE.pattern,
-        "RELEASE_TAG_PATTERN": config.RELEASE_TAG_RE.pattern,
-        # Not sorted: the sweep walks in this order.
-        "MEDIA_DIRS": list(config.MEDIA_DIRS),
-        "SWEEP_AT": config.SWEEP_AT,
-        "IMDB_RATINGS": config.IMDB_RATINGS,
-        "RADARR_URL": config.RADARR_URL,
-        "RADARR_PUBLIC_URL": config.RADARR_PUBLIC_URL,
-        "SONARR_URL": config.SONARR_URL,
-        "SONARR_PUBLIC_URL": config.SONARR_PUBLIC_URL,
-        "PLEX_URL": config.PLEX_URL,
-        "PLEX_PATH_MAP": _pairs(config.PLEX_PATH_MAP),
-        "PLEX_PUBLIC_URL": config.PLEX_PUBLIC_URL,
-        "JELLYFIN_URL": config.JELLYFIN_URL,
-        "JELLYFIN_PATH_MAP": _pairs(config.JELLYFIN_PATH_MAP),
-        "JELLYFIN_PUBLIC_URL": config.JELLYFIN_PUBLIC_URL,
-        "WEBHOOK_URL": config.WEBHOOK_URL,
-    }
+    are left out; each caller adds its own form.
+
+    Sorted, or EDITABLE's hash order would reshuffle the answer every run.
+    """
+    values: dict[str, object] = {name: _held(name) for name in sorted(EDITABLE - SECRETS)}
     # Every rule's effective mode, not only the stated ones.
     for rule, mode in policy.resolved_modes().items():
         values[config.rule_variable(rule)] = mode

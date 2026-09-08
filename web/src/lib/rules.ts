@@ -101,30 +101,51 @@ export function rateNotches(notches: string[], held: string): string[] {
 	return [...notches, rate].sort((left, right) => rateBps(left) - rateBps(right));
 }
 
-// The band the service accepts for the low-bitrate share.
-export const BELOW_MIN = 10;
-export const BELOW_MAX = 90;
+/** One of the two shares the regenerate rule reads a track's rate against: the
+ * band the service takes, which side of the layout's rate it names, and what 0
+ * means where the service allows it. */
+export type Share = {
+	min: number;
+	max: number;
+	// "Low bitrate", the note's subject, and the side it puts a rate on.
+	means: string;
+	side: string;
+	// What 0 says, for a share that switches off. Absent where 0 is refused.
+	off?: string;
+};
+
+export const BELOW: Share = { min: 10, max: 90, means: 'Low bitrate', side: 'under' };
+export const ABOVE: Share = {
+	min: 110,
+	max: 400,
+	means: 'High bitrate',
+	side: 'over',
+	off: 'Off: no track is re-encoded to shrink it.'
+};
 
 /** What startup would check, said while the field is still open. */
-export function belowProblem(entry: string): string {
+export function shareProblem(entry: string, share: Share): string {
 	const typed = entry.trim();
 	if (!/^-?\d+$/.test(typed)) return 'That has to be a whole number.';
 	const percent = Number(typed);
-	if (percent < BELOW_MIN || percent > BELOW_MAX) {
-		return `That has to be between ${BELOW_MIN} and ${BELOW_MAX}.`;
+	if (share.off && percent === 0) return '';
+	if (percent < share.min || percent > share.max) {
+		const opening = share.off ? 'That has to be 0, or between' : 'That has to be between';
+		return `${opening} ${share.min} and ${share.max}.`;
 	}
 	return '';
 }
 
 /** The share as a rate per layout: "under 160k" is what a track reports. */
-export function belowNote(entry: string, rated: readonly Rated[]): string {
-	if (belowProblem(entry)) return '';
+export function shareNote(entry: string, share: Share, rated: readonly Rated[]): string {
+	if (shareProblem(entry, share)) return '';
 	const percent = Number(entry.trim());
+	if (!percent) return share.off ?? '';
 	const each = rated
 		.map(({ layout, rate }) => [layout, rateBps(rate)] as const)
 		.filter(([, rate]) => rate > 0)
-		.map(([layout, rate]) => `a ${layout} under ${Math.round((rate * percent) / 100000)}k`);
-	return each.length ? `Low bitrate means ${each.join(', ')}.` : '';
+		.map(([layout, rate]) => `a ${layout} ${share.side} ${Math.round((rate * percent) / 100000)}k`);
+	return each.length ? `${share.means} means ${each.join(', ')}.` : '';
 }
 
 /** What a layout's encoder cannot do, given the output containers. Each would

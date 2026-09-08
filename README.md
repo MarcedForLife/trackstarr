@@ -22,7 +22,7 @@ answer for a change worth having but not worth a 60GB rewrite of its own.
 | `languages`     | `always`    | Drop audio and subtitles in a language `LANGUAGES` does not name. Untagged tracks always stay                                                                                              |
 | `commentary`    | `never`     | Drop commentary, described-audio and isolated-score tracks. They are never downmix sources either way                                                                                      |
 | `sdh`           | `alongside` | Drop an SDH subtitle when the same language keeps a full one. Forced subtitles are always kept                                                                                             |
-| `regenerate`    | `never`     | Rebuild downmixes whose settings have moved on; see `REGENERATE_SCOPE`. Matroska only                                                                                                      |
+| `regenerate`    | `never`     | Rebuild downmixes whose settings have moved on; see `REGENERATE_SCOPE` and `REGENERATE_ABOVE_PERCENT`. Matroska only                                                                       |
 | `cover_art`     | `always`    | Drop embedded artwork, which players read as a second video track                                                                                                                          |
 | `release_tags`  | `alongside` | Clear release tags from track and container titles                                                                                                                                        |
 | `stray_streams` | `alongside` | Drop data and timecode streams nothing plays                                                                                                                                              |
@@ -249,6 +249,7 @@ key nothing reads is warned about at startup as the typo it usually is.
 | `AUDIO_LAYOUTS`              | `2.0,5.1`       | every layout named, in output order, each with what happens to it; see above                         |
 | `REGENERATE_SCOPE`           | `generated`     | how far `RULE_REGENERATE` reaches: `generated` rebuilds this tool's own tracks when their settings change, `all` also replaces low-bitrate real tracks |
 | `REGENERATE_BELOW_PERCENT`   | `80`            | how far under its layout's rate a track must report before `all` replaces it; 10 to 90               |
+| `REGENERATE_ABOVE_PERCENT`   | `0`             | how far over its layout's rate a track must sit before it is re-encoded from itself, lossless tracks aside; 0 is off, otherwise 110 to 400 |
 
 ### Connections
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
-	belowNote,
-	belowProblem,
+	ABOVE,
+	BELOW,
 	channelsOf,
 	codecNotes,
 	formatLang,
@@ -13,7 +13,9 @@ import {
 	placeRow,
 	rateBps,
 	rateNotches,
-	sameRate
+	sameRate,
+	shareNote,
+	shareProblem
 } from '$lib/rules';
 import type { Codec } from '$lib/settings';
 
@@ -192,44 +194,70 @@ describe('rateBps', () => {
 	});
 });
 
-describe('belowProblem', () => {
+describe('shareProblem', () => {
 	test('takes a whole number inside the band', () => {
-		expect(belowProblem('80')).toBe('');
-		expect(belowProblem(' 10 ')).toBe('');
-		expect(belowProblem('90')).toBe('');
+		expect(shareProblem('80', BELOW)).toBe('');
+		expect(shareProblem(' 10 ', BELOW)).toBe('');
+		expect(shareProblem('90', BELOW)).toBe('');
 	});
 
 	test('names what is wrong while the field is still open', () => {
-		expect(belowProblem('')).toBe('That has to be a whole number.');
-		expect(belowProblem('79.5')).toBe('That has to be a whole number.');
-		expect(belowProblem('9')).toBe('That has to be between 10 and 90.');
-		expect(belowProblem('-20')).toBe('That has to be between 10 and 90.');
-		expect(belowProblem('100')).toBe('That has to be between 10 and 90.');
+		expect(shareProblem('', BELOW)).toBe('That has to be a whole number.');
+		expect(shareProblem('79.5', BELOW)).toBe('That has to be a whole number.');
+		expect(shareProblem('9', BELOW)).toBe('That has to be between 10 and 90.');
+		expect(shareProblem('-20', BELOW)).toBe('That has to be between 10 and 90.');
+		expect(shareProblem('100', BELOW)).toBe('That has to be between 10 and 90.');
+	});
+
+	test('takes 0 for the share that switches off, and says so in its band', () => {
+		expect(shareProblem('0', ABOVE)).toBe('');
+		expect(shareProblem('110', ABOVE)).toBe('');
+		expect(shareProblem(' 400 ', ABOVE)).toBe('');
+		// Under the rate itself a track would be re-encoded to the rate it has.
+		expect(shareProblem('100', ABOVE)).toBe('That has to be 0, or between 110 and 400.');
+		expect(shareProblem('401', ABOVE)).toBe('That has to be 0, or between 110 and 400.');
+		// The other share has no off, so 0 is out of its band like any other.
+		expect(shareProblem('0', BELOW)).toBe('That has to be between 10 and 90.');
 	});
 });
 
-describe('belowNote', () => {
+describe('shareNote', () => {
 	// The share is what the setting holds; a rate is what a track reports about
 	// itself, which is the only one of the two a reader can check.
 	test('turns the share into the rate each layout is read against', () => {
-		const note = belowNote('80', [
+		const note = shareNote('80', BELOW, [
 			{ layout: '2.0', rate: '320k' },
 			{ layout: '5.1', rate: '640k' }
 		]);
 		expect(note).toBe('Low bitrate means a 2.0 under 256k, a 5.1 under 512k.');
 	});
 
+	test('puts the rate on the side its share names', () => {
+		const note = shareNote('150', ABOVE, [
+			{ layout: '2.0', rate: '192k' },
+			{ layout: '5.1', rate: '448k' }
+		]);
+		expect(note).toBe('High bitrate means a 2.0 over 288k, a 5.1 over 672k.');
+	});
+
 	test('leaves out a layout whose rate cannot be read yet', () => {
-		const note = belowNote('50', [
+		const note = shareNote('50', BELOW, [
 			{ layout: '2.0', rate: '320k' },
 			{ layout: '5.1', rate: '' }
 		]);
 		expect(note).toBe('Low bitrate means a 2.0 under 160k.');
 	});
 
+	test('says what 0 means, since a rate would say nothing', () => {
+		expect(shareNote('0', ABOVE, [{ layout: '2.0', rate: '192k' }])).toBe(
+			'Off: no track is re-encoded to shrink it.'
+		);
+	});
+
 	test('says nothing while the share itself is wrong, or with nothing to say it about', () => {
-		expect(belowNote('120', [{ layout: '2.0', rate: '320k' }])).toBe('');
-		expect(belowNote('80', [])).toBe('');
+		expect(shareNote('120', BELOW, [{ layout: '2.0', rate: '320k' }])).toBe('');
+		expect(shareNote('80', BELOW, [])).toBe('');
+		expect(shareNote('90', ABOVE, [{ layout: '2.0', rate: '192k' }])).toBe('');
 	});
 });
 

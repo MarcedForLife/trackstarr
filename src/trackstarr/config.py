@@ -253,7 +253,7 @@ def _unseal(name: str, value: str) -> str:
         return value
     if KEY is None:
         _SEALED_ERRORS.append(
-            f"{name} is sealed but no key was found at {keystore.key_path(STATE_DIR)}; "
+            f"{name} is sealed but no key was found at {keystore.key_path(STATE_DIR)}, so "
             "its service is off until the key is restored or the credential re-entered"
         )
         return ""
@@ -282,7 +282,8 @@ def _secret(name: str) -> str:
     ]
     if len(named) > 1:
         _LOAD_ERRORS.append(
-            f"{name} is set more than one way ({', '.join(var for var, _ in named)}); keep one"
+            f"{name} is set more than one way "
+            f"({', '.join(var for var, _ in named)}), so keep one"
         )
         return ""
     if not named:
@@ -441,6 +442,15 @@ REGENERATE_BELOW_PERCENT = _int("REGENERATE_BELOW_PERCENT", "80")
 #: none does.
 REGENERATE_BELOW_BAND = (10, 90)
 
+#: How far over its layout's rate, in percent, a track must sit before the
+#: regenerate rule re-encodes it from itself. 0 leaves every fat track alone,
+#: which is the default: it is the one rule that spends quality to save space.
+REGENERATE_ABOVE_PERCENT = _int("REGENERATE_ABOVE_PERCENT", "0")
+
+#: Its valid range, on top of 0 for off. Under 100 would re-encode a track that
+#: is already at its rate, every sweep.
+REGENERATE_ABOVE_BAND = (110, 400)
+
 #: Containers we will rewrite. AVI and MPG are left out: a stream copy into
 #: one with a fresh AAC track is usually unplayable.
 ALLOWED_EXTS = _set("ALLOWED_EXTS", ".mkv,.mp4,.m4v")
@@ -586,6 +596,13 @@ def errors() -> list[str]:
             f"REGENERATE_BELOW_PERCENT={REGENERATE_BELOW_PERCENT} must be between "
             f"{least} and {most}"
         )
+    # 0 is a real answer (re-encode nothing), as with HARDLINK_RECHECK.
+    least, most = REGENERATE_ABOVE_BAND
+    if REGENERATE_ABOVE_PERCENT and not least <= REGENERATE_ABOVE_PERCENT <= most:
+        problems.append(
+            f"REGENERATE_ABOVE_PERCENT={REGENERATE_ABOVE_PERCENT} must be 0 or between "
+            f"{least} and {most}"
+        )
     if SWEEP_AT:
         try:
             # Left to the scheduler, a bad schedule would kill only its thread.
@@ -608,8 +625,8 @@ def warnings() -> list[str]:
         if name not in _READ_NAMES and not name.startswith(SCANNED_PREFIXES)
     ):
         problems.append(
-            f"{_settings_path()} names settings nothing reads: {', '.join(ignored)}; "
-            "remove or rename them"
+            f"{_settings_path()} names settings nothing reads: {', '.join(ignored)}. "
+            "Remove or rename them"
         )
     problems += [
         f"{set_name} is set but {unset_name} is not, so that service stays switched off"
@@ -623,7 +640,7 @@ def warnings() -> list[str]:
 def media_dir_warnings() -> list[str]:
     """A missing entry may be a library mounted late, so it is not fatal."""
     return [
-        f"MEDIA_DIRS entry {media_dir} does not exist; the sweep will find nothing there"
+        f"MEDIA_DIRS entry {media_dir} does not exist, so the sweep will find nothing there"
         for media_dir in MEDIA_DIRS
         if not os.path.isdir(media_dir)
     ]

@@ -50,6 +50,20 @@ def test_snapshot_offers_languages_by_name(settings_state):
     assert list(languages.values()) == sorted(languages.values())
 
 
+def test_the_page_is_shown_every_setting_it_may_write(settings_state):
+    """EDITABLE and the snapshot are separate lists of the same names. A name
+    only EDITABLE holds is writable and invisible: no field renders for it."""
+    missing = settings.EDITABLE - set(settings.snapshot()["settings"])
+    assert not missing
+
+
+def test_the_page_may_write_every_setting_it_is_shown(settings_state):
+    """The other direction. A name only the snapshot holds renders a field
+    whose save comes back refused."""
+    refused = {name for name in settings.snapshot()["settings"] if not settings.editable(name)}
+    assert not refused
+
+
 def test_update_applies_live_and_records_the_config(settings_state):
     changes = {"RULE_COMMENTARY": "always", "LANGUAGES": ["original", "jpn:keep"]}
     assert settings.update(changes) == []
@@ -209,6 +223,18 @@ def test_the_low_bitrate_threshold_saves_and_is_held_to_its_band(settings_state)
     (problem,) = settings.update({"REGENERATE_BELOW_PERCENT": "99"})
     assert "REGENERATE_BELOW_PERCENT" in problem
     assert config.REGENERATE_BELOW_PERCENT == 75
+
+
+def test_the_high_bitrate_threshold_saves_and_takes_zero_for_off(settings_state):
+    """The field beside it, which ships off: 0 has to save, since it is how the
+    page switches the re-encode back off."""
+    assert settings.snapshot()["settings"]["REGENERATE_ABOVE_PERCENT"]["value"] == "0"
+    assert settings.update({"REGENERATE_ABOVE_PERCENT": "120"}) == []
+    assert config.REGENERATE_ABOVE_PERCENT == 120
+    (problem,) = settings.update({"REGENERATE_ABOVE_PERCENT": "105"})
+    assert "REGENERATE_ABOVE_PERCENT" in problem
+    assert settings.update({"REGENERATE_ABOVE_PERCENT": "0"}) == []
+    assert config.REGENERATE_ABOVE_PERCENT == 0
 
 
 def test_a_credential_is_reported_as_set_never_echoed(settings_state):

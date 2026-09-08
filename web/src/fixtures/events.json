@@ -82,7 +82,7 @@
 			"dry_run": true,
 			"titles": 1,
 			"files": 2,
-			"config_id": "03e6bfe6b8a1",
+			"config_id": "39455871742b",
 			"counts": {
 				"conform": 1,
 				"failed": 1
@@ -95,7 +95,7 @@
 			"version": "0.0.0",
 			"run": "2026-02-28T19:12:40+13:00#7d6c",
 			"source": "webhook",
-			"config_id": "03e6bfe6b8a1",
+			"config_id": "39455871742b",
 			"path": "/data/media/movies/Dune (2024)/Dune (2024) Bluray-2160p.mkv",
 			"reasons": [
 				"add 2.0 downmix (from track 1)"
@@ -128,7 +128,7 @@
 			"version": "0.0.0",
 			"run": "2026-02-28T03:00:00+13:00#9f8e",
 			"source": "sweep",
-			"config_id": "03e6bfe6b8a1",
+			"config_id": "39455871742b",
 			"reasons": [
 				"add 2.0 downmix (from track 1)"
 			],
@@ -147,7 +147,7 @@
 			"version": "0.0.0",
 			"run": "2026-02-28T03:00:00+13:00#9f8e",
 			"source": "sweep",
-			"config_id": "03e6bfe6b8a1",
+			"config_id": "39455871742b",
 			"reasons": [
 				"add 2.0 downmix (from track 1)"
 			],
@@ -166,7 +166,7 @@
 			"version": "0.0.0",
 			"run": "2026-02-28T03:00:00+13:00#9f8e",
 			"source": "sweep",
-			"config_id": "03e6bfe6b8a1",
+			"config_id": "39455871742b",
 			"reasons": [
 				"remux to mkv (RULE_REMUX)",
 				"add 2.0 downmix (from track 1)"
@@ -252,6 +252,7 @@
 				],
 				"regenerate_scope": "generated",
 				"regenerate_below": 80,
+				"regenerate_above": 0,
 				"audio_layouts": [
 					"2.0:downmix:aac:320k",
 					"5.1:downmix:ac3:640k"
@@ -262,7 +263,7 @@
 				"forced_re": "\\bforced\\b",
 				"release_tag_re": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b"
 			},
-			"config_id": "03e6bfe6b8a1",
+			"config_id": "39455871742b",
 			"cached": 1174,
 			"counts": {
 				"conform": 1177,
@@ -327,6 +328,7 @@
 				],
 				"regenerate_scope": "generated",
 				"regenerate_below": 80,
+				"regenerate_above": 0,
 				"audio_layouts": [
 					"2.0:downmix:aac:320k",
 					"5.1:downmix:ac3:640k"
@@ -337,7 +339,7 @@
 				"forced_re": "\\bforced\\b",
 				"release_tag_re": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b"
 			},
-			"config_id": "03e6bfe6b8a1"
+			"config_id": "39455871742b"
 		}
 	],
 	"titles": {

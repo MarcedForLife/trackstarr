@@ -1,5 +1,5 @@
-// The spellings the whole app shares: bytes, seconds, the last part of a path,
-// a moment.
+// The spellings the whole app shares: bytes, seconds, a track, the last part of
+// a path, a moment.
 
 /** A count of bytes as a person reads it: 512 B, 1.4 GB, 20.0 TB. */
 export function size(bytes: number): string {
@@ -37,6 +37,47 @@ export function wholeUnits(seconds: number): string {
 	if (!fit) return '';
 	const count = seconds / fit[0];
 	return `${count} ${fit[1]}${count === 1 ? '' : 's'}`;
+}
+
+// Channel counts as the names AUDIO_LAYOUTS is written in, so a track and the
+// setting that made it read alike. A table rather than the inverse of
+// rules.channelsOf: 6 channels could be 5.1 or 6.0.
+const LAYOUTS: Record<number, string> = {
+	1: '1.0',
+	2: '2.0',
+	3: '2.1',
+	6: '5.1',
+	7: '6.1',
+	8: '7.1'
+};
+
+/** A channel count as a layout name: 6 is "5.1". An unlisted count is itself. */
+export function layout(channels: number | undefined): string {
+	if (!channels) return '';
+	return LAYOUTS[channels] ?? `${channels}ch`;
+}
+
+/** A bitrate as a person reads it: 640k, 3.4 Mbps. */
+export function rate(bitrate: number | undefined): string {
+	if (!bitrate) return '';
+	if (bitrate >= 1_000_000) return `${(bitrate / 1_000_000).toFixed(1)} Mbps`;
+	// A text subtitle runs at tens of bits a second, which rounded to "0k".
+	if (bitrate < 1000) return `${bitrate} bps`;
+	return `${Math.round(bitrate / 1000)}k`;
+}
+
+/** A track on one line: codec, layout, language. The same shape for current and
+ * planned tracks so the two columns compare. */
+export function describe(track: {
+	kind: string;
+	codec?: string;
+	channels?: number;
+	lang?: string;
+}): string {
+	const parts = [track.codec?.toUpperCase()];
+	if (track.kind === 'audio') parts.push(layout(track.channels));
+	parts.push(track.lang ?? 'und');
+	return parts.filter(Boolean).join(' · ');
 }
 
 /** The last part of a path. */
