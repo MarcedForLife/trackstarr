@@ -14,7 +14,7 @@
 		},
 		"regenerate": {
 			"default": "never",
-			"summary": "Rebuild trackstarr's own downmixes when their codec or bitrate no longer matches the settings (REGENERATE_SCOPE=generated). With REGENERATE_SCOPE=all, also replace any layout-sized track reported under REGENERATE_BELOW_PERCENT of its layout's rate where a surviving bigger track has more to give. A replacement is a fresh downmix from the best surviving bigger track; REGENERATE_ABOVE_PERCENT re-encodes a track that far over its layout's rate from itself, lossless tracks aside."
+			"summary": "Rebuild the downmixes trackstarr made when their codec or bitrate no longer matches the settings (REGENERATE_SCOPE=generated). With REGENERATE_SCOPE=all, also replace any layout-sized track reported under REGENERATE_BELOW_PERCENT of its layout's rate where a surviving bigger track has more to give. A replacement is a fresh downmix from the best surviving bigger track. REGENERATE_ABOVE_PERCENT re-encodes a track that far over its layout's rate from itself, lossless tracks aside."
 		},
 		"cover_art": {
 			"default": "always",
@@ -34,7 +34,7 @@
 		},
 		"remux": {
 			"default": "never",
-			"summary": "Rewrite MP4 and M4V into Matroska, the container every rule works in. Text subtitles convert to SRT; only the usual downmixes are encoded."
+			"summary": "Rewrite MP4 and M4V into Matroska, the container every rule works in. Text subtitles convert to SRT. Only the usual downmixes are encoded."
 		}
 	},
 	"modes": [
@@ -237,18 +237,11 @@
 		"SONARR_API_KEY"
 	],
 	"settings": {
-		"TZ": {
-			"value": "Pacific/Auckland",
-			"env": false
-		},
-		"REWRITE_MODE": {
-			"value": "imports",
-			"env": false
-		},
-		"LANGUAGES": {
+		"ALLOWED_EXTS": {
 			"value": [
-				"original",
-				"eng"
+				".m4v",
+				".mkv",
+				".mp4"
 			],
 			"env": false
 		},
@@ -259,64 +252,47 @@
 			],
 			"env": false
 		},
-		"REGENERATE_SCOPE": {
-			"value": "generated",
-			"env": false
-		},
-		"REGENERATE_BELOW_PERCENT": {
-			"value": "80",
-			"env": false
-		},
-		"REGENERATE_ABOVE_PERCENT": {
-			"value": "0",
-			"env": false
-		},
-		"ALLOWED_EXTS": {
-			"value": [
-				".m4v",
-				".mkv",
-				".mp4"
-			],
-			"env": false
-		},
-		"SKIP_HARDLINKS": {
-			"value": true,
-			"env": false
-		},
-		"HARDLINK_RECHECK": {
-			"value": "900",
-			"env": false
-		},
-		"MAX_CONCURRENT_REWRITES": {
-			"value": "1",
-			"env": false
-		},
-		"PROBE_WORKERS": {
-			"value": "4",
+		"COMMENTARY_PATTERN": {
+			"value": "comment|descriptive|described\\s*video|audio\\s*description|isolated\\s*score|director'?s?\\s*track|interview|behind\\s*the\\s*scenes",
 			"env": false
 		},
 		"FFMPEG_TIMEOUT": {
 			"value": "7200",
 			"env": false
 		},
-		"PROBE_TIMEOUT": {
-			"value": "180",
-			"env": false
-		},
-		"COMMENTARY_PATTERN": {
-			"value": "comment|descriptive|described\\s*video|audio\\s*description|isolated\\s*score|director'?s?\\s*track|interview|behind\\s*the\\s*scenes",
-			"env": false
-		},
-		"SDH_PATTERN": {
-			"value": "\\bsdh\\b|\\bcc\\b|hearing[\\s._-]*impaired",
-			"env": false
-		},
 		"FORCED_PATTERN": {
 			"value": "\\bforced\\b",
 			"env": false
 		},
-		"RELEASE_TAG_PATTERN": {
-			"value": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b",
+		"HARDLINK_RECHECK": {
+			"value": "900",
+			"env": false
+		},
+		"IMDB_RATINGS": {
+			"value": true,
+			"env": false
+		},
+		"JELLYFIN_PATH_MAP": {
+			"value": [],
+			"env": false
+		},
+		"JELLYFIN_PUBLIC_URL": {
+			"value": "",
+			"env": false
+		},
+		"JELLYFIN_URL": {
+			"value": "",
+			"env": false
+		},
+		"LANGUAGES": {
+			"value": [
+				"original",
+				"eng"
+			],
+			"env": false
+		},
+		"MAX_CONCURRENT_REWRITES": {
+			"value": "1",
 			"env": false
 		},
 		"MEDIA_DIRS": {
@@ -326,34 +302,6 @@
 			],
 			"env": true
 		},
-		"SWEEP_AT": {
-			"value": "0 3 * * *",
-			"env": false
-		},
-		"IMDB_RATINGS": {
-			"value": true,
-			"env": false
-		},
-		"RADARR_URL": {
-			"value": "http://radarr:7878",
-			"env": false
-		},
-		"RADARR_PUBLIC_URL": {
-			"value": "",
-			"env": false
-		},
-		"SONARR_URL": {
-			"value": "http://sonarr:8989",
-			"env": false
-		},
-		"SONARR_PUBLIC_URL": {
-			"value": "",
-			"env": false
-		},
-		"PLEX_URL": {
-			"value": "http://plex:32400",
-			"env": false
-		},
 		"PLEX_PATH_MAP": {
 			"value": [],
 			"env": false
@@ -362,16 +310,68 @@
 			"value": "",
 			"env": false
 		},
-		"JELLYFIN_URL": {
+		"PLEX_URL": {
+			"value": "http://plex:32400",
+			"env": false
+		},
+		"PROBE_TIMEOUT": {
+			"value": "180",
+			"env": false
+		},
+		"PROBE_WORKERS": {
+			"value": "4",
+			"env": false
+		},
+		"RADARR_PUBLIC_URL": {
 			"value": "",
 			"env": false
 		},
-		"JELLYFIN_PATH_MAP": {
-			"value": [],
+		"RADARR_URL": {
+			"value": "http://radarr:7878",
 			"env": false
 		},
-		"JELLYFIN_PUBLIC_URL": {
+		"REGENERATE_ABOVE_PERCENT": {
+			"value": "0",
+			"env": false
+		},
+		"REGENERATE_BELOW_PERCENT": {
+			"value": "80",
+			"env": false
+		},
+		"REGENERATE_SCOPE": {
+			"value": "generated",
+			"env": false
+		},
+		"RELEASE_TAG_PATTERN": {
+			"value": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b",
+			"env": false
+		},
+		"REWRITE_MODE": {
+			"value": "imports",
+			"env": false
+		},
+		"SDH_PATTERN": {
+			"value": "\\bsdh\\b|\\bcc\\b|hearing[\\s._-]*impaired",
+			"env": false
+		},
+		"SKIP_HARDLINKS": {
+			"value": true,
+			"env": false
+		},
+		"SONARR_PUBLIC_URL": {
 			"value": "",
+			"env": false
+		},
+		"SONARR_URL": {
+			"value": "http://sonarr:8989",
+			"env": false
+		},
+		"SWEEP_AT": {
+			"value": "0 3 * * *",
+			"env": false
+		},
+		"TZ": {
+			"value": "Pacific/Auckland",
 			"env": false
 		},
 		"WEBHOOK_URL": {

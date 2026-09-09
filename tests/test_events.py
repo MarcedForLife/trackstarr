@@ -15,7 +15,7 @@ from conftest import (
     subtitle,
     video,
 )
-from trackstarr import __version__, config, events, policy, processing, webhook
+from trackstarr import __version__, config, events, jobs, policy, processing
 from trackstarr.executor import Outcome
 from trackstarr.planner import OutStream, Plan, new_plan, plan_from_probe
 from trackstarr.policy import Policy
@@ -220,7 +220,7 @@ def test_reported_webhook_import_records_a_pending_event(monkeypatch):
     what would have happened."""
     monkeypatch.setattr(config, "REWRITE_MODE", "report")
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan("/x.mkv"))
-    webhook._handle(Job("/x.mkv"))
+    jobs.handle(Job("/x.mkv"))
 
     (entry,) = read_events()
     assert entry["event"] == "pending"
@@ -275,7 +275,7 @@ def test_a_webhook_only_install_can_still_resolve_its_config_ids(monkeypatch):
     started = Policy.from_config()
     events.record("config", config=started.fingerprint(), config_id=started.digest())
 
-    webhook._handle(Job("/x.mkv"))
+    jobs.handle(Job("/x.mkv"))
 
     startup, pending = read_events()
     assert startup["event"] == "config"

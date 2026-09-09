@@ -49,10 +49,12 @@ _retry_at = 0.0
 
 
 def forget() -> None:
-    """Drop the memoised table, so the next read goes back to the file."""
-    global _cached
+    """Drop the memoised table and any retry backoff, so the next read goes
+    back to the file and the next pass is due."""
+    global _cached, _retry_at
     with _lock:
         _cached = None
+    _retry_at = 0.0
 
 
 def scores() -> dict[str, float]:

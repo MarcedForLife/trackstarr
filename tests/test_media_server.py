@@ -20,13 +20,9 @@ PLEX_SECTIONS = {
 @pytest.fixture(autouse=True)
 def _fresh_state():
     """Module-level caches must not leak between tests."""
-    media_server._plex_sections.clear()
-    media_server._failures.clear()
-    media_server._unmapped.clear()
+    media_server.reset()
     yield
-    media_server._plex_sections.clear()
-    media_server._failures.clear()
-    media_server._unmapped.clear()
+    media_server.reset()
 
 
 @pytest.fixture

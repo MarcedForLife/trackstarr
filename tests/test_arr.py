@@ -5,8 +5,15 @@ import urllib.error
 import pytest
 
 from conftest import configured_arr
-from trackstarr import auth
-from trackstarr.arr import AUTH_HEADER, WEBHOOK_NAME, _sent_secret, radarr
+from trackstarr import auth, config
+from trackstarr.arr import (
+    AUTH_HEADER,
+    WEBHOOK_NAME,
+    _sent_secret,
+    radarr,
+    reregister_webhooks,
+    webhook_url,
+)
 
 URL = "http://trackstarr:5120"
 
@@ -156,6 +163,27 @@ def test_reports_failure_for_retry_when_the_secret_cannot_be_stored(monkeypatch)
 
 def test_disabled_arr_needs_no_registration():
     assert radarr().register_webhook(URL) is True
+
+
+def test_registration_points_the_arrs_at_the_webhook_path(monkeypatch):
+    """The base URL is the setting; the path is the listener's own contract,
+    appended here so both ends always agree."""
+    monkeypatch.setattr(config, "WEBHOOK_URL", "http://trackstarr:5120")
+    assert webhook_url() == "http://trackstarr:5120/webhook"
+
+
+def test_re_registration_is_one_pass_over_the_enabled_arrs(monkeypatch):
+    """Not register_webhooks' retry loop: a save naming an unreachable *arr
+    would leave a second loop polling it for ever, and every later save
+    another."""
+    calls = []
+    enabled = configured_arr("radarr")
+    monkeypatch.setattr(enabled, "register_webhook", lambda url: calls.append(url) or False)
+    disabled = configured_arr("sonarr", key="")
+    monkeypatch.setattr("trackstarr.arr.all_arrs", lambda: [enabled, disabled])
+
+    reregister_webhooks()
+    assert calls == [webhook_url()]
 
 
 @pytest.mark.parametrize(

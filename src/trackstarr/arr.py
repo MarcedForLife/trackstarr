@@ -3,6 +3,7 @@ rewritten file, and a webhook connection pointing back here."""
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 
 from . import auth, config
@@ -228,6 +229,35 @@ def sonarr() -> Arr:
 
 def all_arrs() -> list[Arr]:
     return [radarr(), sonarr()]
+
+
+#: Registration retry delays. The containers usually start together, so early
+#: attempts land before the *arrs answer; the cap protects an absent one.
+_REGISTER_RETRY_START = 15
+_REGISTER_RETRY_CAP = 300
+
+
+# No cover: a retry loop. Arr.register_webhook does the work and is covered.
+def register_webhooks() -> None:  # pragma: no cover
+    """Retry until every enabled *arr has the webhook."""
+    pending = [arr for arr in all_arrs() if arr.enabled]
+    delay = _REGISTER_RETRY_START
+    while pending:
+        pending = [arr for arr in pending if not arr.register_webhook(webhook_url())]
+        if pending:
+            time.sleep(delay)
+            delay = min(delay * 2, _REGISTER_RETRY_CAP)
+
+
+def reregister_webhooks() -> None:
+    """One pass of webhook registration after the addresses change.
+
+    No retry loop, unlike :func:`register_webhooks`: each save naming an
+    unreachable *arr would leave another loop polling for ever.
+    """
+    for arr in all_arrs():
+        if arr.enabled and not arr.register_webhook(webhook_url()):
+            log.warning("%s: no webhook connection after the settings change", arr.name)
 
 
 def original_of(item: dict | None) -> str | None:

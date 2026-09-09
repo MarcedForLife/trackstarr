@@ -11,21 +11,19 @@ empty answer, not a reason to walk it inside a web request.
 """
 
 import contextlib
-import hashlib
 import logging
 import os
 import re
 import threading
 import time
 from collections.abc import Callable, Iterable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import NamedTuple
 
 from . import config, ratings, state, sweep_cache
 from .arr import Arr, all_arrs, innermost, original_of
-from .client import API_ERRORS, fetch
+from .client import API_ERRORS
 from .policy import Policy
 from .status import Status
 
@@ -33,15 +31,6 @@ log = logging.getLogger(__name__)
 
 #: The word the view puts under each *arr's titles.
 KINDS = {"radarr": "movie", "sonarr": "series"}
-
-#: Poster sizes the *arrs cache, best first; the original is the fallback for a
-#: title whose resize never ran. Fetched under /api/v3, since the bare
-#: /MediaCover path answers an API key with a redirect to the login page.
-_COVER_NAMES = ("poster-500.jpg", "poster.jpg")
-
-#: Artwork beside the files, for a title no *arr claims. The names Plex,
-#: Jellyfin and Kodi write.
-_LOCAL_COVERS = ("poster.jpg", "folder.jpg", "cover.jpg", "poster.png")
 
 #: How long a fetched title list is reused. Listing a whole library is one
 #: heavy request per *arr; short enough that a new title shows without a
@@ -103,18 +92,6 @@ FILTERS = (
     UNCHECKED,
     MISSING,
 )
-
-#: Where fetched posters are kept, under STATE_DIR. Written once per title:
-#: a poster does not change under its id.
-COVER_DIR = "covers"
-
-#: How long a title with no poster is remembered as having none, so every load
-#: does not re-ask the *arrs for every unclaimed folder.
-_ABSENT_TTL = 3600.0
-
-#: How many posters the warm-up fetches at once. About not opening a library's
-#: worth of sockets rather than throughput.
-_WARM_WORKERS = 4
 
 #: Most files a title's detail returns. A 300-episode series with tracks and
 #: plans is megabytes of JSON; actionable files come first, so the cut falls
@@ -179,18 +156,15 @@ _cached: tuple[float, Shelf] | None = None
 def forget() -> None:
     """Drop every memo so the next read refetches.
 
-    Called when the *arr settings change, and by tests. The parsed cache, the
-    built grid and the missing-poster record go too: none is keyed on the
-    rules, so a settings save must not serve an answer judged under the old
-    ones.
+    Called when the *arr settings change, and by tests. The parsed cache and
+    the built grid go too: neither is keyed on the rules, so a settings save
+    must not serve an answer judged under the old ones.
     """
     global _built, _cached, _parsed
     with _lock:
         _built = None
         _cached = None
         _parsed = None
-    with _absent_lock:
-        _absent.clear()
 
 
 #: Fractional seconds beyond the six :func:`datetime.fromisoformat` accepts.
@@ -762,6 +736,12 @@ def title(title_id: str) -> dict | None:
     }
 
 
+def known() -> Shelf:
+    """Every title, in order and keyed by id. The way in for anything outside
+    this module wanting a :class:`Title` rather than a card."""
+    return _shelf(_read_cache())
+
+
 def selected(title_ids: list[str]) -> list[Title]:
     """The titles behind a list of ids, in the order asked.
 
@@ -769,7 +749,7 @@ def selected(title_ids: list[str]) -> list[Title]:
     the index keeps it inside the library. Unknown ids are dropped, not
     refused.
     """
-    index = _shelf(_read_cache()).index
+    index = known().index
     return [found for title_id in title_ids if (found := index.get(title_id))]
 
 
@@ -800,144 +780,3 @@ def cards_for_paths(paths: Iterable[str]) -> tuple[dict[str, str], dict[str, dic
     }
     return owners, cards
 
-
-def cover(title_id: str) -> tuple[bytes, str] | None:
-    """The title's poster and content type, or None.
-
-    From our copy when we have one; otherwise fetched from the *arr or from
-    beside the files and kept. Proxying keeps the *arr's API key out of the
-    browser.
-    """
-    body = _stored_cover(title_id) or _fetch_cover(title_id)
-    return (body, _image_type(body)) if body else None
-
-
-def _image_type(body: bytes) -> str:
-    """The poster's content type, sniffed from its first bytes."""
-    return "image/png" if body.startswith(b"\x89PNG") else "image/jpeg"
-
-
-def _cover_file(title_id: str) -> str:
-    """Where a title's poster is kept. Hashed, since an id may hold a path."""
-    name = hashlib.blake2s(title_id.encode(), digest_size=16).hexdigest()
-    return os.path.join(config.STATE_DIR, COVER_DIR, name)
-
-
-def _stored_cover(title_id: str) -> bytes | None:
-    try:
-        with open(_cover_file(title_id), "rb") as stored:
-            return stored.read() or None
-    except OSError:
-        return None
-
-
-def _keep_cover(title_id: str, body: bytes) -> None:
-    """Store the poster atomically. Never raises.
-
-    Staged and replaced, since the warm-up and a request for the same title
-    can race and a half-written poster is a broken image.
-    """
-    path = _cover_file(title_id)
-    partial = f"{path}.{os.getpid()}.tmp"
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(partial, "wb") as out_file:
-            out_file.write(body)
-        os.replace(partial, path)
-    except OSError as err:
-        log.warning("could not keep the poster for %s: %s", title_id, err)
-
-
-#: Titles nothing has a poster for, and when we last looked.
-_absent: dict[str, float] = {}
-_absent_lock = threading.Lock()
-
-
-def _known_absent(title_id: str) -> bool:
-    with _absent_lock:
-        looked = _absent.get(title_id)
-    return looked is not None and time.monotonic() - looked < _ABSENT_TTL
-
-
-def _fetch_cover(title_id: str) -> bytes | None:
-    """Ask the *arr, then the folder, and keep whatever answers."""
-    if _known_absent(title_id):
-        return None
-    found = _find(title_id, _read_cache())
-    body = _from_arr(found) or _local_cover(found.folder) if found else None
-    if body:
-        _keep_cover(title_id, body)
-    else:
-        with _absent_lock:
-            _absent[title_id] = time.monotonic()
-    return body
-
-
-def _from_arr(found: Title) -> bytes | None:
-    if not (found.arr and found.arr.enabled):
-        return None
-    for name in _COVER_NAMES:
-        try:
-            body, kind = fetch(
-                f"{found.arr.url}/api/v3/mediacover/{found.item_id}/{name}",
-                {"X-Api-Key": found.arr.key},
-            )
-        except API_ERRORS:
-            continue
-        if body and kind.startswith("image/"):
-            return body
-    return None
-
-
-def _local_cover(folder: str) -> bytes | None:
-    """Artwork beside the files, for a title no *arr could answer for."""
-    for name in _LOCAL_COVERS:
-        try:
-            with open(os.path.join(folder, name), "rb") as art:
-                if body := art.read():
-                    return body
-        except OSError:
-            continue
-    return None
-
-
-_warming = threading.Lock()
-
-
-def warm() -> None:
-    """Fetch missing posters in the background, returning at once.
-
-    Called when the grid is handed over, so the *arrs see a few connections
-    from us rather than hundreds from the grid. A warm-up already running is
-    left to finish.
-    """
-    if not _warming.acquire(blocking=False):
-        return
-    threading.Thread(target=_warm_once, name="cover-warm", daemon=True).start()
-
-
-def _warm_once() -> None:
-    """The warm-up thread's body: one pass, errors logged."""
-    try:
-        _warm_all()
-    except Exception:
-        # The grid still works; it fetches its own posters one at a time.
-        log.exception("could not warm the poster cache")
-    finally:
-        _warming.release()
-
-
-def _warm_all() -> None:
-    """Fetch every poster we have not got, a few at a time."""
-    wanted = [
-        title.id
-        for title in _shelf(_read_cache()).titles
-        if not _known_absent(title.id) and not os.path.exists(_cover_file(title.id))
-    ]
-    if not wanted:
-        return
-    log.info("fetching %d posters the library view has not seen before", len(wanted))
-    with ThreadPoolExecutor(_WARM_WORKERS, thread_name_prefix="cover") as pool:
-        # list() so an exception surfaces here rather than in an undrained
-        # generator.
-        list(pool.map(_fetch_cover, wanted))

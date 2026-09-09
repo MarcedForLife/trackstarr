@@ -51,9 +51,9 @@ export type Event = {
 	title?: string;
 	// The settings in force, in full, so an old `config_id` still resolves.
 	config?: Record<string, unknown>;
-	// A settings save: only the names that moved. A side that held nothing is
-	// absent rather than null.
-	changed?: Record<string, { from?: unknown; to?: unknown }>;
+	// A settings save: only the names that moved, both sides of each. A name
+	// set for the first time moves from the empty value, not from nothing.
+	changed?: Record<string, { from: unknown; to: unknown }>;
 	by?: string;
 	// Why a title was held. `seconds` is how long the hold was placed for, and
 	// is absent on one with no end.

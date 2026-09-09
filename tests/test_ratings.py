@@ -27,10 +27,8 @@ def _cold_table():
     """The table is memoised for the life of the process, and a leaked one
     would be another test's scores."""
     ratings.forget()
-    ratings._retry_at = 0.0
     yield
     ratings.forget()
-    ratings._retry_at = 0.0
 
 
 def serving(asked: list[str], served: list[list[str]]):
@@ -183,16 +181,19 @@ def test_imdb_is_left_alone_for_an_hour_after_a_failure(dataset, monkeypatch):
 
     monkeypatch.setattr(ratings, "stream", refuse)
     assert not ratings.refresh_now({"tt15239678"})
-    assert ratings._retry_at > time.time()
+    within = time.time() + ratings.RETRY_AFTER - 1
+    assert not ratings.due(within), "the backoff did not hold for the whole hour"
 
     # IMDb is back, and is still not asked until the hour is up.
     monkeypatch.setattr(ratings, "stream", serving(asked, served))
     assert not ratings.refresh_now({"tt15239678"})
     assert asked == []
 
-    ratings._retry_at = time.time() - 1
+    # The hour is up.
+    ratings.forget()
     assert ratings.refresh_now({"tt15239678"})
-    assert ratings._retry_at == 0.0
+    later = time.time() + ratings.REFRESH_EVERY + 1
+    assert ratings.due(later), "the backoff outlived the fetch that cleared it"
 
 
 def test_a_landed_fetch_says_so_to_whoever_memoised_the_old_table(dataset):

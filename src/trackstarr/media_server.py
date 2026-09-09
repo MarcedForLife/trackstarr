@@ -44,6 +44,14 @@ _plex_sections: dict[tuple[str, str], list[tuple[str, str]]] = {}
 PLEX_SECTIONS = "/library/sections"
 
 
+def reset() -> None:
+    """Forget the muted servers, the unmapped warnings and the fetched Plex
+    sections. For tests: all three last until a restart."""
+    _failures.clear()
+    _unmapped.clear()
+    _plex_sections.clear()
+
+
 def plex_sections(data: dict | None) -> list[tuple[str, str]]:
     """``(location, section key)`` pairs from a Plex sections answer, longest
     location first. Parses without fetching so :mod:`trackstarr.connections`

@@ -150,9 +150,9 @@ def test_a_backlog_is_shared_out_across_the_rewrite_budget(monkeypatch, budget):
 
 @pytest.fixture
 def registry():
-    runs._runs.clear()
+    runs.reset()
     yield runs
-    runs._runs.clear()
+    runs.reset()
 
 
 def _sweep_run(registry, budget: int, monkeypatch) -> dict:

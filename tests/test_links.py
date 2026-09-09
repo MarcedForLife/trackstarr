@@ -47,10 +47,10 @@ def _fresh_state():
     """The module caches outlive a request on purpose, so every test clears
     them; one leaking would be a link resolved from another test's server."""
     links.forget()
-    media_server._plex_sections.clear()
+    media_server.reset()
     yield
     links.forget()
-    media_server._plex_sections.clear()
+    media_server.reset()
 
 
 @pytest.fixture

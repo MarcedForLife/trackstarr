@@ -164,6 +164,19 @@ def test_invalid_layouts_catch_typos(monkeypatch):
     assert [(layout.name, layout.channels) for layout in resolved_layouts()] == [("2.0", 2)]
 
 
+def test_an_entry_of_no_usable_shape_is_refused(monkeypatch):
+    """Refused before its fields are read, since a fourth field means nobody
+    knows which three were meant. The page writes three at most, so this is a
+    hand-edited file or a stray colon."""
+    monkeypatch.setattr(config, "AUDIO_LAYOUTS", ("2.0", "5.1:eac3:448k:extra"))
+    errors = policy.errors()
+    assert len(errors) == 1
+    assert "5.1:eac3:448k:extra" in errors[0]
+    assert "use forms like 5.1, 7.1:remove, 5.1:eac3:448k" in errors[0]
+    # Left out rather than guessed at, like a name that is not a layout.
+    assert [layout.name for layout in resolved_layouts()] == ["2.0"]
+
+
 def test_every_size_offers_the_rate_it_is_shipped_at():
     """The page selects a chip by value, so a stock rate missing from its size's
     notches would land a new row on nothing selected."""

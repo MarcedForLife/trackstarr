@@ -413,10 +413,12 @@ def seed_history() -> None:
     events.record("skipped", run=LAST_SWEEP, path=EPISODE_TWO, by="admin")
     assert runs.pause(by="admin")
     assert runs.resume(by="admin")
+    # Both sides on both names: a name set for the first time moves from "",
+    # which is what settings._changes writes and all it can write.
     events.record(
         "settings",
         changed={
-            "PLEX_URL": {"to": "http://plex:32400"},
+            "PLEX_URL": {"from": "", "to": "http://plex:32400"},
             "RULE_COMMENTARY": {"from": "never", "to": "always"},
         },
         by="admin",

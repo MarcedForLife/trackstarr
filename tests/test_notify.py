@@ -94,9 +94,9 @@ def test_a_file_appearing_is_news(subscription):
 @pytest.fixture
 def clean_registry():
     """The activity registry is module state shared with other suites."""
-    runs._runs.clear()
+    runs.reset()
     yield
-    runs._runs.clear()
+    runs.reset()
 
 
 def test_a_run_appearing_and_leaving_are_both_published(subscription, clean_registry):
@@ -183,4 +183,4 @@ def test_a_pause_and_a_resume_are_published(subscription, clean_registry):
         assert runs.resume("marc")
         assert subscription.take(0) == {notify.RUNS}
     finally:
-        runs._running.set()
+        runs.reset()

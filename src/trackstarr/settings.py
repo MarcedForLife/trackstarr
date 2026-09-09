@@ -15,6 +15,7 @@ import os
 import re
 import threading
 import zoneinfo
+from collections.abc import Iterable
 
 from . import config, events, keystore, langs, policy, tracks
 from .executor import audio_codec_errors
@@ -113,7 +114,7 @@ def zones() -> list[str]:
         return []
 
 
-def _pairs(mapping: list[tuple[str, str]]) -> list[str]:
+def _pairs(mapping: Iterable[tuple[str, str]]) -> list[str]:
     """A parsed path map back as ``LOCAL=REMOTE`` entries."""
     return [f"{local}={remote}" for local, remote in mapping]
 
@@ -301,20 +302,15 @@ def _changes(before: dict, after: dict) -> dict[str, dict]:
     """What a write altered, as ``from``/``to`` per name.
 
     Read off the running config either side of the write, not the body: a
-    field saved unchanged altered nothing, and one name can move another. A
-    missing side is left out, distinct from null.
+    field saved unchanged altered nothing, and one name can move another. Both
+    sides come from :func:`_recorded`, so both hold every name and a change
+    always has two sides.
     """
-    changed: dict[str, dict] = {}
-    for name in sorted(set(before) | set(after)):
-        if before.get(name) == after.get(name):
-            continue
-        entry: dict[str, object] = {}
-        if name in before:
-            entry["from"] = before[name]
-        if name in after:
-            entry["to"] = after[name]
-        changed[name] = entry
-    return changed
+    return {
+        name: {"from": before[name], "to": after[name]}
+        for name in sorted(before)
+        if before[name] != after[name]
+    }
 
 
 def update(changes: dict, by: str | None = None) -> list[str]:

@@ -17,7 +17,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 
-from . import config, estimate, events, notify
+from . import config, estimate, events, notify, runlog
 from .executor import running_count, terminate_running
 from .state import write_json
 
@@ -57,11 +57,6 @@ _UPCOMING = 20
 
 #: How much of a verdict's detail a row carries. The rest is in the history.
 _DETAIL_MAX = 160
-
-#: Log lines kept per file, and files kept at once. Two hundred lines covers a
-#: probe, a plan, an ffmpeg command and its stderr.
-_LOG_LINES = 200
-_LOGGED_FILES = 200
 
 
 @dataclass
@@ -154,86 +149,19 @@ _running.set()
 _paused_by = ""
 _paused_at = ""
 
-#: Log lines per (run, file), and which file each thread holds. Under their own
-#: lock, since a log handler waiting on the registry lock would deadlock the
-#: first caller that logs while holding it.
-_lines: dict[tuple[str, str], collections.deque[str]] = {}
-_held: dict[int, tuple[str, str]] = {}
-_log_lock = threading.Lock()
 
-#: The console's format, so the browser shows the same line. See
-#: :func:`trackstarr.cli.main`.
-_LOG_FORMAT = "%(asctime)s %(levelname)-7s %(message)s"
-_LOG_TIME = "%H:%M:%S"
+def reset() -> None:
+    """Put the registry back to how a fresh process finds it, stamp and all.
 
-
-class _FileLog(logging.Handler):
-    """Keep every line a worker logs against the file it was working on.
-
-    Keyed by thread: a file is probed, planned and rewritten on one, so the
-    ``log.info`` calls across the package need not know about runs.
+    For tests: a run or a pause left behind would decide the next one. The
+    stamp moves so a test can tell one process's answers from another's.
     """
-
-    def emit(self, record: logging.LogRecord) -> None:
-        # None with logging.logThreads off, which leaves nothing to key on.
-        if record.thread is None:
-            return
-        with _log_lock:
-            buffer = _lines.get(_held.get(record.thread, ("", "")))
-        # Formatted outside the lock; deque.append is atomic.
-        if buffer is not None:
-            buffer.append(self.format(record))
-
-
-_capturing = False
-
-
-def capture_logs() -> None:
-    """Start keeping worker log lines for the overview to read back per file.
-
-    Installed by the service, not the CLI: a ``docker exec trackstarr sweep``
-    has nobody to read them.
-    """
-    global _capturing
-    if _capturing:
-        return
-    handler = _FileLog()
-    handler.setFormatter(logging.Formatter(_LOG_FORMAT, datefmt=_LOG_TIME))
-    logging.getLogger().addHandler(handler)
-    _capturing = True
-
-
-def _hold(run_id: str, path: str) -> None:
-    """Point this thread's log lines at one file, evicting the oldest file's
-    lines past :data:`_LOGGED_FILES`."""
-    with _log_lock:
-        _held[threading.get_ident()] = (run_id, path)
-        _lines[(run_id, path)] = collections.deque(maxlen=_LOG_LINES)
-        while len(_lines) > _LOGGED_FILES:
-            del _lines[next(iter(_lines))]
-
-
-def _release() -> None:
-    """Stop pointing this thread's lines at anything. The lines stay: a file's
-    log is wanted after its verdict lands."""
-    with _log_lock:
-        _held.pop(threading.get_ident(), None)
-
-
-def lines(run_id: str, path: str) -> list[str]:
-    """What was logged while this file was worked on. Empty for a cached
-    verdict or for lines since evicted."""
-    with _log_lock:
-        buffer = _lines.get((run_id, path))
-        return list(buffer) if buffer else []
-
-
-def forget_logs() -> None:
-    """Drop every kept line. For tests."""
-    with _log_lock:
-        _lines.clear()
-        _held.clear()
-
+    global _paused_by, _paused_at, _UP
+    with _lock:
+        _runs.clear()
+        _paused_by = _paused_at = ""
+        _UP = time.time()
+    _running.set()
 
 def _paused_path() -> str:
     return os.path.join(config.STATE_DIR, PAUSED_FILE)
@@ -477,7 +405,7 @@ def begin(run_id: str | None, path: str) -> None:
     """
     if run_id is None:
         return
-    _hold(run_id, path)
+    runlog.attach(run_id, path)
     with _lock:
         if run := _runs.get(run_id):
             # Moved from queued to active, or the remaining work would count it
@@ -527,7 +455,7 @@ def finish(run_id: str | None, path: str) -> None:
     list; the verdict lands on that row in :func:`tally`."""
     if run_id is None:
         return
-    _release()
+    runlog.detach()
     now = time.time()
     with _lock:
         run = _runs.get(run_id)

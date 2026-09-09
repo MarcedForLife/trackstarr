@@ -549,6 +549,21 @@ def test_a_lossless_layout_is_never_re_encoded(monkeypatch):
     assert not plan_for(video(0), audio(1, 2, bitrate="1500000"), audio(2, 6)).needed
 
 
+def test_a_size_no_layout_names_has_no_rate_to_be_over(monkeypatch):
+    """A track is judged against its own layout's rate, so a 7.1 in a file whose
+    settings name 2.0 and 5.1 is left as it is, at whatever rate. Removing it is
+    what a layout row is for."""
+    leaner(monkeypatch)
+    plan = plan_for(
+        video(0),
+        audio(1, 2, bitrate="192000"),
+        audio(2, 6, bitrate="640000"),
+        audio(3, 8, bitrate="3000000"),
+    )
+    assert not plan.needed
+    assert 3 in {out.src for out in audio_out(plan) if not out.encode}
+
+
 # The drop_layouts rule: the one drop nothing can undo
 
 

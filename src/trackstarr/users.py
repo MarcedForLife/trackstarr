@@ -228,3 +228,12 @@ def note_failure(name: str) -> None:
 def note_success(name: str) -> None:
     with _failures_lock:
         _failures.pop(name, None)
+
+
+def reset() -> None:
+    """Forget the login throttle and the timing dummy. For tests: a lockout
+    must not outlive the test that earned it."""
+    global _dummy_hash
+    with _failures_lock:
+        _failures.clear()
+    _dummy_hash = None

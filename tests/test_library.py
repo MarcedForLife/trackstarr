@@ -3,12 +3,11 @@
 import contextlib
 import json
 import os
-import threading
 import time
 
 import pytest
 
-from conftest import configured_arr
+from conftest import cache, configured_arr, movie, pending, stub_arrs
 from trackstarr import config, library, ratings, settings, state, sweep, sweep_cache
 from trackstarr.policy import Policy
 from trackstarr.status import Status
@@ -26,54 +25,11 @@ def _cold_index():
     ratings.forget()
 
 
-@pytest.fixture
-def media(tmp_path, monkeypatch) -> str:
-    root = tmp_path / "media" / "movies"
-    root.mkdir(parents=True)
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
-    return str(root)
-
-
-def movie(
-    item_id: int,
-    title: str,
-    folder: str,
-    year: int = 2024,
-    added: str = "2024-01-01T00:00:00Z",
-) -> dict:
-    return {
-        "id": item_id,
-        "title": title,
-        "year": year,
-        "path": folder,
-        "added": added,
-        "originalLanguage": {"name": "English"},
-    }
-
-
 def store_scores(scores: dict[str, float]) -> None:
     """The IMDb table a daily fetch would have left in STATE_DIR."""
     os.makedirs(config.STATE_DIR, exist_ok=True)
     state.write_json(ratings.path(), {"scores": scores})
     ratings.forget()
-
-
-def stub_arrs(monkeypatch, items: list[dict], name: str = "radarr") -> None:
-    """One reachable *arr answering with these movies."""
-    arr = configured_arr(name)
-    monkeypatch.setattr(library, "all_arrs", lambda: [arr])
-    monkeypatch.setattr(type(arr), "all_items", lambda self: items)
-
-
-def cache(*entries: tuple[str, Verdict], size: int = 100) -> None:
-    """Write a sweep cache holding these verdicts, as a sweep would."""
-    os.makedirs(config.STATE_DIR, exist_ok=True)
-    store = SweepCache(
-        os.path.join(config.STATE_DIR, "sweep-cache.json"), Policy.from_config().fingerprint()
-    )
-    for path, verdict in entries:
-        store.record(path, FileKey(size, 1, 1, "eng"), verdict)
-    store.save()
 
 
 @contextlib.contextmanager
@@ -106,31 +62,6 @@ def backdate(when: float, *paths: str) -> None:
     with open(store, "w") as cache_file:
         json.dump(data, cache_file)
     library.forget()
-
-
-def pending() -> Verdict:
-    return Verdict(
-        Status.PENDING,
-        "add 2.0 downmix from stream 1 (6ch eng)",
-        tracks=[
-            {"index": 0, "kind": "video", "codec": "h264"},
-            {"index": 1, "kind": "audio", "codec": "eac3", "channels": 6, "lang": "eng"},
-        ],
-        planned=[
-            {"index": 0, "src": 0, "kind": "video", "codec": "h264"},
-            {
-                "index": 1,
-                "src": 1,
-                "kind": "audio",
-                "codec": "aac",
-                "channels": 2,
-                "title": "2.0",
-                "flags": ["generated"],
-            },
-            {"index": 2, "src": 1, "kind": "audio", "codec": "eac3", "channels": 6},
-        ],
-        why={"reasons": ["add 2.0 downmix from stream 1 (6ch eng)"], "rules": ["downmix"]},
-    )
 
 
 #: What a rewrite leaves on the verdict it publishes; see
@@ -902,138 +833,6 @@ def test_an_unknown_title_is_no_answer_rather_than_an_empty_one(media, monkeypat
     assert library.title("arr:radarr:404") is None
 
 
-def test_a_cover_comes_from_the_arr_that_cached_it(media, monkeypatch):
-    stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
-    asked: list[str] = []
-
-    def answer(url, headers=None, timeout=30):
-        asked.append(url)
-        return b"\xff\xd8jpeg", "image/jpeg"
-
-    monkeypatch.setattr(library, "fetch", answer)
-    body, kind = library.cover("arr:radarr:1")
-    assert (body, kind) == (b"\xff\xd8jpeg", "image/jpeg")
-    # Under /api/v3: the bare /MediaCover path the *arrs' own pages link to is
-    # behind their browser login, and answers an API key with a redirect to it.
-    assert asked == ["http://radarr:7878/api/v3/mediacover/1/poster-500.jpg"]
-
-
-def test_a_fetched_cover_is_kept_and_not_fetched_again(media, monkeypatch):
-    """A grid asks for hundreds of posters and reloads ask again; the *arr
-    should see each title once, ever."""
-    stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
-    asked: list[str] = []
-
-    def answer(url, headers=None, timeout=30):
-        asked.append(url)
-        return b"\xff\xd8jpeg", "image/jpeg"
-
-    monkeypatch.setattr(library, "fetch", answer)
-    assert library.cover("arr:radarr:1")[0] == b"\xff\xd8jpeg"
-    assert library.cover("arr:radarr:1")[0] == b"\xff\xd8jpeg"
-    assert len(asked) == 1
-
-
-def test_a_png_kept_on_disk_is_still_a_png(media, monkeypatch):
-    """The type is sniffed back out of the stored bytes, so local artwork
-    does not come back claiming to be a jpeg."""
-    folder = os.path.join(media, "Loose Film")
-    os.makedirs(folder)
-    with open(os.path.join(folder, "poster.png"), "wb") as art:
-        art.write(b"\x89PNG\r\n\x1a\nlocal")
-    stub_arrs(monkeypatch, [])
-    cache((f"{folder}/film.mkv", pending()))
-    library.cover(f"dir:{folder}")
-    assert library.cover(f"dir:{folder}")[1] == "image/png"
-
-
-def test_a_title_with_no_poster_is_only_looked_for_once(media, monkeypatch):
-    """Otherwise a shelf of unclaimed folders re-asks both *arrs on every
-    load, and each ask is a connection that has to time out."""
-    stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
-    tries: list[int] = []
-
-    def refuse(url, headers=None, timeout=30):
-        tries.append(1)
-        raise OSError("no such poster")
-
-    monkeypatch.setattr(library, "fetch", refuse)
-    assert library.cover("arr:radarr:1") is None
-    assert library.cover("arr:radarr:1") is None
-    # Both poster sizes on the first ask, and nothing on the second.
-    assert len(tries) == len(library._COVER_NAMES)
-
-
-def test_warming_fetches_the_posters_the_grid_has_not_got(media, monkeypatch):
-    stub_arrs(
-        monkeypatch, [movie(1, "Dune", f"{media}/Dune"), movie(2, "Arrival", f"{media}/A")]
-    )
-    asked: list[str] = []
-
-    def answer(url, headers=None, timeout=30):
-        asked.append(url)
-        return b"\xff\xd8jpeg", "image/jpeg"
-
-    monkeypatch.setattr(library, "fetch", answer)
-    library._warm_all()
-    assert len(asked) == 2
-    # And the grid that follows reads them off our disk rather than re-asking.
-    assert library.cover("arr:radarr:1")[0] == b"\xff\xd8jpeg"
-    assert len(asked) == 2
-    # As does the next warm-up: a settled library asks for nothing at all.
-    library._warm_all()
-    assert len(asked) == 2
-
-
-def _warm_up_finished() -> bool:
-    """Wait for the background warm-up to let go of its lock."""
-    for _ in range(500):
-        if library._warming.acquire(blocking=False):
-            library._warming.release()
-            return True
-        time.sleep(0.01)
-    return False
-
-
-def test_warming_returns_at_once_and_runs_one_walk_at_a_time(media, monkeypatch):
-    """It is called on the request that hands the grid over, so it must not
-    block that; and a second grid load a moment later is left to the walk
-    already going rather than starting another over the same list."""
-    stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
-    walks: list[int] = []
-    walking = threading.Event()
-    let_go = threading.Event()
-
-    def slow_walk():
-        walks.append(1)
-        walking.set()
-        let_go.wait(5)
-
-    monkeypatch.setattr(library, "_warm_all", slow_walk)
-    library.warm()
-    assert walking.wait(5), "the caller was not made to wait for it"
-    library.warm()
-    let_go.set()
-
-    assert _warm_up_finished()
-    assert walks == [1]
-
-
-def test_a_warm_up_that_fails_says_so_and_lets_the_next_one_run(media, monkeypatch, caplog):
-    """A background thread has nobody to raise at. The grid still works, it
-    just fetches its own posters one request at a time -- and the next warm-up
-    must not find the lock stuck held by this one."""
-
-    def boom():
-        raise RuntimeError("the cache went away")
-
-    monkeypatch.setattr(library, "_warm_all", boom)
-    library.warm()
-
-    assert _warm_up_finished()
-    assert "could not warm the poster cache" in caplog.text
-
-
 def test_the_sweep_cache_is_parsed_once_per_version_of_it(media, monkeypatch):
     """On a real library this file is megabytes and one page load reads it
     once per poster; parsing it each time is what made the grid crawl."""
@@ -1054,71 +853,6 @@ def test_the_sweep_cache_is_parsed_once_per_version_of_it(media, monkeypatch):
     cache((f"{media}/Dune/d.mkv", Verdict(Status.CONFORM)))
     library.shelf()
     assert len(parses) == 2
-
-
-def test_an_answer_that_is_not_a_picture_falls_through_to_the_next_name(media, monkeypatch):
-    """An *arr with no poster cached answers the request rather than 404ing
-    it, so the content type is the only thing that says whether what came
-    back is an image."""
-    stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
-
-    def answer(url, headers=None, timeout=30):
-        if url.endswith("poster-500.jpg"):
-            return b"<html>", "text/html"
-        return b"\xff\xd8jpeg", "image/jpeg"
-
-    monkeypatch.setattr(library, "fetch", answer)
-    assert library.cover("arr:radarr:1")[0] == b"\xff\xd8jpeg"
-
-
-def test_a_poster_that_cannot_be_kept_is_still_served(media, monkeypatch, caplog):
-    """An unwritable state dir costs the cache, not the picture."""
-    stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
-    monkeypatch.setattr(
-        library, "fetch", lambda url, headers=None, timeout=30: (b"\xff\xd8jpeg", "image/jpeg")
-    )
-
-    def refuse(partial, path):
-        raise OSError("read-only file system")
-
-    monkeypatch.setattr(library.os, "replace", refuse)
-    assert library.cover("arr:radarr:1")[0] == b"\xff\xd8jpeg"
-    assert "could not keep the poster" in caplog.text
-
-
-def test_an_empty_file_beside_the_media_is_not_the_cover(media, monkeypatch):
-    """A zero-byte poster.jpg is a download that never finished. The next name
-    down is still worth trying."""
-    folder = os.path.join(media, "Loose Film")
-    os.makedirs(folder)
-    with open(os.path.join(folder, "poster.jpg"), "wb"):
-        pass
-    with open(os.path.join(folder, "folder.jpg"), "wb") as art:
-        art.write(b"local")
-    stub_arrs(monkeypatch, [])
-    cache((f"{folder}/film.mkv", pending()))
-
-    assert library.cover(f"dir:{folder}") == (b"local", "image/jpeg")
-
-
-def test_a_cover_falls_back_to_artwork_beside_the_files(media, monkeypatch):
-    folder = os.path.join(media, "Loose Film")
-    os.makedirs(folder)
-    with open(os.path.join(folder, "poster.jpg"), "wb") as art:
-        art.write(b"local")
-    stub_arrs(monkeypatch, [])
-    cache((f"{folder}/film.mkv", pending()))
-    assert library.cover(f"dir:{folder}") == (b"local", "image/jpeg")
-
-
-def test_a_cover_nobody_has_is_no_cover(media, monkeypatch):
-    stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
-
-    def refuse(url, headers=None, timeout=30):
-        raise OSError("no such poster")
-
-    monkeypatch.setattr(library, "fetch", refuse)
-    assert library.cover("arr:radarr:1") is None
 
 
 def test_a_damaged_cache_is_an_empty_index_not_a_failed_request(media, monkeypatch):
@@ -1152,12 +886,21 @@ def test_the_index_is_reused_until_it_is_dropped(media, monkeypatch):
 def test_the_index_is_dropped_when_the_settings_change(settings_state, monkeypatch):
     """The memo outlives a save by minutes, which is long enough for a
     corrected address to look like it did nothing."""
-    monkeypatch.setattr(library, "all_arrs", list)
+    fetches: list[int] = []
+
+    def listing():
+        fetches.append(1)
+        return []
+
+    monkeypatch.setattr(library, "all_arrs", listing)
     library.shelf()
-    assert library._cached is not None
+    library.shelf()
+    assert len(fetches) == 1, "the second read did not come off the memo"
+
     settings.update({"RADARR_URL": "http://radarr:7878"}, by="tester")
     library.forget()
-    assert library._cached is None
+    library.shelf()
+    assert len(fetches) == 2
 
 
 def test_a_verdict_written_by_a_sweep_is_readable_by_the_view(media, monkeypatch):
@@ -1357,5 +1100,4 @@ def test_forgetting_drops_the_built_grid(media, monkeypatch):
     cache((f"{media}/Dune/d.mkv", pending()))
     first = library.shelf()
     library.forget()
-    assert library._built is None
     assert library.shelf() is not first

@@ -376,11 +376,9 @@ def test_the_page_check_says_which_media_dirs_are_there(tmp_path):
 def clean_registry():
     """The activity registry is module state, and a sweep registers itself in
     it. A stopped run left behind would stop the next test's sweep too."""
-    runs._runs.clear()
-    runs._running.set()
+    runs.reset()
     yield runs
-    runs._runs.clear()
-    runs._running.set()
+    runs.reset()
 
 
 def test_a_sweep_shows_its_progress_while_it_walks(monkeypatch, tmp_path, clean_registry):

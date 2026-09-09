@@ -20,10 +20,13 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 import trackstarr
-from trackstarr import config, holds, processing, runs, users, webhook
+from trackstarr import config, holds, jobs, library, processing, runlog, runs, users, webhook
 from trackstarr.arr import Arr, radarr, sonarr
 from trackstarr.executor import Outcome
 from trackstarr.planner import Plan
+from trackstarr.policy import Policy
+from trackstarr.status import Status
+from trackstarr.sweep_cache import FileKey, SweepCache, Verdict
 
 
 def _mp4_titles_round_trip() -> bool:
@@ -152,12 +155,15 @@ def settings_state(tmp_path):
 
 @pytest.fixture(autouse=True)
 def _reset_accounts():
-    """Login throttling and the timing dummy are module state; a lockout must
-    not outlive the test that earned it."""
     yield
-    with users._failures_lock:
-        users._failures.clear()
-    users._dummy_hash = None
+    users.reset()
+
+
+@pytest.fixture(autouse=True)
+def _drain_queue():
+    """Here rather than in one file: a POST to the listener queues too."""
+    yield
+    jobs.reset()
 
 
 @pytest.fixture
@@ -237,6 +243,74 @@ def configured_arr(name: str = "radarr", key: str = "key") -> Arr:
     """A reachable-looking *arr, for the paths gated on ``Arr.enabled``."""
     arr = sonarr() if name == "sonarr" else radarr()
     return replace(arr, url=_ARR_URLS[name], key=key)
+
+
+@pytest.fixture
+def media(tmp_path, monkeypatch) -> str:
+    root = tmp_path / "media" / "movies"
+    root.mkdir(parents=True)
+    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
+    return str(root)
+
+
+def movie(
+    item_id: int,
+    title: str,
+    folder: str,
+    year: int = 2024,
+    added: str = "2024-01-01T00:00:00Z",
+) -> dict:
+    return {
+        "id": item_id,
+        "title": title,
+        "year": year,
+        "path": folder,
+        "added": added,
+        "originalLanguage": {"name": "English"},
+    }
+
+
+def stub_arrs(monkeypatch, items: list[dict], name: str = "radarr") -> None:
+    """One reachable *arr answering with these movies."""
+    arr = configured_arr(name)
+    monkeypatch.setattr(library, "all_arrs", lambda: [arr])
+    monkeypatch.setattr(type(arr), "all_items", lambda self: items)
+
+
+def cache(*entries: tuple[str, Verdict], size: int = 100) -> None:
+    """Write a sweep cache holding these verdicts, as a sweep would."""
+    os.makedirs(config.STATE_DIR, exist_ok=True)
+    store = SweepCache(
+        os.path.join(config.STATE_DIR, "sweep-cache.json"), Policy.from_config().fingerprint()
+    )
+    for path, verdict in entries:
+        store.record(path, FileKey(size, 1, 1, "eng"), verdict)
+    store.save()
+
+
+def pending() -> Verdict:
+    return Verdict(
+        Status.PENDING,
+        "add 2.0 downmix from stream 1 (6ch eng)",
+        tracks=[
+            {"index": 0, "kind": "video", "codec": "h264"},
+            {"index": 1, "kind": "audio", "codec": "eac3", "channels": 6, "lang": "eng"},
+        ],
+        planned=[
+            {"index": 0, "src": 0, "kind": "video", "codec": "h264"},
+            {
+                "index": 1,
+                "src": 1,
+                "kind": "audio",
+                "codec": "aac",
+                "channels": 2,
+                "title": "2.0",
+                "flags": ["generated"],
+            },
+            {"index": 2, "src": 1, "kind": "audio", "codec": "eac3", "channels": 6},
+        ],
+        why={"reasons": ["add 2.0 downmix from stream 1 (6ch eng)"], "rules": ["downmix"]},
+    )
 
 
 def needed_plan(path: str = "/x.mkv", **overrides) -> Plan:
@@ -452,12 +526,10 @@ def sign_in(server, name: str, password: str = "right password") -> str:
 
 @pytest.fixture
 def clean_registry():
-    """The activity registry and the pause are module state; neither may
-    outlive the test that made it, least of all a pause."""
-    runs._runs.clear()
-    runs._running.set()
-    runs.forget_logs()
+    """Cleared both sides: an assertion that fails mid-test still has to hand
+    the suite back a running service."""
+    runs.reset()
+    runlog.forget()
     yield runs
-    runs._runs.clear()
-    runs._running.set()
-    runs.forget_logs()
+    runs.reset()
+    runlog.forget()

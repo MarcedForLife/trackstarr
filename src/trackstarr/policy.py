@@ -74,12 +74,12 @@ RULES = {
     ),
     "regenerate": Rule(
         NEVER,
-        "Rebuild trackstarr's own downmixes when their codec or bitrate no longer "
-        "matches the settings (REGENERATE_SCOPE=generated). With "
+        "Rebuild the downmixes trackstarr made when their codec or bitrate no "
+        "longer matches the settings (REGENERATE_SCOPE=generated). With "
         "REGENERATE_SCOPE=all, also replace any layout-sized track reported "
         "under REGENERATE_BELOW_PERCENT of its layout's rate where a surviving "
         "bigger track has more to give. A replacement is a fresh downmix from the "
-        "best surviving bigger track; REGENERATE_ABOVE_PERCENT re-encodes a track "
+        "best surviving bigger track. REGENERATE_ABOVE_PERCENT re-encodes a track "
         "that far over its layout's rate from itself, lossless tracks aside.",
     ),
     "cover_art": Rule(ALWAYS, "Drop embedded cover art."),
@@ -93,7 +93,7 @@ RULES = {
     "remux": Rule(
         NEVER,
         "Rewrite MP4 and M4V into Matroska, the container every rule works in. "
-        "Text subtitles convert to SRT; only the usual downmixes are encoded.",
+        "Text subtitles convert to SRT. Only the usual downmixes are encoded.",
     ),
 }
 
@@ -225,10 +225,6 @@ class Policy:
         """The layouts deleted wherever a file has one."""
         return [layout for layout in self.audio_layouts if layout.removes]
 
-    def rule_mode(self, rule: str) -> str:
-        """What this rule was set to when the plan was made."""
-        return dict(self.rule_modes)[rule]
-
     def rules_in(self, *modes: str) -> frozenset[str]:
         """The rules set to any of these modes."""
         return frozenset(name for name, mode in self.rule_modes if mode in modes)
@@ -321,12 +317,12 @@ def _codec_problems(entry: str, channels: int, codec: str) -> list[str]:
     if channels > known.max_channels:
         problems.append(
             f"AUDIO_LAYOUTS entry {entry!r} asks {codec} for {channels} channels, but it "
-            f"encodes at most {known.max_channels}; every rewrite of one would fail"
+            f"encodes at most {known.max_channels}, so every rewrite of one would fail"
         )
     if unwritable := sorted(output_exts() - known.containers):
         problems.append(
             f"AUDIO_LAYOUTS entry {entry!r} cannot be written into "
-            f"{', '.join(unwritable)}, which ALLOWED_EXTS names; set RULE_REMUX, drop the "
+            f"{', '.join(unwritable)}, which ALLOWED_EXTS names. Set RULE_REMUX, drop the "
             "container, or pick another encoder"
         )
     return problems
@@ -349,7 +345,7 @@ def _spec_problems(entry: str, spec: Spec, channels: int) -> list[str]:
         return [
             (
                 f"AUDIO_LAYOUTS entry {entry!r} states no encoder and rate, and {spec.name} "
-                f"is not a size they are shipped for ({', '.join(sorted(STOCK))}); write it "
+                f"is not a size they are shipped for ({', '.join(sorted(STOCK))}). Write it "
                 f"as {spec.name}:ENCODER:RATE (one of {', '.join(CODECS)}, or any encoder "
                 "your ffmpeg carries)"
             )
@@ -357,7 +353,7 @@ def _spec_problems(entry: str, spec: Spec, channels: int) -> list[str]:
     if not spec.codec:
         return [
             (
-                f"AUDIO_LAYOUTS entry {entry!r} states no encoder; write it as "
+                f"AUDIO_LAYOUTS entry {entry!r} states no encoder. Write it as "
                 f"{spec.name}:ENCODER:{spec.bitrate} (one of {', '.join(CODECS)}, or any "
                 "encoder your ffmpeg carries)"
             )
@@ -365,7 +361,7 @@ def _spec_problems(entry: str, spec: Spec, channels: int) -> list[str]:
     problems = []
     if not spec.bitrate:
         problems.append(
-            f"AUDIO_LAYOUTS entry {entry!r} states no rate; write it as "
+            f"AUDIO_LAYOUTS entry {entry!r} states no rate. Write it as "
             f"{spec.name}:{spec.codec}:RATE (in forms like 640k)"
         )
     elif bitrate_bps(spec.bitrate) is None:
@@ -409,7 +405,8 @@ def _layout_problems() -> list[str]:
         by_channels.setdefault(channels, []).append(entry)
     # Two opinions about one set of tracks: added and removed at once never settles.
     problems += [
-        f"AUDIO_LAYOUTS entries {', '.join(sorted(entries))} are all {count} channels; keep one"
+        f"AUDIO_LAYOUTS entries {', '.join(sorted(entries))} are all {count} channels, "
+        "so keep one"
         for count, entries in sorted(by_channels.items())
         if len(entries) > 1
     ]
@@ -444,7 +441,7 @@ def _lang_problems() -> list[str]:
             by_code.setdefault(lang.name, []).append(entry)
     # Two opinions about one set of tracks, as with a repeated channel count.
     problems += [
-        f"LANGUAGES entries {', '.join(sorted(entries))} are all {code}; keep one"
+        f"LANGUAGES entries {', '.join(sorted(entries))} are all {code}, so keep one"
         for code, entries in sorted(by_code.items())
         if len(entries) > 1
     ]
@@ -525,12 +522,12 @@ def warnings() -> list[str]:
             "container to convert from, so nothing is remuxed (it converts anything but "
             f"{', '.join(TAG_PRESERVING_EXTS)})"
         )
-    # Regeneration finds its own tracks by a tag only these containers keep.
+    # Regeneration finds the tracks it made by a tag only these containers keep.
     if modes["regenerate"] != NEVER and not config.ALLOWED_EXTS & TAG_PRESERVING_EXTS:
         problems.append(
             f"{config.rule_variable('regenerate')}={modes['regenerate']} but ALLOWED_EXTS "
             f"names none of {', '.join(TAG_PRESERVING_EXTS)}, the only containers that keep "
-            "the tag it finds its own tracks by, so nothing is regenerated"
+            "the tag marking which tracks trackstarr made, so nothing is regenerated"
         )
     # Legitimate as a report-only setup, but also what a page of switches
     # flipped one at a time ends up as.

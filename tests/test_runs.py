@@ -1,15 +1,13 @@
 """The activity registry and the pause switch."""
 
-import collections
 import json
-import logging
 import os
 import threading
 
 import pytest
 
 from conftest import read_events
-from trackstarr import config, runs
+from trackstarr import config, runlog, runs
 
 
 @pytest.fixture(autouse=True)
@@ -17,15 +15,11 @@ def _clean_registry():
     """Module state, so a run or a pause left behind would decide the next
     test. Cleared both sides: an assertion that fails mid-test still has to
     hand the suite back a running service."""
-    runs._runs.clear()
-    runs._running.set()
-    runs._paused_by = runs._paused_at = ""
-    runs.forget_logs()
+    runs.reset()
+    runlog.forget()
     yield
-    runs._runs.clear()
-    runs._running.set()
-    runs._paused_by = runs._paused_at = ""
-    runs.forget_logs()
+    runs.reset()
+    runlog.forget()
 
 
 def flag_path() -> str:
@@ -60,8 +54,7 @@ def test_a_pause_survives_a_restart():
         assert json.load(flag)["paused"] is True
 
     # A fresh process: the flag is all it has.
-    runs._running.set()
-    runs._paused_by = runs._paused_at = ""
+    runs.reset()
     runs.load_paused()
     assert runs.paused()
     assert runs.snapshot()["paused_by"] == "marc"
@@ -70,7 +63,7 @@ def test_a_pause_survives_a_restart():
 def test_resuming_clears_the_flag_a_restart_would_read():
     runs.pause("marc")
     runs.resume("marc")
-    runs._running.set()
+    runs.reset()
     runs.load_paused()
     assert not runs.paused()
 
@@ -190,9 +183,6 @@ def test_a_file_decided_without_being_picked_up_still_gets_one():
 def test_recent_files_are_newest_first_and_bounded(monkeypatch):
     monkeypatch.setattr(runs, "_RECENT_FILES", 3)
     runs.open_run("r#1", runs.SWEEP)
-    # Built by hand: the cap is read when the run is made, and this one
-    # already exists.
-    runs._runs["r#1"].recent = collections.deque(maxlen=3)
     for at in range(5):
         runs.tally("r#1", "failed", path=f"/data/{at}.mkv")
     (run,) = runs.snapshot()["runs"]
@@ -220,54 +210,6 @@ def test_the_same_file_twice_keeps_both_verdicts_apart():
     ]
 
 
-def test_a_workers_log_lines_are_kept_with_the_file_it_had_in_hand(caplog):
-    caplog.set_level(logging.INFO)
-    runs.capture_logs()
-    runs.open_run("r#1", runs.SWEEP)
-    logging.getLogger("trackstarr.test").info("before anything was picked up")
-    runs.begin("r#1", "/data/a.mkv")
-    logging.getLogger("trackstarr.test").info("ffmpeg -i a.mkv")
-    runs.finish("r#1", "/data/a.mkv")
-    logging.getLogger("trackstarr.test").info("after it was let go")
-
-    kept = runs.lines("r#1", "/data/a.mkv")
-    assert [line.split("INFO")[-1].strip() for line in kept] == ["ffmpeg -i a.mkv"]
-    # Still readable once the file is done with, which is when somebody has a
-    # verdict to explain.
-    runs.tally("r#1", "modified", path="/data/a.mkv")
-    assert runs.lines("r#1", "/data/a.mkv") == kept
-    assert runs.lines("r#1", "/data/never-touched.mkv") == []
-
-
-def test_a_line_with_no_thread_on_it_belongs_to_no_file(monkeypatch, caplog):
-    """The thread is the whole of how a line finds its file, so a build with
-    logging.logThreads turned off keeps none of them rather than filing every
-    worker's output against whichever file was picked up last."""
-    caplog.set_level(logging.INFO)
-    monkeypatch.setattr(logging, "logThreads", False)
-    runs.capture_logs()
-    runs.open_run("r#1", runs.SWEEP)
-    runs.begin("r#1", "/data/a.mkv")
-    logging.getLogger("trackstarr.test").info("ffmpeg -i a.mkv")
-
-    assert runs.lines("r#1", "/data/a.mkv") == []
-
-
-def test_only_so_many_files_worth_of_log_is_kept(monkeypatch, caplog):
-    """A sweep of ten thousand files would otherwise hold every line it ever
-    wrote."""
-    monkeypatch.setattr(runs, "_LOGGED_FILES", 2)
-    caplog.set_level(logging.INFO)
-    runs.capture_logs()
-    runs.open_run("r#1", runs.SWEEP)
-    for at in range(3):
-        runs.begin("r#1", f"/data/{at}.mkv")
-        logging.getLogger("trackstarr.test").info("probing %d", at)
-        runs.finish("r#1", f"/data/{at}.mkv")
-    assert runs.lines("r#1", "/data/0.mkv") == [], "the oldest went first"
-    assert len(runs.lines("r#1", "/data/2.mkv")) == 1
-
-
 def test_the_snapshot_says_which_registry_answered_it():
     """Nothing resumes a run, so a page has to be able to tell a sweep that
     finished from one a restart cut off. The stamp holds while the process
@@ -275,10 +217,6 @@ def test_the_snapshot_says_which_registry_answered_it():
     runs.open_run("r#1", runs.SWEEP)
     first = runs.snapshot()["up_since"]
     assert first and runs.snapshot()["up_since"] == first
-
-    # A fresh process: the module is imported again and the stamp taken again.
-    runs._UP = runs._UP + 60
-    assert runs.snapshot()["up_since"] != first
 
 
 def test_an_import_retires_itself_once_its_last_file_is_done():
@@ -532,7 +470,7 @@ def test_stopping_everything_asks_each_run_once():
     runs.open_run("s#1", runs.SWEEP)
     runs.open_run("i#1", runs.IMPORT)
     assert runs.stop_all() == 2
-    assert all(run.stopping for run in runs._runs.values())
+    assert all(runs.stopping(run_id) for run_id in ("s#1", "i#1"))
     # Nothing left to ask the second time, which is what the page reports.
     assert runs.stop_all() == 0
 
@@ -571,7 +509,7 @@ def test_a_paused_delivery_still_counts_as_waiting():
 def test_cache_holder_names_either_walk_and_nothing_else():
     """A sweep and a re-check both write the cache whole, so a second would
     lose the first's verdicts. An import writes no cache."""
-    runs._runs.clear()
+    runs.reset()
     assert runs.cache_holder() is None
 
     runs.open_run("i#1", runs.IMPORT)
@@ -583,7 +521,7 @@ def test_cache_holder_names_either_walk_and_nothing_else():
 
     runs.open_run("s#1", runs.SWEEP)
     assert runs.cache_holder().id == "s#1"
-    runs._runs.clear()
+    runs.reset()
 
 
 def test_a_file_in_hand_reports_how_far_into_it_the_rewrite_is():
