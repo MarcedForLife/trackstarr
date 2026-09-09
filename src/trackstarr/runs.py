@@ -163,6 +163,7 @@ def reset() -> None:
         _UP = time.time()
     _running.set()
 
+
 def _paused_path() -> str:
     return os.path.join(config.STATE_DIR, PAUSED_FILE)
 

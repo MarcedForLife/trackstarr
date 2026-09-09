@@ -4,8 +4,8 @@ import urllib.error
 
 import pytest
 
-from conftest import configured_arr
-from trackstarr import auth, config
+from conftest import configured_arr, set_config
+from trackstarr import auth
 from trackstarr.arr import (
     AUTH_HEADER,
     WEBHOOK_NAME,
@@ -165,10 +165,10 @@ def test_disabled_arr_needs_no_registration():
     assert radarr().register_webhook(URL) is True
 
 
-def test_registration_points_the_arrs_at_the_webhook_path(monkeypatch):
+def test_registration_points_the_arrs_at_the_webhook_path():
     """The base URL is the setting; the path is the listener's own contract,
     appended here so both ends always agree."""
-    monkeypatch.setattr(config, "WEBHOOK_URL", "http://trackstarr:5120")
+    set_config(WEBHOOK_URL="http://trackstarr:5120")
     assert webhook_url() == "http://trackstarr:5120/webhook"
 
 

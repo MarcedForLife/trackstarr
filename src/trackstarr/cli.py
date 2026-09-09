@@ -201,7 +201,7 @@ def cmd_fix(files: list[str], original: str | None) -> int:
     Same locks, events and REWRITE_MODE latch as everything else. Deferred
     fails the exit code, unlike in the sweep: the caller is the retry.
     """
-    if config.REWRITE_MODE == "report":
+    if config.current().REWRITE_MODE == "report":
         print("REWRITE_MODE is report, planning only, nothing will be rewritten")
     # One run per invocation, so a multi-file fix groups in the history.
     jobs, arrs_answered = _resolve_jobs(files, original, match_items=True, run=events.run_id())

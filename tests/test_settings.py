@@ -1,6 +1,5 @@
 """The settings API's model: effective values out, live file writes in."""
 
-import importlib
 import json
 import os
 import time
@@ -8,7 +7,6 @@ import zoneinfo
 
 import pytest
 
-import trackstarr
 from conftest import read_events
 from trackstarr import config, events, executor, keystore, policy, processing, settings
 
@@ -67,8 +65,8 @@ def test_the_page_may_write_every_setting_it_is_shown(settings_state):
 def test_update_applies_live_and_records_the_config(settings_state):
     changes = {"RULE_COMMENTARY": "always", "LANGUAGES": ["original", "jpn:keep"]}
     assert settings.update(changes) == []
-    assert config.RULE_MODES["commentary"] == "always"
-    assert config.LANGUAGES == ("original", "jpn:keep")
+    assert config.current().RULE_MODES["commentary"] == "always"
+    assert config.current().LANGUAGES == ("original", "jpn:keep")
     assert read_settings_file() == {
         "RULE_COMMENTARY": "always",
         "LANGUAGES": "original,jpn:keep",
@@ -146,8 +144,8 @@ def test_a_change_startup_would_refuse_is_rolled_back_whole(settings_state):
     problems = settings.update({"RULE_LANGAUGES": "never", "RULE_COMMENTARY": "always"})
     assert any("names no rule" in problem for problem in problems)
     # The valid half must not survive alone; the write is one gesture.
-    assert "langauges" not in config.RULE_MODES
-    assert "commentary" not in config.RULE_MODES
+    assert "langauges" not in config.current().RULE_MODES
+    assert "commentary" not in config.current().RULE_MODES
     assert not os.path.exists(os.path.join(config.STATE_DIR, config.SETTINGS_FILE))
     assert read_events() == []
 
@@ -155,14 +153,14 @@ def test_a_change_startup_would_refuse_is_rolled_back_whole(settings_state):
 def test_null_unsets_a_name(settings_state):
     assert settings.update({"RULE_COMMENTARY": "always"}) == []
     assert settings.update({"RULE_COMMENTARY": None}) == []
-    assert "commentary" not in config.RULE_MODES
+    assert "commentary" not in config.current().RULE_MODES
     assert read_settings_file() == {}
 
 
 def test_an_env_pinned_name_is_refused(settings_state):
     os.environ["AUDIO_LAYOUTS"] = "2.0:libfdk_aac:320k"
     try:
-        importlib.reload(config)
+        config.apply(config.load())
         shot = settings.snapshot()
         assert shot["settings"]["AUDIO_LAYOUTS"] == {
             "value": ["2.0:libfdk_aac:320k"],
@@ -188,7 +186,7 @@ def test_only_the_editable_names_are_accepted(settings_state):
 def test_report_mode_toggles_the_latch_live(settings_state):
     assert settings.snapshot()["settings"]["REWRITE_MODE"] == {"value": "imports", "env": False}
     assert settings.update({"REWRITE_MODE": "report"}) == []
-    assert config.REWRITE_MODE == "report"
+    assert config.current().REWRITE_MODE == "report"
     # A webhook import asks for a rewrite outright, so the mode only counts if
     # it reaches the latch every path goes through, without a restart.
     assert processing.effective_dry_run(False) is True
@@ -202,7 +200,7 @@ def test_a_mode_nobody_spells_that_way_is_rolled_back(settings_state):
     assert settings.update({"REWRITE_MODE": "everything"}) == [
         "REWRITE_MODE='everything' is not one of: report, imports, all"
     ]
-    assert config.REWRITE_MODE == "imports"
+    assert config.current().REWRITE_MODE == "imports"
 
 
 def test_layout_order_survives_the_round_trip(settings_state):
@@ -210,7 +208,7 @@ def test_layout_order_survives_the_round_trip(settings_state):
     snapshot that sorted like the other lists would undo every drag."""
     assert settings.update({"AUDIO_LAYOUTS": ["5.1", "2.0"]}) == []
     assert read_settings_file() == {"AUDIO_LAYOUTS": "5.1,2.0"}
-    assert config.AUDIO_LAYOUTS == ("5.1", "2.0")
+    assert config.current().AUDIO_LAYOUTS == ("5.1", "2.0")
     assert settings.snapshot()["settings"]["AUDIO_LAYOUTS"]["value"] == ["5.1", "2.0"]
 
 
@@ -219,10 +217,10 @@ def test_the_low_bitrate_threshold_saves_and_is_held_to_its_band(settings_state)
     percent outside the band the page offers is rolled back whole."""
     assert settings.snapshot()["settings"]["REGENERATE_BELOW_PERCENT"]["value"] == "80"
     assert settings.update({"REGENERATE_BELOW_PERCENT": "75"}) == []
-    assert config.REGENERATE_BELOW_PERCENT == 75
+    assert config.current().REGENERATE_BELOW_PERCENT == 75
     (problem,) = settings.update({"REGENERATE_BELOW_PERCENT": "99"})
     assert "REGENERATE_BELOW_PERCENT" in problem
-    assert config.REGENERATE_BELOW_PERCENT == 75
+    assert config.current().REGENERATE_BELOW_PERCENT == 75
 
 
 def test_the_high_bitrate_threshold_saves_and_takes_zero_for_off(settings_state):
@@ -230,11 +228,11 @@ def test_the_high_bitrate_threshold_saves_and_takes_zero_for_off(settings_state)
     page switches the re-encode back off."""
     assert settings.snapshot()["settings"]["REGENERATE_ABOVE_PERCENT"]["value"] == "0"
     assert settings.update({"REGENERATE_ABOVE_PERCENT": "120"}) == []
-    assert config.REGENERATE_ABOVE_PERCENT == 120
+    assert config.current().REGENERATE_ABOVE_PERCENT == 120
     (problem,) = settings.update({"REGENERATE_ABOVE_PERCENT": "105"})
     assert "REGENERATE_ABOVE_PERCENT" in problem
     assert settings.update({"REGENERATE_ABOVE_PERCENT": "0"}) == []
-    assert config.REGENERATE_ABOVE_PERCENT == 0
+    assert config.current().REGENERATE_ABOVE_PERCENT == 0
 
 
 def test_a_credential_is_reported_as_set_never_echoed(settings_state):
@@ -246,7 +244,7 @@ def test_a_credential_is_reported_as_set_never_echoed(settings_state):
         "set": False,
     }
     assert settings.update({"RADARR_API_KEY": "abc123"}) == []
-    assert config.RADARR_API_KEY == "abc123"
+    assert config.current().RADARR_API_KEY == "abc123"
 
     entry = settings.snapshot()["settings"]["RADARR_API_KEY"]
     assert entry == {"value": "", "env": False, "set": True}
@@ -261,7 +259,7 @@ def test_a_saved_credential_is_sealed_on_the_volume(settings_state):
     assert held.startswith(keystore.PREFIX)
     assert "abc123" not in held
     # Sealed on disk, plain in hand: this is the value replayed to Radarr.
-    assert config.RADARR_API_KEY == "abc123"
+    assert config.current().RADARR_API_KEY == "abc123"
     assert mode(config.SETTINGS_FILE) == 0o600
     assert mode(keystore.KEY_FILE) == 0o600
 
@@ -279,12 +277,12 @@ def test_a_hand_written_credential_is_sealed_by_the_next_save(settings_state):
     os.makedirs(config.STATE_DIR, exist_ok=True)
     with open(os.path.join(config.STATE_DIR, config.SETTINGS_FILE), "w") as by_hand:
         json.dump({"RADARR_API_KEY": "typed-in", "PLEX_URL": "http://plex:32400"}, by_hand)
-    importlib.reload(config)
-    assert config.RADARR_API_KEY == "typed-in"
+    config.apply(config.load())
+    assert config.current().RADARR_API_KEY == "typed-in"
 
     assert settings.update({"RULE_COMMENTARY": "always"}) == []
     assert read_settings_file()["RADARR_API_KEY"].startswith(keystore.PREFIX)
-    assert config.RADARR_API_KEY == "typed-in"
+    assert config.current().RADARR_API_KEY == "typed-in"
 
 
 def test_a_credential_whose_key_is_gone_reads_as_unset_and_says_so(settings_state):
@@ -292,8 +290,8 @@ def test_a_credential_whose_key_is_gone_reads_as_unset_and_says_so(settings_stat
     the listener must come up for the key to be re-entered."""
     assert settings.update({"RADARR_API_KEY": "abc123"}) == []
     os.remove(os.path.join(config.STATE_DIR, keystore.KEY_FILE))
-    importlib.reload(config)
-    assert config.RADARR_API_KEY == ""
+    config.apply(config.load())
+    assert config.current().RADARR_API_KEY == ""
     (told,) = [problem for problem in config.warnings() if "sealed" in problem]
     assert "RADARR_API_KEY" in told
     assert config.errors() == []
@@ -310,7 +308,7 @@ def test_a_key_that_cannot_be_minted_refuses_the_save(settings_state, monkeypatc
     monkeypatch.setattr(keystore, "ensure", refuse)
     (problem,) = settings.update({"RADARR_API_KEY": "abc123"})
     assert "could not be sealed" in problem
-    assert config.RADARR_API_KEY == ""
+    assert config.current().RADARR_API_KEY == ""
     assert not os.path.exists(os.path.join(config.STATE_DIR, config.SETTINGS_FILE))
 
 
@@ -320,9 +318,9 @@ def test_a_damaged_key_file_disables_the_credentials_and_says_so(settings_state)
     assert settings.update({"RADARR_API_KEY": "abc123"}) == []
     with open(os.path.join(config.STATE_DIR, keystore.KEY_FILE), "w") as clipped:
         clipped.write("abcd\n")
-    importlib.reload(config)
+    config.apply(config.load())
 
-    assert config.RADARR_API_KEY == ""
+    assert config.current().RADARR_API_KEY == ""
     assert any(keystore.KEY_FILE in problem for problem in config.warnings())
     assert config.errors() == []
 
@@ -334,9 +332,9 @@ def test_a_credential_sealed_under_another_key_reads_as_unset(settings_state):
     assert settings.update({"RADARR_API_KEY": "abc123"}) == []
     with open(os.path.join(config.STATE_DIR, keystore.KEY_FILE), "w") as elsewhere:
         elsewhere.write("33" * 32 + "\n")
-    importlib.reload(config)
+    config.apply(config.load())
 
-    assert config.RADARR_API_KEY == ""
+    assert config.current().RADARR_API_KEY == ""
     (told,) = [problem for problem in config.warnings() if "different key" in problem]
     assert "RADARR_API_KEY" in told
 
@@ -346,10 +344,10 @@ def test_re_entering_a_credential_recovers_from_a_lost_key(settings_state):
     into the page again and it seals under whatever key is in hand now."""
     assert settings.update({"RADARR_API_KEY": "abc123"}) == []
     os.remove(os.path.join(config.STATE_DIR, keystore.KEY_FILE))
-    importlib.reload(config)
+    config.apply(config.load())
 
     assert settings.update({"RADARR_API_KEY": "def456"}) == []
-    assert config.RADARR_API_KEY == "def456"
+    assert config.current().RADARR_API_KEY == "def456"
     assert not any("sealed" in problem for problem in config.warnings())
 
 
@@ -360,28 +358,28 @@ def test_a_credential_mounted_as_a_file_counts_as_pinned(settings_state, tmp_pat
     secret.write_text("from-a-file\n")
     os.environ["RADARR_API_KEY_FILE"] = str(secret)
     try:
-        importlib.reload(config)
+        config.apply(config.load())
         entry = settings.snapshot()["settings"]["RADARR_API_KEY"]
         assert entry == {"value": "", "env": True, "set": True}
         (problem,) = settings.update({"RADARR_API_KEY": "typed"})
         assert "environment" in problem
     finally:
         os.environ.pop("RADARR_API_KEY_FILE", None)
-        importlib.reload(config)
+        config.apply(config.load())
 
 
 def test_an_address_without_a_scheme_is_rolled_back(settings_state):
     (problem,) = settings.update({"RADARR_URL": "radarr:7878"})
     assert "must start with http:// or https://" in problem
-    assert config.RADARR_URL == ""
+    assert config.current().RADARR_URL == ""
     assert settings.update({"RADARR_URL": "http://radarr:7878"}) == []
-    assert config.RADARR_URL == "http://radarr:7878"
+    assert config.current().RADARR_URL == "http://radarr:7878"
 
 
 def test_a_path_map_round_trips_as_the_pairs_it_was_written_as(settings_state):
     assert settings.update({"PLEX_PATH_MAP": ["/data/media=/srv/media"]}) == []
     assert read_settings_file() == {"PLEX_PATH_MAP": "/data/media=/srv/media"}
-    assert config.PLEX_PATH_MAP == [("/data/media", "/srv/media")]
+    assert config.current().PLEX_PATH_MAP == [("/data/media", "/srv/media")]
     shot = settings.snapshot()["settings"]["PLEX_PATH_MAP"]
     assert shot["value"] == ["/data/media=/srv/media"]
 
@@ -392,7 +390,7 @@ def test_a_layout_off_the_stock_table_needs_its_own_encoder_and_rate(settings_st
     (problem,) = settings.update({"AUDIO_LAYOUTS": ["2.0", "5.1", "4.0"]})
     assert "4.0:ENCODER:RATE" in problem
     assert settings.update({"AUDIO_LAYOUTS": ["2.0", "5.1", "4.0:aac:384k"]}) == []
-    assert config.AUDIO_LAYOUTS == ("2.0", "5.1", "4.0:aac:384k")
+    assert config.current().AUDIO_LAYOUTS == ("2.0", "5.1", "4.0:aac:384k")
 
 
 def test_a_bare_layout_the_table_knows_is_taken_as_shipped(settings_state):
@@ -415,7 +413,7 @@ def test_a_damaged_settings_file_refuses_the_write(settings_state, content, expe
 
     (problem,) = settings.update({"RULE_COMMENTARY": "always"})
     assert expected in problem
-    assert "commentary" not in config.RULE_MODES
+    assert "commentary" not in config.current().RULE_MODES
     # Untouched: the damaged file is the operator's to look at.
     assert (settings_state / config.SETTINGS_FILE).read_text() == content
 
@@ -433,8 +431,8 @@ def test_the_sweep_schedule_and_dirs_are_editable(settings_state):
         )
         == []
     )
-    assert config.SWEEP_AT == "0 4 * * *"
-    assert config.MEDIA_DIRS == ["/data/media/movies", "/data/media/tv"]
+    assert config.current().SWEEP_AT == "0 4 * * *"
+    assert config.current().MEDIA_DIRS == ["/data/media/movies", "/data/media/tv"]
     assert read_settings_file()["MEDIA_DIRS"] == "/data/media/movies:/data/media/tv"
 
     shot = settings.snapshot()["settings"]
@@ -449,7 +447,7 @@ def test_a_schedule_the_scheduler_could_not_read_is_rolled_back(settings_state):
     assert settings.update({"SWEEP_AT": "0 4 * * *"}) == []
     (problem,) = settings.update({"SWEEP_AT": "0 99 * * *"})
     assert "hour" in problem
-    assert config.SWEEP_AT == "0 4 * * *"
+    assert config.current().SWEEP_AT == "0 4 * * *"
 
 
 def test_a_codec_this_ffmpeg_lacks_is_rolled_back(settings_state, monkeypatch):
@@ -458,9 +456,17 @@ def test_a_codec_this_ffmpeg_lacks_is_rolled_back(settings_state, monkeypatch):
     monkeypatch.setattr(executor, "audio_encoders", lambda: frozenset({"aac", "ac3"}))
     (problem,) = settings.update({"AUDIO_LAYOUTS": ["2.0:acc:320k", "5.1"]})
     assert "acc" in problem
-    assert config.AUDIO_LAYOUTS == ("2.0", "5.1")
+    assert config.current().AUDIO_LAYOUTS == ("2.0", "5.1")
     assert settings.update({"AUDIO_LAYOUTS": ["2.0:ac3:320k", "5.1"]}) == []
-    assert config.AUDIO_LAYOUTS == ("2.0:ac3:320k", "5.1")
+    assert config.current().AUDIO_LAYOUTS == ("2.0:ac3:320k", "5.1")
+
+
+def test_trimming_a_layout_is_not_a_missing_encoder(settings_state, monkeypatch):
+    """The encoder check read every row, and a trimmed or held one names none,
+    so the page refused the save with a complaint about the empty encoder."""
+    monkeypatch.setattr(executor, "audio_encoders", lambda: frozenset({"aac", "ac3"}))
+    assert settings.update({"AUDIO_LAYOUTS": ["2.0", "5.1:keep", "7.1:remove"]}) == []
+    assert config.current().AUDIO_LAYOUTS == ("2.0", "5.1:keep", "7.1:remove")
 
 
 def test_an_ffmpeg_that_cannot_be_asked_refuses_nothing(settings_state, monkeypatch):
@@ -489,7 +495,7 @@ def test_the_time_zone_is_applied_to_the_process_itself(settings_state):
     nothing of ours reads TZ, libc does, so a saved zone means nothing until
     it is there and tzset() has been called."""
     assert settings.update({"TZ": _ELSEWHERE}) == []
-    assert config.TZ == _ELSEWHERE
+    assert config.current().TZ == _ELSEWHERE
     assert os.environ["TZ"] == _ELSEWHERE
     assert time.strftime("%Z") in _NAMES
     assert read_settings_file() == {"TZ": _ELSEWHERE}
@@ -504,7 +510,7 @@ def test_clearing_the_time_zone_takes_ours_back_out(settings_state):
     system = time.strftime("%Z")
     assert settings.update({"TZ": _ELSEWHERE}) == []
     assert settings.update({"TZ": None}) == []
-    assert config.TZ == ""
+    assert config.current().TZ == ""
     assert "TZ" not in os.environ
     assert time.strftime("%Z") == system
 
@@ -515,23 +521,20 @@ def test_a_zone_nothing_knows_is_rolled_back(settings_state):
     assert settings.update({"TZ": _ELSEWHERE}) == []
     (problem,) = settings.update({"TZ": "Middle/Earth"})
     assert "is not a zone this system knows" in problem
-    assert config.TZ == _ELSEWHERE
+    assert config.current().TZ == _ELSEWHERE
     assert time.strftime("%Z") in _NAMES
 
 
-def test_a_stated_zone_wins_and_pins_the_field(settings_state):
+def test_a_stated_zone_wins_and_pins_the_field(settings_state, monkeypatch):
     """What the deploy put in TZ is already in force, so it is neither
     re-applied nor editable, the same bargain every other setting strikes."""
-    trackstarr.ENV_TZ = "Etc/UTC"
-    try:
-        importlib.reload(config)
-        assert settings.snapshot()["settings"]["TZ"] == {"value": "Etc/UTC", "env": True}
-        (problem,) = settings.update({"TZ": _ELSEWHERE})
-        assert "environment" in problem
-        # Untouched: the zone the deploy stated is the process's already.
-        assert "TZ" not in os.environ
-    finally:
-        trackstarr.ENV_TZ = ""
+    monkeypatch.setattr(config, "STATED_TZ", "Etc/UTC")
+    config.apply(config.load())
+    assert settings.snapshot()["settings"]["TZ"] == {"value": "Etc/UTC", "env": True}
+    (problem,) = settings.update({"TZ": _ELSEWHERE})
+    assert "environment" in problem
+    # Untouched: the zone the deploy stated is the process's already.
+    assert "TZ" not in os.environ
 
 
 def test_the_snapshot_offers_the_zones_by_name(settings_state):
@@ -581,12 +584,12 @@ def test_the_set_once_settings_are_editable(settings_state):
         )
         == []
     )
-    assert config.SKIP_HARDLINKS is False
-    assert config.HARDLINK_RECHECK == 60
-    assert config.MAX_CONCURRENT_REWRITES == 3
-    assert config.FFMPEG_TIMEOUT == 3600
-    assert config.PROBE_TIMEOUT == 30
-    assert config.COMMENTARY_RE.search("Kommentar")
+    assert config.current().SKIP_HARDLINKS is False
+    assert config.current().HARDLINK_RECHECK == 60
+    assert config.current().MAX_CONCURRENT_REWRITES == 3
+    assert config.current().FFMPEG_TIMEOUT == 3600
+    assert config.current().PROBE_TIMEOUT == 30
+    assert config.current().COMMENTARY_RE.search("Kommentar")
     # The numbers travel as the strings the file holds either way, so the page
     # reads back exactly what it sent.
     shot = settings.snapshot()["settings"]
@@ -598,29 +601,29 @@ def test_the_set_once_settings_are_editable(settings_state):
 def test_the_containers_are_editable_from_the_offered_set(settings_state):
     assert settings.snapshot()["containers"] == [".m4v", ".mkv", ".mp4"]
     assert settings.update({"ALLOWED_EXTS": [".mkv"]}) == []
-    assert {".mkv"} == config.ALLOWED_EXTS
+    assert {".mkv"} == config.current().ALLOWED_EXTS
     assert policy.Policy.from_config().allowed_container("/x/f.mp4") is False
     # One with no muxer would plan a rewrite ffmpeg then chokes on.
     (problem,) = settings.update({"ALLOWED_EXTS": [".mkv", ".avi"]})
     assert "no known muxer" in problem
-    assert {".mkv"} == config.ALLOWED_EXTS
+    assert {".mkv"} == config.current().ALLOWED_EXTS
 
 
 def test_a_pattern_that_does_not_compile_is_rolled_back(settings_state):
     assert settings.update({"SDH_PATTERN": r"\bsdh\b"}) == []
     (problem,) = settings.update({"SDH_PATTERN": "sdh("})
     assert "not a valid regex" in problem
-    assert config.SDH_RE.pattern == r"\bsdh\b"
+    assert config.current().SDH_RE.pattern == r"\bsdh\b"
 
 
 def test_clearing_a_pattern_hands_the_built_in_back(settings_state):
     """What the page sends for an emptied field: null, never "". An empty
     pattern compiles and matches every title, so every track would read as
     commentary."""
-    built_in = config.COMMENTARY_RE.pattern
+    built_in = config.current().COMMENTARY_RE.pattern
     assert settings.update({"COMMENTARY_PATTERN": "comment"}) == []
     assert settings.update({"COMMENTARY_PATTERN": None}) == []
-    assert config.COMMENTARY_RE.pattern == built_in
+    assert config.current().COMMENTARY_RE.pattern == built_in
 
 
 @pytest.mark.parametrize(

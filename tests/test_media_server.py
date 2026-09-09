@@ -4,7 +4,8 @@ import urllib.error
 
 import pytest
 
-from trackstarr import config, media_server
+from conftest import set_config
+from trackstarr import media_server
 from trackstarr.media_server import refresh_servers, server_status
 
 PLEX_SECTIONS = {
@@ -26,15 +27,15 @@ def _fresh_state():
 
 
 @pytest.fixture
-def plex(monkeypatch):
-    monkeypatch.setattr(config, "PLEX_URL", "http://plex:32400")
-    monkeypatch.setattr(config, "PLEX_TOKEN", "token")
+def plex():
+    set_config(PLEX_URL="http://plex:32400")
+    set_config(PLEX_TOKEN="token")
 
 
 @pytest.fixture
-def jellyfin(monkeypatch):
-    monkeypatch.setattr(config, "JELLYFIN_URL", "http://jellyfin:8096")
-    monkeypatch.setattr(config, "JELLYFIN_API_KEY", "key")
+def jellyfin():
+    set_config(JELLYFIN_URL="http://jellyfin:8096")
+    set_config(JELLYFIN_API_KEY="key")
 
 
 @pytest.fixture
@@ -87,10 +88,10 @@ def test_plex_outside_any_section_does_nothing(plex, requests):
     assert [url for url, *_ in requests] == ["http://plex:32400/library/sections"]
 
 
-def test_plex_maps_our_paths_to_the_ones_it_indexes(plex, requests, monkeypatch):
+def test_plex_maps_our_paths_to_the_ones_it_indexes(plex, requests):
     """The server mounts the library somewhere else, which is the usual case
     once trackstarr runs in a container and Plex doesn't."""
-    monkeypatch.setattr(config, "PLEX_PATH_MAP", [("/library", "/data/media")])
+    set_config(PLEX_PATH_MAP=[("/library", "/data/media")])
     refresh_servers("/library/movies/A/A.mkv")
 
     url, *_ = requests[-1]
@@ -98,8 +99,8 @@ def test_plex_maps_our_paths_to_the_ones_it_indexes(plex, requests, monkeypatch)
     assert "path=%2Fdata%2Fmedia%2Fmovies%2FA" in url
 
 
-def test_jellyfin_maps_our_paths_too(jellyfin, requests, monkeypatch):
-    monkeypatch.setattr(config, "JELLYFIN_PATH_MAP", [("/library", "/media")])
+def test_jellyfin_maps_our_paths_too(jellyfin, requests):
+    set_config(JELLYFIN_PATH_MAP=[("/library", "/media")])
     refresh_servers("/library/movies/A/A.mkv")
 
     *_, payload = requests[-1]
@@ -148,13 +149,13 @@ def test_unexpected_errors_never_escape(plex, monkeypatch):
     refresh_servers("/data/media/movies/A/A.mkv")
 
 
-def test_server_status_reports_each_server_for_the_startup_summary(monkeypatch):
+def test_server_status_reports_each_server_for_the_startup_summary():
     """serve logs this, so a misconfigured token shows as "off" at boot rather
     than as refreshes that silently never happen."""
-    monkeypatch.setattr(config, "PLEX_URL", "http://plex:32400")
-    monkeypatch.setattr(config, "PLEX_TOKEN", "token")
-    monkeypatch.setattr(config, "JELLYFIN_URL", "")
-    monkeypatch.setattr(config, "JELLYFIN_API_KEY", "")
+    set_config(PLEX_URL="http://plex:32400")
+    set_config(PLEX_TOKEN="token")
+    set_config(JELLYFIN_URL="")
+    set_config(JELLYFIN_API_KEY="")
     assert server_status() == {"plex": True, "jellyfin": False}
 
 

@@ -1,14 +1,14 @@
 """The import queue: the worker's decisions per job, hardlink parking and its
 stored set, and the pool that follows the rewrite budget.
 
-The listener's own tests are in test_webhook.py; nothing here binds a socket.
+The listener's own tests are in test_server.py; nothing here binds a socket.
 """
 
 import os
 
 import pytest
 
-from conftest import configured_arr, needed_plan, read_events, set_rules
+from conftest import configured_arr, needed_plan, read_events, set_config, set_rules
 from trackstarr import config, jobs, processing, runs, sweep_cache
 from trackstarr.executor import Outcome
 from trackstarr.jobs import _resolve_lang
@@ -37,7 +37,7 @@ def test_worker_keeps_a_language_the_webhook_already_carried():
 def test_report_mode_never_rewrites_a_webhook_import(monkeypatch):
     """The REWRITE_MODE latch lives inside process(), so the handler's plain
     dry_run=False still has to end as a pending verdict."""
-    monkeypatch.setattr(config, "REWRITE_MODE", "report")
+    set_config(REWRITE_MODE="report")
     plan = needed_plan()
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: plan)
     monkeypatch.setattr(
@@ -51,7 +51,7 @@ def test_report_mode_never_rewrites_a_webhook_import(monkeypatch):
 def test_the_worker_labels_history_with_the_delivery_run(monkeypatch):
     """In report mode the pending entry is the webhook's only record, so it
     has to carry the run the delivery minted."""
-    monkeypatch.setattr(config, "REWRITE_MODE", "report")
+    set_config(REWRITE_MODE="report")
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: needed_plan())
     jobs.handle(Job("/x.mkv", run="r#1"))
     (entry,) = read_events()
@@ -70,7 +70,7 @@ def test_a_delivery_books_its_verdict_where_the_collection_reads_it(monkeypatch,
     """A sweep books every file it walks; a delivery judges one, and used to
     book none. That left an import with a verdict in the history and none
     anywhere the library looks, until whenever the next sweep ran."""
-    monkeypatch.setattr(config, "REWRITE_MODE", "report")
+    set_config(REWRITE_MODE="report")
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: needed_plan(imported))
 
     jobs.handle(Job(imported, "eng"))
@@ -122,7 +122,7 @@ def test_a_remux_books_the_mkv_and_forgets_the_file_it_replaced(monkeypatch, tmp
     # Before the cache is seeded: the rule is part of the fingerprint the
     # entries are filed under, and update() will not book into a cache judged
     # by rules that have since moved.
-    set_rules(monkeypatch, remux="always")
+    set_rules(remux="always")
     os.makedirs(config.STATE_DIR, exist_ok=True)
     cache = SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
     cache.record(source, FileKey(10, 1, 1, "eng"), Verdict(Status.PENDING, "remux to mkv"))
@@ -174,7 +174,7 @@ def test_a_delivery_leaves_the_rest_of_the_library_alone(monkeypatch, imported, 
     cache.record(neighbour, FileKey(10, 1, 1, "eng"), Verdict(Status.CONFORM))
     cache.save()
 
-    monkeypatch.setattr(config, "REWRITE_MODE", "report")
+    set_config(REWRITE_MODE="report")
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: needed_plan(imported))
     jobs.handle(Job(imported, "eng"))
 
@@ -211,9 +211,9 @@ def test_a_path_already_in_flight_is_not_queued_twice(tmp_path):
 
 
 @pytest.fixture
-def parked(monkeypatch):
+def parked():
     """SKIP_HARDLINKS on, with a clean parked set before and after."""
-    monkeypatch.setattr(config, "SKIP_HARDLINKS", True)
+    set_config(SKIP_HARDLINKS=True)
     jobs.reset()
     yield
     jobs.reset()
@@ -241,7 +241,7 @@ def test_seeded_import_is_parked_not_processed(parked, seeded_file, monkeypatch)
 
 
 def test_parking_requires_the_option(parked, seeded_file, monkeypatch):
-    monkeypatch.setattr(config, "SKIP_HARDLINKS", False)
+    set_config(SKIP_HARDLINKS=False)
     processed = []
     monkeypatch.setattr(
         jobs,
@@ -286,41 +286,32 @@ def test_parking_switched_off_releases_the_whole_set(parked, seeded_file, monkey
     monkeypatch.setattr(jobs, "enqueue", lambda job: queued.append(job) is None)
     jobs.park(Job(seeded_file))
     for name, value in off.items():
-        monkeypatch.setattr(config, name, value)
+        set_config(**{name: value})
 
     jobs.recheck_parked()
     assert jobs.parked_count() == 0
     assert [job.path for job in queued] == [seeded_file]
 
 
-@pytest.fixture
-def worker_pool(monkeypatch):
-    """The pool's counters, with the thread body stubbed out: a real worker
-    waits on the queue for ever, and these tests start several."""
-    monkeypatch.setattr(jobs, "worker", lambda: None)
-    monkeypatch.setattr(jobs, "_workers", 0)
-    monkeypatch.setattr(jobs, "_worker_names", 0)
-
-
-def test_the_worker_pool_grows_with_the_rewrite_budget(worker_pool, monkeypatch):
+def test_the_worker_pool_grows_with_the_rewrite_budget():
     """The point of topping it up after a save: serve() sized the pool once,
     so a budget raised in the UI bought nothing until a restart."""
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 2)
+    set_config(MAX_CONCURRENT_REWRITES=2)
     jobs.start_workers()
     assert jobs.worker_count() == 2
     # Idempotent, since every save calls it and only one ever changes this.
     jobs.start_workers()
     assert jobs.worker_count() == 2
 
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 4)
+    set_config(MAX_CONCURRENT_REWRITES=4)
     jobs.start_workers()
     assert jobs.worker_count() == 4
 
 
-def test_a_lowered_budget_retires_exactly_the_workers_over_it(worker_pool, monkeypatch):
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 3)
+def test_a_lowered_budget_retires_exactly_the_workers_over_it():
+    set_config(MAX_CONCURRENT_REWRITES=3)
     jobs.start_workers()
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
+    set_config(MAX_CONCURRENT_REWRITES=1)
     # Each worker asks for itself as it comes off the queue wait, so the
     # count has to be what decides, not how many happen to ask.
     assert [jobs.retire() for _ in range(3)] == [True, True, False]

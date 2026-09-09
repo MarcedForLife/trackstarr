@@ -23,7 +23,7 @@ def test_a_probe_timeout_is_a_probe_error(monkeypatch):
     """A file on a stalled mount must not hang the sweep for ever."""
 
     def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(cmd="ffprobe", timeout=config.PROBE_TIMEOUT)
+        raise subprocess.TimeoutExpired(cmd="ffprobe", timeout=config.current().PROBE_TIMEOUT)
 
     monkeypatch.setattr(subprocess, "run", timeout)
     with pytest.raises(ProbeError, match="timed out"):

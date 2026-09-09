@@ -96,7 +96,7 @@ def _under_media(path: str) -> bool:
     candidate = os.path.normpath(path)
     return any(
         candidate == root or candidate.startswith(os.path.join(root, ""))
-        for root in (os.path.normpath(media) for media in config.MEDIA_DIRS)
+        for root in (os.path.normpath(media) for media in config.current().MEDIA_DIRS)
     )
 
 
@@ -484,7 +484,7 @@ def _refresh_ratings(handler: Handler, signed_in: users.Account) -> None:
     """
     if handler.read_json() is None:
         return
-    if not config.IMDB_RATINGS:
+    if not config.current().IMDB_RATINGS:
         handler.reply(409, "title scores are switched off")
         return
     wanted = library.imdb_ids()

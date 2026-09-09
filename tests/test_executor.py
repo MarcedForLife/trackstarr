@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import fake_run, needed_plan, set_layouts
+from conftest import fake_run, needed_plan, set_config, set_layouts
 from trackstarr import config, executor
 from trackstarr.executor import Outcome, apply_plan, audio_codec_errors, work_dir_errors
 from trackstarr.planner import OutStream, Plan, SourceSignature
@@ -23,8 +23,8 @@ class _StopError(Exception):
 
 
 @pytest.fixture(autouse=True)
-def _work_dir(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "WORK_DIR", str(tmp_path / "work"))
+def _work_dir(tmp_path):
+    set_config(WORK_DIR=str(tmp_path / "work"))
 
 
 @pytest.fixture(autouse=True)
@@ -102,7 +102,7 @@ def test_rewrites_stage_in_the_work_dir(tmp_path, monkeypatch):
         apply_plan(needed_plan(str(path)))
 
     (entry,) = staged
-    assert os.path.dirname(entry) == config.WORK_DIR
+    assert os.path.dirname(entry) == config.current().WORK_DIR
     name = os.path.basename(entry)
     # Hidden and not a media extension, for the cross-device landing copy,
     # which does sit in the library for as long as it takes to write.
@@ -201,15 +201,16 @@ def test_failed_preflight_leaves_no_staged_file(tmp_path, monkeypatch):
     outcome, detail = apply_plan(Plan(path=str(source), remuxing=True))
     assert outcome is Outcome.FAILED
     assert "already exists" in detail
-    assert not os.path.isdir(config.WORK_DIR) or not os.listdir(config.WORK_DIR)
+    work_dir = config.current().WORK_DIR
+    assert not os.path.isdir(work_dir) or not os.listdir(work_dir)
 
 
-def test_clean_work_dir_age_gates_unless_no_rewrite_can_be_running(monkeypatch):
+def test_clean_work_dir_age_gates_unless_no_rewrite_can_be_running():
     """serve can restart while a ``sweep --apply`` is mid-rewrite in the same
     WORK_DIR, so a fresh staged file may be its live ffmpeg output. Only proof
     that every slot is free allows clearing those."""
-    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 7200)
-    work = Path(config.WORK_DIR)
+    set_config(FFMPEG_TIMEOUT=7200)
+    work = Path(config.current().WORK_DIR)
     work.mkdir(parents=True)
     fresh = work / ".trackstarr-fresh.partial"
     stale = work / ".trackstarr-stale.partial"
@@ -228,9 +229,9 @@ def test_clean_work_dir_age_gates_unless_no_rewrite_can_be_running(monkeypatch):
     assert keeper.exists(), "files that are not ours stay, whoever holds the slots"
 
 
-def test_stale_staged_files_are_dropped_but_live_ones_are_not(tmp_path, monkeypatch):
+def test_stale_staged_files_are_dropped_but_live_ones_are_not(tmp_path):
     """Age is the only safe test: a young one may be another worker's."""
-    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 7200)
+    set_config(FFMPEG_TIMEOUT=7200)
     fresh = tmp_path / ".trackstarr-aaaa.partial"
     stale = tmp_path / ".trackstarr-bbbb.partial"
     fresh.write_text("in flight")
@@ -308,19 +309,19 @@ def test_ffmpeg_stderr_in_the_detail_is_bounded(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "elsewhere", [False, True], ids=["beside the library", "on another drive"]
 )
-def test_a_writable_work_dir_passes_wherever_it_lives(tmp_path, monkeypatch, elsewhere):
+def test_a_writable_work_dir_passes_wherever_it_lives(tmp_path, elsewhere):
     """Which filesystem it is on deliberately doesn't matter; the refusal this
     replaced ruled out every multi-drive library."""
     media = ["/mnt/disk1/movies", "/mnt/disk2/tv"] if elsewhere else [str(tmp_path)]
-    monkeypatch.setattr(config, "MEDIA_DIRS", media)
+    set_config(MEDIA_DIRS=media)
     assert work_dir_errors() == []
-    assert os.path.isdir(config.WORK_DIR), "the check should create WORK_DIR"
+    assert os.path.isdir(config.current().WORK_DIR), "the check should create WORK_DIR"
 
 
-def test_unusable_work_dir_is_an_error(tmp_path, monkeypatch):
+def test_unusable_work_dir_is_an_error(tmp_path):
     blocker = tmp_path / "not-a-dir"
     blocker.write_bytes(b"")
-    monkeypatch.setattr(config, "WORK_DIR", str(blocker))
+    set_config(WORK_DIR=str(blocker))
     errors = work_dir_errors()
     assert len(errors) == 1
     assert "not usable" in errors[0]
@@ -352,7 +353,7 @@ def test_an_audio_codec_ffmpeg_cannot_encode_is_refused(monkeypatch, codec):
     """A bad codec has to fail the restart that introduced it, not the first
     rewrite hours later."""
     _fake_encoders(monkeypatch)
-    set_layouts(monkeypatch, "2.0:aac:320k", f"5.1:{codec}:640k")
+    set_layouts("2.0:aac:320k", f"5.1:{codec}:640k")
     errors = audio_codec_errors()
     assert len(errors) == 1
     assert repr(codec) in errors[0]
@@ -364,13 +365,21 @@ def test_an_audio_codec_ffmpeg_cannot_encode_is_refused(monkeypatch, codec):
 def test_every_layout_missing_an_encoder_is_named(monkeypatch):
     """One line each: two layouts on a typo'd encoder are two variables to fix."""
     _fake_encoders(monkeypatch)
-    set_layouts(monkeypatch, "2.0:acc:320k", "5.1:acc:640k")
+    set_layouts("2.0:acc:320k", "5.1:acc:640k")
     errors = audio_codec_errors()
     assert len(errors) == 2
     assert {error.split(" with ")[0] for error in errors} == {
         "AUDIO_LAYOUTS makes 2.0",
         "AUDIO_LAYOUTS makes 5.1",
     }
+
+
+def test_a_layout_nothing_is_made_for_needs_no_encoder(monkeypatch):
+    """keep and remove state no encoder, so checking them reported the empty
+    one and refused every save that trimmed or held a layout."""
+    _fake_encoders(monkeypatch)
+    set_layouts("2.0:aac:320k", "5.1:keep", "7.1:remove")
+    assert audio_codec_errors() == []
 
 
 def test_missing_ffmpeg_is_not_this_checks_problem(monkeypatch):
@@ -384,7 +393,7 @@ def test_missing_ffmpeg_is_not_this_checks_problem(monkeypatch):
 def test_a_staged_file_that_cannot_be_removed_is_left_alone(tmp_path, monkeypatch, caplog):
     """Another worker may hold it, or the work dir may have gone read-only. This
     runs at startup either way and must not stop the service coming up."""
-    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 0)
+    set_config(FFMPEG_TIMEOUT=0)
     staged = tmp_path / ".trackstarr-cccc.partial"
     staged.write_text("orphaned")
 
@@ -394,15 +403,15 @@ def test_a_staged_file_that_cannot_be_removed_is_left_alone(tmp_path, monkeypatc
     assert staged.exists()
 
 
-def test_a_vanished_staged_file_is_not_an_error(tmp_path, monkeypatch):
+def test_a_vanished_staged_file_is_not_an_error(tmp_path):
     """Two workers can clean the same orphan; the loser sees it already gone."""
     assert executor.drop_staged(str(tmp_path / "never-existed.partial")) is False
 
 
-def test_an_unreachable_work_dir_is_not_reported_as_remote(monkeypatch):
+def test_an_unreachable_work_dir_is_not_reported_as_remote():
     """Only used for a startup note, so an answer it cannot work out has to be
     the quiet one. work_dir_errors is what refuses."""
-    monkeypatch.setattr(config, "WORK_DIR", "/definitely/not/here")
+    set_config(WORK_DIR="/definitely/not/here")
     assert executor.work_dir_is_remote() is False
 
 
@@ -419,13 +428,13 @@ def test_a_work_dir_that_cannot_be_staged_in_fails_the_plan(tmp_path, monkeypatc
 
     outcome, detail = apply_plan(needed_plan(str(source)))
     assert outcome is Outcome.FAILED
-    assert config.WORK_DIR in detail
+    assert config.current().WORK_DIR in detail
     assert "no space left on device" in detail
 
 
 def test_an_ffmpeg_timeout_is_a_failure_naming_the_limit(tmp_path, monkeypatch):
     """A wedged encode on one file must not stall a whole sweep silently."""
-    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 900)
+    set_config(FFMPEG_TIMEOUT=900)
 
     def hang(args, on_progress=None, rewriting=""):
         raise executor.subprocess.TimeoutExpired(cmd="ffmpeg", timeout=900)
@@ -438,7 +447,7 @@ def test_an_ffmpeg_timeout_is_a_failure_naming_the_limit(tmp_path, monkeypatch):
     assert outcome is Outcome.FAILED
     assert "timed out after 900s" in detail
     # The partial encode must not be left behind for the next sweep to find.
-    assert not os.listdir(config.WORK_DIR)
+    assert not os.listdir(config.current().WORK_DIR)
 
 
 def test_a_publish_failure_that_is_not_cross_device_is_raised(tmp_path, monkeypatch):
@@ -527,20 +536,20 @@ def test_an_encoder_list_that_cannot_be_read_is_not_an_error(monkeypatch):
     assert audio_codec_errors() == []
 
 
-def test_a_work_dir_beside_the_library_is_not_remote(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
-    os.makedirs(config.WORK_DIR, exist_ok=True)
+def test_a_work_dir_beside_the_library_is_not_remote(tmp_path):
+    set_config(MEDIA_DIRS=[str(tmp_path)])
+    os.makedirs(config.current().WORK_DIR, exist_ok=True)
     assert executor.work_dir_is_remote() is False
 
 
-def test_cleaning_an_absent_work_dir_does_nothing(monkeypatch):
+def test_cleaning_an_absent_work_dir_does_nothing():
     """serve calls this before anything creates the directory."""
-    monkeypatch.setattr(config, "WORK_DIR", str(Path("/definitely/not/here")))
+    set_config(WORK_DIR=str(Path("/definitely/not/here")))
     executor.clean_work_dir()
 
 
 def test_an_exclusive_clean_warns_rather_than_stopping_startup(tmp_path, monkeypatch, caplog):
-    monkeypatch.setattr(config, "WORK_DIR", str(tmp_path))
+    set_config(WORK_DIR=str(tmp_path))
     (tmp_path / ".trackstarr-dddd.partial").write_text("orphaned")
 
     _unremovable(monkeypatch)
@@ -548,10 +557,10 @@ def test_an_exclusive_clean_warns_rather_than_stopping_startup(tmp_path, monkeyp
     assert "could not remove" in caplog.text
 
 
-def test_a_rewrite_in_flight_can_be_stopped(tmp_path, monkeypatch):
+def test_a_rewrite_in_flight_can_be_stopped(tmp_path):
     """The activity page's "stop rewrites now". A real child process, since
     what is being tested is that the registry can reach one and signal it."""
-    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 60)
+    set_config(FFMPEG_TIMEOUT=60)
     result: list[tuple[int, str]] = []
     running = threading.Thread(
         target=lambda: result.append(executor._run_ffmpeg(["sleep", "30"])), daemon=True
@@ -584,7 +593,7 @@ def test_a_stopped_rewrite_is_deferred_rather_than_failed(tmp_path, monkeypatch)
     assert "stopped" in detail
     assert source.read_bytes() == b"content"
     # The partial goes with it, rather than waiting on the age gate.
-    assert not os.listdir(config.WORK_DIR)
+    assert not os.listdir(config.current().WORK_DIR)
 
 
 def _open_fds() -> set[int]:
@@ -627,10 +636,10 @@ def test_a_child_nothing_could_reach_is_killed_rather_than_left_writing(monkeypa
     assert _open_fds() == before
 
 
-def test_a_wedged_process_is_killed_at_the_timeout(monkeypatch):
+def test_a_wedged_process_is_killed_at_the_timeout():
     """communicate() only stops waiting; without the kill the child would go
     on holding the CPU the timeout was meant to take back."""
-    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 0.2)
+    set_config(FFMPEG_TIMEOUT=0.2)
     with pytest.raises(executor.subprocess.TimeoutExpired):
         executor._run_ffmpeg(["sleep", "30"])
     assert executor._running_ffmpeg == {}, "and it is no longer abortable"

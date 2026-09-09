@@ -55,7 +55,7 @@ def _claim_slot():
     """
     os.makedirs(_lock_dir(), exist_ok=True)
     while True:
-        for slot in range(config.MAX_CONCURRENT_REWRITES):
+        for slot in range(config.current().MAX_CONCURRENT_REWRITES):
             if lock_file := _try_lock(f"{_SLOT_PREFIX}{slot}"):
                 return lock_file
         time.sleep(_SLOT_POLL_SECONDS)
@@ -84,7 +84,8 @@ def all_slots_held() -> Iterator[bool]:
     under this. Never waits.
     """
     os.makedirs(_lock_dir(), exist_ok=True)
-    wanted = {f"{_SLOT_PREFIX}{slot}" for slot in range(config.MAX_CONCURRENT_REWRITES)}
+    budget = config.current().MAX_CONCURRENT_REWRITES
+    wanted = {f"{_SLOT_PREFIX}{slot}" for slot in range(budget)}
     # Another process with a bigger budget can hold slots past our range; its
     # files exist, so the union covers every rewrite.
     wanted.update(name for name in os.listdir(_lock_dir()) if name.startswith(_SLOT_PREFIX))
@@ -254,7 +255,7 @@ def effective_dry_run(dry_run: bool, path: str = "") -> bool:
     ``report`` latches over every caller, ``sweep --apply`` included, and a
     hold does the same for the one title; see :mod:`trackstarr.holds`.
     """
-    return dry_run or config.REWRITE_MODE == "report" or holds.held(path) is not None
+    return dry_run or config.current().REWRITE_MODE == "report" or holds.held(path) is not None
 
 
 def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:

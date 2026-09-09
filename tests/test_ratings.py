@@ -10,6 +10,7 @@ import urllib.error
 
 import pytest
 
+from conftest import set_config
 from trackstarr import config, ratings, state
 
 #: The dataset's own shape: a header, then tconst, average and vote count.
@@ -50,7 +51,7 @@ def dataset(monkeypatch):
     asked: list[str] = []
     served = [ROWS]
     monkeypatch.setattr(ratings, "stream", serving(asked, served))
-    monkeypatch.setattr(config, "IMDB_RATINGS", True)
+    set_config(IMDB_RATINGS=True)
     return asked, served
 
 
@@ -138,10 +139,10 @@ def test_a_fetch_is_due_until_one_lands_and_then_not_for_a_day(dataset):
     assert ratings.due(time.time() + ratings.REFRESH_EVERY + 1)
 
 
-def test_nothing_is_fetched_with_the_setting_off(dataset, monkeypatch):
+def test_nothing_is_fetched_with_the_setting_off(dataset):
     """The one outbound request trackstarr makes to something nobody
     configured, so it has to be refusable."""
-    monkeypatch.setattr(config, "IMDB_RATINGS", False)
+    set_config(IMDB_RATINGS=False)
 
     assert not ratings.due()
     assert not ratings.refresh_now({"tt15239678"})

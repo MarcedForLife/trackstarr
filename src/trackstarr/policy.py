@@ -110,10 +110,9 @@ RULE_NAMES = frozenset(RULES) | set(LIST_RULES)
 REGENERATE_SCOPES = ("generated", "all")
 
 
-def resolved_modes() -> dict[str, str]:
-    """Every rule and its mode, defaults filled in. An unknown rule or mode is
-    left out and reaches :func:`errors`."""
-    stated = config.RULE_MODES
+def resolved_modes(stated: dict[str, str]) -> dict[str, str]:
+    """Every rule and its mode, RULE_MODES filled in with the defaults. An
+    unknown rule or mode is left out and reaches :func:`errors`."""
     return {
         name: mode if (mode := stated.get(name)) in MODES else rule.default
         for name, rule in RULES.items()
@@ -202,19 +201,22 @@ class Policy:
 
     @classmethod
     def from_config(cls) -> Policy:
+        """The rules in force. One snapshot for all twelve, so a save landing
+        mid-read cannot fingerprint a mix of both."""
+        settings = config.current()
         return cls(
-            languages=tuple(resolved_langs()),
-            allowed_exts=frozenset(config.ALLOWED_EXTS),
-            rule_modes=tuple(sorted(resolved_modes().items())),
-            regenerate_scope=config.REGENERATE_SCOPE,
-            regenerate_below=config.REGENERATE_BELOW_PERCENT,
-            regenerate_above=config.REGENERATE_ABOVE_PERCENT,
-            audio_layouts=tuple(resolved_layouts()),
-            skip_hardlinks=config.SKIP_HARDLINKS,
-            commentary_re=config.COMMENTARY_RE,
-            sdh_re=config.SDH_RE,
-            forced_re=config.FORCED_RE,
-            release_tag_re=config.RELEASE_TAG_RE,
+            languages=tuple(resolved_langs(settings.LANGUAGES)),
+            allowed_exts=frozenset(settings.ALLOWED_EXTS),
+            rule_modes=tuple(sorted(resolved_modes(settings.RULE_MODES).items())),
+            regenerate_scope=settings.REGENERATE_SCOPE,
+            regenerate_below=settings.REGENERATE_BELOW_PERCENT,
+            regenerate_above=settings.REGENERATE_ABOVE_PERCENT,
+            audio_layouts=tuple(resolved_layouts(settings.AUDIO_LAYOUTS)),
+            skip_hardlinks=settings.SKIP_HARDLINKS,
+            commentary_re=settings.COMMENTARY_RE,
+            sdh_re=settings.SDH_RE,
+            forced_re=settings.FORCED_RE,
+            release_tag_re=settings.RELEASE_TAG_RE,
         )
 
     def downmixed(self) -> list[Layout]:
@@ -297,9 +299,10 @@ def output_exts() -> frozenset[str]:
     an encoder only Matroska holds is fine. A container with no muxer is left
     out: it is already its own error.
     """
-    if resolved_modes()["remux"] != NEVER:
+    settings = config.current()
+    if resolved_modes(settings.RULE_MODES)["remux"] != NEVER:
         return frozenset(TAG_PRESERVING_EXTS)
-    return frozenset(config.ALLOWED_EXTS & MUXERS.keys())
+    return frozenset(settings.ALLOWED_EXTS & MUXERS.keys())
 
 
 def _codec_problems(entry: str, channels: int, codec: str) -> list[str]:
@@ -372,13 +375,13 @@ def _spec_problems(entry: str, spec: Spec, channels: int) -> list[str]:
     return problems + _codec_problems(entry, channels, spec.codec)
 
 
-def _layout_problems() -> list[str]:
+def _layout_problems(entries: tuple[str, ...]) -> list[str]:
     """What is wrong with AUDIO_LAYOUTS, worst shape first: unreadable entries,
     then ones naming no layout, then the fields of the rest."""
     malformed: list[str] = []
     unrecognised: list[str] = []
     sized: dict[str, tuple[Spec, int]] = {}
-    for entry in config.AUDIO_LAYOUTS:
+    for entry in entries:
         if (spec := split_entry(entry)) is None:
             malformed.append(entry)
         elif (channels := parse_channels(spec.name)) is None:
@@ -413,11 +416,11 @@ def _layout_problems() -> list[str]:
     return problems
 
 
-def _lang_problems() -> list[str]:
+def _lang_problems(entries: tuple[str, ...]) -> list[str]:
     """What is wrong with LANGUAGES: an entry of no usable shape, then one
     naming no language, then a bad action."""
     problems = []
-    for entry in config.LANGUAGES:
+    for entry in entries:
         parts = [part.strip() for part in entry.split(":")]
         if len(parts) > 2:
             problems.append(
@@ -436,7 +439,7 @@ def _lang_problems() -> list[str]:
                 "everything the list does not name)"
             )
     by_code: dict[str, list[str]] = {}
-    for entry in config.LANGUAGES:
+    for entry in entries:
         if (lang := parse_lang(entry)) is not None:
             by_code.setdefault(lang.name, []).append(entry)
     # Two opinions about one set of tracks, as with a repeated channel count.
@@ -451,23 +454,24 @@ def _lang_problems() -> list[str]:
 def errors() -> list[str]:
     """Startup-fatal problems with the rule vocabulary, which would otherwise
     fail silently. :mod:`trackstarr.cli` reports these beside config.errors()."""
+    settings = config.current()
     problems: list[str] = []
-    if unmuxable := config.ALLOWED_EXTS - MUXERS.keys():
+    if unmuxable := settings.ALLOWED_EXTS - MUXERS.keys():
         problems.append(
             f"ALLOWED_EXTS contains containers with no known muxer: "
             f"{', '.join(sorted(unmuxable))} (valid: {', '.join(sorted(MUXERS))})"
         )
-    for rule, mode in sorted(config.RULE_MODES.items()):
+    for rule, mode in sorted(settings.RULE_MODES.items()):
         variable = config.rule_variable(rule)
         if rule not in RULES:
             problems.append(f"{variable} names no rule (valid: {', '.join(RULES)})")
         elif mode not in MODES:
             problems.append(f"{variable}={mode!r} is not one of: {', '.join(MODES)}")
-    problems += _layout_problems()
-    problems += _lang_problems()
-    if config.REGENERATE_SCOPE not in REGENERATE_SCOPES:
+    problems += _layout_problems(settings.AUDIO_LAYOUTS)
+    problems += _lang_problems(settings.LANGUAGES)
+    if settings.REGENERATE_SCOPE not in REGENERATE_SCOPES:
         problems.append(
-            f"REGENERATE_SCOPE={config.REGENERATE_SCOPE!r} is not one of: "
+            f"REGENERATE_SCOPE={settings.REGENERATE_SCOPE!r} is not one of: "
             + ", ".join(REGENERATE_SCOPES)
         )
     return problems
@@ -477,18 +481,19 @@ def warnings() -> list[str]:
     """Settings switched on that cannot do anything as configured, or that undo
     each other. Each may be half an edit, so none refuses startup. The settings
     pages carry the same notes inline."""
+    settings = config.current()
     problems: list[str] = []
-    modes = resolved_modes()
+    modes = resolved_modes(settings.RULE_MODES)
     # A lossless encoder ignores the rate. A warning, since a lossless downmix
     # is legitimate and the rate is required of every added layout.
     problems += [
         f"AUDIO_LAYOUTS makes {layout.name} with {layout.codec}, which is lossless, so "
         f"the {layout.bitrate} beside it does nothing"
-        for layout in downmixed_layouts()
+        for layout in downmixed_layouts(settings.AUDIO_LAYOUTS)
         if (codec := CODECS.get(layout.codec)) and codec.lossless
     ]
     # Only untagged tracks would survive.
-    if modes["languages"] != NEVER and not resolved_langs():
+    if modes["languages"] != NEVER and not resolved_langs(settings.LANGUAGES):
         problems.append(
             f"LANGUAGES is empty and {config.rule_variable('languages')}="
             f"{modes['languages']} drops every language, so only untagged tracks survive"
@@ -496,13 +501,13 @@ def warnings() -> list[str]:
     # Only where the removed size is bigger than an added one, since a rebuild
     # downmixes from above. Not an error: trimming once and regenerating from
     # then on is a real order of work.
-    added = downmixed_layouts()
-    losing_sources = any(
-        gone.channels > made.channels for gone in removed_layouts() for made in added
-    )
+    added = downmixed_layouts(settings.AUDIO_LAYOUTS)
+    removed = removed_layouts(settings.AUDIO_LAYOUTS)
+    losing_sources = any(gone.channels > made.channels for gone in removed for made in added)
     # REGENERATE_ABOVE_PERCENT answers it: a trimmed file's own downmixes are
     # made again from themselves, so a later rate change does reach them.
-    if modes["regenerate"] != NEVER and losing_sources and not config.REGENERATE_ABOVE_PERCENT:
+    above = settings.REGENERATE_ABOVE_PERCENT
+    if modes["regenerate"] != NEVER and losing_sources and not above:
         problems.append(
             f"AUDIO_LAYOUTS removes tracks {config.rule_variable('regenerate')} rebuilds "
             "downmixes from, so a later codec or rate change reaches nothing on the "
@@ -510,20 +515,20 @@ def warnings() -> list[str]:
         )
     # Legitimate for a library that only reorders, and what a list edited a row
     # at a time passes through.
-    if not added and not removed_layouts():
+    if not added and not removed:
         problems.append(
             "AUDIO_LAYOUTS adds and removes no layout, so no audio track is made or "
             "dropped and the list only sets the order"
         )
     # Remux converts every allowed container that is not already Matroska.
-    if modes["remux"] != NEVER and not config.ALLOWED_EXTS - TAG_PRESERVING_EXTS:
+    if modes["remux"] != NEVER and not settings.ALLOWED_EXTS - TAG_PRESERVING_EXTS:
         problems.append(
             f"{config.rule_variable('remux')}={modes['remux']} but ALLOWED_EXTS names no "
             "container to convert from, so nothing is remuxed (it converts anything but "
             f"{', '.join(TAG_PRESERVING_EXTS)})"
         )
     # Regeneration finds the tracks it made by a tag only these containers keep.
-    if modes["regenerate"] != NEVER and not config.ALLOWED_EXTS & TAG_PRESERVING_EXTS:
+    if modes["regenerate"] != NEVER and not settings.ALLOWED_EXTS & TAG_PRESERVING_EXTS:
         problems.append(
             f"{config.rule_variable('regenerate')}={modes['regenerate']} but ALLOWED_EXTS "
             f"names none of {', '.join(TAG_PRESERVING_EXTS)}, the only containers that keep "

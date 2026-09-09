@@ -25,7 +25,6 @@ import re
 from dataclasses import dataclass
 from typing import NamedTuple
 
-from . import config
 from .langs import norm_lang
 
 
@@ -205,21 +204,21 @@ def parse_layout(entry: str) -> Layout | None:
     return Layout(spec.name, channels, spec.action, spec.codec, canonical_bitrate(spec.bitrate))
 
 
-def resolved_layouts() -> list[Layout]:
+def resolved_layouts(entries: tuple[str, ...]) -> list[Layout]:
     """AUDIO_LAYOUTS parsed, unusable entries dropped, in written order, which
     is the audio track order. Every action, since the order is the whole
     list's."""
-    return [layout for entry in config.AUDIO_LAYOUTS if (layout := parse_layout(entry))]
+    return [layout for entry in entries if (layout := parse_layout(entry))]
 
 
-def downmixed_layouts() -> list[Layout]:
+def downmixed_layouts(entries: tuple[str, ...]) -> list[Layout]:
     """The layouts guaranteed to exist, in order: what a downmix is made for."""
-    return [layout for layout in resolved_layouts() if layout.downmixes]
+    return [layout for layout in resolved_layouts(entries) if layout.downmixes]
 
 
-def removed_layouts() -> list[Layout]:
+def removed_layouts(entries: tuple[str, ...]) -> list[Layout]:
     """The layouts deleted wherever a file has them."""
-    return [layout for layout in resolved_layouts() if layout.removes]
+    return [layout for layout in resolved_layouts(entries) if layout.removes]
 
 
 def encode_settings(codec: str, bitrate: str) -> str:
@@ -274,7 +273,7 @@ def lang_name(entry: str) -> str:
     return name if name == ORIGINAL else (norm_lang(name) or "")
 
 
-def resolved_langs() -> list[Lang]:
+def resolved_langs(entries: tuple[str, ...]) -> list[Lang]:
     """LANGUAGES parsed, unusable entries dropped, in written order, which is
     the downmix source preference."""
-    return [lang for entry in config.LANGUAGES if (lang := parse_lang(entry))]
+    return [lang for entry in entries if (lang := parse_lang(entry))]

@@ -277,7 +277,7 @@ def imdb_ids() -> set[str] | None:
 def _unclaimed(path: str) -> str | None:
     """The title folder of an unclaimed file: the first directory under its
     MEDIA_DIR. A file loose in a media dir has none."""
-    for media_dir in config.MEDIA_DIRS:
+    for media_dir in config.current().MEDIA_DIRS:
         root = media_dir.rstrip("/")
         if not root or not path.startswith(root + os.sep):
             continue
@@ -779,4 +779,3 @@ def cards_for_paths(paths: Iterable[str]) -> tuple[dict[str, str], dict[str, dic
         for title_id in set(owners.values())
     }
     return owners, cards
-

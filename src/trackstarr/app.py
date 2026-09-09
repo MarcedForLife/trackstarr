@@ -32,7 +32,7 @@ def serve() -> None:  # pragma: no cover
         log.info(
             "WORK_DIR %s is not on the media's filesystem; each rewrite will be "
             "copied onto it before being published",
-            config.WORK_DIR,
+            config.current().WORK_DIR,
         )
     # Before anything picks up a file, so every worker log line is kept with
     # its file for the overview.
@@ -57,16 +57,17 @@ def serve() -> None:  # pragma: no cover
     # A file watcher rather than hooks in the writers, so a CLI sweep in a
     # second process is announced too.
     threading.Thread(target=notify.watcher, daemon=True, name="stream-watcher").start()
-    srv = ThreadingHTTPServer((config.LISTEN_ADDR, config.LISTEN_PORT), Handler)
+    settings = config.current()
+    srv = ThreadingHTTPServer((settings.LISTEN_ADDR, settings.LISTEN_PORT), Handler)
     # Registration fires a test event at us, so the socket must be bound first.
     threading.Thread(target=register_webhooks, daemon=True, name="register").start()
-    log.info("listening on %s:%s", config.LISTEN_ADDR, config.LISTEN_PORT)
+    log.info("listening on %s:%s", settings.LISTEN_ADDR, settings.LISTEN_PORT)
     log.info(
         "arrs=[%s] servers=[%s] languages=%s sweep_at=%s mode=%s",
         ", ".join(f"{arr.name}={'on' if arr.enabled else 'off'}" for arr in all_arrs()),
         ", ".join(f"{name}={'on' if on else 'off'}" for name, on in server_status().items()),
-        list(config.LANGUAGES),
-        config.SWEEP_AT or "disabled",
-        config.REWRITE_MODE,
+        list(settings.LANGUAGES),
+        settings.SWEEP_AT or "disabled",
+        settings.REWRITE_MODE,
     )
     srv.serve_forever()

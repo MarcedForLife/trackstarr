@@ -6,6 +6,7 @@ import os
 
 import pytest
 
+from conftest import set_config
 from trackstarr import config, users
 
 
@@ -128,9 +129,9 @@ def test_ensure_admin_generates_a_password_and_forces_its_change(fast_scrypt, ca
     assert users.verify("admin", password) == users.Account("admin", "admin", True)
 
 
-def test_ensure_admin_honours_admin_password(fast_scrypt, monkeypatch, caplog):
+def test_ensure_admin_honours_admin_password(fast_scrypt, caplog):
     """An operator's chosen credential is taken verbatim and not printed."""
-    monkeypatch.setattr(config, "ADMIN_PASSWORD", "from-the-compose-file")
+    set_config(ADMIN_PASSWORD="from-the-compose-file")
     with caplog.at_level(logging.INFO):
         users.ensure_admin()
     assert users.verify("admin", "from-the-compose-file") == users.Account(
@@ -139,10 +140,10 @@ def test_ensure_admin_honours_admin_password(fast_scrypt, monkeypatch, caplog):
     assert "from-the-compose-file" not in caplog.text
 
 
-def test_ensure_admin_never_touches_an_existing_store(fast_scrypt, monkeypatch):
+def test_ensure_admin_never_touches_an_existing_store(fast_scrypt):
     """After first run, passwords change in the UI or the CLI; a restart with
     ADMIN_PASSWORD still set must not quietly reset one."""
-    monkeypatch.setattr(config, "ADMIN_PASSWORD", "a newer password")
+    set_config(ADMIN_PASSWORD="a newer password")
     users.add("admin", "the chosen one", "admin")
     users.ensure_admin()
     assert users.verify("admin", "the chosen one")

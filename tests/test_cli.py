@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from conftest import needed_plan, set_rules
+from conftest import needed_plan, set_config, set_rules
 from trackstarr import auth, config, policy, sessions, sweep_cache, users
 from trackstarr.arr import LibraryIndex, LibraryItem, radarr
 from trackstarr.cli import handle_sigterm, main
@@ -31,8 +31,8 @@ from trackstarr.tracks import Lang
         ("REGENERATE_SCOPE", "true"),
     ],
 )
-def test_bad_config_fails_fast(monkeypatch, setting, value):
-    monkeypatch.setattr(config, setting, value)
+def test_bad_config_fails_fast(setting, value):
+    set_config(**{setting: value})
     assert main(["plan", "f.mkv"]) == 1
 
 
@@ -40,7 +40,7 @@ def test_bad_config_fails_fast(monkeypatch, setting, value):
 def startup_ok(monkeypatch, tmp_path):
     """Pass main()'s environment checks: ffmpeg "on PATH", writable WORK_DIR."""
     monkeypatch.setattr("trackstarr.cli.shutil.which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(config, "WORK_DIR", str(tmp_path / "work"))
+    set_config(WORK_DIR=str(tmp_path / "work"))
 
 
 def test_sigterm_ends_the_process():
@@ -81,19 +81,17 @@ def test_a_missing_media_dir_is_reported_at_startup(startup_ok, monkeypatch, tmp
     """The mistake the README singles out, and a quiet one: walk_library says so
     as it walks, which under serve is whenever SWEEP_AT next fires, and with
     no schedule is never. Startup is where it can still be acted on."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "wrong-mount")])
+    set_config(MEDIA_DIRS=[str(tmp_path / "wrong-mount")])
     monkeypatch.setattr("trackstarr.cli.sweep", lambda dry_run: dict.fromkeys(Status, 0))
     with caplog.at_level(logging.WARNING):
         assert main(["sweep"]) == 0
     assert "wrong-mount" in caplog.text
 
 
-def test_a_command_handed_its_files_says_nothing_about_media_dirs(
-    startup_ok, monkeypatch, tmp_path, caplog
-):
+def test_a_command_handed_its_files_says_nothing_about_media_dirs(startup_ok, tmp_path, caplog):
     """plan runs against a single file wherever it lives, so MEDIA_DIRS has nothing
     to do with it."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "wrong-mount")])
+    set_config(MEDIA_DIRS=[str(tmp_path / "wrong-mount")])
     with caplog.at_level(logging.WARNING):
         main(["plan", "--original", "eng", "/nowhere/missing.mkv"])
     assert "wrong-mount" not in caplog.text
@@ -184,7 +182,7 @@ def test_fix_refuses_when_an_arr_cannot_answer(startup_ok, monkeypatch, caplog):
 def test_fix_proceeds_when_the_policy_never_asks_the_language(startup_ok, monkeypatch):
     """No row names the original language, so the outage withholds nothing a
     verdict needed and the fix runs without --original."""
-    monkeypatch.setattr(config, "LANGUAGES", ("eng",))
+    set_config(LANGUAGES=("eng",))
     monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: LibraryIndex({}, False))
     jobs = []
     monkeypatch.setattr(
@@ -288,7 +286,7 @@ def test_plan_groups_the_rules_by_mode_and_omits_the_empty_groups(
     assert "rules alongside" in out and "release_tags" in out
     assert "rules never" in out and "remux" in out
 
-    set_rules(monkeypatch, **dict.fromkeys(policy.RULES, "always"))
+    set_rules(**dict.fromkeys(policy.RULES, "always"))
     _planned(monkeypatch, Plan(path="f.mkv", policy=Policy.from_config()))
     main(["plan", "f.mkv"])
     assert "rules never" not in capsys.readouterr().out
@@ -389,7 +387,7 @@ def test_a_sweep_typed_into_a_paused_install_runs_and_says_so(startup_ok, monkey
 def test_fix_says_so_in_report_mode(startup_ok, monkeypatch, capsys):
     """fix is the command that writes, so the bottom rung of REWRITE_MODE has to
     be stated or it reports "conforms" for files it never touched."""
-    monkeypatch.setattr(config, "REWRITE_MODE", "report")
+    set_config(REWRITE_MODE="report")
     monkeypatch.setattr(
         "trackstarr.cli.process",
         lambda job, dry_run, source: ProcessResult(Status.CONFORM),
@@ -538,8 +536,8 @@ def test_a_rule_that_cannot_fire_is_reported_to_a_command_handed_its_files(
     """Unlike the MEDIA_DIRS warning, these are about rules rather than the
     library, so plan and fix want them too: the switch reads as on and the rule
     never appears in the plan being explained."""
-    set_rules(monkeypatch, remux="always")
-    monkeypatch.setattr(config, "ALLOWED_EXTS", {".mkv"})
+    set_rules(remux="always")
+    set_config(ALLOWED_EXTS={".mkv"})
     monkeypatch.setattr(
         "trackstarr.cli.build_plan", lambda path, lang: Plan(path=path, skip="nothing to do")
     )

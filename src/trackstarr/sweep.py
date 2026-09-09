@@ -87,7 +87,7 @@ def _walk(policy: Policy, roots: list[str], noun: str) -> list[str]:
 
 
 def walk_library(policy: Policy) -> list[str]:
-    return _walk(policy, config.MEDIA_DIRS, "media dir")
+    return _walk(policy, config.current().MEDIA_DIRS, "media dir")
 
 
 #: Longest pending.tsv cell; a 30-track plan's reasons get cut, not the row.
@@ -574,11 +574,11 @@ def _walk_files(run: str, ready: _Ready, walk: Walk) -> _Totals:
     with (
         sweep_cache.live(cache),
         ThreadPoolExecutor(
-            max_workers=config.PROBE_WORKERS,
+            max_workers=config.current().PROBE_WORKERS,
             thread_name_prefix=walk.kind,
         ) as probes,
         ThreadPoolExecutor(
-            max_workers=config.MAX_CONCURRENT_REWRITES,
+            max_workers=config.current().MAX_CONCURRENT_REWRITES,
             thread_name_prefix="rewrite",
         ) as rewrites,
     ):
@@ -667,7 +667,7 @@ def seconds_until(schedule: str, now: float | None = None) -> float:
 def next_scheduled(schedule: str = "", now: float | None = None) -> str | None:
     """When the scheduled sweep next fires, stamped like a history ``ts``, or
     None with no schedule or an unparseable one."""
-    schedule = (schedule or config.SWEEP_AT).strip()
+    schedule = (schedule or config.current().SWEEP_AT).strip()
     if not schedule:
         return None
     now = time.time() if now is None else now
@@ -785,7 +785,7 @@ def run_scheduled() -> None:
         )
     else:
         # Only REWRITE_MODE=all lets the scheduled sweep write.
-        sweep(dry_run=config.REWRITE_MODE != "all")
+        sweep(dry_run=config.current().REWRITE_MODE != "all")
 
 
 #: The scheduler sleeps in slices this long so a SWEEP_AT saved at 03:59 can
@@ -802,7 +802,7 @@ def scheduler() -> None:  # pragma: no cover
     """
     announced: str | None = None
     while True:
-        schedule = config.SWEEP_AT
+        schedule = config.current().SWEEP_AT
         try:
             delay = seconds_until(schedule) if schedule else None
         except ValueError as err:
@@ -815,7 +815,8 @@ def scheduler() -> None:  # pragma: no cover
             time.sleep(_TICK)
             continue
         if schedule != announced:
-            log.info("next sweep in %.1f hours (mode=%s)", delay / 3600, config.REWRITE_MODE)
+            mode = config.current().REWRITE_MODE
+            log.info("next sweep in %.1f hours (mode=%s)", delay / 3600, mode)
             announced = schedule
         if delay > _TICK:
             time.sleep(_TICK)

@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import trackstarr
-from conftest import api, configured_arr, sign_in
+from conftest import api, configured_arr, set_config, sign_in
 from trackstarr import (
     config,
     connections,
@@ -160,13 +160,13 @@ def pinned(monkeypatch, clean_registry):
     monkeypatch.setattr(settings, "zones", lambda: [ZONE, "UTC"])
     monkeypatch.setattr(settings, "env_pinned", lambda name: name == "MEDIA_DIRS")
     monkeypatch.setattr(library, "_folder_added", lambda folder: NOW - 400 * DAY)
-    monkeypatch.setattr(config, "TZ", ZONE)
-    monkeypatch.setattr(config, "MEDIA_DIRS", [MOVIES, TV])
-    monkeypatch.setattr(config, "SWEEP_AT", "0 3 * * *")
-    monkeypatch.setattr(config, "RADARR_URL", "http://radarr:7878")
-    monkeypatch.setattr(config, "SONARR_URL", "http://sonarr:8989")
-    monkeypatch.setattr(config, "PLEX_URL", "http://plex:32400")
-    monkeypatch.setattr(config, "PLEX_TOKEN", "token")
+    set_config(TZ=ZONE)
+    set_config(MEDIA_DIRS=[MOVIES, TV])
+    set_config(SWEEP_AT="0 3 * * *")
+    set_config(RADARR_URL="http://radarr:7878")
+    set_config(SONARR_URL="http://sonarr:8989")
+    set_config(PLEX_URL="http://plex:32400")
+    set_config(PLEX_TOKEN="token")
     # runs.stamp() asks libc for the zone, and config left the process in the
     # machine's own at import. Put back by hand: monkeypatch restores the
     # variable after this fixture has finished, which is too late for tzset.

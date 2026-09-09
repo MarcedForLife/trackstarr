@@ -29,11 +29,12 @@ _unmapped: set[str] = set()
 
 
 def _plex_enabled() -> bool:
-    return bool(config.PLEX_URL and config.PLEX_TOKEN)
+    settings = config.current()
+    return bool(settings.PLEX_URL and settings.PLEX_TOKEN)
 
 
 def _plex_headers() -> dict:
-    return {"X-Plex-Token": config.PLEX_TOKEN, "Accept": "application/json"}
+    return {"X-Plex-Token": config.current().PLEX_TOKEN, "Accept": "application/json"}
 
 
 #: Section locations per (url, token). Static, so fetched once per process.
@@ -70,9 +71,10 @@ def plex_sections(data: dict | None) -> list[tuple[str, str]]:
 def plex_locations() -> list[tuple[str, str]]:
     """:func:`plex_sections` for the configured server, fetched once. Public
     for :mod:`trackstarr.links`, so there is one cache to invalidate."""
-    cache_key = (config.PLEX_URL, config.PLEX_TOKEN)
+    settings = config.current()
+    cache_key = (settings.PLEX_URL, settings.PLEX_TOKEN)
     if cache_key not in _plex_sections:
-        data = request(f"{config.PLEX_URL}{PLEX_SECTIONS}", _plex_headers(), timeout=_TIMEOUT)
+        data = request(f"{settings.PLEX_URL}{PLEX_SECTIONS}", _plex_headers(), timeout=_TIMEOUT)
         _plex_sections[cache_key] = plex_sections(data)
     return _plex_sections[cache_key]
 
@@ -102,8 +104,8 @@ def _warn_unmapped(server: str, folder: str, known: list[str], setting: str) -> 
         return
     _unmapped.add(server)
     # A ready-to-paste pair when both halves are known.
-    both_halves_known = config.MEDIA_DIRS and known
-    example = f"{config.MEDIA_DIRS[0]}={known[0]}" if both_halves_known else "LOCAL=REMOTE"
+    media_dirs = config.current().MEDIA_DIRS
+    example = f"{media_dirs[0]}={known[0]}" if media_dirs and known else "LOCAL=REMOTE"
     log.warning(
         "%s: %s is outside everything it indexes (%s), so refreshes are being skipped; "
         "mount the library where it sees it, or set %s=%s",
@@ -118,7 +120,7 @@ def _warn_unmapped(server: str, folder: str, known: list[str], setting: str) -> 
 def _plex_refresh(path: str) -> None:
     """Path-scoped refresh of the section holding the file, the nearest thing
     Plex has to "this file changed"."""
-    folder = map_path(os.path.dirname(path), config.PLEX_PATH_MAP)
+    folder = map_path(os.path.dirname(path), config.current().PLEX_PATH_MAP)
     locations = plex_locations()
     section = next((key for location, key in locations if path_within(folder, location)), None)
     if section is None:
@@ -126,7 +128,7 @@ def _plex_refresh(path: str) -> None:
         return
     query = urllib.parse.urlencode({"path": folder})
     request(
-        f"{config.PLEX_URL}/library/sections/{section}/refresh?{query}",
+        f"{config.current().PLEX_URL}/library/sections/{section}/refresh?{query}",
         _plex_headers(),
         timeout=_TIMEOUT,
     )
@@ -134,16 +136,18 @@ def _plex_refresh(path: str) -> None:
 
 
 def _jellyfin_enabled() -> bool:
-    return bool(config.JELLYFIN_URL and config.JELLYFIN_API_KEY)
+    settings = config.current()
+    return bool(settings.JELLYFIN_URL and settings.JELLYFIN_API_KEY)
 
 
 def _jellyfin_refresh(path: str) -> None:
     """Tell Jellyfin (or Emby, same API) which file changed. Nothing says
     whether it knew the path, so a wrong mount is a silent no-op."""
-    mapped = map_path(path, config.JELLYFIN_PATH_MAP)
+    settings = config.current()
+    mapped = map_path(path, settings.JELLYFIN_PATH_MAP)
     request(
-        f"{config.JELLYFIN_URL}/Library/Media/Updated",
-        {"X-Emby-Token": config.JELLYFIN_API_KEY},
+        f"{settings.JELLYFIN_URL}/Library/Media/Updated",
+        {"X-Emby-Token": settings.JELLYFIN_API_KEY},
         payload={"Updates": [{"Path": mapped, "UpdateType": "Modified"}]},
         timeout=_TIMEOUT,
     )

@@ -26,7 +26,7 @@ WEBHOOK_PATH = "/webhook"
 
 def webhook_url() -> str:
     """The URL the *arrs are registered to call: WEBHOOK_URL plus the path."""
-    return config.WEBHOOK_URL + WEBHOOK_PATH
+    return config.current().WEBHOOK_URL + WEBHOOK_PATH
 
 
 @dataclass
@@ -198,10 +198,11 @@ def _webhook_current(notification: dict, payload: dict) -> bool:
 
 
 def radarr() -> Arr:
+    settings = config.current()
     return Arr(
         name="radarr",
-        url=config.RADARR_URL,
-        key=config.RADARR_API_KEY,
+        url=settings.RADARR_URL,
+        key=settings.RADARR_API_KEY,
         item_ep="/api/v3/movie",
         rescan_cmd="RescanMovie",
         rescan_key="movieId",
@@ -213,10 +214,11 @@ def radarr() -> Arr:
 
 
 def sonarr() -> Arr:
+    settings = config.current()
     return Arr(
         name="sonarr",
-        url=config.SONARR_URL,
-        key=config.SONARR_API_KEY,
+        url=settings.SONARR_URL,
+        key=settings.SONARR_API_KEY,
         item_ep="/api/v3/series",
         rescan_cmd="RescanSeries",
         rescan_key="seriesId",

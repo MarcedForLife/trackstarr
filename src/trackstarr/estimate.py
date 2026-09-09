@@ -117,4 +117,4 @@ def measured(pages: int = _PAGES) -> Speeds:
 def backlog(seconds: float) -> float:
     """How long a queue holding that much rewriting takes to clear across the
     rewrite budget. A floor: a delivery mid-sweep competes for the slots."""
-    return seconds / max(1, config.MAX_CONCURRENT_REWRITES)
+    return seconds / max(1, config.current().MAX_CONCURRENT_REWRITES)

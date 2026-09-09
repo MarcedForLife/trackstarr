@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from conftest import cache, configured_arr, movie, pending, stub_arrs
+from conftest import cache, configured_arr, movie, pending, set_config, stub_arrs
 from trackstarr import config, library, ratings, settings, state, sweep, sweep_cache
 from trackstarr.policy import Policy
 from trackstarr.status import Status
@@ -567,7 +567,7 @@ def test_a_verdict_outside_every_media_dir_belongs_to_no_title(media, monkeypatc
     title for it would put a folder nothing sweeps on the grid."""
     tv = tmp_path / "media" / "tv"
     tv.mkdir()
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tv), media])
+    set_config(MEDIA_DIRS=[str(tv), media])
     stub_arrs(monkeypatch, [])
     cache(
         (f"{media}/Loose Film (1999)/film.mkv", pending()),
@@ -734,7 +734,7 @@ def test_a_shelf_says_when_the_rules_have_moved_on(media, monkeypatch):
     stub_arrs(monkeypatch, [movie(1, "Dune", f"{media}/Dune")])
     cache((f"{media}/Dune/d.mkv", pending()))
     assert library.shelf()["current"] is True
-    monkeypatch.setattr(config, "AUDIO_LAYOUTS", ("2.0",))
+    set_config(AUDIO_LAYOUTS=("2.0",))
     library.forget()
     assert library.shelf()["current"] is False
 
@@ -1043,7 +1043,7 @@ def test_a_running_walk_is_current_over_a_file_it_is_replacing(media, monkeypatc
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
     cache((f"{folder}/dune.mkv", pending()))
-    monkeypatch.setattr(config, "AUDIO_LAYOUTS", ("2.0",))
+    set_config(AUDIO_LAYOUTS=("2.0",))
     library.forget()
     assert library.shelf()["current"] is False
 

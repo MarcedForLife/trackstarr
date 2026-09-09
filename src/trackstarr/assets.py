@@ -83,9 +83,10 @@ def static_file(url_path: str) -> str | None:
     Paths resolving outside WEB_DIR are refused. Extensionless misses fall
     back to index.html for the client-side router; a missing asset is a 404.
     """
-    if not config.WEB_DIR:
+    web_dir = config.current().WEB_DIR
+    if not web_dir:
         return None
-    root = os.path.abspath(config.WEB_DIR)
+    root = os.path.abspath(web_dir)
     candidate = os.path.normpath(os.path.join(root, url_path.lstrip("/")))
     if candidate != root and not candidate.startswith(root + os.sep):
         return None

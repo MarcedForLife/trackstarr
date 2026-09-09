@@ -9,7 +9,8 @@ import urllib.error
 
 import pytest
 
-from trackstarr import config, connections
+from conftest import set_config
+from trackstarr import connections
 from trackstarr.arr import WEBHOOK_NAME
 
 ARR_STATUS = {"appName": "Radarr", "instanceName": "Films", "version": "5.14.0"}
@@ -64,8 +65,8 @@ def answers(monkeypatch):
 
 
 @pytest.fixture
-def library(monkeypatch):
-    monkeypatch.setattr(config, "MEDIA_DIRS", ["/data/media/movies"])
+def library():
+    set_config(MEDIA_DIRS=["/data/media/movies"])
 
 
 def test_a_service_with_no_address_is_switched_off(answers):
@@ -76,8 +77,8 @@ def test_a_service_with_no_address_is_switched_off(answers):
     assert answers.urls == []
 
 
-def test_a_service_with_no_key_says_which_half_is_missing(answers, monkeypatch):
-    monkeypatch.setattr(config, "RADARR_URL", "http://radarr:7878")
+def test_a_service_with_no_key_says_which_half_is_missing(answers):
+    set_config(RADARR_URL="http://radarr:7878")
     assert "No API key set" in connections.check("radarr").detail
 
 
@@ -95,11 +96,11 @@ def test_a_reachable_arr_reports_its_name_and_version(answers):
     assert answers.urls[0] == "http://radarr:7878/api/v3/system/status"
 
 
-def test_the_saved_values_stand_in_for_what_the_page_left_out(answers, monkeypatch):
+def test_the_saved_values_stand_in_for_what_the_page_left_out(answers):
     """An untouched password field is sent as nothing, and must not read as a
     key being cleared."""
-    monkeypatch.setattr(config, "RADARR_URL", "http://radarr:7878")
-    monkeypatch.setattr(config, "RADARR_API_KEY", "saved")
+    set_config(RADARR_URL="http://radarr:7878")
+    set_config(RADARR_API_KEY="saved")
     assert connections.check("radarr", "http://elsewhere:7878", "").ok
     # The typed address, the stored key.
     assert answers.urls[0] == "http://elsewhere:7878/api/v3/system/status"
@@ -138,15 +139,15 @@ def test_a_media_server_indexing_nothing_of_ours_says_so(answers, library):
     assert "/data/media/movies=/srv/media/movies" in result.hint
 
 
-def test_a_path_map_that_already_lands_inside_leaves_no_hint(answers, library, monkeypatch):
-    monkeypatch.setattr(config, "PLEX_PATH_MAP", [("/data/media", "/srv/media")])
+def test_a_path_map_that_already_lands_inside_leaves_no_hint(answers, library):
+    set_config(PLEX_PATH_MAP=[("/data/media", "/srv/media")])
     assert connections.check("plex", "http://plex:32400", "token").hint == ""
 
 
-def test_a_server_indexing_a_folder_inside_ours_agrees(answers, monkeypatch):
+def test_a_server_indexing_a_folder_inside_ours_agrees(answers):
     """Ours is the whole library, theirs one folder in it. Both spellings
     mean the same mount, so neither direction is a mismatch."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", ["/srv/media"])
+    set_config(MEDIA_DIRS=["/srv/media"])
     assert connections.check("plex", "http://plex:32400", "token").hint == ""
 
 
@@ -189,10 +190,10 @@ def test_a_media_server_is_never_asked_about_a_webhook(answers, library):
     assert connections.check("jellyfin", "http://jellyfin:8096", "key").webhook == ""
 
 
-def test_configured_needs_both_halves(monkeypatch):
+def test_configured_needs_both_halves():
     service = connections.BY_NAME["sonarr"]
     assert not connections.configured(service)
-    monkeypatch.setattr(config, "SONARR_URL", "http://sonarr:8989")
+    set_config(SONARR_URL="http://sonarr:8989")
     assert not connections.configured(service)
-    monkeypatch.setattr(config, "SONARR_API_KEY", "key")
+    set_config(SONARR_API_KEY="key")
     assert connections.configured(service)

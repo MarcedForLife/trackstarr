@@ -9,6 +9,7 @@ from conftest import (
     needed_plan,
     probe_data,
     read_events,
+    set_config,
     set_langs,
     set_layouts,
     set_rules,
@@ -105,20 +106,15 @@ def _named(path: str, *streams: dict, title: str = "") -> set[str]:
     return plan.rules | plan.incidental_rules
 
 
-def test_the_rules_a_plan_can_name_are_exactly_the_vocabulary(monkeypatch):
+def test_the_rules_a_plan_can_name_are_exactly_the_vocabulary():
     """Both directions matter. A key invented at a call site reaches the history
     as a name nothing else knows; one in RULE_NAMES that nothing emits
     promises a breakdown the data will never contain."""
-    set_rules(
-        monkeypatch,
-        regenerate="always",
-        commentary="always",
-        remux="always",
-    )
+    set_rules(regenerate="always", commentary="always", remux="always")
     # No mode of their own; the row is the switch.
-    set_layouts(monkeypatch, "2.0", "5.1", "7.1:remove")
-    set_langs(monkeypatch, "original", "eng")
-    monkeypatch.setattr(config, "REGENERATE_SCOPE", "all")
+    set_layouts("2.0", "5.1", "7.1:remove")
+    set_langs("original", "eng")
+    set_config(REGENERATE_SCOPE="all")
 
     named = _named(
         "/x.mp4",
@@ -201,7 +197,7 @@ def test_deferred_rewrite_leaves_an_event(stub_rewrite):
     assert entry["reasons"] == ["reorder streams"]
 
 
-def test_a_remux_event_names_the_file_it_replaced(tmp_path, monkeypatch, stub_rewrite):
+def test_a_remux_event_names_the_file_it_replaced(tmp_path, stub_rewrite):
     """A remux publishes an .mkv and deletes the source, so without this the
     history says an .mkv was rewritten and nothing records the .mp4 it was."""
     source = tmp_path / "f.mp4"
@@ -218,7 +214,7 @@ def test_a_remux_event_names_the_file_it_replaced(tmp_path, monkeypatch, stub_re
 def test_reported_webhook_import_records_a_pending_event(monkeypatch):
     """In report mode an import leaves no other trace, so the handler records
     what would have happened."""
-    monkeypatch.setattr(config, "REWRITE_MODE", "report")
+    set_config(REWRITE_MODE="report")
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan("/x.mkv"))
     jobs.handle(Job("/x.mkv"))
 
@@ -230,8 +226,8 @@ def test_reported_webhook_import_records_a_pending_event(monkeypatch):
     assert entry["incidental"] == ["clear release tags"]
 
 
-def test_sweep_leaves_a_summary_event(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "empty")])
+def test_sweep_leaves_a_summary_event(tmp_path):
+    set_config(MEDIA_DIRS=[str(tmp_path / "empty")])
     os.makedirs(tmp_path / "empty")
 
     sweep(dry_run=True)
@@ -246,15 +242,13 @@ def test_sweep_leaves_a_summary_event(monkeypatch, tmp_path):
     assert entry["seconds"] >= 0
 
 
-def test_a_rewrites_config_id_resolves_against_the_sweeps_config(
-    monkeypatch, tmp_path, stub_rewrite
-):
+def test_a_rewrites_config_id_resolves_against_the_sweeps_config(tmp_path, stub_rewrite):
     """`version` alone cannot say what the rules were (two installs on one
     release rewrite differently), so every event carries a digest of them."""
     root = tmp_path / "library"
     root.mkdir()
     (root / "f.mkv").write_bytes(b"x")
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
+    set_config(MEDIA_DIRS=[str(root)])
     stub_rewrite(make_plan(str(root / "f.mkv")))
 
     sweep(dry_run=False)
@@ -270,7 +264,7 @@ def test_a_rewrites_config_id_resolves_against_the_sweeps_config(
 def test_a_webhook_only_install_can_still_resolve_its_config_ids(monkeypatch):
     """An install that never sweeps writes no other line carrying the full
     fingerprint, so without serve's its digests point at nothing."""
-    monkeypatch.setattr(config, "REWRITE_MODE", "report")
+    set_config(REWRITE_MODE="report")
     monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan("/x.mkv"))
     started = Policy.from_config()
     events.record("config", config=started.fingerprint(), config_id=started.digest())
@@ -286,7 +280,7 @@ def test_a_webhook_only_install_can_still_resolve_its_config_ids(monkeypatch):
     ]
 
 
-def test_a_restart_under_unchanged_rules_records_nothing(monkeypatch):
+def test_a_restart_under_unchanged_rules_records_nothing():
     """The digest already resolves against the line that recorded it, so a
     second copy would only put a "rules applied" nobody applied in the feed."""
     assert events.record_config(Policy.from_config()) is True
@@ -295,16 +289,16 @@ def test_a_restart_under_unchanged_rules_records_nothing(monkeypatch):
     (entry,) = read_events()
     assert entry["event"] == "config"
 
-    set_rules(monkeypatch, commentary="always")
+    set_rules(commentary="always")
     assert events.record_config(Policy.from_config()) is True
     first, second = read_events()
     assert first["config_id"] != second["config_id"]
 
 
-def test_a_sweeps_fingerprint_pins_the_rules_for_the_next_restart(monkeypatch, tmp_path):
+def test_a_sweeps_fingerprint_pins_the_rules_for_the_next_restart(tmp_path):
     """A sweep summary carries the whole fingerprint, so the digest it puts on
     record resolves without a config line repeating it."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "empty")])
+    set_config(MEDIA_DIRS=[str(tmp_path / "empty")])
     os.makedirs(tmp_path / "empty")
 
     sweep(dry_run=True)
@@ -314,7 +308,7 @@ def test_a_sweeps_fingerprint_pins_the_rules_for_the_next_restart(monkeypatch, t
     assert entry["event"] == "sweep"
 
 
-def test_rules_older_than_the_lookback_are_recorded_again(monkeypatch):
+def test_rules_older_than_the_lookback_are_recorded_again():
     """A busy install can put thousands of rewrites between two restarts.
     Searching all of them for a line the next sweep writes anyway is not worth
     it, so falling off the window costs a duplicate, not a wrong digest."""
@@ -328,13 +322,13 @@ def test_rules_older_than_the_lookback_are_recorded_again(monkeypatch):
     assert last["config_id"] == first["config_id"]
 
 
-def test_sweep_events_share_a_run_id(monkeypatch, tmp_path, stub_rewrite):
+def test_sweep_events_share_a_run_id(tmp_path, stub_rewrite):
     """A sweep's rewrites carry its start time, so one night's work groups without
     timestamp window arithmetic."""
     root = tmp_path / "library"
     root.mkdir()
     (root / "f.mkv").write_bytes(b"x")
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
+    set_config(MEDIA_DIRS=[str(root)])
     stub_rewrite(make_plan(str(root / "f.mkv")))
 
     sweep(dry_run=False)

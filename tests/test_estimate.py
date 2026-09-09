@@ -3,7 +3,8 @@ that says so comes from."""
 
 import pytest
 
-from trackstarr import config, estimate, events, runs
+from conftest import set_config
+from trackstarr import estimate, events, runs
 from trackstarr.estimate import Speeds, measured, shape
 
 
@@ -139,8 +140,8 @@ def test_the_history_is_read_a_page_at_a_time_and_only_so_far_back():
 
 
 @pytest.mark.parametrize("budget", [1, 3])
-def test_a_backlog_is_shared_out_across_the_rewrite_budget(monkeypatch, budget):
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", budget)
+def test_a_backlog_is_shared_out_across_the_rewrite_budget(budget):
+    set_config(MAX_CONCURRENT_REWRITES=budget)
 
     assert estimate.backlog(600) == 600 / budget
 
@@ -155,8 +156,8 @@ def registry():
     runs.reset()
 
 
-def _sweep_run(registry, budget: int, monkeypatch) -> dict:
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", budget)
+def _sweep_run(registry, budget: int) -> dict:
+    set_config(MAX_CONCURRENT_REWRITES=budget)
     registry.open_run("r#1", runs.SWEEP)
     (snapshot,) = registry.snapshot()["runs"]
     return snapshot
@@ -167,7 +168,7 @@ def test_a_run_with_no_rewriting_in_it_has_nothing_to_say(registry, monkeypatch)
     left is the walk's own rate to answer, not this."""
     registry.begin("r#1", "/library/film.mkv")
 
-    assert _sweep_run(registry, 1, monkeypatch)["rewrite_seconds"] is None
+    assert _sweep_run(registry, 1)["rewrite_seconds"] is None
 
 
 def test_a_queued_backlog_is_what_is_left(registry, monkeypatch):
@@ -175,7 +176,7 @@ def test_a_queued_backlog_is_what_is_left(registry, monkeypatch):
     for i in range(4):
         registry.queue("r#1", f"/library/{i}.mkv", 300.0)
 
-    assert _sweep_run(registry, 2, monkeypatch)["rewrite_seconds"] == 600.0
+    assert _sweep_run(registry, 2)["rewrite_seconds"] == 600.0
 
 
 def test_a_file_in_hand_counts_for_what_it_has_left(registry, monkeypatch):
@@ -185,7 +186,7 @@ def test_a_file_in_hand_counts_for_what_it_has_left(registry, monkeypatch):
     registry.queue("r#1", "/library/film.mkv", 300.0)
     registry.begin("r#1", "/library/film.mkv")
 
-    left = _sweep_run(registry, 1, monkeypatch)["rewrite_seconds"]
+    left = _sweep_run(registry, 1)["rewrite_seconds"]
     assert 290.0 < left <= 300.0
 
 
@@ -199,7 +200,7 @@ def test_ffmpegs_own_readout_beats_the_estimate_that_queued_the_file(registry, m
     # Half written, at twenty times realtime: three minutes left, not fifty.
     registry.progress("r#1", "/library/film.mkv", 3600.0, 20.0)
 
-    assert _sweep_run(registry, 1, monkeypatch)["rewrite_seconds"] == 180.0
+    assert _sweep_run(registry, 1)["rewrite_seconds"] == 180.0
 
 
 def test_one_long_file_is_not_shared_out_across_the_budget(registry, monkeypatch):
@@ -211,4 +212,4 @@ def test_one_long_file_is_not_shared_out_across_the_budget(registry, monkeypatch
     registry.stage("r#1", "/library/film.mkv", runs.ENCODING, 7200.0)
     registry.progress("r#1", "/library/film.mkv", 0.0, 1.0)
 
-    assert _sweep_run(registry, 3, monkeypatch)["rewrite_seconds"] == 7200.0
+    assert _sweep_run(registry, 3)["rewrite_seconds"] == 7200.0

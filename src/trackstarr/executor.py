@@ -18,7 +18,7 @@ from . import config
 from .command import ffmpeg_args
 from .media import duration, probe
 from .planner import Plan, SourceSignature
-from .tracks import resolved_layouts
+from .tracks import downmixed_layouts
 
 log = logging.getLogger(__name__)
 
@@ -226,7 +226,7 @@ def _run_ffmpeg(
                 os.close(descriptor)
         raise
     try:
-        _, stderr = proc.communicate(timeout=config.FFMPEG_TIMEOUT)
+        _, stderr = proc.communicate(timeout=config.current().FFMPEG_TIMEOUT)
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.communicate()
@@ -278,10 +278,11 @@ def apply_plan(
         return Outcome.DEFERRED, "source changed since it was planned, nothing rewritten"
 
     # Staged after the pre-flight checks, or each return above leaks a file.
+    work_dir = config.current().WORK_DIR
     try:
-        tmp = _new_temp(config.WORK_DIR)
+        tmp = _new_temp(work_dir)
     except OSError as err:
-        return Outcome.FAILED, f"could not stage the rewrite in {config.WORK_DIR}: {err}"
+        return Outcome.FAILED, f"could not stage the rewrite in {work_dir}: {err}"
 
     args = ffmpeg_args(plan, tmp)
     log.info("ffmpeg %s", " ".join(args[1:]))
@@ -316,7 +317,7 @@ def apply_plan(
         log.info("rewrote %s", plan.out_path)
         return Outcome.APPLIED, ""
     except subprocess.TimeoutExpired:
-        return Outcome.FAILED, f"ffmpeg timed out after {config.FFMPEG_TIMEOUT}s"
+        return Outcome.FAILED, f"ffmpeg timed out after {config.current().FFMPEG_TIMEOUT}s"
     finally:
         # Already gone when _publish renamed it.
         with contextlib.suppress(OSError):
@@ -326,12 +327,13 @@ def apply_plan(
 def work_dir_errors() -> list[str]:
     """Whether WORK_DIR is usable, as ready-to-log messages. Creates it and
     stages a file to prove the mount is writable."""
+    work_dir = config.current().WORK_DIR
     try:
-        os.makedirs(config.WORK_DIR, exist_ok=True)
-        probe_path = _new_temp(config.WORK_DIR)
+        os.makedirs(work_dir, exist_ok=True)
+        probe_path = _new_temp(work_dir)
         os.remove(probe_path)
     except OSError as err:
-        return [f"WORK_DIR {config.WORK_DIR} is not usable: {err}"]
+        return [f"WORK_DIR {work_dir} is not usable: {err}"]
     return []
 
 
@@ -363,8 +365,9 @@ def audio_encoders() -> frozenset[str] | None:
 def audio_codec_errors() -> list[str]:
     """Layouts whose encoder this ffmpeg lacks, as ready-to-log messages.
 
-    A typo would otherwise surface as the first rewrite failing. A layout with
-    no encoder at all is :func:`trackstarr.policy.errors`' report.
+    A typo would otherwise surface as the first rewrite failing. Downmixed
+    layouts only: the others name no encoder because nothing is made for them.
+    A downmix missing one entirely is :func:`trackstarr.policy.errors`' report.
     """
     encoders = audio_encoders()
     if encoders is None:
@@ -372,7 +375,7 @@ def audio_codec_errors() -> list[str]:
     return [
         f"AUDIO_LAYOUTS makes {layout.name} with {layout.codec!r}, which is not an audio "
         "encoder this ffmpeg provides (see ffmpeg -encoders)"
-        for layout in resolved_layouts()
+        for layout in downmixed_layouts(config.current().AUDIO_LAYOUTS)
         if layout.codec not in encoders
     ]
 
@@ -380,13 +383,14 @@ def audio_codec_errors() -> list[str]:
 def work_dir_is_remote() -> bool:
     """Whether publishing will probably copy rather than rename. Best effort,
     for a startup note only: a union filesystem can fool it."""
+    settings = config.current()
     try:
-        work_dev = os.stat(config.WORK_DIR).st_dev
+        work_dev = os.stat(settings.WORK_DIR).st_dev
     except OSError:
         return False
     return any(
         os.stat(media_dir).st_dev != work_dev
-        for media_dir in config.MEDIA_DIRS
+        for media_dir in settings.MEDIA_DIRS
         if os.path.isdir(media_dir)
     )
 
@@ -401,8 +405,9 @@ def drop_staged(path: str, force: bool = False) -> bool:
     Anything older than the ffmpeg timeout has outlived its writer. ``force``
     is for a caller holding every rewrite slot, which proves no writer exists.
     """
+    timeout = config.current().FFMPEG_TIMEOUT
     try:
-        if not force and time.time() - os.stat(path).st_mtime <= config.FFMPEG_TIMEOUT:
+        if not force and time.time() - os.stat(path).st_mtime <= timeout:
             return False
         os.remove(path)
     except OSError as err:
@@ -419,8 +424,9 @@ def clean_work_dir(exclusive: bool = False) -> None:
     go too. WORK_DIR only; :func:`trackstarr.sweep.walk_library` clears the
     ones cross-filesystem publishing stages beside the target.
     """
-    if not config.WORK_DIR or not os.path.isdir(config.WORK_DIR):
+    work_dir = config.current().WORK_DIR
+    if not work_dir or not os.path.isdir(work_dir):
         return
-    for name in os.listdir(config.WORK_DIR):
+    for name in os.listdir(work_dir):
         if is_staged_file(name):
-            drop_staged(os.path.join(config.WORK_DIR, name), force=exclusive)
+            drop_staged(os.path.join(work_dir, name), force=exclusive)

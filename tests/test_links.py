@@ -5,7 +5,8 @@ import urllib.error
 
 import pytest
 
-from trackstarr import config, links, media_server
+from conftest import set_config
+from trackstarr import links, media_server
 
 PLEX_SECTIONS = {
     "MediaContainer": {
@@ -54,26 +55,26 @@ def _fresh_state():
 
 
 @pytest.fixture
-def plex(monkeypatch):
-    monkeypatch.setattr(config, "PLEX_URL", "http://plex:32400")
-    monkeypatch.setattr(config, "PLEX_TOKEN", "token")
-    monkeypatch.setattr(config, "PLEX_PUBLIC_URL", "")
-    monkeypatch.setattr(config, "PLEX_PATH_MAP", [])
+def plex():
+    set_config(PLEX_URL="http://plex:32400")
+    set_config(PLEX_TOKEN="token")
+    set_config(PLEX_PUBLIC_URL="")
+    set_config(PLEX_PATH_MAP=[])
 
 
 @pytest.fixture
-def jellyfin(monkeypatch):
-    monkeypatch.setattr(config, "JELLYFIN_URL", "http://jellyfin:8096")
-    monkeypatch.setattr(config, "JELLYFIN_API_KEY", "key")
-    monkeypatch.setattr(config, "JELLYFIN_PUBLIC_URL", "")
-    monkeypatch.setattr(config, "JELLYFIN_PATH_MAP", [])
+def jellyfin():
+    set_config(JELLYFIN_URL="http://jellyfin:8096")
+    set_config(JELLYFIN_API_KEY="key")
+    set_config(JELLYFIN_PUBLIC_URL="")
+    set_config(JELLYFIN_PATH_MAP=[])
 
 
 @pytest.fixture
-def arrs(monkeypatch):
+def arrs():
     """Both *arrs addressable. No key: a link to a page is not a call."""
-    monkeypatch.setattr(config, "RADARR_URL", "http://radarr:7878")
-    monkeypatch.setattr(config, "SONARR_URL", "http://sonarr:8989")
+    set_config(RADARR_URL="http://radarr:7878")
+    set_config(SONARR_URL="http://sonarr:8989")
 
 
 @pytest.fixture
@@ -144,10 +145,10 @@ def test_a_series_is_confirmed_by_its_own_folders(plex, answers):
     assert "http://plex:32400/library/metadata/415641" in asked
 
 
-def test_the_public_address_is_what_the_link_is_built_on(plex, answers, monkeypatch):
+def test_the_public_address_is_what_the_link_is_built_on(plex, answers):
     """The address we call Plex on is this container's, and a phone cannot
     follow it. Only the link moves; the lookup still goes to the other."""
-    monkeypatch.setattr(config, "PLEX_PUBLIC_URL", "https://plex.example.com")
+    set_config(PLEX_PUBLIC_URL="https://plex.example.com")
     _, canned = answers
     canned["http://plex:32400/library/sections/1/all"] = container(
         plex_movie("1", "Alien", 1979, "/data/media/movies/Alien (1979)/Alien.mkv")
@@ -159,7 +160,7 @@ def test_the_public_address_is_what_the_link_is_built_on(plex, answers, monkeypa
 
 
 def test_our_paths_are_mapped_to_the_ones_plex_indexes(plex, answers, monkeypatch):
-    monkeypatch.setattr(config, "PLEX_PATH_MAP", [("/data/media", "/srv/media")])
+    set_config(PLEX_PATH_MAP=[("/data/media", "/srv/media")])
     monkeypatch.setitem(
         PLEX_SECTIONS["MediaContainer"]["Directory"][0],
         "Location",
@@ -345,10 +346,10 @@ def test_a_server_that_will_not_answer_costs_the_link_and_nothing_else(plex, ans
     assert find("/data/media/movies/Alien (1979)", "Alien", 1979) == []
 
 
-def test_unconfigured_servers_are_never_called(answers, monkeypatch):
+def test_unconfigured_servers_are_never_called(answers):
     asked, _ = answers
     for name in ("PLEX_URL", "PLEX_TOKEN", "JELLYFIN_URL", "JELLYFIN_API_KEY"):
-        monkeypatch.setattr(config, name, "")
+        set_config(**{name: ""})
 
     assert find("/data/media/movies/Alien (1979)", "Alien", 1979) == []
     assert asked == []
@@ -475,16 +476,16 @@ def test_a_slug_is_escaped_into_the_arr_path(arrs, answers):
     assert found[0]["url"] == "http://sonarr:8989/series/a%20b%2Fc"
 
 
-def test_the_public_address_is_what_the_arr_link_is_built_on(arrs, answers, monkeypatch):
-    monkeypatch.setattr(config, "RADARR_PUBLIC_URL", "https://radarr.example.com")
+def test_the_public_address_is_what_the_arr_link_is_built_on(arrs, answers):
+    set_config(RADARR_PUBLIC_URL="https://radarr.example.com")
 
     found = find("/data/media/movies/Dune (2024)", "Dune", 2024, arr="radarr", slug="693134")
 
     assert found[0]["url"] == "https://radarr.example.com/movie/693134"
 
 
-def test_an_arr_with_no_address_is_no_link(answers, monkeypatch):
-    monkeypatch.setattr(config, "SONARR_URL", "http://sonarr:8989")
+def test_an_arr_with_no_address_is_no_link(answers):
+    set_config(SONARR_URL="http://sonarr:8989")
 
     assert find("/data/media/movies/Dune", "Dune", arr="radarr", slug="693134") == []
 

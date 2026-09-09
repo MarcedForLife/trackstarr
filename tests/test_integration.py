@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import read_events, set_layouts, set_rules
+from conftest import read_events, set_config, set_layouts, set_rules
 from trackstarr import config, executor, planner, sweep_cache
 from trackstarr.cli import main as cli_main
 from trackstarr.executor import Outcome, apply_plan
@@ -28,9 +28,9 @@ def rewrite(plan) -> Outcome:
 
 
 @pytest.fixture(autouse=True)
-def _work_dir(tmp_path, monkeypatch):
+def _work_dir(tmp_path):
     """Keep rewrites beside the fixture, so os.replace stays a same-fs rename."""
-    monkeypatch.setattr(config, "WORK_DIR", str(tmp_path))
+    set_config(WORK_DIR=str(tmp_path))
 
 
 def streams_of(path, *kinds):
@@ -72,16 +72,16 @@ def test_commentary_case_produces_a_real_stereo_track(make_file):
     assert len(tracks) == 3
 
 
-def test_regenerate_downmix_end_to_end(make_file, monkeypatch):
+def test_regenerate_downmix_end_to_end(make_file):
     """The settings tag survives the mkv round trip; a bitrate change
     rewrites only once the regenerate rule is on."""
     path = make_file("f.mkv", COMMENTARY_CASE)
     assert rewrite(build_plan(path, "eng")) is Outcome.APPLIED
 
-    set_layouts(monkeypatch, "2.0:aac:128k", "5.1:ac3:640k")
+    set_layouts("2.0:aac:128k", "5.1:ac3:640k")
     assert not build_plan(path, "eng").needed
 
-    set_rules(monkeypatch, regenerate="always")
+    set_rules(regenerate="always")
     plan = build_plan(path, "eng")
     assert any("regenerate 2.0 downmix" in reason for reason in plan.reasons)
     assert rewrite(plan) is Outcome.APPLIED
@@ -89,21 +89,21 @@ def test_regenerate_downmix_end_to_end(make_file, monkeypatch):
     assert len(streams_of(path, "audio")) == 3
 
 
-def test_a_trimmed_file_re_encodes_its_own_downmix(make_file, monkeypatch):
+def test_a_trimmed_file_re_encodes_its_own_downmix(make_file):
     """What REGENERATE_ABOVE_PERCENT is for: with the 5.1 removed, a later rate
     change has nothing bigger to rebuild the stereo from, so the track is its
     own source."""
-    set_layouts(monkeypatch, "2.0:aac:320k", "5.1:remove")
+    set_layouts("2.0:aac:320k", "5.1:remove")
     path = make_file("f.mkv", [(6, "eng", "Surround")])
     assert rewrite(build_plan(path, "eng")) is Outcome.APPLIED
     assert [stream["channels"] for stream in streams_of(path, "audio")] == [2]
 
-    set_layouts(monkeypatch, "2.0:aac:128k", "5.1:remove")
-    set_rules(monkeypatch, regenerate="always")
+    set_layouts("2.0:aac:128k", "5.1:remove")
+    set_rules(regenerate="always")
     # The rebuild side leaves it: there is nothing left to downmix from.
     assert not build_plan(path, "eng").needed
 
-    monkeypatch.setattr(config, "REGENERATE_ABOVE_PERCENT", 120)
+    set_config(REGENERATE_ABOVE_PERCENT=120)
     plan = build_plan(path, "eng")
     assert any("re-encode high-bitrate 2.0 downmix" in reason for reason in plan.reasons)
     assert rewrite(plan) is Outcome.APPLIED
@@ -123,10 +123,10 @@ def test_mp4_commentary_titles_are_read_and_survive(make_file):
     assert not build_plan(path, "eng").needed
 
 
-def test_remux_to_mkv_end_to_end(make_file, monkeypatch):
+def test_remux_to_mkv_end_to_end(make_file):
     """An MP4 converts to its .mkv sibling: subtitles become SRT, the
     generated downmix carries its settings tag, and the original is gone."""
-    set_rules(monkeypatch, remux="always")
+    set_rules(remux="always")
     path = make_file("f.mp4", COMMENTARY_CASE, subs=[("eng", "")])
     plan = build_plan(path, "eng")
     assert "remux to mkv (RULE_REMUX)" in plan.reasons
@@ -140,10 +140,10 @@ def test_remux_to_mkv_end_to_end(make_file, monkeypatch):
     assert not build_plan(converted, "eng").needed
 
 
-def test_remux_carries_the_mp4_bitrates_into_bps_tags(make_file, monkeypatch):
+def test_remux_carries_the_mp4_bitrates_into_bps_tags(make_file):
     """Matroska has no per-stream rate field, so without a BPS tag every
     remuxed file loses its track rates."""
-    set_rules(monkeypatch, remux="always")
+    set_rules(remux="always")
     path = make_file("f.mp4", COMMENTARY_CASE)
     source_rates = {
         stream["index"]: stream["bit_rate"] for stream in streams_of(path, "audio", "video")
@@ -170,10 +170,10 @@ def test_remux_carries_the_mp4_bitrates_into_bps_tags(make_file, monkeypatch):
     assert carried and all(track.get("bitrate") for track in carried)
 
 
-def test_a_rewrite_never_restates_a_source_bps_tag(make_file, monkeypatch):
+def test_a_rewrite_never_restates_a_source_bps_tag(make_file):
     """A file's own mkvmerge statistics are better than ffprobe's reading of
     them, so the gap-filling above must not overwrite one that is already there."""
-    set_rules(monkeypatch, remux="always")
+    set_rules(remux="always")
     path = make_file("f.mkv", COMMENTARY_CASE)
     tagged = Path(path).with_name("tagged.mkv")
     subprocess.run(
@@ -190,8 +190,8 @@ def test_a_rewrite_never_restates_a_source_bps_tag(make_file, monkeypatch):
     assert (surround.get("tags") or {})["BPS"] == "999999"
 
 
-def test_remux_never_overwrites_an_existing_sibling(make_file, monkeypatch, tmp_path):
-    set_rules(monkeypatch, remux="always")
+def test_remux_never_overwrites_an_existing_sibling(make_file, tmp_path):
+    set_rules(remux="always")
     path = make_file("f.mp4", COMMENTARY_CASE)
     (tmp_path / "f.mkv").write_text("precious")
 
@@ -270,12 +270,10 @@ def test_cover_art_is_removed(make_file):
     assert [stream["codec_name"] for stream in streams_of(path, "video")] == ["h264"]
 
 
-def test_the_dropped_layout_is_really_gone_and_its_downmixes_are_really_there(
-    make_file, monkeypatch
-):
+def test_the_dropped_layout_is_really_gone_and_its_downmixes_are_really_there(make_file):
     """The one change that deletes something a re-rip is the only way back
     from, so it is worth proving against a real file rather than a probe."""
-    set_layouts(monkeypatch, "2.0", "5.1", "7.1:remove")
+    set_layouts("2.0", "5.1", "7.1:remove")
     path = make_file("f.mkv", [(8, "eng", "")])
     plan = build_plan(path, "eng")
     assert rewrite(plan) is Outcome.APPLIED
@@ -362,7 +360,7 @@ def test_corrupt_file_raises_rather_than_being_rewritten(tmp_path):
 @pytest.fixture
 def swept_library(monkeypatch, tmp_path):
     """Point the sweep at the fixture directory and count planner probes."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    set_config(MEDIA_DIRS=[str(tmp_path)])
     monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
 
     probed = []
@@ -387,8 +385,8 @@ def test_second_sweep_skips_probing_unchanged_files(make_file, swept_library):
     assert len(swept_library) == 1
 
 
-def test_drop_commentary_end_to_end(make_file, monkeypatch):
-    set_rules(monkeypatch, commentary="always")
+def test_drop_commentary_end_to_end(make_file):
+    set_rules(commentary="always")
     path = make_file("f.mkv", COMMENTARY_CASE)
     assert rewrite(build_plan(path, "eng")) is Outcome.APPLIED
 
@@ -457,23 +455,19 @@ def test_hardlinked_file_is_processed_once_the_seed_is_gone(make_file, tmp_path)
     assert build_plan(path, "eng").needed
 
 
-def test_hardlinks_are_rewritten_when_the_skip_is_switched_off(
-    make_file, monkeypatch, tmp_path
-):
-    monkeypatch.setattr(config, "SKIP_HARDLINKS", False)
+def test_hardlinks_are_rewritten_when_the_skip_is_switched_off(make_file, tmp_path):
+    set_config(SKIP_HARDLINKS=False)
     path = make_file("f.mkv", COMMENTARY_CASE)
     os.link(path, tmp_path / "seed.mkv")
     assert build_plan(path, "eng").needed
 
 
-def test_seed_release_invalidates_cached_hardlink_skip(
-    make_file, swept_library, monkeypatch, tmp_path
-):
+def test_seed_release_invalidates_cached_hardlink_skip(make_file, swept_library, tmp_path):
     """When seeding ends only the link count changes; the cache must notice."""
-    monkeypatch.setattr(config, "SKIP_HARDLINKS", True)
+    set_config(SKIP_HARDLINKS=True)
     library = tmp_path / "media"
     library.mkdir()
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(library)])
+    set_config(MEDIA_DIRS=[str(library)])
     path = make_file("media/f.mkv", COMMENTARY_CASE)
     seed = tmp_path / "seed.mkv"
     os.link(path, seed)

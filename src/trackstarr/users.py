@@ -188,8 +188,8 @@ def ensure_admin() -> None:
     """
     if _load():
         return
-    if config.ADMIN_PASSWORD:
-        add("admin", config.ADMIN_PASSWORD, "admin")
+    if stated := config.current().ADMIN_PASSWORD:
+        add("admin", stated, "admin")
         log.info("created the admin user with the configured ADMIN_PASSWORD")
         return
     password = secrets.token_urlsafe(12)

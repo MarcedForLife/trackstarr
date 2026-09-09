@@ -1,17 +1,17 @@
 # Refactor plan
 
-Five findings from a review on 2026-09-09. Four have landed. Item 5 is what is
-left, and it is the only one that can lose data.
+Five findings from a review on 2026-09-09, all landed. What each one turned out
+to be is below.
 
-Branch `feature/web-ui`, commits `cca398b` (this doc) through `221d433`.
+Branch `feature/web-ui`, commits `cca398b` (this doc) onward.
 
-| #   | What                                                | Where                     | State |
-| --- | --------------------------------------------------- | ------------------------- | ----- |
-| 1   | Extract the duplicated run-precondition preamble     | `api.py`                  | done  |
-| 2   | Split the poster cache out of the library            | `library.py`              | done  |
-| 3   | Split the per-file log buffer out of the registry    | `runs.py`                 | done  |
-| 4   | Cut the tests' reach into module privates            | `tests/`                  | done  |
-| 5   | Stop reloading config to apply a settings write      | `config.py`, `settings.py`| 2 days |
+| #   | What                                                | Where                      |
+| --- | --------------------------------------------------- | -------------------------- |
+| 1   | Extract the duplicated run-precondition preamble     | `api.py`                   |
+| 2   | Split the poster cache out of the library            | `library.py`               |
+| 3   | Split the per-file log buffer out of the registry    | `runs.py`                  |
+| 4   | Cut the tests' reach into module privates            | `tests/`                   |
+| 5   | Stop reloading config to apply a settings write      | `config.py`, `settings.py` |
 
 ## Running the gate
 
@@ -38,66 +38,8 @@ Public `reset()` puts a module back to how a fresh process finds it. Public
 `forget()` drops a memo. Promote a private only when it is the covered unit
 sitting inside an uncovered thread loop, never to give a test a way in.
 
-## 5. Reloading config to apply a settings write races the readers
-
-`settings._write()` (`settings.py:270`) calls `importlib.reload(config)`, which
-is how a save takes effect without a restart. The write path around it is
-careful. It takes `_WRITE_LOCK`, validates, and rolls the whole file back on a
-new problem.
-
-The reload is not covered by any of that. It re-executes the module body,
-rebinding 54 attributes one at a time, while the sweep and the webhook workers
-read `config.*` freely. `Policy.from_config()` (`policy.py:204`) reads twelve of
-those attributes in one expression. A call landing inside the reload window can
-mix pre-save and post-save values, and the `fingerprint()` it produces then
-matches no state that was ever saved. `sweep_cache` keys every verdict on that
-fingerprint, so the next read finds a mismatch and re-probes the whole library.
-It looks like a cache bug rather than a settings one.
-
-The same reload runs `_timezone()` (`config.py:346`), which writes
-`os.environ["TZ"]` and calls `time.tzset()` process-wide while other threads are
-formatting log lines.
-
-### The approach
-
-Make config a frozen snapshot that readers take by reference, so a save builds a
-new snapshot and swaps one pointer. `Policy.from_config()` then reads twelve
-fields off one object that cannot change under it.
-
-This was chosen over the cheap alternative, which is to hold the pause latch
-across the save so no worker is mid-read. That one leaves the reload in place,
-does not help the CLI, which shares the module, and is a second thing to
-remember about a module that already has too many.
-
-### Where to start
-
-Read `config.py` top to bottom first. It is 646 lines and almost all of it is
-one pattern: a module-level attribute assigned from a parser that reads the
-environment, then the settings file, then a default. The parsers are `_raw`,
-`_bool`, `_int`, `_list`, `_set`, `_ordered`, `_choice`, `_regex`, `_secret`,
-`_path_map` and `_rule_modes`, and they are the thing that has to move onto the
-snapshot.
-
-Two callers make the shape clear. `Policy.from_config()` is the reader that
-must see a consistent set. `settings.update()` is the writer, and its
-`_write` / roll-back pair is where the pointer swap goes.
-
-Design the test surface as part of it rather than after. The tests call config's
-parsers directly 51 times, patch a private with `setattr` 10 more, and call
-`importlib.reload(config)` 11 times to make a setting take effect. All of it
-wants the same thing the snapshot wants, a public way to say what the settings
-are for this read. Land that and the call sites move once.
-
-```
-grep -rhoE 'config\._[A-Za-z][A-Za-z_]*|setattr\(config, "_[A-Za-z_]+"' tests/*.py | wc -l
-grep -rc 'importlib.reload(config)' tests/*.py | grep -v ':0'
-```
-
-`_timezone()` is the one parser with a side effect on the process rather than a
-value, so it does not belong on a frozen snapshot. Decide where it goes early.
-
-Done when `importlib.reload` appears nowhere in `src/`, and
-`tests/test_settings.py` no longer reloads config to set up a case.
+A setting is read through `config.current()`. Take the snapshot once where
+several are read together, since a save swaps the whole thing between two calls.
 
 ## What landed
 
@@ -186,6 +128,37 @@ on their own. `test_notify.py` backdates a run's `told` stamp to get past the
 notifier's rate limit, and `test_links.py` backdates a `_found` entry to expire
 it. Both would fall out of making time injectable, if that is ever worth doing.
 
-`config` keeps every one of its reach-ins. They belong to item 5, where the fix
-is whatever public reading surface the snapshot lands on, not a `reset()` bolted
+`config` kept every one of its reach-ins for item 5, so that the snapshot could
+decide what the public reading surface was rather than a `reset()` being bolted
 on first and rewritten after.
+
+### 5. A settings write reloaded the module under its readers
+
+`settings._write()` called `importlib.reload(config)`, which re-executed the
+module body and rebound 54 attributes one at a time while the sweep and the
+webhook workers read them. `config` now reads both sources into one frozen
+`Settings` that `current()` hands out; a save builds another with `load()` and
+`apply()` swaps the pointer. `Policy.from_config()` takes it once and reads its
+twelve fields off that, so a fingerprint can no longer describe a state nobody
+saved. `importlib.reload` appears nowhere.
+
+The parsers moved onto `_Source`, one read of the environment and the file,
+which collects its own problems instead of appending to module lists. Every
+name parsed from those two sources is on the snapshot; `STATE_DIR` and
+`LOG_LEVEL` are environment-only and stay module constants.
+
+`_timezone()` split in two. The parse returns the zone name, and `apply()` is
+what writes `TZ` and calls `tzset()`: once per swap, rather than once per parse
+from inside the reload, with other threads formatting log lines.
+
+`tracks.resolved_layouts`, `downmixed_layouts`, `removed_layouts` and
+`resolved_langs` take their entries, and `policy.resolved_modes` takes the
+stated modes, so `from_config` hands all five one snapshot's values rather than
+each of them reading their own. `tracks` no longer imports `config` at all.
+
+The tests say what the settings are through `conftest.set_config`, which
+installs a snapshot; the autouse fixture's `config.reset()` undoes it. That is
+207 calls in place of `monkeypatch.setattr(config, ...)`, and it retires the
+`_no_services` fixture, the `_LOAD_ERRORS` one, and every
+`importlib.reload(config)` the suite used to need to make a setting take effect.
+`test_config.py`'s parser tests build a `_Source` and read `problems` off it.

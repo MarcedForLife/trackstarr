@@ -25,7 +25,7 @@ STOP_GRACE = 10
 
 #: The one port development answers on: the listener's own, so a bookmark
 #: does not care that a dev server is behind it.
-WEB_PORT = config.LISTEN_PORT
+WEB_PORT = config.current().LISTEN_PORT
 
 #: Where the listener binds while Vite has the front door. Passed explicitly,
 #: so it wins over .env.
@@ -75,7 +75,8 @@ def main() -> int:
             cwd=ROOT,
             # WEBHOOK_URL's default follows LISTEN_PORT, and the *arrs must call
             # the port Vite fronts.
-            env=os.environ | {"LISTEN_PORT": str(API_PORT), "WEBHOOK_URL": config.WEBHOOK_URL},
+            env=os.environ
+            | {"LISTEN_PORT": str(API_PORT), "WEBHOOK_URL": config.current().WEBHOOK_URL},
             start_new_session=True,
         ),
         "web": subprocess.Popen(

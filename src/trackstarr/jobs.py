@@ -158,7 +158,8 @@ def _resolve_lang(job: Job) -> Job:
 
 
 def parking_enabled() -> bool:
-    return config.SKIP_HARDLINKS and config.HARDLINK_RECHECK > 0
+    settings = config.current()
+    return settings.SKIP_HARDLINKS and settings.HARDLINK_RECHECK > 0
 
 
 def park(job: Job) -> None:
@@ -255,7 +256,7 @@ def start_workers() -> None:
     """
     global _workers, _worker_names
     with _workers_lock:
-        while _workers < config.MAX_CONCURRENT_REWRITES:
+        while _workers < config.current().MAX_CONCURRENT_REWRITES:
             _workers += 1
             _worker_names += 1
             threading.Thread(target=worker, daemon=True, name=f"worker-{_worker_names}").start()
@@ -275,7 +276,7 @@ def retire() -> bool:
     """
     global _workers
     with _workers_lock:
-        if _workers <= config.MAX_CONCURRENT_REWRITES:
+        if _workers <= config.current().MAX_CONCURRENT_REWRITES:
             return False
         _workers -= 1
         return True
@@ -365,7 +366,7 @@ def parked_recheck_loop() -> None:  # pragma: no cover
     while True:
         time.sleep(_PARKED_TICK)
         waited += _PARKED_TICK
-        if parking_enabled() and waited < config.HARDLINK_RECHECK:
+        if parking_enabled() and waited < config.current().HARDLINK_RECHECK:
             continue
         waited = 0.0
         try:

@@ -76,11 +76,12 @@ class Candidate:
 
 
 def _plex_headers() -> dict:
-    return {"X-Plex-Token": config.PLEX_TOKEN, "Accept": "application/json"}
+    return {"X-Plex-Token": config.current().PLEX_TOKEN, "Accept": "application/json"}
 
 
 def _plex_configured() -> bool:
-    return bool(config.PLEX_URL and config.PLEX_TOKEN)
+    settings = config.current()
+    return bool(settings.PLEX_URL and settings.PLEX_TOKEN)
 
 
 def _plex_entries(answer: dict | None) -> list[dict]:
@@ -102,7 +103,9 @@ def _plex_folders(rating_key: str) -> tuple[str, ...]:
     """The folders one item occupies, from its own metadata. One more call,
     since a series listing does not carry them."""
     answer = request(
-        f"{config.PLEX_URL}/library/metadata/{rating_key}", _plex_headers(), timeout=TIMEOUT
+        f"{config.current().PLEX_URL}/library/metadata/{rating_key}",
+        _plex_headers(),
+        timeout=TIMEOUT,
     )
     entries = _plex_entries(answer)
     return tuple(
@@ -127,7 +130,7 @@ def _plex_candidates(folder: str, name: str) -> list[Candidate]:
         return []
     query = urllib.parse.urlencode({"title": name})
     answer = request(
-        f"{config.PLEX_URL}/library/sections/{section}/all?{query}",
+        f"{config.current().PLEX_URL}/library/sections/{section}/all?{query}",
         _plex_headers(),
         timeout=TIMEOUT,
     )
@@ -165,17 +168,20 @@ def _identity(server: str, url: str, key: str, read: Callable[[], str]) -> str:
 def _plex_machine() -> str:
     """The server's machine identifier, which its web app addresses it by."""
 
+    settings = config.current()
+
     def read() -> str:
-        answer = request(f"{config.PLEX_URL}/identity", _plex_headers(), timeout=TIMEOUT)
+        answer = request(f"{settings.PLEX_URL}/identity", _plex_headers(), timeout=TIMEOUT)
         return str(((answer or {}).get("MediaContainer") or {}).get("machineIdentifier") or "")
 
-    return _identity("plex", config.PLEX_URL, config.PLEX_TOKEN, read)
+    return _identity("plex", settings.PLEX_URL, settings.PLEX_TOKEN, read)
 
 
 def _plex_link(subject: Subject) -> str:
     if not _plex_configured():
         return ""
-    mapped = map_path(subject.folder, config.PLEX_PATH_MAP)
+    settings = config.current()
+    mapped = map_path(subject.folder, settings.PLEX_PATH_MAP)
     found = _resolve(mapped, subject.name, subject.year, _plex_candidates)
     if found is None:
         return ""
@@ -184,16 +190,17 @@ def _plex_link(subject: Subject) -> str:
         return ""
     # The route is in the fragment, so the key must be escaped inside it.
     key = urllib.parse.quote(f"/library/metadata/{found.id}", safe="")
-    base = config.PLEX_PUBLIC_URL or config.PLEX_URL
+    base = settings.PLEX_PUBLIC_URL or settings.PLEX_URL
     return f"{base}/web/index.html#!/server/{machine}/details?key={key}"
 
 
 def _jellyfin_headers() -> dict:
-    return {"X-Emby-Token": config.JELLYFIN_API_KEY, "Accept": "application/json"}
+    return {"X-Emby-Token": config.current().JELLYFIN_API_KEY, "Accept": "application/json"}
 
 
 def _jellyfin_configured() -> bool:
-    return bool(config.JELLYFIN_URL and config.JELLYFIN_API_KEY)
+    settings = config.current()
+    return bool(settings.JELLYFIN_URL and settings.JELLYFIN_API_KEY)
 
 
 def _jellyfin_candidates(folder: str, name: str) -> list[Candidate]:
@@ -210,7 +217,7 @@ def _jellyfin_candidates(folder: str, name: str) -> list[Candidate]:
         }
     )
     answer = request(
-        f"{config.JELLYFIN_URL}/Items?{query}", _jellyfin_headers(), timeout=TIMEOUT
+        f"{config.current().JELLYFIN_URL}/Items?{query}", _jellyfin_headers(), timeout=TIMEOUT
     )
     return [
         Candidate(
@@ -231,27 +238,30 @@ def _jellyfin_server() -> str:
     reads the link without it, so a refusal costs the parameter, not the button.
     """
 
+    settings = config.current()
+
     def read() -> str:
         try:
             answer = request(
-                f"{config.JELLYFIN_URL}/System/Info", _jellyfin_headers(), timeout=TIMEOUT
+                f"{settings.JELLYFIN_URL}/System/Info", _jellyfin_headers(), timeout=TIMEOUT
             )
         except API_ERRORS as err:
             log.debug("jellyfin: could not read its server id (%s)", err)
             return ""
         return str((answer or {}).get("Id") or "")
 
-    return _identity("jellyfin", config.JELLYFIN_URL, config.JELLYFIN_API_KEY, read)
+    return _identity("jellyfin", settings.JELLYFIN_URL, settings.JELLYFIN_API_KEY, read)
 
 
 def _jellyfin_link(subject: Subject) -> str:
     if not _jellyfin_configured():
         return ""
-    mapped = map_path(subject.folder, config.JELLYFIN_PATH_MAP)
+    settings = config.current()
+    mapped = map_path(subject.folder, settings.JELLYFIN_PATH_MAP)
     found = _resolve(mapped, subject.name, subject.year, _jellyfin_candidates)
     if found is None:
         return ""
-    base = config.JELLYFIN_PUBLIC_URL or config.JELLYFIN_URL
+    base = settings.JELLYFIN_PUBLIC_URL or settings.JELLYFIN_URL
     # Optional: a client with one server reads the page without it.
     server = _jellyfin_server()
     return f"{base}/web/#/details?id={found.id}" + (f"&serverId={server}" if server else "")
@@ -371,10 +381,16 @@ SERVERS: tuple[Server, ...] = (
     Server("plex", "Plex", _plex_configured, _plex_link),
     Server("jellyfin", "Jellyfin", _jellyfin_configured, _jellyfin_link),
     _arr_server(
-        "radarr", "Radarr", "/movie/", lambda: config.RADARR_PUBLIC_URL or config.RADARR_URL
+        "radarr",
+        "Radarr",
+        "/movie/",
+        lambda: config.current().RADARR_PUBLIC_URL or config.current().RADARR_URL,
     ),
     _arr_server(
-        "sonarr", "Sonarr", "/series/", lambda: config.SONARR_PUBLIC_URL or config.SONARR_URL
+        "sonarr",
+        "Sonarr",
+        "/series/",
+        lambda: config.current().SONARR_PUBLIC_URL or config.current().SONARR_URL,
     ),
     Server("imdb", "IMDb", lambda: True, _imdb_link, known=True),
 )

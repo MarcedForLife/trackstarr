@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from conftest import set_config
 from trackstarr import __version__, config, policy, sweep_cache
 from trackstarr.policy import Policy
 from trackstarr.status import Status
@@ -133,20 +134,18 @@ def test_unreadable_file_is_never_cached(cache_path, tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("module", "attribute", "changed"),
+    "change",
     [
-        (config, "LANGUAGES", ("eng", "fre")),
-        (policy, "__version__", "0.0.0-test"),
+        lambda monkeypatch: set_config(LANGUAGES=("eng", "fre")),
+        lambda monkeypatch: monkeypatch.setattr(policy, "__version__", "0.0.0-test"),
     ],
     ids=["a rule setting", "the package version"],
 )
-def test_a_changed_fingerprint_drops_the_cache(
-    cache_path, media, monkeypatch, module, attribute, changed
-):
+def test_a_changed_fingerprint_drops_the_cache(cache_path, media, monkeypatch, change):
     """Rule changes shipped in code have to invalidate old verdicts too."""
     key = cache_key(media, "eng")
     saved_cache(cache_path, (media, key, CONFORM))
-    monkeypatch.setattr(module, attribute, changed)
+    change(monkeypatch)
     assert SweepCache.load(cache_path, fingerprint()).lookup(media, key) is None
 
 

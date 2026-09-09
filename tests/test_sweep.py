@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import read_events
+from conftest import read_events, set_config
 from trackstarr import config, estimate, holds, library, notify, runs, sweep_cache
 from trackstarr import sweep as sweep_mod
 from trackstarr.arr import LibraryIndex
@@ -24,21 +24,21 @@ from trackstarr.sweep import Judged, seconds_until, sweep
 from trackstarr.sweep_cache import FileKey, Verdict
 
 
-def _library(tmp_path, monkeypatch, count: int) -> list[str]:
+def _library(tmp_path, count: int) -> list[str]:
     root = tmp_path / "library"
     root.mkdir()
     names = [f"{i:03d}.mkv" for i in range(count)]
     for name in names:
         (root / name).write_text("not really a video")
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
+    set_config(MEDIA_DIRS=[str(root)])
     return names
 
 
 def test_concurrent_sweep_reports_in_walk_order(monkeypatch, tmp_path):
     """Verdicts are booked in walk order however many workers produced them, so
     raising concurrency doesn't reshuffle pending.tsv."""
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 4)
-    _library(tmp_path, monkeypatch, 40)
+    set_config(MAX_CONCURRENT_REWRITES=4)
+    _library(tmp_path, 40)
     # Fixed order of our own, since os.walk's is the filesystem's business.
     walked = sorted(str(path) for path in (tmp_path / "library").iterdir())
     monkeypatch.setattr("trackstarr.sweep.walk_library", lambda policy: walked)
@@ -77,8 +77,8 @@ def test_a_path_cannot_break_its_own_report_row(monkeypatch, tmp_path):
 
 def test_a_worker_raising_does_not_abandon_the_sweep(monkeypatch, tmp_path):
     """One unforeseen error must not cost every file queued behind it."""
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 3)
-    _library(tmp_path, monkeypatch, 10)
+    set_config(MAX_CONCURRENT_REWRITES=3)
+    _library(tmp_path, 10)
 
     def explode(job, dry_run, source="webhook"):
         if job.path.endswith("004.mkv"):
@@ -96,9 +96,9 @@ def test_a_worker_raising_does_not_abandon_the_sweep(monkeypatch, tmp_path):
 def test_probing_is_not_sized_by_the_rewrite_budget(monkeypatch, tmp_path, budget):
     """The rewrite budget and the probe pool are separate settings: a disk that
     wants one rewrite at a time still takes several probes."""
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", budget)
-    monkeypatch.setattr(config, "PROBE_WORKERS", 3)
-    _library(tmp_path, monkeypatch, 1)
+    set_config(MAX_CONCURRENT_REWRITES=budget)
+    set_config(PROBE_WORKERS=3)
+    _library(tmp_path, 1)
     sized: dict[str, int] = {}
 
     def spying_pool(max_workers, **kwargs):
@@ -113,7 +113,7 @@ def test_probing_is_not_sized_by_the_rewrite_budget(monkeypatch, tmp_path, budge
 def test_an_arr_outage_downgrades_an_applying_sweep(monkeypatch, tmp_path, caplog):
     """With original languages unknown, the languages rule would read a foreign
     film's own track as junk to drop. Report-only until the *arr answers."""
-    _library(tmp_path, monkeypatch, 1)
+    _library(tmp_path, 1)
     monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, False))
     judged_dry = []
 
@@ -133,8 +133,8 @@ def test_an_arr_outage_downgrades_an_applying_sweep(monkeypatch, tmp_path, caplo
 def test_an_arr_outage_stops_nothing_a_policy_never_asked(monkeypatch, tmp_path, caplog):
     """No row names the original language, so the outage takes no verdict with
     it and an applying sweep goes on applying."""
-    monkeypatch.setattr(config, "LANGUAGES", ("eng",))
-    _library(tmp_path, monkeypatch, 1)
+    set_config(LANGUAGES=("eng",))
+    _library(tmp_path, 1)
     monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, False))
     judged_dry = []
 
@@ -151,11 +151,11 @@ def test_an_arr_outage_stops_nothing_a_policy_never_asked(monkeypatch, tmp_path,
     assert "report-only" not in caplog.text
 
 
-def test_report_mode_overrides_an_applying_sweep(monkeypatch, tmp_path):
-    monkeypatch.setattr(config, "REWRITE_MODE", "report")
+def test_report_mode_overrides_an_applying_sweep(tmp_path):
+    set_config(REWRITE_MODE="report")
     root = tmp_path / "library"
     root.mkdir()
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
+    set_config(MEDIA_DIRS=[str(root)])
 
     sweep(dry_run=False)
 
@@ -167,7 +167,7 @@ def test_report_mode_overrides_an_applying_sweep(monkeypatch, tmp_path):
 def test_checkpoints_come_from_time_not_file_count(monkeypatch, tmp_path):
     """An applying sweep can spend minutes on one file, so what it learned must not
     wait on a count a small library never reaches."""
-    _library(tmp_path, monkeypatch, 3)
+    _library(tmp_path, 3)
     monkeypatch.setattr("trackstarr.sweep._CHECKPOINT_SECONDS", 0.0)
     checkpoints = []
     monkeypatch.setattr(
@@ -229,13 +229,13 @@ def test_the_check_falls_back_to_our_own_clock():
     assert sweep_mod.check("0 4 * * *", []).zone == ours
 
 
-def test_a_missing_media_dir_is_reported_not_walked_silently(tmp_path, monkeypatch, caplog):
+def test_a_missing_media_dir_is_reported_not_walked_silently(tmp_path, caplog):
     """os.walk yields nothing for a path that isn't there, so a wrong mount would
     look like an empty library."""
     real = tmp_path / "media"
     real.mkdir()
     (real / "f.mkv").write_bytes(b"x")
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "gone"), str(real)])
+    set_config(MEDIA_DIRS=[str(tmp_path / "gone"), str(real)])
 
     found = sweep_mod.walk_library(Policy.from_config())
     assert found == [str(real / "f.mkv")]
@@ -243,12 +243,12 @@ def test_a_missing_media_dir_is_reported_not_walked_silently(tmp_path, monkeypat
     assert "does not exist" in caplog.text
 
 
-def test_the_walk_clears_staged_files_scattered_through_the_library(tmp_path, monkeypatch):
+def test_the_walk_clears_staged_files_scattered_through_the_library(tmp_path):
     """Cross-filesystem publishing lands its copy beside the file it replaces, so
     a crash leaves these anywhere. This walk is the only thing that visits
     them, and the age gate is what makes dropping them safe."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
-    monkeypatch.setattr(config, "FFMPEG_TIMEOUT", 0)
+    set_config(MEDIA_DIRS=[str(tmp_path)])
+    set_config(FFMPEG_TIMEOUT=0)
     (tmp_path / "f.mkv").write_bytes(b"x")
     orphan = tmp_path / ".trackstarr-eeee.partial"
     orphan.write_text("orphaned by a crash")
@@ -258,11 +258,11 @@ def test_the_walk_clears_staged_files_scattered_through_the_library(tmp_path, mo
     assert not orphan.exists()
 
 
-def test_the_walk_collects_containers_the_rules_will_never_rewrite(tmp_path, monkeypatch):
+def test_the_walk_collects_containers_the_rules_will_never_rewrite(tmp_path):
     """An AVI-only title was a poster with no files under it and nothing to say
     about why. The walk names them so the library can; artwork and sidecars are
     still none of its business."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    set_config(MEDIA_DIRS=[str(tmp_path)])
     for name in ("f.mkv", "old.avi", "poster.jpg", "f.nfo", "f.eng.srt"):
         (tmp_path / name).write_bytes(b"x")
 
@@ -275,7 +275,7 @@ def test_the_walk_collects_containers_the_rules_will_never_rewrite(tmp_path, mon
 def test_an_unsupported_container_is_judged_without_being_opened(tmp_path, monkeypatch):
     """Its own verdict, carrying the container that earned it, and no probe: the
     plan stops at the extension."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    set_config(MEDIA_DIRS=[str(tmp_path)])
     (tmp_path / "old.avi").write_bytes(b"not really an avi")
     monkeypatch.setattr(
         "trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, complete=True)
@@ -296,7 +296,7 @@ def test_an_unsupported_container_is_judged_without_being_opened(tmp_path, monke
 def test_an_unsupported_container_is_not_reported_as_work(tmp_path, monkeypatch):
     """pending.tsv is what a sweep would do next. Nothing here is ever going to
     happen to this file, so a row for it is a queue nobody can clear."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    set_config(MEDIA_DIRS=[str(tmp_path)])
     (tmp_path / "old.avi").write_bytes(b"not really an avi")
     monkeypatch.setattr(
         "trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, complete=True)
@@ -307,9 +307,9 @@ def test_an_unsupported_container_is_not_reported_as_work(tmp_path, monkeypatch)
     assert rows == ["status\toriginal_lang\tpath\treasons\tdetail"]
 
 
-def test_hidden_directories_are_not_walked(tmp_path, monkeypatch):
+def test_hidden_directories_are_not_walked(tmp_path):
     """@eaDir, .recycle and friends hold copies that must never be rewritten."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    set_config(MEDIA_DIRS=[str(tmp_path)])
     (tmp_path / "f.mkv").write_bytes(b"x")
     hidden = tmp_path / ".recycle"
     hidden.mkdir()
@@ -334,7 +334,7 @@ def test_a_long_sweep_logs_progress_as_it_goes(monkeypatch, caplog):
     assert "500/500" in caplog.text
 
 
-def test_the_page_check_reads_a_schedule_back_in_local_time(monkeypatch):
+def test_the_page_check_reads_a_schedule_back_in_local_time():
     """The one question a cron field raises. Answered by the parser the
     scheduler obeys rather than by a second one in the browser, which would
     also be reading the wrong clock."""
@@ -384,7 +384,7 @@ def clean_registry():
 def test_a_sweep_shows_its_progress_while_it_walks(monkeypatch, tmp_path, clean_registry):
     """The whole point of the activity page: a three-hour walk has to be
     watchable, not a wait for the summary event."""
-    _library(tmp_path, monkeypatch, 3)
+    _library(tmp_path, 3)
     seen: list[dict] = []
 
     def judge(path, **kwargs):
@@ -392,7 +392,7 @@ def test_a_sweep_shows_its_progress_while_it_walks(monkeypatch, tmp_path, clean_
         return Judged(Job(path), None, Verdict(Status.CONFORM))
 
     monkeypatch.setattr("trackstarr.sweep._judge", judge)
-    monkeypatch.setattr(config, "PROBE_WORKERS", 1)
+    set_config(PROBE_WORKERS=1)
     sweep(dry_run=True, run="r#1")
 
     # The total is known before the first file is judged, so the bar has a
@@ -413,8 +413,8 @@ def test_a_sweep_puts_each_file_it_worked_on_up_with_its_verdict(
 ):
     """A row appears when a worker picks the file up and gains its verdict when
     booked. A cached verdict gets no row: nothing was probed."""
-    _library(tmp_path, monkeypatch, 2)
-    monkeypatch.setattr(config, "PROBE_WORKERS", 1)
+    _library(tmp_path, 2)
+    set_config(PROBE_WORKERS=1)
 
     def judge(path, **kwargs):
         # One is worked on, the other answered from the cache.
@@ -443,8 +443,8 @@ def test_a_sweep_puts_each_file_it_worked_on_up_with_its_verdict(
 def test_a_stopped_sweep_leaves_the_rest_of_the_library_unjudged(
     monkeypatch, tmp_path, clean_registry
 ):
-    _library(tmp_path, monkeypatch, 20)
-    monkeypatch.setattr(config, "PROBE_WORKERS", 1)
+    _library(tmp_path, 20)
+    set_config(PROBE_WORKERS=1)
     judged: list[str] = []
 
     def judge(job, dry_run, source="webhook"):
@@ -472,8 +472,8 @@ def test_a_stopped_sweep_keeps_the_verdicts_it_never_revisited(
     """save() prunes files the walk never reached, which is right for a
     completed sweep and would cost a stopped one a cold re-probe of most of
     the library."""
-    names = _library(tmp_path, monkeypatch, 6)
-    monkeypatch.setattr(config, "PROBE_WORKERS", 1)
+    names = _library(tmp_path, 6)
+    set_config(PROBE_WORKERS=1)
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="webhook": ProcessResult(Status.CONFORM),
@@ -500,8 +500,8 @@ def test_a_stopped_sweep_keeps_the_verdicts_it_never_revisited(
 
 
 def test_a_paused_service_holds_the_walk_where_it_stands(monkeypatch, tmp_path, clean_registry):
-    _library(tmp_path, monkeypatch, 5)
-    monkeypatch.setattr(config, "PROBE_WORKERS", 1)
+    _library(tmp_path, 5)
+    set_config(PROBE_WORKERS=1)
     judged: list[str] = []
 
     def judge(job, dry_run, source="webhook"):
@@ -548,7 +548,7 @@ def test_the_scheduler_skips_a_slot_a_sweep_is_still_filling(
 def test_a_free_slot_sweeps_on_the_configured_rung(monkeypatch, clean_registry):
     """The scheduler is the one caller with nobody to ask, so it reads
     REWRITE_MODE itself: only "all" puts it on the writing rung."""
-    monkeypatch.setattr(config, "REWRITE_MODE", "all")
+    set_config(REWRITE_MODE="all")
     seen: list[bool] = []
     monkeypatch.setattr("trackstarr.sweep.sweep", lambda dry_run: seen.append(dry_run))
     sweep_mod.run_scheduled()
@@ -561,7 +561,7 @@ def _one_file(tmp_path, monkeypatch) -> str:
     root.mkdir()
     path = root / "one.mkv"
     path.write_text("not really a video")
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
+    set_config(MEDIA_DIRS=[str(root)])
     monkeypatch.setattr("trackstarr.sweep.walk_library", lambda policy: [str(path)])
     return str(path)
 
@@ -633,7 +633,7 @@ def test_an_arr_outage_marks_the_run_it_has_already_shown(monkeypatch, tmp_path)
     has to reach the record too: a card reading "Sweep" for a walk that has
     just been forced to report only is the wrong half of the answer."""
     _one_file(tmp_path, monkeypatch)
-    monkeypatch.setattr(config, "REWRITE_MODE", "all")
+    set_config(REWRITE_MODE="all")
     monkeypatch.setattr("trackstarr.sweep.all_arrs", list)
     monkeypatch.setattr(
         "trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, complete=False)
@@ -654,7 +654,7 @@ def test_an_arr_outage_marks_the_run_it_has_already_shown(monkeypatch, tmp_path)
 def _failing_sweeps(monkeypatch, tmp_path, count: int, detail: str = "ffmpeg failed (1): boom"):
     """Run `count` applying sweeps over one file whose rewrite always fails;
     which of them spent a rewrite on it."""
-    _library(tmp_path, monkeypatch, 1)
+    _library(tmp_path, 1)
     attempts: list[str] = []
 
     def failing(job, dry_run, source="sweep"):
@@ -707,7 +707,7 @@ def test_a_failure_with_no_words_on_it_still_says_nothing_is_trying(monkeypatch,
 def test_a_report_that_cannot_be_written_does_not_cost_the_sweep(monkeypatch, tmp_path, caplog):
     """The report is the sweep's answer written down, and a full or read-only
     volume must not throw away the hours that produced it."""
-    _library(tmp_path, monkeypatch, 1)
+    _library(tmp_path, 1)
     os.makedirs(config.STATE_DIR, exist_ok=True)
     # A directory where the report goes: open(..., "w") refuses it the same
     # way a read-only mount would.
@@ -744,7 +744,7 @@ def test_reporting_sweeps_neither_spend_the_budget_nor_stop_retrying(monkeypatch
     """A report-only failure is a probe that would not read the file. It costs
     milliseconds to repeat and says nothing about whether the rewrite would
     work, so it must not use up the attempts an applying sweep is owed."""
-    _library(tmp_path, monkeypatch, 1)
+    _library(tmp_path, 1)
     probed: list[bool] = []
 
     def failing(job, dry_run, source="sweep"):
@@ -822,9 +822,9 @@ class _Sweeping:
 def _mid_sweep(monkeypatch, tmp_path, count: int, run: str = "r#1"):
     """An applying sweep held at the moment worth looking at: the walk all the
     way round, one rewrite being worked on, and none of them finished."""
-    _library(tmp_path, monkeypatch, count)
-    monkeypatch.setattr(config, "PROBE_WORKERS", 2)
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
+    _library(tmp_path, count)
+    set_config(PROBE_WORKERS=2)
+    set_config(MAX_CONCURRENT_REWRITES=1)
     sweeping = _Sweeping(run)
     monkeypatch.setattr("trackstarr.sweep.process", sweeping.process)
     walking = threading.Thread(target=sweep, kwargs={"dry_run": False, "run": run})
@@ -863,8 +863,8 @@ def test_a_sweep_says_what_it_has_left_to_do_before_it_has_done_any_of_it(
 def test_a_sweep_is_still_walking_until_it_has_seen_every_file(monkeypatch, tmp_path):
     """A queue under a walk that is still going is the work found so far, and
     a page that read it as the whole would promise an end that keeps moving."""
-    _library(tmp_path, monkeypatch, 4)
-    monkeypatch.setattr(config, "PROBE_WORKERS", 1)
+    _library(tmp_path, 4)
+    set_config(PROBE_WORKERS=1)
     seen: list[bool] = []
 
     def watching(job, dry_run, source="sweep"):
@@ -900,8 +900,8 @@ def test_a_sweep_queues_its_work_with_how_long_it_will_take(
 ):
     """The estimate is made where the work is found, so the page can say how
     long the backlog will take before any of it has been done."""
-    _library(tmp_path, monkeypatch, 3)
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
+    _library(tmp_path, 3)
+    set_config(MAX_CONCURRENT_REWRITES=1)
     # An hour of film each, at a hundred times realtime: 36 seconds apiece.
     monkeypatch.setattr(estimate, "measured", lambda: estimate.Speeds({("2.0",): 100.0}))
     planned = [{"codec": "aac", "title": "2.0", "flags": ["generated"]}]
@@ -938,7 +938,7 @@ def test_a_sweep_queues_its_work_with_how_long_it_will_take(
 def test_the_report_gives_a_file_its_final_verdict_and_only_that(monkeypatch, tmp_path):
     """A pending verdict is written down while it waits for a slot, so the report has
     to be the file's answer rather than both of them one after the other."""
-    names = _library(tmp_path, monkeypatch, 4)
+    names = _library(tmp_path, 4)
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="sweep": ProcessResult(
@@ -958,7 +958,7 @@ def test_an_applying_sweep_leaves_a_held_title_where_the_walk_found_it(monkeypat
     """A held file is booked as discovery judged it rather than queued: the
     rewrite would latch to report anyway, having spent a slot and a second
     probe getting there."""
-    _library(tmp_path, monkeypatch, 3)
+    _library(tmp_path, 3)
     holds.place(str(tmp_path / "library"), by="marc", reason="watching one of them")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
@@ -979,7 +979,7 @@ def test_an_applying_sweep_leaves_a_held_title_where_the_walk_found_it(monkeypat
 def test_a_file_skipped_mid_sweep_keeps_the_verdict_the_walk_gave_it(monkeypatch, tmp_path):
     """Skipping is "not in this pass": the file keeps its pending verdict, so the
     library still shows the work and the next sweep picks it up."""
-    _library(tmp_path, monkeypatch, 1)
+    _library(tmp_path, 1)
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="sweep": ProcessResult(
@@ -1019,14 +1019,14 @@ def test_a_queued_file_reads_as_pending_while_it_waits_for_its_rewrite(monkeypat
 # stored verdict, which is usually what is doubted.
 
 
-def _folder(tmp_path, monkeypatch, name: str, *files: str) -> str:
+def _folder(tmp_path, name: str, *files: str) -> str:
     """One title folder under MEDIA_DIRS, holding these files."""
     root = tmp_path / "media"
     folder = root / name
     folder.mkdir(parents=True, exist_ok=True)
     for file_name in files:
         (folder / file_name).write_text("not really a video")
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
+    set_config(MEDIA_DIRS=[str(root)])
     return str(folder)
 
 
@@ -1036,7 +1036,7 @@ def test_a_recheck_reprobes_a_file_the_cache_has_already_judged(
     """The whole reason it exists. A sweep of a settled library answers from
     the cache, so pressing this on a title whose verdict looks wrong would
     otherwise hand back that same verdict without opening the file."""
-    folder = _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv")
+    folder = _folder(tmp_path, "Dune (2024)", "Dune.mkv")
     probed: list[str] = []
     monkeypatch.setattr(
         "trackstarr.sweep.process",
@@ -1060,8 +1060,8 @@ def test_a_recheck_leaves_the_rest_of_the_librarys_verdicts_alone(
 ):
     """save() drops every unvisited entry, which for a walk of one folder is
     the rest of the library."""
-    dune = _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv")
-    _folder(tmp_path, monkeypatch, "Arrival (2016)", "Arrival.mkv")
+    dune = _folder(tmp_path, "Dune (2024)", "Dune.mkv")
+    _folder(tmp_path, "Arrival (2016)", "Arrival.mkv")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="": ProcessResult(Status.CONFORM, None),
@@ -1078,7 +1078,7 @@ def test_a_recheck_leaves_the_rest_of_the_librarys_verdicts_alone(
 
 
 def test_a_recheck_replaces_the_verdict_it_re_judged(monkeypatch, tmp_path, clean_registry):
-    folder = _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv")
+    folder = _folder(tmp_path, "Dune (2024)", "Dune.mkv")
     verdicts = iter([Status.PENDING, Status.CONFORM])
     monkeypatch.setattr(
         "trackstarr.sweep.process",
@@ -1097,8 +1097,8 @@ def test_a_recheck_does_not_overwrite_the_last_sweeps_report(
     """pending.tsv is the last sweep's answer about a whole library, written
     open-and-truncate. Replacing it with the two rows a selection produced
     would destroy that answer without replacing it."""
-    folder = _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv")
-    _folder(tmp_path, monkeypatch, "Arrival (2016)", "Arrival.mkv")
+    folder = _folder(tmp_path, "Dune (2024)", "Dune.mkv")
+    _folder(tmp_path, "Arrival (2016)", "Arrival.mkv")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="": ProcessResult(Status.PENDING, None),
@@ -1114,7 +1114,7 @@ def test_a_recheck_does_not_overwrite_the_last_sweeps_report(
 def test_a_recheck_records_what_it_looked_at(monkeypatch, tmp_path, clean_registry):
     """Counted in titles as well as files: that is what somebody picked, and
     it is the half that says this was a shelf rather than the library."""
-    folder = _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv", "Dune-extras.mkv")
+    folder = _folder(tmp_path, "Dune (2024)", "Dune.mkv", "Dune-extras.mkv")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="": ProcessResult(Status.CONFORM, None),
@@ -1131,7 +1131,7 @@ def test_a_recheck_records_what_it_looked_at(monkeypatch, tmp_path, clean_regist
 def test_a_recheck_registers_itself_so_the_page_can_watch_it(
     monkeypatch, tmp_path, clean_registry
 ):
-    folder = _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv")
+    folder = _folder(tmp_path, "Dune (2024)", "Dune.mkv")
     seen: list[dict] = []
 
     def judge(path, **kwargs):
@@ -1148,8 +1148,8 @@ def test_a_recheck_registers_itself_so_the_page_can_watch_it(
 
 
 def test_a_stopped_recheck_counts_only_what_it_reached(monkeypatch, tmp_path, clean_registry):
-    folder = _folder(tmp_path, monkeypatch, "Show", "a.mkv", "b.mkv", "c.mkv")
-    monkeypatch.setattr(config, "PROBE_WORKERS", 1)
+    folder = _folder(tmp_path, "Show", "a.mkv", "b.mkv", "c.mkv")
+    set_config(PROBE_WORKERS=1)
 
     def judged_then_stopped(job, dry_run, source=""):
         # The stop lands after the first file, so the two behind it are never
@@ -1170,8 +1170,8 @@ def test_a_recheck_reports_only_when_the_install_is_latched_to_report(
 ):
     """REWRITE_MODE latches over every caller. A new entry point must not be
     the one that gets talked into rewriting a library its owner is watching."""
-    folder = _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv")
-    monkeypatch.setattr(config, "REWRITE_MODE", "report")
+    folder = _folder(tmp_path, "Dune (2024)", "Dune.mkv")
+    set_config(REWRITE_MODE="report")
     asked: list[bool] = []
     monkeypatch.setattr(
         "trackstarr.sweep.process",
@@ -1190,7 +1190,7 @@ def test_a_recheck_reports_only_when_a_arr_cannot_be_listed(
     """With original languages unknown the languages rule would read a foreign
     film's own track as junk to drop. The same trade the sweep makes, and the
     run's own record has to say so or the page shows a rewrite that is not."""
-    folder = _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv")
+    folder = _folder(tmp_path, "Dune (2024)", "Dune.mkv")
     monkeypatch.setattr("trackstarr.sweep.all_arrs", list)
     monkeypatch.setattr(
         "trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, complete=False)
@@ -1213,9 +1213,9 @@ def test_a_recheck_keeps_walking_while_its_rewrite_holds_a_slot(monkeypatch, tmp
     """The same split the sweep walks on, which a re-check used not to have: it
     rewrote on the probe threads, so a selection with work in it got no further
     than its first encode before it stopped looking at the rest."""
-    folder = _folder(tmp_path, monkeypatch, "Show", *[f"{n}.mkv" for n in range(6)])
-    monkeypatch.setattr(config, "PROBE_WORKERS", 2)
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
+    folder = _folder(tmp_path, "Show", *[f"{n}.mkv" for n in range(6)])
+    set_config(PROBE_WORKERS=2)
+    set_config(MAX_CONCURRENT_REWRITES=1)
     rechecking = _Sweeping("r#2")
     monkeypatch.setattr("trackstarr.sweep.process", rechecking.process)
     walking = threading.Thread(
@@ -1237,7 +1237,7 @@ def test_a_recheck_keeps_walking_while_its_rewrite_holds_a_slot(monkeypatch, tmp
 def test_a_recheck_writes_down_what_it_learns_as_it_goes(monkeypatch, tmp_path, clean_registry):
     """It used to write once, at the end. A selection is minutes of probing
     that a restart threw away, and it is the walk somebody is watching."""
-    folder = _folder(tmp_path, monkeypatch, "Show", "a.mkv", "b.mkv", "c.mkv")
+    folder = _folder(tmp_path, "Show", "a.mkv", "b.mkv", "c.mkv")
     monkeypatch.setattr("trackstarr.sweep._CHECKPOINT_SECONDS", 0.0)
     checkpoints: list[int] = []
     monkeypatch.setattr(
@@ -1292,7 +1292,7 @@ def test_a_sweep_says_the_library_moved_before_its_first_checkpoint(
 ):
     """The cache file only moves every _CHECKPOINT_SECONDS, so a page with
     nothing to fetch until then reads a cold walk as an untouched library."""
-    _library(tmp_path, monkeypatch, 3)
+    _library(tmp_path, 3)
     monkeypatch.setattr("trackstarr.sweep._judge", _judged)
     kinds = _bells(monkeypatch)
     sweep(dry_run=True)
@@ -1302,7 +1302,7 @@ def test_a_sweep_says_the_library_moved_before_its_first_checkpoint(
 def test_the_floor_is_what_holds_a_walks_bell_down(monkeypatch, tmp_path, clean_registry):
     """Three files in the same instant is one thing worth looking at; without
     the floor it is a message and a shelf fetched per file per tab."""
-    _library(tmp_path, monkeypatch, 3)
+    _library(tmp_path, 3)
     monkeypatch.setattr("trackstarr.sweep._judge", _judged)
     monkeypatch.setattr(sweep_mod, "_PUBLISH_SECONDS", 0.0)
     kinds = _bells(monkeypatch)
@@ -1313,7 +1313,7 @@ def test_the_floor_is_what_holds_a_walks_bell_down(monkeypatch, tmp_path, clean_
 def test_the_view_stands_before_the_bell_is_rung(monkeypatch, tmp_path, clean_registry):
     """A page that fetches the moment it is told must not find the answer it
     was told about still on its way."""
-    _library(tmp_path, monkeypatch, 1)
+    _library(tmp_path, 1)
     monkeypatch.setattr("trackstarr.sweep._judge", _judged)
     offered: list[int] = []
 
@@ -1332,7 +1332,7 @@ def test_a_warm_sweep_says_nothing_about_the_library(monkeypatch, tmp_path, clea
     """carry() brings an unchanged file's entry forward byte for byte, so a
     settled library's nightly sweep has nothing to tell anyone and nothing to
     build a view out of."""
-    _library(tmp_path, monkeypatch, 3)
+    _library(tmp_path, 3)
     monkeypatch.setattr(
         "trackstarr.sweep._judge",
         lambda path, **kwargs: Judged(
@@ -1346,7 +1346,7 @@ def test_a_warm_sweep_says_nothing_about_the_library(monkeypatch, tmp_path, clea
 
 def test_a_recheck_says_the_library_moved_as_it_goes(monkeypatch, tmp_path, clean_registry):
     """It writes once, at the end, and is always a walk somebody is watching."""
-    folder = _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv")
+    folder = _folder(tmp_path, "Dune (2024)", "Dune.mkv")
     monkeypatch.setattr("trackstarr.sweep._judge", _judged)
     kinds = _bells(monkeypatch)
     sweep_mod.recheck([folder], dry_run=True, run="r#2")
@@ -1359,7 +1359,7 @@ def test_the_grid_reads_a_walk_before_the_cache_file_exists(
     """End to end, which is the whole point of the machinery: the walk offers
     what it has judged, the bell goes, and the library builds a card out of it
     with nothing yet written anywhere."""
-    _folder(tmp_path, monkeypatch, "Dune (2024)", "Dune.mkv")
+    _folder(tmp_path, "Dune (2024)", "Dune.mkv")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="": ProcessResult(Status.PENDING),

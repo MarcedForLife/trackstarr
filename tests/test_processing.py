@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from conftest import configured_arr, needed_plan
+from conftest import configured_arr, needed_plan, set_config
 from trackstarr import config, holds, processing
 from trackstarr.executor import Outcome
 from trackstarr.media import ProbeError
@@ -86,7 +86,7 @@ def test_a_file_that_is_not_a_video_at_all_is_still_only_skipped(tmp_path):
 def test_report_mode_bottoms_out_in_process(monkeypatch):
     """No caller can rewrite on REWRITE_MODE's bottom rung, whatever dry_run it
     passes."""
-    monkeypatch.setattr(config, "REWRITE_MODE", "report")
+    set_config(REWRITE_MODE="report")
     plan = needed_plan()
     monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
     monkeypatch.setattr(
@@ -100,7 +100,7 @@ def test_a_held_file_is_planned_and_reported_but_never_rewritten(monkeypatch):
     """The whole point: a title somebody is watching goes on being judged, so
     the library still shows the work, and nothing touches the file."""
     holds.place("/data/media/movies/Dune (2024)", by="marc", reason="watching it")
-    monkeypatch.setattr(config, "MEDIA_DIRS", ["/data/media/movies"])
+    set_config(MEDIA_DIRS=["/data/media/movies"])
     plan = needed_plan()
     monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
     monkeypatch.setattr(
@@ -114,7 +114,7 @@ def test_a_held_file_is_planned_and_reported_but_never_rewritten(monkeypatch):
     assert "watching it" in result.detail
 
 
-def test_a_hold_on_one_title_leaves_the_rest_alone(monkeypatch, stub_rewrite):
+def test_a_hold_on_one_title_leaves_the_rest_alone(stub_rewrite):
     """A hold is not a pause; everything else goes on being rewritten."""
     holds.place("/data/media/movies/Dune (2024)", by="marc")
     stub_rewrite(needed_plan(path="/data/media/movies/Arrival (2016)/Arrival (2016).mkv"))
@@ -146,10 +146,10 @@ def test_rewrites_hold_a_cross_process_file_lock():
     assert not _is_locked("rewrite.lock.0")
 
 
-def test_every_slot_gets_its_own_lock_file(monkeypatch):
+def test_every_slot_gets_its_own_lock_file():
     """Two processes sharing one lock file would serialize whatever the
     budget says."""
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 3)
+    set_config(MAX_CONCURRENT_REWRITES=3)
     with held_slot(), held_slot():
         held = sorted(
             name
@@ -191,10 +191,10 @@ def test_a_state_dir_check_tolerates_a_slot_another_process_holds():
         assert processing.state_dir_errors() == []
 
 
-def test_all_slots_held_sees_slots_beyond_our_budget(monkeypatch):
+def test_all_slots_held_sees_slots_beyond_our_budget():
     """A process started with a bigger budget can hold a slot past our range;
     its lock file exists on disk, so it must be checked too."""
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
+    set_config(MAX_CONCURRENT_REWRITES=1)
     os.makedirs(processing._lock_dir(), exist_ok=True)
     with open(os.path.join(processing._lock_dir(), "rewrite.lock.7"), "w") as foreign:
         fcntl.flock(foreign, fcntl.LOCK_EX)
@@ -234,13 +234,13 @@ def _peak_concurrency(monkeypatch, jobs: int) -> int:
     ids=["the default is still exclusive", "a raised budget is shared"],
 )
 def test_the_budget_bounds_concurrent_rewrites(monkeypatch, budget, jobs):
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", budget)
+    set_config(MAX_CONCURRENT_REWRITES=budget)
     assert _peak_concurrency(monkeypatch, jobs) == budget
 
 
 def test_a_raising_rewrite_releases_its_slot(monkeypatch):
     """Leak one lock handle and the pool drains, hanging every later rewrite."""
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
+    set_config(MAX_CONCURRENT_REWRITES=1)
     for _ in range(3):
         with pytest.raises(RuntimeError), held_slot():
             raise RuntimeError("ffmpeg exploded")
@@ -249,7 +249,7 @@ def test_a_raising_rewrite_releases_its_slot(monkeypatch):
 
 def test_a_probe_failure_during_a_rewrite_is_reported_not_raised(tmp_path, monkeypatch):
     """One corrupt file must not take the rest of a sweep down with it."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    set_config(MEDIA_DIRS=[str(tmp_path)])
     path = tmp_path / "f.mkv"
     path.write_bytes(b"x")
 
@@ -263,9 +263,9 @@ def test_a_probe_failure_during_a_rewrite_is_reported_not_raised(tmp_path, monke
     assert "moov atom not found" in result.detail
 
 
-def test_a_rewritten_file_asks_its_arr_to_rescan(tmp_path, monkeypatch, stub_rewrite):
+def test_a_rewritten_file_asks_its_arr_to_rescan(tmp_path, stub_rewrite):
     """Otherwise Radarr keeps reporting the old size and media info."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path)])
+    set_config(MEDIA_DIRS=[str(tmp_path)])
     path = tmp_path / "f.mkv"
     path.write_bytes(b"x")
     rescanned: list[int] = []
@@ -282,7 +282,7 @@ def test_a_rewritten_file_asks_its_arr_to_rescan(tmp_path, monkeypatch, stub_rew
 def test_a_rewrite_waits_for_a_busy_slot_rather_than_failing(monkeypatch):
     """The budget is a queue, not a limit that rejects: an import arriving
     mid-sweep waits its turn."""
-    monkeypatch.setattr(config, "MAX_CONCURRENT_REWRITES", 1)
+    set_config(MAX_CONCURRENT_REWRITES=1)
     held = processing._claim_slot()
     released: list[bool] = []
 

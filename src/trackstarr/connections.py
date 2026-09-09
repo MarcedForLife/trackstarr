@@ -157,7 +157,7 @@ def _headers(header: str, key: str) -> dict:
 
 
 def _value(name: str) -> str:
-    return str(getattr(config, name, "") or "")
+    return str(getattr(config.current(), name, "") or "")
 
 
 def configured(service: Service) -> bool:
@@ -186,8 +186,9 @@ def _path_hint(service: Service, locations: list[str]) -> str:
     """A hint when this server indexes nothing we would send it. Otherwise
     invisible: refreshes are best effort, so a mismatched library never
     updates."""
-    mapping = getattr(config, service.map_name, [])
-    ours = [map_path(media_dir, mapping) for media_dir in config.MEDIA_DIRS]
+    settings = config.current()
+    mapping = getattr(settings, service.map_name, [])
+    ours = [map_path(media_dir, mapping) for media_dir in settings.MEDIA_DIRS]
     if not locations or not ours:
         return ""
     # Either direction: a server may index the whole library or one folder in
@@ -200,7 +201,7 @@ def _path_hint(service: Service, locations: list[str]) -> str:
         return ""
     return (
         f"It indexes {', '.join(locations)}, which nothing in MEDIA_DIRS "
-        f"({', '.join(config.MEDIA_DIRS)}) lands inside, so refreshes would be skipped. "
+        f"({', '.join(settings.MEDIA_DIRS)}) lands inside, so refreshes would be skipped. "
         f"Add a path map below, such as {ours[0]}={locations[0]}."
     )
 

@@ -9,7 +9,6 @@ is rolled back whole.
 
 import contextlib
 import functools
-import importlib
 import json
 import os
 import re
@@ -94,8 +93,8 @@ def editable(name: str) -> bool:
 
 def env_pinned(name: str) -> bool:
     """Whether the environment states the name, which beats the file. A
-    credential counts in any of the forms :func:`trackstarr.config._secret`
-    reads."""
+    credential counts in any of the forms
+    :meth:`trackstarr.config._Source._secret` reads."""
     if name == "TZ":
         # This process writes TZ itself to apply a saved zone, so config keeps
         # the deploy's own word from before that.
@@ -125,7 +124,7 @@ def _held(name: str) -> object:
     Shaped by type rather than by name: config's parser already chose it, so a
     tuple's order is part of the setting and a set has none of its own.
     """
-    held = getattr(config, _ATTRIBUTES.get(name, name))
+    held = getattr(config.current(), _ATTRIBUTES.get(name, name))
     if isinstance(held, re.Pattern):
         return held.pattern
     # Before the int test, which a bool passes: the page wants a boolean.
@@ -152,7 +151,7 @@ def _values() -> dict[str, object]:
     """
     values: dict[str, object] = {name: _held(name) for name in sorted(EDITABLE - SECRETS)}
     # Every rule's effective mode, not only the stated ones.
-    for rule, mode in policy.resolved_modes().items():
+    for rule, mode in policy.resolved_modes(config.current().RULE_MODES).items():
         values[config.rule_variable(rule)] = mode
     return values
 
@@ -165,11 +164,12 @@ def snapshot() -> dict:
     }
     # Set-or-not in place of the value. Sorted, or a frozenset's iteration
     # order reshuffles the contract fixture on every run.
+    settings = config.current()
     for name in sorted(SECRETS):
         entries[name] = {
             "value": "",
             "env": env_pinned(name),
-            "set": bool(getattr(config, name)),
+            "set": bool(getattr(settings, name)),
         }
     return {
         # So the page keeps no second copy of the vocabulary.
@@ -258,8 +258,8 @@ def _read_file() -> dict | None:
 
 
 def _write(content: dict | None) -> None:
-    """Write the file (None removes it) and reload config in place, which is
-    what applies the change without a restart."""
+    """Write the file (None removes it) and read it back into the live
+    settings, which is what applies the change without a restart."""
     if content is None:
         with contextlib.suppress(FileNotFoundError):
             os.remove(_settings_path())
@@ -267,7 +267,8 @@ def _write(content: dict | None) -> None:
         os.makedirs(config.STATE_DIR, exist_ok=True)
         # 0600 like the user and session stores: this file holds credentials.
         write_json(_settings_path(), content, mode=0o600)
-    importlib.reload(config)
+    # One pointer swap, so a reader mid-verdict sees either save, never a mix.
+    config.apply(config.load())
 
 
 def _seal_secrets(merged: dict) -> None:
@@ -293,8 +294,9 @@ def _seal_secrets(merged: dict) -> None:
 def _recorded() -> dict[str, object]:
     """Every setting as the history keeps it: credentials as set-or-not."""
     values = _values()
+    settings = config.current()
     for name in SECRETS:
-        values[name] = "set" if getattr(config, name) else "unset"
+        values[name] = "set" if getattr(settings, name) else "unset"
     return values
 
 

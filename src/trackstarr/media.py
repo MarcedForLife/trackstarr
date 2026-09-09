@@ -19,6 +19,7 @@ class ProbeError(RuntimeError):
 
 def probe(path: str) -> dict:
     """ffprobe's JSON for a file. Raises ProbeError."""
+    timeout = config.current().PROBE_TIMEOUT
     try:
         out = subprocess.run(
             # -v error, not quiet: on a damaged file stderr is the only clue.
@@ -34,10 +35,10 @@ def probe(path: str) -> dict:
             ],
             capture_output=True,
             text=True,
-            timeout=config.PROBE_TIMEOUT,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired as err:
-        raise ProbeError(f"ffprobe timed out after {config.PROBE_TIMEOUT}s") from err
+        raise ProbeError(f"ffprobe timed out after {timeout}s") from err
     if out.returncode != 0:
         raise ProbeError(f"ffprobe failed: {out.stderr.strip()[:200]}")
     try:

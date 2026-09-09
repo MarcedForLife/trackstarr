@@ -102,7 +102,7 @@ def summary() -> dict:
 
 def due(now: float | None = None) -> bool:
     """Whether it is time to fetch the dataset again."""
-    if not config.IMDB_RATINGS:
+    if not config.current().IMDB_RATINGS:
         return False
     now = time.time() if now is None else now
     return now >= _retry_at and now - fetched_at() >= REFRESH_EVERY

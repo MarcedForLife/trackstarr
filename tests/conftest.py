@@ -5,7 +5,6 @@ makes real files with ffmpeg, which :func:`pytest_configure` insists on.
 """
 
 import http.client
-import importlib
 import json
 import os
 import shutil
@@ -19,8 +18,18 @@ from http.server import ThreadingHTTPServer
 
 import pytest
 
-import trackstarr
-from trackstarr import config, holds, jobs, library, processing, runlog, runs, users, webhook
+from trackstarr import (
+    config,
+    covers,
+    holds,
+    jobs,
+    library,
+    processing,
+    runlog,
+    runs,
+    users,
+    webhook,
+)
 from trackstarr.arr import Arr, radarr, sonarr
 from trackstarr.executor import Outcome
 from trackstarr.planner import Plan
@@ -90,67 +99,71 @@ def pytest_configure() -> None:
         )
 
 
-@pytest.fixture(autouse=True)
-def _isolated_state(monkeypatch, tmp_path):
-    """Point STATE_DIR at the test's tmp dir, so nothing reaches a real
-    /config, and drop whatever settings file a real one held at import."""
-    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setattr(config, "_SETTINGS", {})
-    monkeypatch.setattr(config, "WEB_DIR", "")
-    # Memoised on the file's mark, which two tmp dirs can share.
-    holds.forget()
+def set_config(**values) -> None:
+    """Make these settings live for one test: ``set_config(MEDIA_DIRS=[root])``.
+
+    Names and shapes are config.Settings', which is what the parsers left, so
+    a layout list arrives as a tuple. Undone by _isolated_state.
+    """
+    config.apply(replace(config.current(), **values))
 
 
-#: Environment names settings_state scrubs so a config reload cannot pick up
-#: a developer's real services or state directory mid-test.
-_RELOAD_SENSITIVE = (
-    "STATE_DIR",
-    # Would point every reload at a developer's real key instead of the one
-    # the test's own state directory mints.
-    "TRACKSTARR_KEY_FILE",
-    # The developer's own zone, which config would otherwise apply to the
-    # process running the suite.
-    "TZ",
+#: The services a developer's own environment sets, blanked for every test.
+#: Each is enough on its own to put an "Open in" link on a title, so one would
+#: show up in tests asserting a sheet offers none.
+_SERVICES = (
     "RADARR_URL",
     "RADARR_API_KEY",
+    "RADARR_PUBLIC_URL",
     "SONARR_URL",
     "SONARR_API_KEY",
+    "SONARR_PUBLIC_URL",
     "PLEX_URL",
     "PLEX_TOKEN",
+    "PLEX_PUBLIC_URL",
     "JELLYFIN_URL",
     "JELLYFIN_API_KEY",
-    # The browser-side addresses too: each is enough on its own to put an
-    # "Open in" link on a title, so a developer's own would show up in tests
-    # that assert a sheet offers none.
-    "RADARR_PUBLIC_URL",
-    "SONARR_PUBLIC_URL",
-    "PLEX_PUBLIC_URL",
     "JELLYFIN_PUBLIC_URL",
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolated_state(monkeypatch, tmp_path):
+    """Point STATE_DIR at the test's tmp dir, so nothing reaches a real
+    /config, and hand every test the settings a bare install has."""
+    monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
+    set_config(file={}, WEB_DIR="", **dict.fromkeys(_SERVICES, ""))
+    # Memoised on the file's mark, which two tmp dirs can share.
+    holds.forget()
+    yield
+    config.reset()
+
+
+#: Environment names settings_state scrubs, since a save reads both sources
+#: back and would otherwise pick up a developer's real services.
+_SAVE_SENSITIVE = (
+    # Would point every read at a developer's real key instead of the one the
+    # test's own state directory mints.
+    "TRACKSTARR_KEY_FILE",
+    # The developer's own zone, which config would otherwise apply to the
+    # process running the suite.
+    "TZ",
+    *_SERVICES,
+)
+
+
 @pytest.fixture
-def settings_state(tmp_path):
-    """STATE_DIR pinned through the environment, for tests that run
-    settings.update(): its config reload discards attribute patches, so the
-    isolation must be in the environment. Teardown reloads with the real one.
-    """
-    previous = {name: os.environ.get(name) for name in _RELOAD_SENSITIVE}
-    for name in _RELOAD_SENSITIVE:
-        os.environ.pop(name, None)
-    os.environ["STATE_DIR"] = str(tmp_path / "state")
+def settings_state(monkeypatch, tmp_path):
+    """For tests that run settings.update(): the save reads the environment
+    and the file back, so the isolation has to be in the environment rather
+    than in the snapshot the other tests patch."""
+    for name in _SAVE_SENSITIVE:
+        monkeypatch.delenv(name, raising=False)
     # What the deploy said about the zone, read once at package import: a
     # developer's own would pin TZ and refuse every write a test makes.
-    stated_tz, trackstarr.ENV_TZ = trackstarr.ENV_TZ, ""
-    importlib.reload(config)
-    yield tmp_path / "state"
-    trackstarr.ENV_TZ = stated_tz
-    for name, value in previous.items():
-        if value is None:
-            os.environ.pop(name, None)
-        else:
-            os.environ[name] = value
-    importlib.reload(config)
+    monkeypatch.setattr(config, "STATED_TZ", "")
+    config.apply(config.load())
+    return tmp_path / "state"
 
 
 @pytest.fixture(autouse=True)
@@ -164,6 +177,15 @@ def _drain_queue():
     """Here rather than in one file: a POST to the listener queues too."""
     yield
     jobs.reset()
+
+
+@pytest.fixture(autouse=True)
+def _no_worker_threads(monkeypatch):
+    """A real worker waits on the queue for ever, and a settings save brings the
+    pool up. Left running, one drains the queue of every test that follows."""
+    monkeypatch.setattr(jobs, "worker", lambda: None)
+    monkeypatch.setattr(jobs, "_workers", 0)
+    monkeypatch.setattr(jobs, "_worker_names", 0)
 
 
 @pytest.fixture
@@ -183,42 +205,22 @@ def _restore_sigterm():
     signal.signal(signal.SIGTERM, original)
 
 
-@pytest.fixture(autouse=True)
-def _no_services(monkeypatch):
-    """Keep locally set service env vars from leaking into any test's clients."""
-    for name in (
-        "RADARR_URL",
-        "RADARR_API_KEY",
-        "RADARR_PUBLIC_URL",
-        "SONARR_URL",
-        "SONARR_API_KEY",
-        "SONARR_PUBLIC_URL",
-        "PLEX_URL",
-        "PLEX_TOKEN",
-        "PLEX_PUBLIC_URL",
-        "JELLYFIN_URL",
-        "JELLYFIN_API_KEY",
-        "JELLYFIN_PUBLIC_URL",
-    ):
-        monkeypatch.setattr(config, name, "")
-
-
-def set_rules(monkeypatch, **modes: str) -> None:
+def set_rules(**modes: str) -> None:
     """Set named rules' modes, leaving the rest at their defaults:
-    ``set_rules(monkeypatch, remux="always", sdh="never")``."""
-    monkeypatch.setattr(config, "RULE_MODES", dict(config.RULE_MODES) | modes)
+    ``set_rules(remux="always", sdh="never")``."""
+    set_config(RULE_MODES=config.current().RULE_MODES | modes)
 
 
-def set_layouts(monkeypatch, *entries: str) -> None:
+def set_layouts(*entries: str) -> None:
     """AUDIO_LAYOUTS in order, each entry as the service reads it:
-    ``set_layouts(monkeypatch, "2.0", "5.1:eac3:448k", "7.1:remove")``."""
-    monkeypatch.setattr(config, "AUDIO_LAYOUTS", tuple(entries))
+    ``set_layouts("2.0", "5.1:eac3:448k", "7.1:remove")``."""
+    set_config(AUDIO_LAYOUTS=tuple(entries))
 
 
-def set_langs(monkeypatch, *entries: str) -> None:
+def set_langs(*entries: str) -> None:
     """LANGUAGES in order, each entry as the service reads it:
-    ``set_langs(monkeypatch, "original", "eng:keep", "hin:remove")``."""
-    monkeypatch.setattr(config, "LANGUAGES", tuple(entries))
+    ``set_langs("original", "eng:keep", "hin:remove")``."""
+    set_config(LANGUAGES=tuple(entries))
 
 
 def fake_run(returncode: int = 0, stdout: str = "", stderr: str = ""):
@@ -246,10 +248,10 @@ def configured_arr(name: str = "radarr", key: str = "key") -> Arr:
 
 
 @pytest.fixture
-def media(tmp_path, monkeypatch) -> str:
+def media(tmp_path) -> str:
     root = tmp_path / "media" / "movies"
     root.mkdir(parents=True)
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(root)])
+    set_config(MEDIA_DIRS=[str(root)])
     return str(root)
 
 
@@ -515,6 +517,34 @@ def api(server, method: str, path: str, body=None, cookie: str = "", headers=Non
         conn.close()
 
 
+def request(server, method: str, path: str, body: bytes | None = None, headers=None):
+    """One HTTP request against a listener, returning (status code, JSON body)."""
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+    try:
+        conn.request(method, path, body, headers or {})
+        response = conn.getresponse()
+        return response.status, json.loads(response.read())
+    finally:
+        conn.close()
+
+
+def get_raw(server, path: str) -> tuple[int, dict, bytes]:
+    """One GET, returning (status, headers, body) with the body unparsed."""
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+    try:
+        conn.request("GET", path)
+        response = conn.getresponse()
+        return response.status, dict(response.getheaders()), response.read()
+    finally:
+        conn.close()
+
+
+def keep_alive(server):
+    """A connection the caller drives request by request, so a test can see
+    whether the listener leaves it usable."""
+    return http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+
+
 def sign_in(server, name: str, password: str = "right password") -> str:
     """A session cookie for an existing account, as the Cookie header value."""
     status, _, headers = api(
@@ -533,3 +563,54 @@ def clean_registry():
     yield runs
     runs.reset()
     runlog.forget()
+
+
+@pytest.fixture
+def web_dir(tmp_path):
+    """A built UI: the shell plus one hashed asset, with WEB_DIR pointing at it."""
+    root = tmp_path / "webui"
+    (root / "_app" / "immutable").mkdir(parents=True)
+    (root / "index.html").write_text("<!doctype html><title>trackstarr</title>")
+    (root / "_app" / "immutable" / "app.abc123.js").write_text("console.log('hi')")
+    set_config(WEB_DIR=str(root))
+    return root
+
+
+@pytest.fixture
+def one_title(monkeypatch, tmp_path):
+    """One film, swept once: the *arr answering for the title and a cached
+    verdict under it. Yields the title's folder."""
+    root = tmp_path / "media" / "movies"
+    folder = root / "Dune (2024)"
+    folder.mkdir(parents=True)
+    set_config(MEDIA_DIRS=[str(root)])
+    arr = configured_arr()
+    monkeypatch.setattr(library, "all_arrs", lambda: [arr])
+    monkeypatch.setattr(
+        type(arr),
+        "all_items",
+        lambda self: [
+            {
+                "id": 7,
+                "title": "Dune",
+                "year": 2024,
+                "path": str(folder),
+                # What Radarr's own pages route on, which is its TMDB id.
+                "titleSlug": "693134",
+            }
+        ],
+    )
+    library.forget()
+    os.makedirs(config.STATE_DIR, exist_ok=True)
+    swept = SweepCache(
+        os.path.join(config.STATE_DIR, "sweep-cache.json"), Policy.from_config().fingerprint()
+    )
+    swept.record(
+        str(folder / "Dune.mkv"),
+        FileKey(10, 1, 1, "eng"),
+        Verdict(Status.PENDING, "add 2.0 downmix", tracks=[{"index": 0, "kind": "video"}]),
+    )
+    swept.save()
+    yield str(folder)
+    library.forget()
+    covers.forget()
