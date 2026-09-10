@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { details, headline, type Event } from '$lib/events';
+import { detail, details, headline, type Event } from '$lib/events';
 
 function entry(over: Partial<Event> = {}): Event {
 	return {
@@ -32,5 +32,39 @@ describe('the headline of a hold', () => {
 		expect(labels(entry({ event: 'skipped', path: '/data/media/tv/S01E01.mkv' }))).toContain(
 			'File'
 		);
+	});
+});
+
+describe('a track edited in place', () => {
+	const line = entry({
+		event: 'retagged',
+		path: '/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv',
+		index: 1,
+		kind: 'audio',
+		changed: { lang: { from: 'und', to: 'jpn' }, commentary: { from: false, to: true } },
+		by: 'admin'
+	});
+
+	test('is headlined by its title and detailed by its track', () => {
+		// The card's name where the page has it, the file's own otherwise.
+		expect(headline(line, 'Severance (2022)')).toBe('Retagged Severance (2022)');
+		expect(headline(line)).toBe('Retagged Severance');
+		expect(detail(line)).toBe('Audio stream 1 · language und to jpn · commentary on');
+	});
+
+	test('opens on the file, the track and each tag moved', () => {
+		const rows = details(line);
+		// Its own rows; the tail every event shares follows.
+		expect(rows.slice(0, 4).map((row) => row.label)).toEqual(['File', 'Track', 'Changed', 'By']);
+		expect(rows[2].values).toEqual(['language und to jpn', 'commentary on']);
+	});
+
+	test('a line recorded without a kind still reads, and SDH keeps its case', () => {
+		const line = entry({
+			event: 'retagged',
+			kind: '',
+			changed: { forced: { from: true, to: false }, sdh: { from: false, to: true } }
+		});
+		expect(detail(line)).toBe('Track stream ? · forced off · SDH on');
 	});
 });

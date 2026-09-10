@@ -23,6 +23,7 @@ from trackstarr import (
     links,
     notify,
     ratings,
+    retag,
     runlog,
     runs,
     sessions,
@@ -1464,3 +1465,150 @@ def test_running_titles_is_an_admins(listener, fast_scrypt, clean_registry, one_
         api(listener, "POST", "/api/library/run", body, cookie=sign_in(listener, "watcher"))[0]
         == 403
     )
+
+
+def test_retagging_is_an_admins(listener, fast_scrypt, one_title):
+    users.add("watcher", "right password", "viewer")
+    body = {"tracks": [{"path": f"{one_title}/Dune.mkv", "index": 1}], "lang": "jpn"}
+    status, answer, _ = api(
+        listener, "POST", "/api/library/retag", body, cookie=sign_in(listener, "watcher")
+    )
+    assert (status, answer["status"]) == (403, "forbidden")
+
+
+@pytest.mark.parametrize(
+    ("body", "said"),
+    [
+        ({"tracks": [{"path": "/x.mkv", "index": 1}]}, "nothing to change"),
+        ({"tracks": [{"path": "/x.mkv", "index": 1}], "lang": "japan!"}, "not a language code"),
+        ({"lang": "jpn"}, "name the tracks"),
+        ({"tracks": [], "lang": "jpn"}, "name the tracks"),
+        ({"tracks": "all", "lang": "jpn"}, "name the tracks"),
+        ({"tracks": [{"path": "/x.mkv"}], "lang": "jpn"}, "a path and a stream index"),
+        (
+            {"tracks": [{"path": "/x.mkv", "index": "1"}], "lang": "jpn"},
+            "a path and a stream index",
+        ),
+        (
+            {"tracks": [{"path": "/x.mkv", "index": True}], "lang": "jpn"},
+            "a path and a stream index",
+        ),
+        ({"tracks": ["/x.mkv"], "lang": "jpn"}, "a path and a stream index"),
+        ({"tracks": [{"path": "/x.mkv", "index": 1}], "lang": "jpn"}, "not in a swept library"),
+    ],
+)
+def test_a_retag_has_to_name_tracks_in_the_library_and_a_change(
+    listener, fast_scrypt, one_title, body, said
+):
+    """The edit is checked before the tracks, so a body with neither hears
+    about the change first; a path is held to MEDIA_DIRS as a hold's is."""
+    users.add("admin", "right password", "admin")
+    status, answer, _ = api(
+        listener, "POST", "/api/library/retag", body, cookie=sign_in(listener, "admin")
+    )
+    assert status == 400
+    assert said in answer["status"]
+
+
+def test_a_retag_names_a_file_once(listener, fast_scrypt, one_title):
+    """The staleness check reads one snapshot of the cache, which the first
+    edit to a file puts out of date for a second."""
+    users.add("admin", "right password", "admin")
+    twice = [{"path": f"{one_title}/Dune.mkv", "index": index} for index in (1, 2)]
+    status, answer, _ = api(
+        listener,
+        "POST",
+        "/api/library/retag",
+        {"tracks": twice, "lang": "jpn"},
+        cookie=sign_in(listener, "admin"),
+    )
+    assert (status, answer["status"]) == (400, "one track per file per request")
+
+
+def test_a_retag_body_has_to_be_an_object(listener, fast_scrypt, one_title):
+    users.add("admin", "right password", "admin")
+    status, _, _ = api(
+        listener, "POST", "/api/library/retag", [1, 2], cookie=sign_in(listener, "admin")
+    )
+    assert status == 400
+
+
+def test_a_retag_is_bounded(listener, fast_scrypt, one_title):
+    users.add("admin", "right password", "admin")
+    many = [
+        {"path": f"{one_title}/{at}.mkv", "index": 1} for at in range(retag.MAX_TARGETS + 1)
+    ]
+    status, answer, _ = api(
+        listener,
+        "POST",
+        "/api/library/retag",
+        {"tracks": many, "lang": "jpn"},
+        cookie=sign_in(listener, "admin"),
+    )
+    assert (status, answer["status"]) == (400, f"at most {retag.MAX_TARGETS} tracks at once")
+
+
+@pytest.mark.parametrize(
+    ("kind", "said"),
+    [
+        (runs.SWEEP, "a sweep is running. Wait for it to finish"),
+        (runs.RECHECK, "a recheck is running. Wait for it to finish"),
+    ],
+)
+def test_a_retag_waits_for_a_running_walk(
+    listener, fast_scrypt, clean_registry, one_title, kind, said
+):
+    """A walk books verdicts as it goes and would book over the fresh one.
+    A pause is no bar: nothing here rewrites."""
+    users.add("admin", "right password", "admin")
+    cookie = sign_in(listener, "admin")
+    body = {"tracks": [{"path": f"{one_title}/Dune.mkv", "index": 1}], "lang": "jpn"}
+    runs.open_run("walk-1", kind)
+    try:
+        status, answer, _ = api(listener, "POST", "/api/library/retag", body, cookie=cookie)
+    finally:
+        runs.close_run("walk-1")
+    assert (status, answer["status"], answer["run"]) == (409, said, "walk-1")
+
+
+def test_a_retag_answers_for_each_track(listener, fast_scrypt, one_title, monkeypatch):
+    """One edit, every track named, each file its own answer. The service's
+    words for a refusal go back as written, since the page shows them."""
+    users.add("admin", "right password", "admin")
+    seen: list[tuple] = []
+
+    def fake_apply_all(targets, edit, by):
+        seen.append((targets, edit, by))
+        return [
+            retag.Result(targets[0][0], retag.Outcome.RETAGGED, "", "pending"),
+            retag.Result(targets[1][0], retag.Outcome.REFUSED, "hardlinked: no"),
+        ]
+
+    monkeypatch.setattr(retag, "apply_all", fake_apply_all)
+    first, second = f"{one_title}/Dune.mkv", f"{one_title}/Dune (extended).mkv"
+    status, answer, _ = api(
+        listener,
+        "POST",
+        "/api/library/retag",
+        {
+            # A path is normalised on the way in, as the sweep keys the cache.
+            "tracks": [
+                {"path": f"{one_title}//./Dune.mkv", "index": 1},
+                {"path": second, "index": 2},
+            ],
+            "lang": "ja",
+            "flags": {"commentary": True},
+        },
+        cookie=sign_in(listener, "admin"),
+    )
+    assert status == 200
+    assert answer == {
+        "status": "done",
+        "results": [
+            {"path": first, "status": "retagged", "verdict": "pending"},
+            {"path": second, "status": "refused", "detail": "hardlinked: no"},
+        ],
+    }
+    assert seen == [
+        ([(first, 1), (second, 2)], retag.Edit("jpn", {"commentary": True}), "admin")
+    ]

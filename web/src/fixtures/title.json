@@ -12,6 +12,7 @@
 			"name": "Severance - S01E02 - Half Loop.mkv",
 			"status": "failed",
 			"bytes": 2147483648,
+			"seconds": 3305.0,
 			"lang": "eng",
 			"tracks": [
 				{
@@ -55,6 +56,7 @@
 			"name": "Severance - S01E01 - Good News About Hell.mkv",
 			"status": "conform",
 			"bytes": 2251799813,
+			"seconds": 3420.0,
 			"lang": "eng",
 			"tracks": [
 				{

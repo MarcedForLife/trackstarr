@@ -121,6 +121,16 @@ def test_generated_settings_only_reads_our_own_tag():
     assert media.generated_settings({}) is None
 
 
+def test_a_track_we_encoded_reads_its_rate_off_its_own_tag():
+    """ffmpeg writes neither bit_rate nor BPS on an encode, so without this a
+    generated downmix is the one track in the file showing no rate."""
+    downmix = audio(1, 2, title="2.0")
+    downmix["tags"][media.GENERATED_TAG] = "aac 320k"
+    assert media.summary_bitrate(downmix) == 320_000
+    # A reported rate still wins: the tag says what it was made at.
+    assert media.summary_bitrate(downmix | {"bit_rate": "192000"}) == 192_000
+
+
 def test_track_summary_distils_a_stream():
     stream = audio(2, 6, title="Director's Commentary", default=1, bitrate="640000")
     assert media.track_summary(stream, Policy.from_config()) == {

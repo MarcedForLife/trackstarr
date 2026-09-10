@@ -1,7 +1,7 @@
 {
 	"events": [
 		{
-			"ts": "2026-03-01T11:18:00+13:00",
+			"ts": "2026-03-01T11:19:00+13:00",
 			"event": "held",
 			"version": "0.0.0",
 			"path": "/data/media/tv/The Bear",
@@ -10,7 +10,7 @@
 			"by": "admin"
 		},
 		{
-			"ts": "2026-03-01T11:16:00+13:00",
+			"ts": "2026-03-01T11:17:00+13:00",
 			"event": "webhook",
 			"version": "0.0.0",
 			"run": "2026-03-01T11:55:00+13:00#c3d4",
@@ -21,7 +21,7 @@
 			]
 		},
 		{
-			"ts": "2026-03-01T11:15:00+13:00",
+			"ts": "2026-03-01T11:16:00+13:00",
 			"event": "settings",
 			"version": "0.0.0",
 			"changed": {
@@ -37,16 +37,36 @@
 			"by": "admin"
 		},
 		{
-			"ts": "2026-03-01T11:14:00+13:00",
+			"ts": "2026-03-01T11:15:00+13:00",
 			"event": "resumed",
 			"version": "0.0.0",
 			"by": "admin"
 		},
 		{
-			"ts": "2026-03-01T11:13:00+13:00",
+			"ts": "2026-03-01T11:14:00+13:00",
 			"event": "paused",
 			"version": "0.0.0",
 			"by": "admin"
+		},
+		{
+			"ts": "2026-03-01T11:12:00+13:00",
+			"event": "retagged",
+			"version": "0.0.0",
+			"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
+			"index": 1,
+			"kind": "audio",
+			"changed": {
+				"lang": {
+					"from": "und",
+					"to": "jpn"
+				},
+				"commentary": {
+					"from": false,
+					"to": true
+				}
+			},
+			"by": "admin",
+			"title": "arr:sonarr:12"
 		},
 		{
 			"ts": "2026-03-01T11:11:00+13:00",

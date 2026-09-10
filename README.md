@@ -27,7 +27,7 @@ answer for a change worth having but not worth a 60GB rewrite of its own.
 | `release_tags`  | `alongside` | Clear release tags from track and container titles                                                                                                                                        |
 | `stray_streams` | `alongside` | Drop data and timecode streams nothing plays                                                                                                                                              |
 | `order`         | `always`    | Video, then audio in `AUDIO_LAYOUTS` order, then subtitles, then attachments                                                                                                              |
-| `remux`         | `never`     | Rewrite MP4 and M4V into Matroska, where every rule works. `alongside` converts a file something else is already rewriting                                                                 |
+| `remux`         | `never`     | Rewrite MP4 and M4V into Matroska, where every rule works and track tags can be edited in place. `alongside` converts a file something else is already rewriting                                                                 |
 
 Every rule is idempotent, so a sweep is safe to run as often as you like. A rule
 riding along never causes a rewrite, even indirectly: what the others would do
@@ -103,7 +103,8 @@ where the *arrs cannot answer, the row does not act.
 
 Names normalise as track tags do, so `en`, `eng` and `English` all mean the
 same. The written order is which language a downmix is taken from when none of
-the downmixed ones has a track to use.
+the downmixed ones has a track to use. That stand-in goes again once a downmixed
+language has a source, say after an `und` track is tagged.
 
 ## Quick start
 
@@ -182,7 +183,12 @@ so when the server mounts the library elsewhere, map the difference with
   and kills its rewrite where one is under way.
 - **Library.** Every title as a poster, filtered by verdict and sorted by
   name, size, last processed and more. Open a title to see its files and
-  their plans, hold it, or select titles to plan or rewrite them now.
+  their plans, hold it, or select titles to plan or rewrite them now. An
+  admin can set an `.mkv` track's language and its commentary, forced and
+  SDH flags, across every episode carrying the same track. `mkvpropedit`
+  rewrites the header in place and the file is judged again, so tagging an
+  `und` track with the title's language hands the downmix rule the source it
+  was missing.
 - **Events.** Every rewrite, failure, deferral, sweep and settings change,
   read back from `events.jsonl` with the settings it was judged under.
 - **Settings.** General, Rules, Sweep and Connections edit every setting live,
@@ -330,7 +336,7 @@ are scrypt hashes in `/config/users.json`.
 uv sync                 # the dev group, at the versions CI uses
 cp .env.example .env    # WORK_DIR and STATE_DIR under dev/, loaded at startup
 uv run dev.py           # API and the SvelteKit UI on one port with hot reload
-uv run pytest           # needs ffmpeg 8.1+ on PATH
+uv run pytest           # needs ffmpeg 8.1+ and mkvtoolnix on PATH
 uv run pytest --cov     # what CI measures; fails under the floor in pyproject
 uv run ruff check && uv run ruff format
 uv run mypy
@@ -341,7 +347,8 @@ snapshot, so `tests/test_planner.py` covers them with hand-built stream dicts
 and no media at all. `command.py` turns a plan into an ffmpeg argument list and
 `executor.py` runs it, which is what lets `plan` print the exact command
 without touching a file. `tests/test_integration.py` generates real media
-with ffmpeg.
+with ffmpeg. The tests that edit tags in place skip where `mkvpropedit` is
+missing; CI and the image both have it.
 
 `cryptography` is the only runtime dependency, and the bar for a second is
 high. `uv.lock` is committed; after changing dependencies, run `uv lock` and

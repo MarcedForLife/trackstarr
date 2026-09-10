@@ -66,6 +66,13 @@ export function rate(bitrate: number | undefined): string {
 	return `${Math.round(bitrate / 1000)}k`;
 }
 
+/** What a track of this rate takes over a running time, in bytes. Zero without
+ * both, since neither a rate nor a runtime alone says anything. */
+export function bytesFor(bitrate: number | undefined, seconds: number | undefined): number {
+	if (!bitrate || !seconds) return 0;
+	return Math.round((bitrate / 8) * seconds);
+}
+
 /** A track on one line: codec, layout, language. The same shape for current and
  * planned tracks so the two columns compare. */
 export function describe(track: {

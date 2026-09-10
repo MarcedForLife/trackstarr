@@ -360,6 +360,9 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
         return plan
 
     kept_audio = _drop_commentary(plan, kept_audio)
+    # Ahead of the regenerate rule, or a stale stand-in is rebuilt rather than
+    # retired.
+    kept_audio = _drop_stand_ins(plan, kept_audio)
     # A dropped track is owed its language back, whatever the downmix settings
     # say; see _choose_downmixes.
     kept_audio, rebuild_langs, replacing = _drop_stale_downmixes(plan, kept_audio)
@@ -568,6 +571,62 @@ def _drop_commentary(plan: Plan, kept_audio: list[dict]) -> list[dict]:
     for stream in dropped:
         _record(plan, "commentary", f"drop commentary audio {_stream_label(stream)}")
     return keep
+
+
+def _drop_stand_ins(plan: Plan, kept_audio: list[dict]) -> list[dict]:
+    """The downmix rule taking back a stand-in it made.
+
+    A layout no wanted language could fill is filled from any language (see
+    :func:`_choose_downmixes`), usually because the original track was
+    untagged. Once a wanted language has a track or a source at that size the
+    stand-in has nothing to stand in for. Known by GENERATED_TAG, so a stereo
+    track the ripper shipped is never taken for one: that is the languages
+    rule's business, or the owner's.
+    """
+    # Widened for the lookup: a broken stream reports no channels.
+    layouts: dict[int | None, Layout] = {
+        layout.channels: layout for layout in plan.policy.downmixed()
+    }
+    wanted = _wanted_langs(plan, set())
+    if not layouts or not wanted:
+        return kept_audio
+    keep: list[dict] = []
+    for stream in kept_audio:
+        layout = layouts.get(stream.get("channels"))
+        lang = stream_lang(stream)
+        if layout is None or lang in wanted or generated_settings(stream) is None:
+            keep.append(stream)
+            continue
+        served = _served_lang(plan, kept_audio, layout, wanted)
+        if served is None:
+            keep.append(stream)
+            continue
+        _record(
+            plan,
+            DOWNMIX_RULE,
+            f"drop {layout.name} downmix {_stream_label(stream, lang or 'und')}, "
+            f"a stand-in until {served} had a source",
+        )
+    return keep
+
+
+def _served_lang(
+    plan: Plan, kept_audio: list[dict], layout: Layout, wanted: list[str]
+) -> str | None:
+    """The first wanted language with a track at this size, or a track to make
+    one from. None while the layout still needs a stand-in."""
+    present = {
+        (stream.get("channels"), stream_lang(stream))
+        for stream in kept_audio
+        if not is_commentary(stream, plan.policy)
+    }
+    sources = _downmix_sources(kept_audio, layout.channels, plan.policy)
+    for lang in wanted:
+        if (layout.channels, lang) in present or any(
+            stream_lang(src) == lang for src in sources
+        ):
+            return lang
+    return None
 
 
 def _downmix_sources(

@@ -51,9 +51,13 @@ export type Event = {
 	title?: string;
 	// The settings in force, in full, so an old `config_id` still resolves.
 	config?: Record<string, unknown>;
-	// A settings save: only the names that moved, both sides of each. A name
-	// set for the first time moves from the empty value, not from nothing.
+	// A settings save, or a track edited in place: only the names that moved,
+	// both sides of each. A setting set for the first time moves from the empty
+	// value, not from nothing.
 	changed?: Record<string, { from: unknown; to: unknown }>;
+	// The track an edit was made to: its stream index in the file, and its kind.
+	index?: number;
+	kind?: string;
 	by?: string;
 	// Why a title was held. `seconds` is how long the hold was placed for, and
 	// is absent on one with no end.
@@ -220,6 +224,8 @@ export function headline(entry: Event, title = ''): string {
 			return `Hold lifted on ${title || named(entry.path).name}`;
 		case 'skipped':
 			return `Skipped ${named(entry.path).name}`;
+		case 'retagged':
+			return `Retagged ${title || named(entry.path).name}`;
 		case 'webhook': {
 			// Counted even for one, since a release file name truncates at any
 			// width. The name goes on the second line.
@@ -234,6 +240,23 @@ export function headline(entry: Event, title = ''): string {
 		default:
 			return entry.event;
 	}
+}
+
+/** The track an edit was made to, as a person names it: "Audio stream 1". */
+function stream(entry: Event): string {
+	const kind = entry.kind || 'track';
+	return `${kind[0].toUpperCase()}${kind.slice(1)} stream ${entry.index ?? '?'}`;
+}
+
+/** A track edit as lines, one per tag moved. The language reads as its codes
+ * both sides, since that is what the file carries; a flag as where it ended,
+ * under the name the editor gives it. */
+export function retagged(entry: Event): string[] {
+	return Object.entries(entry.changed ?? {}).map(([field, move]) =>
+		field === 'lang'
+			? `language ${spell(move.from)} to ${spell(move.to)}`
+			: `${field === 'sdh' ? 'SDH' : field} ${spell(move.to)}`
+	);
 }
 
 /** The episode a headline was about, kept out of the truncation: eight
@@ -305,6 +328,8 @@ export function detail(entry: Event): string {
 			// The run it was taken off is in the opened row; a skip lasts no
 			// longer than that run.
 			return entry.by ? `Left alone for that run by ${entry.by}.` : '';
+		case 'retagged':
+			return [stream(entry), ...retagged(entry)].join(' · ');
 		case 'webhook': {
 			// What the headline counted, by name. Whole, since this line wraps and
 			// two episodes of one series otherwise read as one name twice.
@@ -426,6 +451,12 @@ export function details(entry: Event, before?: Event): Detail[] {
 			// A hold on a whole title is on its folder, and a skip is on one file.
 			add(entry.event === 'skipped' ? 'File' : 'Path', [entry.path], true);
 			add('Reason', [entry.reason]);
+			add('By', [entry.by]);
+			break;
+		case 'retagged':
+			add('File', [entry.path], true);
+			add('Track', [stream(entry)]);
+			add('Changed', retagged(entry));
 			add('By', [entry.by]);
 			break;
 	}

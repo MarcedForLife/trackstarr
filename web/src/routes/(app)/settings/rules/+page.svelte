@@ -151,7 +151,7 @@
 	const outputExts = $derived(ruleOn('remux') ? ['.mkv'] : exts);
 
 	const LAYOUTS_DESC =
-		'Every size this library has an opinion about, in the audio track order. Downmix guarantees one exists, made from the best bigger track, Keep leaves it alone and Remove deletes it.';
+		'Every size this library has an opinion about, in the audio track order. Downmix guarantees one exists, made from the best bigger track, and takes back a stand-in it made while no downmixed language had one. Keep leaves it alone and Remove deletes it.';
 
 	// The row says what each encoder is for; nobody arrives knowing. Notes come
 	// only from downmixed rows, since nothing else is encoded.
@@ -193,7 +193,7 @@
 		{
 			name: 'FORCED_PATTERN',
 			label: 'Forced subtitles',
-			desc: 'Matches forced subtitles, which are always kept.'
+			desc: 'Matches forced subtitles, which the SDH rule leaves alone. The languages rule still drops one in a language not listed.'
 		},
 		{
 			name: 'RELEASE_TAG_PATTERN',
@@ -426,7 +426,7 @@
 			{@render ruleRow({
 				rule: 'sdh',
 				label: 'SDH subtitles',
-				text: 'Drop an SDH subtitle when the same language keeps a full one. Forced subtitles always stay.'
+				text: 'Drop an SDH subtitle when the same language keeps a full one. A forced subtitle is neither the full one nor the one dropped.'
 			})}
 		</Section>
 

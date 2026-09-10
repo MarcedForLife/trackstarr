@@ -24,9 +24,10 @@ RUN npm run build
 
 # Alpine's ffmpeg carries the native AAC encoder, which is all the downmixes
 # need. No hardware acceleration: the work is stream copies and is disk-bound.
+# mkvtoolnix is the command-line package, for editing a track's tags in place.
 FROM alpine:3.24
 
-RUN apk add --no-cache ffmpeg python3 tzdata
+RUN apk add --no-cache ffmpeg mkvtoolnix python3 tzdata
 COPY --from=build /out /
 COPY --from=web /web/build /web
 RUN python3 -m compileall -q /usr/lib/python3*/site-packages/trackstarr

@@ -126,6 +126,14 @@ def running_count() -> int:
         return len(_running_ffmpeg)
 
 
+def is_rewriting(path: str) -> bool:
+    """Whether an ffmpeg this process started is reading ``path`` for a rewrite.
+    An in-place tag edit under it would hand ffmpeg a header it did not open.
+    A run with no path on record answers for no file."""
+    with _running_lock:
+        return bool(path) and path in _running_ffmpeg.values()
+
+
 def terminate_running(path: str = "") -> int:
     """SIGTERM every running ffmpeg, or only the one rewriting ``path``; how
     many were signalled.

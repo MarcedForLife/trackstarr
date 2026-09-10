@@ -1,14 +1,15 @@
 """End-to-end against real files. Requires ffmpeg."""
 
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
 
 import pytest
 
-from conftest import read_events, set_config, set_layouts, set_rules
-from trackstarr import config, executor, planner, sweep_cache
+from conftest import read_events, set_config, set_langs, set_layouts, set_rules
+from trackstarr import config, executor, library, planner, retag, sweep_cache
 from trackstarr.cli import main as cli_main
 from trackstarr.executor import Outcome, apply_plan
 from trackstarr.media import ProbeError, duration, probe, stream_title
@@ -20,6 +21,12 @@ from trackstarr.sweep_cache import read
 
 #: The defect this tool exists to fix: a 5.1 main track and a 2.0 commentary.
 COMMENTARY_CASE = [(6, "eng", "Surround"), (2, "eng", "Commentary")]
+
+#: The tag edits need mkvpropedit, which the image and CI have and a
+#: development machine may not.
+needs_mkvtoolnix = pytest.mark.skipif(
+    shutil.which("mkvpropedit") is None, reason="mkvtoolnix is not installed"
+)
 
 
 def rewrite(plan) -> Outcome:
@@ -539,3 +546,96 @@ def test_a_rewrite_reports_how_far_through_the_file_it_is(make_file):
         "it should end at the file's length"
     )
     assert speed > 0, "and say how fast it got there, which is what a time left is made of"
+
+
+def judged(path: str) -> dict:
+    """The sweep cache entry the page would have shown the file's tracks from,
+    as far as the staleness check reads it."""
+    found = os.stat(path)
+    return {"size": found.st_size, "mtime_ns": found.st_mtime_ns}
+
+
+@needs_mkvtoolnix
+def test_tagging_an_untagged_original_makes_it_the_downmix_source(make_file):
+    """The case the editor exists for: a Japanese film whose 5.1 says und
+    beside an English 2.0, so nothing is made for it. One tag later the rules
+    want the Japanese stereo track."""
+    set_langs("eng", "original")
+    set_layouts("5.1", "2.0")
+    path = make_file("f.mkv", [(6, "und", ""), (2, "eng", "")])
+    dune = library.Title("arr:radarr:7", "Dune", os.path.dirname(path), "movie", lang="jpn")
+    assert not build_plan(path, "jpn").needed
+
+    result = retag.apply(path, 1, retag.Edit("jpn"), "admin", judged(path), title=dune)
+
+    assert (result.status, result.verdict) == (retag.Outcome.RETAGGED, "pending")
+    assert langs_of(path, "audio") == ["jpn", "eng"]
+    plan = build_plan(path, "jpn")
+    assert any("2.0 downmix from stream 1 (6ch jpn)" in reason for reason in plan.reasons)
+    # Booked, so the sheet reloads to the new verdict rather than the old.
+    stored = read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    assert stored.files[path]["status"] == "pending"
+    assert stored.files[path]["tracks"][1]["lang"] == "jpn"
+    (recorded,) = read_events()
+    assert (recorded["event"], recorded["changed"]) == (
+        "retagged",
+        {"lang": {"from": "und", "to": "jpn"}},
+    )
+
+
+@needs_mkvtoolnix
+def test_marking_a_stereo_track_as_commentary_frees_the_stereo_slot(make_file):
+    """A 2.0 with no title and no flag is the stereo track as far as the
+    rules can tell. Flagged, it is commentary, and a real 2.0 is owed."""
+    set_layouts("5.1", "2.0")
+    set_rules(commentary="never")
+    path = make_file("f.mkv", [(6, "eng", "Surround"), (2, "eng", "")])
+    assert not build_plan(path, "eng").needed
+
+    result = retag.apply(path, 2, retag.Edit(flags={"commentary": True}), "admin", judged(path))
+
+    assert result.status == retag.Outcome.RETAGGED
+    assert [stream["disposition"]["comment"] for stream in streams_of(path, "audio")] == [0, 1]
+    reasons = build_plan(path, "eng").reasons
+    assert any("2.0 downmix from stream 1 (6ch eng)" in reason for reason in reasons)
+    # The 5.1 was not touched.
+    assert langs_of(path, "audio") == ["eng", "eng"]
+    assert titles_of(path, "audio") == ["Surround", ""]
+
+
+@needs_mkvtoolnix
+def test_subtitle_flags_round_trip(make_file):
+    path = make_file("f.mkv", [(2, "eng", "")], subs=[("eng", ""), ("eng", "")])
+    subtitles = streams_of(path, "subtitle")
+    result = retag.apply(
+        path,
+        subtitles[1]["index"],
+        retag.Edit(flags={"forced": True, "sdh": True}),
+        "admin",
+        judged(path),
+    )
+    assert result.status == retag.Outcome.RETAGGED
+    flagged = streams_of(path, "subtitle")[1]["disposition"]
+    assert (flagged["forced"], flagged["hearing_impaired"]) == (1, 1)
+    # Back again, which is the same edit the other way.
+    result = retag.apply(
+        path,
+        subtitles[1]["index"],
+        retag.Edit(flags={"forced": False, "sdh": False}),
+        "admin",
+        judged(path),
+    )
+    assert result.status == retag.Outcome.RETAGGED
+    flagged = streams_of(path, "subtitle")[1]["disposition"]
+    assert (flagged["forced"], flagged["hearing_impaired"]) == (0, 0)
+
+
+@needs_mkvtoolnix
+def test_a_language_mkvpropedit_does_not_know_fails_in_its_words(make_file):
+    path = make_file("f.mkv", [(2, "eng", "")])
+    result = retag.apply(path, 1, retag.Edit("xq"), "admin", judged(path))
+    assert result.status is retag.Outcome.FAILED
+    # The tool's own message, whatever this version's wording, naming the code.
+    assert result.detail.startswith("mkvpropedit failed (2):")
+    assert "xq" in result.detail
+    assert langs_of(path, "audio") == ["eng"]

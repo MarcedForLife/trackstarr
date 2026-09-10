@@ -114,6 +114,9 @@ export type LibraryFile = {
 	name: string;
 	status: Verdict;
 	bytes: number;
+	// Running time, which is what turns a track's rate into a size. Zero on a
+	// file no probe has reached.
+	seconds: number;
 	lang?: string | null;
 	// The file now, and what a rewrite would leave. The second is empty for
 	// everything but a pending file.
@@ -342,24 +345,53 @@ export function unify(before: Track[], after: Track[], mark: Pairing): Row[] {
 	return rows;
 }
 
+// A row with its place on disk: `stream` is the track's index in the file as
+// it stands, which is what an edit of its tags is aimed at, and null for a
+// track the file does not hold, one a rewrite would generate or one already
+// dropped.
+export type Listed = Row & { stream: number | null };
+
+function placed(rows: Row[], stream: (row: Row) => number | null): Listed[] {
+	return rows.map((row) => ({ ...row, stream: stream(row) }));
+}
+
 // A file's tracks as one numbered list, and what the numbering is of: what a
 // run would leave, what one left, or just the file as it stands. A plan wins
 // over a rewrite already made, being the more useful answer, and only a rules
 // change leaves a file with both.
-export function listing(file: LibraryFile): { label: string; rows: Row[] } {
+export function listing(file: LibraryFile): { label: string; rows: Listed[] } {
 	if (file.planned.length) {
-		return { label: 'After the rewrite', rows: unify(file.tracks, file.planned, pair(file)) };
+		// A kept row is the planned track, which names its source; a dropped one is
+		// the file's own; a generated one is not there yet.
+		const rows = unify(file.tracks, file.planned, pair(file));
+		return {
+			label: 'After the rewrite',
+			rows: placed(rows, (row) =>
+				row.state === 'added'
+					? null
+					: row.state === 'dropped'
+						? row.track.index
+						: (row.track.src ?? null)
+			)
+		};
 	}
 	const was = file.modified?.was ?? [];
 	const moved = file.modified && was.length ? paired(file.modified) : null;
 	// The after is the file as it was probed once rewritten, not the plan's word
-	// for what it would be.
-	if (moved) return { label: 'As rewritten', rows: unify(was, file.tracks, moved) };
+	// for what it would be. A dropped row is the file that was.
+	if (moved) {
+		const rows = unify(was, file.tracks, moved);
+		return {
+			label: 'As rewritten',
+			rows: placed(rows, (row) => (row.state === 'dropped' ? null : row.track.index))
+		};
+	}
 	const whole = {
 		kept: new Set(file.tracks.map((track) => track.index)),
 		added: new Set<number>()
 	};
-	return { label: 'Tracks', rows: unify(file.tracks, file.tracks, whole) };
+	const rows = unify(file.tracks, file.tracks, whole);
+	return { label: 'Tracks', rows: placed(rows, (row) => row.track.index) };
 }
 
 // Everything the app knows how to say about one verdict.

@@ -563,7 +563,8 @@ def test_a_rewrite_in_flight_can_be_stopped(tmp_path):
     set_config(FFMPEG_TIMEOUT=60)
     result: list[tuple[int, str]] = []
     running = threading.Thread(
-        target=lambda: result.append(executor._run_ffmpeg(["sleep", "30"])), daemon=True
+        target=lambda: result.append(executor._run_ffmpeg(["sleep", "30"], None, "/m/f.mkv")),
+        daemon=True,
     )
     running.start()
     # Registered by the time it is running, or the button would be a no-op on
@@ -573,12 +574,18 @@ def test_a_rewrite_in_flight_can_be_stopped(tmp_path):
             break
         time.sleep(0.01)
 
+    # And answers for the file, so an edit of its tags waits; a run with no
+    # file on record answers for none.
+    assert executor.is_rewriting("/m/f.mkv")
+    assert not executor.is_rewriting("/m/other.mkv")
+    assert not executor.is_rewriting("")
     assert executor.terminate_running() == 1
     running.join(timeout=10)
     (code, _) = result[0]
     assert code < 0, "signalled, not a clean exit"
     # And it lets go, so a later abort does not signal a process that has gone.
     assert executor.terminate_running() == 0
+    assert not executor.is_rewriting("/m/f.mkv")
 
 
 def test_a_stopped_rewrite_is_deferred_rather_than_failed(tmp_path, monkeypatch):

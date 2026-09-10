@@ -92,8 +92,9 @@ RULES = {
     ),
     "remux": Rule(
         NEVER,
-        "Rewrite MP4 and M4V into Matroska, the container every rule works in. "
-        "Text subtitles convert to SRT. Only the usual downmixes are encoded.",
+        "Rewrite MP4 and M4V into Matroska, the container every rule works in and the "
+        "only one whose track tags the library can edit in place. Text subtitles "
+        "convert to SRT. Only the usual downmixes are encoded.",
     ),
 }
 

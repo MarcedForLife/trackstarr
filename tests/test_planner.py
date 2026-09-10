@@ -190,6 +190,89 @@ def test_a_layout_no_wanted_language_can_fill_falls_back():
     assert [(out.channels, out.lang) for out in audio_out(plan) if out.encode] == [(2, "eng")]
 
 
+def tagged_downmix(index, channels, settings, title="2.0", lang="eng"):
+    """An audio stream carrying the tag a generated downmix is written with."""
+    stream = audio(index, channels, lang=lang, title=title)
+    stream["tags"]["TRACKSTARR"] = settings
+    return stream
+
+
+def stand_in_rip(source_lang="jpn", settings="aac 320k"):
+    """A file rewritten while its original track was untagged: the English 2.0
+    the rule made then, the original 5.1 as it is tagged now, and the dub."""
+    return [
+        video(0),
+        tagged_downmix(1, 2, settings),
+        audio(2, 6, lang=source_lang),
+        audio(3, 6, lang="eng"),
+    ]
+
+
+STAND_IN = "drop 2.0 downmix 1 (eng, 2.0), a stand-in until jpn had a source"
+JPN_DOWNMIX = "add 2.0 downmix from stream 2 (6ch jpn)"
+
+
+def test_a_stand_in_goes_once_the_wanted_language_has_a_source():
+    """The und original was tagged jpn after the first rewrite. The English 2.0
+    made in its place is the rule's own, so the rule takes it back."""
+    set_langs("original", "eng:keep")
+    plan = plan_for(*stand_in_rip(), original="jpn")
+    assert plan.reasons == [STAND_IN, JPN_DOWNMIX]
+    assert plan.rules == {"downmix"}
+    assert 1 not in {out.src for out in plan.streams}
+
+
+def test_a_stand_in_goes_when_the_wanted_language_already_has_the_layout():
+    set_langs("original", "eng:keep")
+    plan = plan_for(
+        video(0),
+        tagged_downmix(1, 2, "aac 320k", lang="jpn"),
+        tagged_downmix(2, 2, "aac 320k"),
+        audio(3, 6, lang="jpn"),
+        original="jpn",
+    )
+    assert plan.reasons == ["drop 2.0 downmix 2 (eng, 2.0), a stand-in until jpn had a source"]
+
+
+def test_a_stand_in_stays_while_no_wanted_language_can_fill_the_layout():
+    set_langs("original", "eng:keep")
+    plan = plan_for(*stand_in_rip(source_lang=None), original="jpn")
+    assert plan.reasons == []
+
+
+def test_a_downmix_in_a_wanted_language_is_never_a_stand_in():
+    plan = plan_for(*stand_in_rip(), original="jpn")
+    assert plan.reasons == [JPN_DOWNMIX]
+
+
+def test_a_stereo_track_the_ripper_shipped_is_not_a_stand_in():
+    set_langs("original", "eng:keep")
+    plan = plan_for(video(0), audio(1, 2, lang="eng"), audio(2, 6, lang="jpn"), original="jpn")
+    assert plan.reasons == [JPN_DOWNMIX]
+
+
+def test_an_untagged_stand_in_is_still_the_rules_own():
+    set_langs("original")
+    plan = plan_for(
+        video(0),
+        tagged_downmix(1, 2, "aac 320k", lang=None),
+        audio(2, 6, lang="jpn"),
+        original="jpn",
+    )
+    assert plan.reasons == [
+        "drop 2.0 downmix 1 (und, 2.0), a stand-in until jpn had a source",
+        JPN_DOWNMIX,
+    ]
+
+
+def test_a_stale_stand_in_is_retired_not_rebuilt():
+    set_langs("original", "eng:keep")
+    set_rules(regenerate="always")
+    plan = plan_for(*stand_in_rip(settings="aac 192k"), original="jpn")
+    assert plan.reasons == [STAND_IN, JPN_DOWNMIX]
+    assert plan.rules == {"downmix"}
+
+
 def test_downmix_prefers_most_channels_within_a_language():
     plan = plan_for(video(0), audio(1, 6, lang="eng"), audio(2, 8, lang="eng"))
     assert any("add 2.0 downmix from stream 2" in reason for reason in plan.reasons)
@@ -229,13 +312,6 @@ def test_layouts_with_equal_channel_counts_generate_one_track():
 # The regenerate rule
 
 
-def tagged_downmix(index, channels, settings, title="2.0", lang="eng"):
-    """An audio stream carrying the tag a generated downmix is written with."""
-    stream = audio(index, channels, lang=lang, title=title)
-    stream["tags"]["TRACKSTARR"] = settings
-    return stream
-
-
 def test_generated_mode_rebuilds_stale_downmixes():
     set_rules(regenerate="always")
     plan = plan_for(video(0), tagged_downmix(1, 2, "aac 192k"), audio(2, 6))
@@ -272,6 +348,18 @@ def test_a_drop_with_no_track_to_claim_it_still_says_so():
         "regenerate 2.0 downmix 2 (aac 128k, 2.0)",
     ]
     assert sum("from stream 3" in reason for reason in plan.reasons) == 1
+
+
+def test_a_stale_downmix_with_no_source_in_its_language_is_an_orphan():
+    """A German 2.0 owed a rebuild the file cannot give: the English one made
+    instead is a new track, not its replacement, so both lines are said."""
+    set_rules(regenerate="always")
+    set_langs("eng", "ger")
+    plan = plan_for(video(0), tagged_downmix(1, 2, "aac 192k", lang="ger"), audio(2, 6))
+    assert plan.reasons == [
+        "add 2.0 downmix from stream 2 (6ch eng)",
+        "regenerate 2.0 downmix 1 (aac 192k, 2.0) as aac 320k",
+    ]
 
 
 @pytest.mark.parametrize("wanted", [True, False], ids=["original wanted", "no language wanted"])
@@ -1337,9 +1425,13 @@ def test_a_plan_records_every_input_track():
 def test_an_untagged_stale_downmix_rebuilds_without_claiming_a_language():
     """A generated track whose language tag has since been stripped still
     regenerates, but names no language for the rebuild to come back in: an
-    untagged source would otherwise reserve a layout for the empty string."""
+    untagged source would otherwise reserve a layout for the empty string.
+    The source is untagged too, or the downmix rule would retire the track as
+    a stand-in before the regenerate rule saw it."""
     set_rules(regenerate="always")
-    plan = plan_for(video(0), tagged_downmix(1, 2, "aac 192k", lang=None), audio(2, 6))
+    plan = plan_for(
+        video(0), tagged_downmix(1, 2, "aac 192k", lang=None), audio(2, 6, lang=None)
+    )
     assert any(reason.startswith("regenerate 2.0 downmix") for reason in plan.reasons)
     assert 1 not in {out.src for out in plan.streams}
     assert [out.channels for out in audio_out(plan) if out.encode] == [2]

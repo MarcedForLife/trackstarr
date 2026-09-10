@@ -12,7 +12,8 @@
 		| 'cross'
 		| 'chevron'
 		| 'refresh'
-		| 'sliders';
+		| 'sliders'
+		| 'pencil';
 </script>
 
 <script lang="ts">
@@ -22,7 +23,8 @@
 	// empties a field or drops a row; `chevron` is `next` a shade lighter, for a
 	// row that opens. `refresh` is an arc left open where its tick goes, since a
 	// closed ring with an arrowhead on it is a blot this small. `sliders` says
-	// settings without a gear, whose teeth are mud at 12px.
+	// settings without a gear, whose teeth are mud at 12px. `pencil` marks a
+	// row whose tags open for editing.
 	let { name, size = 12 }: { name: GlyphName; size?: number } = $props();
 </script>
 
@@ -118,6 +120,19 @@
 		>
 			<path d="M12.4 9.6A4.8 4.8 0 1 1 12.2 5.2"></path>
 			<path d="M8.8 5.2h3.6V1.8"></path>
+		</g>
+	{:else if name === 'pencil'}
+		<!-- The body is the diagonal; one cross-stroke says where the point starts,
+		     since a second would close up into a smudge at this size. -->
+		<g
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.5"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<path d="M3.4 12.6l.9-3.1 6.4-6.4 2.2 2.2-6.4 6.4z"></path>
+			<path d="M9.4 4.4l2.2 2.2"></path>
 		</g>
 	{:else if name === 'cross'}
 		<!-- Half the box, centred: six pixels of stroke at 12px. -->

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { named, titled, wholeUnits } from '$lib/format';
+import { bytesFor, named, titled, wholeUnits } from '$lib/format';
 
 describe('named', () => {
 	test('an episode is said apart from the series it truncates with', () => {
@@ -112,5 +112,17 @@ describe('wholeUnits', () => {
 		expect(wholeUnits(-60)).toBe('');
 		expect(wholeUnits(60.5)).toBe('');
 		expect(wholeUnits(NaN)).toBe('');
+	});
+});
+
+describe('bytesFor', () => {
+	test('a rate over a running time is what the track takes', () => {
+		// 640k over an hour: 640000 / 8 * 3600.
+		expect(bytesFor(640_000, 3600)).toBe(288_000_000);
+	});
+
+	test('either half missing says nothing rather than nothing much', () => {
+		expect(bytesFor(undefined, 3600)).toBe(0);
+		expect(bytesFor(640_000, 0)).toBe(0);
 	});
 });

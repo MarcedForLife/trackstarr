@@ -6,6 +6,7 @@ import subprocess
 from . import config
 from .langs import norm_lang
 from .policy import IMAGE_CODECS, Policy
+from .tracks import settings_bitrate
 
 #: Tag recording a generated downmix's encode settings, so a later pass knows
 #: our own tracks. Survives in Matroska; MP4 drops custom tags.
@@ -108,6 +109,16 @@ def generated_settings(stream: dict) -> str | None:
     return tag_value(stream, GENERATED_TAG)
 
 
+def summary_bitrate(stream: dict) -> int | None:
+    """The rate a library view shows: the reported one, or the rate a track we
+    encoded records in its own tag.
+
+    ffmpeg writes neither bit_rate nor BPS on an encode, so a generated downmix
+    is the one track in the file with no rate on disk.
+    """
+    return stream_bitrate(stream) or settings_bitrate(generated_settings(stream) or "")
+
+
 def has_disposition(stream: dict, *flags: str) -> bool:
     disposition = stream.get("disposition") or {}
     return any(disposition.get(flag) for flag in flags)
@@ -195,7 +206,7 @@ def track_summary(stream: dict, policy: Policy) -> dict:
         "channels": stream.get("channels"),
         "lang": stream_lang(stream),
         "title": stream_title(stream),
-        "bitrate": stream_bitrate(stream),
+        "bitrate": summary_bitrate(stream),
         "flags": flags,
     }
     return {name: value for name, value in summary.items() if value not in (None, "", [])}

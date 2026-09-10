@@ -689,6 +689,9 @@ def _file(entry: dict) -> dict:
     :func:`trackstarr.processing._modified` before the sort. The verdict says
     what the file is now, which for a rewritten one is Passed like any other,
     so without this the sheet could not tell the two apart.
+
+    ``seconds`` is the running time, which is what turns a track's rate into
+    the space it takes.
     """
     modified = entry.get("modified")
     return {
@@ -696,6 +699,7 @@ def _file(entry: dict) -> dict:
         "name": os.path.basename(entry["path"]),
         "status": entry.get("status") or UNCHECKED,
         "bytes": entry.get("size") or 0,
+        "seconds": entry.get("duration") or 0,
         "lang": entry.get("lang"),
         "tracks": entry.get("tracks") or [],
         "planned": entry.get("planned") or [],

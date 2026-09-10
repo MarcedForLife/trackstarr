@@ -411,6 +411,18 @@ def seed_history() -> None:
     )
     holds.lift(SEVERANCE, by="admin")
     events.record("skipped", run=LAST_SWEEP, path=EPISODE_TWO, by="admin")
+    # A track edited in place: the stream, and both sides of each tag moved.
+    events.record(
+        "retagged",
+        path=EPISODE_TWO,
+        index=1,
+        kind="audio",
+        changed={
+            "lang": {"from": "und", "to": "jpn"},
+            "commentary": {"from": False, "to": True},
+        },
+        by="admin",
+    )
     assert runs.pause(by="admin")
     assert runs.resume(by="admin")
     # Both sides on both names: a name set for the first time moves from "",

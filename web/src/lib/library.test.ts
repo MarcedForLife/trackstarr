@@ -23,6 +23,7 @@ function file(over: Partial<LibraryFile> = {}): LibraryFile {
 		name: 'one.mkv',
 		status: 'conform',
 		bytes: 1,
+		seconds: 3600,
 		tracks: [],
 		planned: [],
 		why: {},
@@ -142,6 +143,50 @@ describe('listing', () => {
 			[1, 'kept'],
 			[2, 'kept']
 		]);
+	});
+
+	test('a plan names each row on disk: the kept row by its source, the generated row not at all', () => {
+		const planned = listing(
+			file({
+				tracks: [track(0, 'video'), track(1, 'audio'), track(2, 'audio')],
+				planned: [
+					track(0, 'video', { src: 0 }),
+					track(1, 'audio', { src: 2 }),
+					track(2, 'audio', { src: 2, flags: ['generated'] })
+				]
+			})
+		);
+		expect(planned.rows.map((row) => [row.state, row.stream])).toEqual([
+			['kept', 0],
+			['kept', 2],
+			['added', null],
+			['dropped', 1]
+		]);
+	});
+
+	test('a rewrite already made: what it dropped is gone, what it generated is in the file', () => {
+		const rewritten = listing(
+			file({
+				tracks: [track(0, 'video'), track(1, 'audio')],
+				modified: {
+					at: '2026-09-01T00:00:00Z',
+					was: [track(0, 'video'), track(1, 'audio'), track(2, 'audio')],
+					dropped: [1, 2],
+					added: [1]
+				}
+			})
+		);
+		expect(rewritten.rows.map((row) => [row.state, row.stream])).toEqual([
+			['kept', 0],
+			['added', 1],
+			['dropped', null],
+			['dropped', null]
+		]);
+	});
+
+	test('a file as it stands is on disk row for row', () => {
+		const plain = listing(file({ tracks: [track(0, 'video'), track(3, 'audio')] }));
+		expect(plain.rows.map((row) => row.stream)).toEqual([0, 3]);
 	});
 
 	test('a rewrite that moved no track numbers the file as it stands', () => {

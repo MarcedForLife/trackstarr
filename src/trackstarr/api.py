@@ -5,6 +5,7 @@ sitting below a check. :mod:`trackstarr.webhook` owns the socket and answers
 through the handler each function here is passed.
 """
 
+import collections
 import hashlib
 import json
 import logging
@@ -28,6 +29,7 @@ from . import (
     links,
     notify,
     ratings,
+    retag,
     runlog,
     runs,
     sessions,
@@ -581,6 +583,78 @@ def _recheck_titles(handler: Handler, signed_in: users.Account) -> None:
     handler.send_json({"status": "started", "run": run, "titles": len(chosen)})
 
 
+def _retag_targets(body: dict) -> tuple[list[tuple[str, int]], tuple[int, str] | None]:
+    """The tracks a retag names, as (path, stream index), or the refusal.
+
+    Paths rather than title ids, since a track is one stream of one file,
+    and checked against MEDIA_DIRS as a hold on a file is.
+    """
+    named = body.get("tracks")
+    if not isinstance(named, list) or not named:
+        return [], (400, "name the tracks to change, as a path and a stream index each")
+    if len(named) > retag.MAX_TARGETS:
+        return [], (400, f"at most {retag.MAX_TARGETS} tracks at once")
+    targets: list[tuple[str, int]] = []
+    for entry in named:
+        if not isinstance(entry, dict):
+            return [], (400, "each track is a path and a stream index")
+        path, index = entry.get("path"), entry.get("index")
+        # bool is an int, so `true` would otherwise pass as stream 1.
+        if not isinstance(path, str) or not isinstance(index, int) or isinstance(index, bool):
+            return [], (400, "each track is a path and a stream index")
+        if not _under_media(path):
+            return [], (400, "that file is not in a swept library")
+        # Normalised, since the sweep cache is keyed by the path as walked and a
+        # spelling that misses its entry would read as a file never judged.
+        path = os.path.normpath(path)
+        if any(path == named_path for named_path, _ in targets):
+            # The staleness check reads one snapshot of the cache, which the
+            # first edit to a file puts out of date for the second.
+            return [], (400, "one track per file per request")
+        targets.append((path, index))
+    return targets, None
+
+
+def _retag_tracks(handler: Handler, signed_in: users.Account) -> None:
+    """Change the language or flags of tracks in place and judge each file
+    again.
+
+    One edit for every track named, which is how a season's untagged
+    original track is fixed in one press. Each file answers for itself.
+    Refused during a walk, which would book over the fresh verdicts; a pause
+    is no bar, since nothing here rewrites.
+    """
+    body = handler.read_json()
+    if body is None:
+        return
+    try:
+        edit = retag.parse_edit(body)
+    except ValueError as err:
+        handler.reply(400, str(err))
+        return
+    targets, refusal = _retag_targets(body)
+    if refusal:
+        handler.reply(*refusal)
+        return
+    if _cache_busy(handler, "Wait for it to finish"):
+        return
+    results = retag.apply_all(targets, edit, signed_in.name)
+    tally = collections.Counter(str(result.status) for result in results)
+    log.info("retag from the web UI by %s: %s, %s", signed_in.name, edit, dict(tally))
+    handler.send_json({"status": "done", "results": [result.as_json() for result in results]})
+
+
+def _cache_busy(handler: Handler, advice: str) -> bool:
+    """Whether a walk holds the sweep cache, with the refusal already served.
+    ``advice`` is what the caller can do about it."""
+    if existing := runs.cache_holder():
+        handler.send_json(
+            {"status": f"a {existing.kind} is running. {advice}", "run": existing.id}, 409
+        )
+        return True
+    return False
+
+
 def _clear_library(handler: Handler, signed_in: users.Account) -> None:
     """Drop every stored verdict so the next sweep re-probes.
 
@@ -592,11 +666,7 @@ def _clear_library(handler: Handler, signed_in: users.Account) -> None:
     # reused.
     if handler.read_json() is None:
         return
-    if existing := runs.cache_holder():
-        handler.send_json(
-            {"status": f"a {existing.kind} is running. Stop it first", "run": existing.id},
-            409,
-        )
+    if _cache_busy(handler, "Stop it first"):
         return
     dropped = library.clear()
     log.info("stored verdicts cleared from the web UI by %s", signed_in.name)
@@ -950,6 +1020,7 @@ _POST_ROUTES: dict[str, Route[_PostHandler]] = {
     "/api/holds": Route(Access.ADMIN, _place_hold),
     "/api/holds/lift": Route(Access.ADMIN, _lift_hold),
     "/api/library/run": Route(Access.ADMIN, _recheck_titles),
+    "/api/library/retag": Route(Access.ADMIN, _retag_tracks),
     "/api/library/clear": Route(Access.ADMIN, _clear_library),
     "/api/library/ratings": Route(Access.ADMIN, _refresh_ratings),
 }
