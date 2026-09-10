@@ -7,7 +7,16 @@ import time
 
 import pytest
 
-from conftest import cache, configured_arr, movie, pending, set_config, stub_arrs
+from conftest import (
+    REWROTE,
+    cache,
+    configured_arr,
+    movie,
+    pending,
+    rewrote,
+    set_config,
+    stub_arrs,
+)
 from trackstarr import config, library, ratings, settings, state, sweep, sweep_cache
 from trackstarr.policy import Policy
 from trackstarr.status import Status
@@ -62,16 +71,6 @@ def backdate(when: float, *paths: str) -> None:
     with open(store, "w") as cache_file:
         json.dump(data, cache_file)
     library.forget()
-
-
-#: What a rewrite leaves on the verdict it publishes; see
-#: :func:`trackstarr.processing._modified`.
-REWROTE = {
-    "at": "2026-03-01T12:00:00+13:00",
-    "bytes_before": 2_000,
-    "bytes_after": 1_800,
-    "added": [1],
-}
 
 
 def regenerated(stale_only: bool = True) -> Verdict:
@@ -753,14 +752,15 @@ def test_a_title_hands_back_both_states_and_the_reason(media, monkeypatch):
 
 
 def test_a_passed_file_still_says_a_rewrite_made_it_pass(media, monkeypatch):
-    """A rewritten file conforms like any other, so what the rewrite left on
-    the verdict is the sheet's only way to tell the two apart."""
+    """A rewritten file conforms like any other, so what the rewrite left is
+    the sheet's only way to tell the two apart."""
     folder = f"{media}/Dune (2024)"
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
     cache(
-        (f"{folder}/Dune.mkv", Verdict(Status.CONFORM, modified=REWROTE)),
+        (f"{folder}/Dune.mkv", Verdict(Status.CONFORM)),
         (f"{folder}/Extras.mkv", Verdict(Status.CONFORM)),
     )
+    rewrote(f"{folder}/Dune.mkv")
     files = {file["name"]: file for file in library.title("arr:radarr:1")["files"]}
     assert files["Dune.mkv"]["modified"] == REWROTE
     # Off every other file, which is most of a settled library.
@@ -774,9 +774,10 @@ def test_a_rewritten_file_leads_the_others_of_its_verdict(media, monkeypatch):
     stub_arrs(monkeypatch, [movie(1, "Show", folder)], name="sonarr")
     cache(
         (f"{folder}/s01e01.mkv", Verdict(Status.CONFORM)),
-        (f"{folder}/s01e02.mkv", Verdict(Status.CONFORM, modified=REWROTE)),
+        (f"{folder}/s01e02.mkv", Verdict(Status.CONFORM)),
         (f"{folder}/s01e03.mkv", pending()),
     )
+    rewrote(f"{folder}/s01e02.mkv")
     detail = library.title("arr:sonarr:1")
     assert [file["name"] for file in detail["files"]] == [
         "s01e03.mkv",
@@ -790,13 +791,25 @@ def test_a_card_counts_the_files_a_rewrite_left(media, monkeypatch):
     marks a title trackstarr has been through."""
     stub_arrs(monkeypatch, [movie(1, "Show", f"{media}/Show")], name="sonarr")
     cache(
-        (f"{media}/Show/one.mkv", Verdict(Status.CONFORM, modified=REWROTE)),
-        (f"{media}/Show/two.mkv", Verdict(Status.CONFORM, modified=REWROTE)),
+        (f"{media}/Show/one.mkv", Verdict(Status.CONFORM)),
+        (f"{media}/Show/two.mkv", Verdict(Status.CONFORM)),
         (f"{media}/Show/three.mkv", Verdict(Status.CONFORM)),
     )
+    rewrote(f"{media}/Show/one.mkv", f"{media}/Show/two.mkv")
     card = library.shelf()["titles"][0]
     assert card["state"] == "conform"
     assert card["modified"] == 2
+
+
+def test_a_rewrite_landing_alone_reaches_the_grid(media, monkeypatch):
+    """The count is no longer part of a verdict, so a rewrite that reaches the
+    same verdict changes nothing the grid was memoised on but the record."""
+    stub_arrs(monkeypatch, [movie(1, "Show", f"{media}/Show")], name="sonarr")
+    cache((f"{media}/Show/one.mkv", Verdict(Status.CONFORM)))
+    assert "modified" not in library.shelf()["titles"][0]
+
+    rewrote(f"{media}/Show/one.mkv")
+    assert library.shelf()["titles"][0]["modified"] == 1
 
 
 def test_a_title_lists_what_needs_work_first(media, monkeypatch):

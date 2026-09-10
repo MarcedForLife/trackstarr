@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 
-from . import config, events, holds, runs
+from . import config, events, holds, rewrites, runs
 from .arr import Arr, LibraryItem
 from .executor import Outcome, apply_plan
 from .media import ProbeError
@@ -205,10 +205,10 @@ def _modified(plan: Plan, bytes_before: int | None, bytes_after: int | None) -> 
     """What the rewrite did: when, the sizes either side, and the streams it
     moved.
 
-    Kept on the verdict because the file passes from here on: without it a
-    rewritten file is a Passed one, indistinguishable from a file the rules
-    never touched. The reasons in prose are the event's, and the history page
-    reads them there; a library view has the two track lists instead.
+    Kept in :mod:`trackstarr.rewrites` because the file passes from here on:
+    without it a rewritten file is a Passed one, indistinguishable from a file
+    the rules never touched. The reasons in prose are the event's, and the
+    history page reads them there; a library view has the two track lists.
     """
     record = {"at": events.timestamp(), **_before(plan)}
     if bytes_before and bytes_after:
@@ -216,16 +216,14 @@ def _modified(plan: Plan, bytes_before: int | None, bytes_after: int | None) -> 
     return record
 
 
-def _rejudged(job: Job, plan: Plan, modified: dict) -> Rewritten | None:
+def _rejudged(job: Job, plan: Plan, key: FileKey | None) -> Rewritten | None:
     """The file a rewrite has just published, judged again.
 
     Without this a rewritten title reads as unchecked until the next sweep. One
     probe, through :func:`process` in report mode so verdicts are reached in
     one place; that call never rewrites, so it cannot recurse. None when the
-    file has gone or the probe would not read it. ``modified`` is
-    :func:`_modified`, which the fresh verdict has no way of knowing.
+    file has gone or the probe would not read it.
     """
-    key = cache_key(plan.out_path, job.lang)
     if key is None:
         return None
     judged = process(replace(job, path=plan.out_path), dry_run=True)
@@ -234,7 +232,7 @@ def _rejudged(job: Job, plan: Plan, modified: dict) -> Rewritten | None:
         # "Failed" against a checked file would be wrong.
         log.warning("could not judge %s after rewriting it: %s", plan.out_path, judged.detail)
         return None
-    return Rewritten(plan.out_path, key, replace(verdict_of(judged), modified=modified))
+    return Rewritten(plan.out_path, key, verdict_of(judged))
 
 
 def _file_size(path: str) -> int | None:
@@ -348,8 +346,13 @@ def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
             job.arr.rescan(job.item_id)
         # out_path, not job.path: a remux publishes under a new extension.
         refresh_servers(plan.out_path)
-        modified = _modified(plan, bytes_before, bytes_after)
-        return ProcessResult(Status.MODIFIED, plan, became=_rejudged(job, plan, modified))
+        # Keyed before the re-probe, as a sweep keys its verdicts, so a change
+        # landing under the probe leaves a stale record rather than a wrong one.
+        written = cache_key(plan.out_path, job.lang)
+        rewrites.record(plan.out_path, written, _modified(plan, bytes_before, bytes_after))
+        if plan.out_path != plan.path:
+            rewrites.drop(plan.path)
+        return ProcessResult(Status.MODIFIED, plan, became=_rejudged(job, plan, written))
     if outcome is Outcome.DEFERRED:
         log.info("deferred %s: %s", job.path, detail)
         # Recorded because a file that defers every pass leaves no other trace.

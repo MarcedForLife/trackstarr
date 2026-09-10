@@ -13,15 +13,6 @@ from trackstarr.sweep_cache import FORMAT, FileKey, SweepCache, Verdict, cache_k
 
 CONFORM = Verdict(Status.CONFORM)
 
-#: What a rewrite leaves on the verdict it publishes; see
-#: :func:`trackstarr.processing._modified`.
-REWROTE = {
-    "at": "2026-03-01T12:00:00+13:00",
-    "bytes_before": 2_000,
-    "bytes_after": 1_800,
-    "added": [1],
-}
-
 
 def fingerprint() -> dict:
     """The current policy's fingerprint, as the sweep would compute it."""
@@ -304,38 +295,6 @@ def test_a_carried_entry_keeps_the_stamp_it_arrived_with(cache_path, media, monk
     assert stored["files"][media]["judged"] == 1_700_000_000
 
 
-def test_a_rewrite_record_outlives_the_same_verdict_reached_again(cache_path, media):
-    """A re-check re-probes a file trackstarr rewrote and finds it conforms,
-    which is the right answer and says nothing about the rewrite. Without this
-    the library would go back to calling the file untouched."""
-    key = cache_key(media, "eng")
-    cache = saved_cache(cache_path, (media, key, Verdict(Status.CONFORM, modified=REWROTE)))
-
-    cache.record(media, key, CONFORM)
-    cache.save()
-    assert read(cache_path, fingerprint()).files[media]["modified"] == REWROTE
-
-
-def test_a_changed_file_leaves_the_rewrite_record_behind(cache_path, media):
-    """Whatever we made of the file, it is not what is on disk now."""
-    rewrote = Verdict(Status.CONFORM, modified=REWROTE)
-    saved_cache(cache_path, (media, cache_key(media, "eng"), rewrote))
-    Path(media).write_bytes(b"x" * 20)
-
-    cache = SweepCache.load(cache_path, fingerprint())
-    cache.record(media, cache_key(media, "eng"), CONFORM)
-    cache.save()
-    assert "modified" not in read(cache_path, fingerprint()).files[media]
-
-
-def test_an_unrewritten_file_has_no_record(cache_path, media):
-    """Almost every entry in a settled library is one, so the field stays off
-    them."""
-    saved_cache(cache_path, (media, cache_key(media, "eng"), CONFORM))
-
-    assert "modified" not in json.loads(Path(cache_path).read_text())["files"][media]
-
-
 def test_a_failure_count_round_trips(cache_path, media):
     """The sweep's give-up bound is only as good as the count behind it, and
     the count is only ever read back from the cache."""
@@ -431,16 +390,6 @@ def test_update_creates_the_cache_when_nothing_has_swept(state_cache, media):
     title and everything else as unchecked, which is what is known."""
     sweep_cache.update(media, cache_key(media, "eng"), CONFORM, fingerprint())
     assert read(str(state_cache), fingerprint()).files[media]["status"] == "conform"
-
-
-def test_update_keeps_the_rewrite_record_the_sweep_stored(state_cache, media):
-    """A delivery re-judging a file we rewrote reaches the same verdict a
-    re-check would, and must not drop the record the same way."""
-    key = cache_key(media, "eng")
-    saved_cache(str(state_cache), (media, key, Verdict(Status.CONFORM, modified=REWROTE)))
-
-    sweep_cache.update(media, key, CONFORM, fingerprint())
-    assert read(str(state_cache), fingerprint()).files[media]["modified"] == REWROTE
 
 
 def test_update_with_no_verdict_drops_the_stored_entry(state_cache, media):

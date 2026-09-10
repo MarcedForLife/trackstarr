@@ -13,7 +13,7 @@ import logging
 import threading
 import time
 
-from . import events, state, sweep_cache
+from . import events, rewrites, state, sweep_cache
 
 log = logging.getLogger(__name__)
 
@@ -88,7 +88,11 @@ _WATCH_TICK = 1.0
 def _watched() -> list[tuple[str, str]]:
     """The watched files and the kind each announces. Per pass, since tests
     move STATE_DIR."""
-    return [(events.path(), EVENTS), (sweep_cache.cache_path(), LIBRARY)]
+    return [
+        (events.path(), EVENTS),
+        (sweep_cache.cache_path(), LIBRARY),
+        (rewrites.store_path(), LIBRARY),
+    ]
 
 
 def watch_once(marks: dict[str, tuple[int, int]]) -> None:

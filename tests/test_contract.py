@@ -33,6 +33,7 @@ from trackstarr import (
     library,
     notify,
     policy,
+    rewrites,
     runs,
     settings,
     sweep,
@@ -257,25 +258,25 @@ def seed_library(monkeypatch, clock: Clock) -> None:
         ),
     )
     clock.tick(DAY)
+    episode_one = FileKey(2_251_799_813, 1_740_704_400_000_000_000, 1, "eng")
     cache.record(
         EPISODE_ONE,
-        FileKey(2_251_799_813, 1_740_704_400_000_000_000, 1, "eng"),
-        Verdict(
-            Status.CONFORM,
-            "",
-            tracks=EPISODE_TRACKS,
-            duration=3420.0,
-            # Passed because we rewrote it, which is the one thing the verdict
-            # cannot say. The same rewrite the history's "modified" line records,
-            # which is where the reasons in prose stay.
-            modified={
-                "at": stamp(clock.now),
-                "bytes_before": 2_147_483_648,
-                "bytes_after": 2_251_799_813,
-                "was": EPISODE_WAS,
-                "added": EPISODE_ADDED,
-            },
-        ),
+        episode_one,
+        Verdict(Status.CONFORM, "", tracks=EPISODE_TRACKS, duration=3420.0),
+    )
+    # Passed because we rewrote it, which is the one thing the verdict cannot
+    # say. The same rewrite the history's "modified" line records, which is
+    # where the reasons in prose stay.
+    rewrites.record(
+        EPISODE_ONE,
+        episode_one,
+        {
+            "at": stamp(clock.now),
+            "bytes_before": 2_147_483_648,
+            "bytes_after": 2_251_799_813,
+            "was": EPISODE_WAS,
+            "added": EPISODE_ADDED,
+        },
     )
     clock.tick(300)
     cache.record(

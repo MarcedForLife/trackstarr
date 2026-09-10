@@ -25,6 +25,7 @@ from trackstarr import (
     jobs,
     library,
     processing,
+    rewrites,
     runlog,
     runs,
     users,
@@ -135,6 +136,7 @@ def _isolated_state(monkeypatch, tmp_path):
     set_config(file={}, WEB_DIR="", **dict.fromkeys(_SERVICES, ""))
     # Memoised on the file's mark, which two tmp dirs can share.
     holds.forget()
+    rewrites.forget()
     yield
     config.reset()
 
@@ -288,6 +290,23 @@ def cache(*entries: tuple[str, Verdict], size: int = 100) -> None:
     for path, verdict in entries:
         store.record(path, FileKey(size, 1, 1, "eng"), verdict)
     store.save()
+
+
+#: What a rewrite of ours leaves behind; see
+#: :func:`trackstarr.processing._modified`.
+REWROTE = {
+    "at": "2026-03-01T12:00:00+13:00",
+    "bytes_before": 2_000,
+    "bytes_after": 1_800,
+    "added": [1],
+}
+
+
+def rewrote(*paths: str, made: dict | None = None, size: int = 100) -> None:
+    """Book a rewrite of ours against these paths, keyed as :func:`cache` keys
+    its verdicts so the two join."""
+    for path in paths:
+        rewrites.record(path, FileKey(size, 1, 1, "eng"), made or REWROTE)
 
 
 def pending() -> Verdict:

@@ -27,7 +27,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
-from . import config, events, library, sweep, sweep_cache
+from . import config, events, library, rewrites, sweep, sweep_cache
 from .arr import Arr, innermost
 from .executor import is_rewriting
 from .langs import norm_lang
@@ -422,6 +422,9 @@ def _rejudge(path: str, title: library.Title | None) -> str:
     key = cache_key(path, lang)
     result = process(Job(path, lang), dry_run=True)
     sweep.remember(path, key, result)
+    # Our own edit moved the file, so the record follows it rather than losing
+    # its claim to a change we made.
+    rewrites.rekey(path, key)
     refresh_servers(path)
     return str(result.status)
 

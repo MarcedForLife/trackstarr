@@ -7,7 +7,8 @@ under no title are grouped by their top folder rather than dropped.
 
 Nothing here probes or plans. Every verdict shown was written to the cache by
 the sweep or by :func:`trackstarr.sweep.remember`; an unswept library is an
-empty answer, not a reason to walk it inside a web request.
+empty answer, not a reason to walk it inside a web request. What a rewrite of
+ours left a file comes from :mod:`trackstarr.rewrites`, joined on by path.
 """
 
 import contextlib
@@ -21,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import NamedTuple
 
-from . import config, ratings, state, sweep_cache
+from . import config, ratings, rewrites, state, sweep_cache
 from .arr import Arr, all_arrs, innermost, original_of
 from .client import API_ERRORS
 from .policy import Policy
@@ -70,8 +71,9 @@ ACTIONABLE = (Status.FAILED, Status.PENDING)
 #: title is reachable under each state it holds.
 MIXED = "mixed"
 
-#: Titles a rewrite of ours has been through. A rewritten file passes, so the
-#: count of them is the only place a title says any of its files are ours.
+#: Titles a rewrite of ours has been through, counted from
+#: :mod:`trackstarr.rewrites`. A rewritten file passes, so the count of them is
+#: the only place a title says any of its files are ours.
 MODIFIED = Status.MODIFIED
 
 #: The card field holding that count, which :func:`summary` reads back. Spelt
@@ -356,9 +358,9 @@ def _read_cache() -> sweep_cache.Stored:
 def clear() -> int:
     """Delete every stored verdict and return how many went.
 
-    Only the cache file; the rest of STATE_DIR survives. The memos go too:
-    `_cached` is on a timer, and a page still showing cleared verdicts gets
-    pressed twice.
+    Only the cache file; the rest of STATE_DIR survives, the rewrite records
+    included. The memos go too: `_cached` is on a timer, and a page still
+    showing cleared verdicts gets pressed twice.
     """
     stored = _read_cache()
     dropped = len(stored.files)
@@ -463,8 +465,11 @@ def _changes(entry: dict) -> Changes:
     return Changes(adds, rebuilds, len(dropped))
 
 
-def _tally(entries: dict[str, dict], folders: dict[str, Title]) -> dict[str, Rollup]:
-    """Every cached verdict counted under the title whose folder holds it."""
+def _tally(
+    entries: dict[str, dict], folders: dict[str, Title], made: dict[str, dict]
+) -> dict[str, Rollup]:
+    """Every cached verdict counted under the title whose folder holds it.
+    ``made`` is :func:`trackstarr.rewrites.against`."""
     rollups: dict[str, Rollup] = {}
     for path, entry in entries.items():
         title = innermost(folders, path)
@@ -478,7 +483,7 @@ def _tally(entries: dict[str, dict], folders: dict[str, Title]) -> dict[str, Rol
             rollup.judged = max(rollup.judged, stamp)
         status = str(entry.get("status") or UNCHECKED)
         rollup.counts[status] = rollup.counts.get(status, 0) + 1
-        if entry.get("modified"):
+        if path in made:
             rollup.modified += 1
         if entry.get("planned"):
             changes = _changes(entry)
@@ -555,19 +560,22 @@ def _rank(card: dict) -> int:
 
 
 class _Built(NamedTuple):
-    """A built grid and the two memoised reads it came from.
+    """A built grid and the memoised reads it came from.
 
-    Compared by identity: both hold a library's worth of verdicts, and
+    Compared by identity: each holds a library's worth of records, and
     comparing those by value is the cost this exists to avoid. The answer is
     shared across threads, so callers must not mutate it.
     """
 
     stored: sweep_cache.Stored
     found: Shelf
+    made: dict[str, rewrites.Rewrite]
     answer: dict
 
-    def came_from(self, stored: sweep_cache.Stored, found: Shelf) -> bool:
-        return self.stored is stored and self.found is found
+    def came_from(
+        self, stored: sweep_cache.Stored, found: Shelf, made: dict[str, rewrites.Rewrite]
+    ) -> bool:
+        return self.stored is stored and self.found is found and self.made is made
 
 
 _built: _Built | None = None
@@ -583,12 +591,13 @@ def shelf() -> dict:
     global _built
     stored = _read_cache()
     found = _shelf(stored)
+    made = rewrites.records()
     with _lock:
         built = _built
-    if built is not None and built.came_from(stored, found):
+    if built is not None and built.came_from(stored, found, made):
         return built.answer
     folders = {title.folder: title for title in found.titles}
-    rollups = _tally(stored.files, folders)
+    rollups = _tally(stored.files, folders, rewrites.against(stored.files))
     cards = [_card(title, rollups.get(title.id)) for title in found.titles]
     cards.sort(key=lambda card: (_rank(card), card["name"].lower()))
     answer = {
@@ -599,7 +608,7 @@ def shelf() -> dict:
         "swept": len(stored.files),
     }
     with _lock:
-        _built = _Built(stored, found, answer)
+        _built = _Built(stored, found, made, answer)
     return answer
 
 
@@ -685,10 +694,10 @@ def _file(entry: dict) -> dict:
     """One file as the sheet reads it: its verdict, what the probe saw and what
     a rewrite would leave.
 
-    ``modified`` is only on a file trackstarr has rewritten, and is resolved by
-    :func:`trackstarr.processing._modified` before the sort. The verdict says
-    what the file is now, which for a rewritten one is Passed like any other,
-    so without this the sheet could not tell the two apart.
+    ``modified`` is only on a file trackstarr has rewritten and still holds a
+    claim on, and is merged in by :func:`title` before the sort. The verdict
+    says what the file is now, which for a rewritten one is Passed like any
+    other, so without this the sheet could not tell the two apart.
 
     ``seconds`` is the running time, which is what turns a track's rate into
     the space it takes.
@@ -719,8 +728,9 @@ def title(title_id: str) -> dict | None:
     if found is None:
         return None
     folders = {found.folder: found}
+    made = rewrites.against(stored.files)
     entries = [
-        {**entry, "path": path}
+        {**entry, "path": path, **({"modified": made[path]} if path in made else {})}
         for path, entry in stored.files.items()
         if innermost(folders, path) is not None
     ]
@@ -777,7 +787,7 @@ def cards_for_paths(paths: Iterable[str]) -> tuple[dict[str, str], dict[str, dic
         return {}, {}
     # The grid's own rollups, so a poster raised from the feed matches the
     # library's.
-    rollups = _tally(stored.files, folders)
+    rollups = _tally(stored.files, folders, rewrites.against(stored.files))
     cards = {
         title_id: _card(found.index[title_id], rollups.get(title_id))
         for title_id in set(owners.values())

@@ -6,11 +6,21 @@ import os
 import subprocess
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
-from conftest import audio, needed_plan, probe_data, read_events, set_config, subtitle, video
-from trackstarr import library, retag, sweep_cache
+from conftest import (
+    REWROTE,
+    audio,
+    needed_plan,
+    probe_data,
+    read_events,
+    set_config,
+    subtitle,
+    video,
+)
+from trackstarr import library, retag, rewrites, sweep_cache
 from trackstarr.media import ProbeError
 from trackstarr.planner import Plan
 from trackstarr.policy import Policy
@@ -535,6 +545,25 @@ def test_the_verdict_is_reached_in_the_titles_language_and_the_servers_told(
     assert (result.status, result.verdict) == (Outcome.RETAGGED, "conform")
     assert judged == ["jpn"]
     assert refreshed == [mkv]
+
+
+def test_our_own_edit_keeps_the_rewrite_record(tools, mkv, monkeypatch):
+    """mkvpropedit moves the file's size and mtime, which is what tells a
+    record its file was rewritten by something else. Ours was not."""
+    fake = tools([commentary_case(), commentary_case("jpn")])
+    rewrites.record(mkv, sweep_cache.cache_key(mkv, "jpn"), REWROTE)
+    edit = fake.run
+
+    def touching(args, timeout, **kwargs):
+        answer = edit(args, timeout, **kwargs)
+        if args[0] == "mkvpropedit":
+            Path(mkv).write_bytes(b"xx")
+        return answer
+
+    monkeypatch.setattr(retag.subprocess, "run", touching)
+
+    assert retag.apply(mkv, 1, Edit("jpn"), "admin", entry(mkv)).status is Outcome.RETAGGED
+    assert rewrites.against({mkv: entry(mkv)}) == {mkv: REWROTE}
 
 
 class FakeArr:

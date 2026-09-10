@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from conftest import read_events, set_config, set_langs, set_layouts, set_rules
-from trackstarr import config, executor, library, planner, retag, sweep_cache
+from trackstarr import config, executor, library, planner, retag, rewrites, sweep_cache
 from trackstarr.cli import main as cli_main
 from trackstarr.executor import Outcome, apply_plan
 from trackstarr.media import ProbeError, duration, probe, stream_title
@@ -505,19 +505,22 @@ def test_report_only_sweep_reuses_pending_verdicts(make_file, swept_library, tmp
     # :func:`trackstarr.processing._rejudged`.
     assert len(swept_library) == 3
     stored = read(sweep_cache.cache_path(), Policy.from_config().fingerprint()).files
-    entry = stored[str(tmp_path / "f.mkv")]
+    path = str(tmp_path / "f.mkv")
+    entry = stored[path]
     assert entry["status"] == "conform"
-    # Passed from here on, so what the rewrite did rides on the verdict; the
-    # library has nothing else to tell this file from one we never touched.
-    assert entry["modified"]["at"]
-    assert entry["modified"]["bytes_after"] == entry["size"]
+    # Passed from here on, so the record is the library's only way to tell this
+    # file from one we never touched. Joined by key, so it claims the file the
+    # sweep just judged rather than some earlier one.
+    made = rewrites.against(stored)[path]
+    assert made["at"]
+    assert made["bytes_after"] == entry["size"]
     # The two columns the sheet draws it in. `added` is a position in the file
     # as it now stands, so it is read against the re-probed tracks: nothing
     # else proves the record and the file agree.
-    was = entry["modified"]["was"]
+    was = made["was"]
     assert [track["index"] for track in was] == [0, 1, 2]
-    assert "dropped" not in entry["modified"]
-    (added,) = entry["modified"]["added"]
+    assert "dropped" not in made
+    (added,) = made["added"]
     assert entry["tracks"][added]["channels"] == 2
     assert len(entry["tracks"]) == len(was) + 1
 

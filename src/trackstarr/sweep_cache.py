@@ -10,6 +10,9 @@ index. :func:`update` lets an import or a ``fix`` book one verdict without a
 walk's bookkeeping, and :func:`live` and :func:`live_view` let the library read
 a running walk's verdicts ahead of its next checkpoint.
 
+Nothing here outlives a rule change. What a rewrite of ours did is history and
+lives in :mod:`trackstarr.rewrites` for that reason.
+
 Which verdicts are safe to cache is the sweep's call; see
 :data:`trackstarr.sweep.CACHEABLE_STATUSES`.
 """
@@ -34,7 +37,7 @@ log = logging.getLogger(__name__)
 #: meaning: ``carry`` moves unchanged entries forward byte for byte, so an added
 #: field would otherwise never arrive. A mismatch drops the cache whole; the
 #: rebuild is a sweep.
-FORMAT = 5
+FORMAT = 6
 
 
 def cache_path() -> str:
@@ -73,11 +76,6 @@ class Verdict:
     tracks: list[dict] = field(default_factory=list)
     planned: list[dict] = field(default_factory=list)
     why: dict = field(default_factory=dict)
-    #: What a rewrite of this file did, once it has one: when, the sizes either
-    #: side, and the streams it moved. Empty on a file nothing has rewritten,
-    #: which is what an entry written before this field existed also reads as.
-    #: See :func:`trackstarr.processing._rejudged`.
-    modified: dict = field(default_factory=dict)
     #: Running time in seconds, zero when never probed. What
     #: :mod:`trackstarr.estimate` sizes a backlog from.
     duration: float = 0.0
@@ -139,34 +137,18 @@ def cache_key(path: str, lang: str | None) -> FileKey | None:
     return FileKey(stat_result.st_size, stat_result.st_mtime_ns, stat_result.st_nlink, lang)
 
 
-def _carried_rewrite(previous: dict | None, key: FileKey) -> dict:
-    """The rewrite the stored entry remembers, where the file has not changed
-    since.
-
-    A re-check re-probes a file it rewrote earlier and reaches the same
-    verdict; without this the second verdict would drop the record and the
-    library would call the file untouched.
-    """
-    if not isinstance(previous, dict) or not asdict(key).items() <= previous.items():
-        return {}
-    modified = previous.get("modified")
-    return modified if isinstance(modified, dict) else {}
-
-
-def _entry(key: FileKey, verdict: Verdict, previous: dict | None = None) -> dict:
+def _entry(key: FileKey, verdict: Verdict) -> dict:
     """One stored entry, as both a sweep and a delivery write it.
 
     Empty extras are dropped, since most entries carry none and the file is
     rewritten whole at every checkpoint. ``judged`` is stamped here because
     :meth:`SweepCache.carry` moves entries forward untouched, so it keeps
-    saying when the file was last opened. ``previous`` is what stands at this
-    path, for :func:`_carried_rewrite`.
+    saying when the file was last opened.
     """
     extras = {
         "tracks": verdict.tracks,
         "planned": verdict.planned,
         "why": verdict.why,
-        "modified": verdict.modified or _carried_rewrite(previous, key),
         "failures": verdict.failures,
         "duration": verdict.duration,
     }
@@ -207,7 +189,7 @@ def update(path: str, key: FileKey | None, verdict: Verdict | None, fingerprint:
             # Nothing to key by, so nothing could tell whether the file changed.
             return
         else:
-            entries[path] = _entry(key, verdict, entries.get(path))
+            entries[path] = _entry(key, verdict)
         try:
             # A delivery can be the first thing this install writes.
             os.makedirs(config.STATE_DIR, exist_ok=True)
@@ -298,9 +280,7 @@ class SweepCache:
     def lookup(self, path: str, key: FileKey | None) -> Verdict | None:
         """The stored verdict for an unchanged file, or None.
 
-        Tracks and the rewrite record are not decoded, since ``carry`` moves
-        the entry forward whole and :func:`_carried_rewrite` keeps the record on a
-        verdict reached again.
+        Tracks are not decoded, since ``carry`` moves the entry forward whole.
         ``why``, ``planned`` and ``duration`` are: a hit out of retries must
         say what went wrong, and an estimate needs the other two.
         """
@@ -339,7 +319,7 @@ class SweepCache:
     def record(self, path: str, key: FileKey | None, verdict: Verdict) -> None:
         if key is None:
             return
-        self._next[path] = _entry(key, verdict, self._previous.get(path))
+        self._next[path] = _entry(key, verdict)
         self._dropped.discard(path)
         self._dirty = True
         self._changes += 1
