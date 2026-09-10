@@ -4,14 +4,14 @@
 	import { chrome } from '$lib/chrome.svelte';
 	import NavIcon from '$lib/components/NavIcon.svelte';
 	import { reduced } from '$lib/motion.svelte';
-	import { PRIMARY } from '$lib/nav';
+	import { PRIMARY, routeOf } from '$lib/nav';
 	import { pause, watchPause } from '$lib/paused.svelte';
 
 	// The phone's primary nav: three destinations a thumb reaches. The drawer
 	// keeps Settings and the account. Three, so a 412px screen has room for a
 	// real icon over a real label.
 
-	const path = $derived(page.url.pathname);
+	const path = $derived(routeOf(page.url.pathname));
 	const index = $derived(PRIMARY.findIndex((spot) => spot.href === path));
 
 	$effect(watchPause);

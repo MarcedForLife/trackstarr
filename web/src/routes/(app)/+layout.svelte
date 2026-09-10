@@ -4,19 +4,26 @@
 	import { page } from '$app/state';
 	import { dropPendingCovers } from '$lib/covers';
 	import { behind, keyboard } from '$lib/modal';
-	import { PRIMARY, SETTINGS } from '$lib/nav';
+	import { PRIMARY, routeOf, SETTINGS } from '$lib/nav';
+	import { notice } from '$demo';
 	import { overlay } from '$lib/overlay';
 	import Mark from '$lib/components/Mark.svelte';
 	import NavProgress from '$lib/components/NavProgress.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
+	import type { Component } from 'svelte';
 	import type { LayoutProps } from './$types';
 
 	let { data, children }: LayoutProps = $props();
 
+	// The demo's notice over every page, which only the demo build has a
+	// component for.
+	let DemoNotice = $state<Component | null>(null);
+	notice?.().then((loaded) => (DemoNotice = loaded.default));
+
 	// The gear carries the accent on a settings page: with the drawer shut it is
 	// the only thing on a phone that can say so.
-	const settingsHere = $derived(page.url.pathname.startsWith('/settings'));
+	const settingsHere = $derived(routeOf(page.url.pathname).startsWith('/settings'));
 
 	// Every route the nav can reach, prefetched once the first page settles: the
 	// route's code was 90ms of a 500ms navigation on a throttled phone. Code
@@ -143,6 +150,9 @@
 	></button>
 
 	<div class="flex min-w-0 flex-1 flex-col">
+		{#if DemoNotice}
+			<DemoNotice />
+		{/if}
 		<header
 			class="sticky top-0 z-30 border-b border-line bg-surface/85 pt-[env(safe-area-inset-top)] backdrop-blur-md lg:hidden"
 		>

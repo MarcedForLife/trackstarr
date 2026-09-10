@@ -1,6 +1,7 @@
 // The three primary destinations, drawn by both the desktop rail and the phone's
 // tab bar. Settings stays behind the drawer rather than in the thumb zone.
 
+import { base } from '$app/paths';
 import type { Pathname } from '$app/types';
 
 // `Pathname`, so a renamed route fails the build rather than the tap.
@@ -25,3 +26,10 @@ export const SETTINGS: Pathname[] = [
 	'/settings/appearance',
 	'/settings/account'
 ];
+
+/** A pathname as the routes above spell it, with the deployment's base path
+ * off the front. `page.url.pathname` carries the base, and the demo build sits
+ * under one. */
+export function routeOf(pathname: string): string {
+	return pathname.slice(base.length) || '/';
+}

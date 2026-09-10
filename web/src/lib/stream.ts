@@ -6,6 +6,9 @@
 // here, slowly. The pages keep a slow poll as fallback, so a proxy that
 // swallows the stream costs latency, never truth.
 
+import { source as demoSource } from '$demo';
+import type { Source } from '$lib/demo/stream';
+
 // `runs` is the registry changing; `progress` is a run in it moving, which is
 // the same fetch and far less urgent. A list so fixtures.test.ts can check it
 // against the service's.
@@ -16,7 +19,8 @@ type Listener = { kinds: readonly Kind[]; tell: (kind: Kind) => void };
 
 const listeners = new Set<Listener>();
 
-let source: EventSource | null = null;
+// An EventSource, or the demo's stand-in for one.
+let source: Source | null = null;
 
 // When something last arrived, a message or the service's 20s heartbeat. A
 // proxy buffering the body leaves the socket OPEN with nothing through, so
@@ -63,7 +67,7 @@ function lookAgain() {
 }
 
 function open() {
-	const stream = new EventSource('/api/stream');
+	const stream: Source = demoSource?.() ?? new EventSource('/api/stream');
 	source = stream;
 	stream.onopen = () => {
 		heard = Date.now();

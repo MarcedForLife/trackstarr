@@ -11,7 +11,11 @@ const apiPort = Number(process.env.TRACKSTARR_API_PORT) || webPort + 1;
 // What the listener owns; everything else is a page.
 const apiPaths = ['/api', '/health', '/webhook'];
 
-export default defineConfig({
+// Where the pages sit on their host. Empty in the image, which serves them at
+// the root; the demo on GitHub Pages sits under the repository's name.
+const basePath = process.env.BASE_PATH ?? '';
+
+export default defineConfig(({ mode }) => ({
 	plugins: [
 		tailwindcss(),
 		sveltekit({
@@ -22,7 +26,12 @@ export default defineConfig({
 			},
 			// A pure SPA: the stdlib server has no Node, so index.html stands in
 			// for every route.
-			adapter: adapter({ fallback: 'index.html' })
+			adapter: adapter({ fallback: 'index.html' }),
+			paths: { base: basePath as '' | `/${string}` },
+			// `vite --mode demo` builds the pages with no service behind them,
+			// answered from $lib/demo in the browser. The switch is which file
+			// `$demo` names, so the normal build never imports the demo.
+			alias: { $demo: mode === 'demo' ? 'src/lib/demo/hooks.ts' : 'src/lib/demo/none.ts' }
 		})
 	],
 	server: {
@@ -38,4 +47,4 @@ export default defineConfig({
 		include: ['src/**/*.test.ts'],
 		setupFiles: ['./vitest.setup.ts']
 	}
-});
+}));

@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { ApiError, login } from '$lib/api';
 	import Mark from '$lib/components/Mark.svelte';
+	import { loginHint } from '$demo';
 
 	let username = $state('');
 	let password = $state('');
@@ -44,6 +45,9 @@
 			<h1 class="text-2xl font-semibold tracking-tight">Trackstarr</h1>
 		</div>
 		<p class="mt-1 text-sm text-dim">Sign in</p>
+		{#if loginHint}
+			<p class="mt-3 text-sm text-dim">{loginHint}</p>
+		{/if}
 	</div>
 
 	<form class="flex flex-col gap-4" onsubmit={submit}>

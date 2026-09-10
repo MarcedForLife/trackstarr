@@ -1,0 +1,69 @@
+name: Demo
+
+# The web UI built with no service behind it, answering from a sample library in
+# the browser, published to GitHub Pages. See web/README.md, "The demo".
+#
+# Pages has to be switched on once, under Settings, Pages, with GitHub Actions
+# as the source. The feature branch is here so the demo can go up before the UI
+# reaches main; drop it once that has happened.
+on:
+  push:
+    branches: [main, feature/demo-site]
+    paths: [web/**, .github/workflows/demo.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time, and the newest wins.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      # A project site sits under the repository's name. With a custom domain
+      # attached to Pages, set BASE_PATH to nothing.
+      - run: npm run build:demo
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}
+
+      # Pages answers 404.html for any path it has no file for, which is every
+      # route of a single-page app. And the demo is meant to be found, unlike an
+      # install, so it drops the robots.txt that keeps indexes off one.
+      - run: |
+          cp build/index.html build/404.html
+          printf 'User-agent: *\nAllow: /\n' > build/robots.txt
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

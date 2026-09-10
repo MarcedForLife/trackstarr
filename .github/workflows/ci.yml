@@ -109,6 +109,9 @@ jobs:
       - run: npm test
       # Same build the image does, minutes earlier and without Docker.
       - run: npm run build
+      # And the demo's, so a change to the pages cannot break the one build
+      # nothing else runs. See .github/workflows/demo.yml.
+      - run: npm run build:demo
 
   # One entry per published architecture, or an amd64-only image could become
   # :latest for arm64. Native runners, since the integration tests encode real

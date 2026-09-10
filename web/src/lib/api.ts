@@ -3,6 +3,7 @@
 // request forgery) check.
 
 import { invalidateAll } from '$app/navigation';
+import { fetcher as demoFetcher } from '$demo';
 import { shut } from '$lib/stream';
 
 export type Account = { name: string; role: 'admin' | 'viewer'; must_change: boolean };
@@ -59,10 +60,12 @@ export async function request<T>(
 	init?: RequestInit,
 	fetcher: typeof fetch = fetch
 ): Promise<T> {
-	const response = await fetcher(path, {
+	const options = {
 		...init,
 		headers: init?.body ? { ...jsonHeaders, ...init.headers } : init?.headers
-	});
+	};
+	// The demo build has no service: $lib/demo answers in the browser.
+	const response = await (demoFetcher ?? fetcher)(path, options);
 	if (response.ok) return response.json();
 	// A 401 from the auth endpoints is a wrong password, not an expiry.
 	const mine = fetcher === globalThis.fetch && !path.startsWith('/api/auth/');
