@@ -21,3 +21,6 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# The demo's posters, fetched from Wikimedia Commons by scripts/demo-posters.mjs.
+/src/lib/demo/posters/

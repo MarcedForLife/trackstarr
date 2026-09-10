@@ -9,10 +9,9 @@ import type { Track } from '$lib/library';
 export type Kind = 'movie' | 'series' | 'folder';
 
 /** What a file's history left on it that the rules alone would not: a rewrite
- * that broke, one this tool made, a download client still holding it, or a
- * file no sweep has opened. */
+ * this tool made, a download client still holding it, or a file no sweep has
+ * opened. */
 export type History =
-	| { kind: 'failed'; daysAgo: number; detail: string }
 	| { kind: 'rewritten'; daysAgo: number }
 	| { kind: 'deferred'; daysAgo: number; detail: string }
 	| { kind: 'unchecked' };
@@ -246,6 +245,8 @@ export function catalogue(): TitleSpec[] {
 			rating: 6.8,
 			addedDays: 300,
 			minutes: 12,
+			// An MP4: only Matroska is rewritten or retagged, so the rules skip it.
+			ext: '.mp4',
 			source: 'WEBDL-1080p',
 			tracks: stereo('eng')
 		}),
@@ -289,17 +290,6 @@ export function catalogue(): TitleSpec[] {
 			]
 		}),
 		movie({
-			id: 8,
-			name: 'Agent 327: Operation Barbershop',
-			year: 2017,
-			lang: 'eng',
-			addedDays: 220,
-			minutes: 4,
-			ext: '.mp4',
-			source: 'WEBDL-1080p',
-			tracks: stereo('eng')
-		}),
-		movie({
 			id: 9,
 			name: 'Coffee Run',
 			year: 2020,
@@ -319,59 +309,7 @@ export function catalogue(): TitleSpec[] {
 			minutes: 4,
 			missing: true
 		}),
-		movie({
-			id: 11,
-			name: 'Wing It!',
-			year: 2023,
-			lang: 'eng',
-			rating: 6.4,
-			addedDays: 3,
-			minutes: 6,
-			tracks: surroundOnly('eng'),
-			history: { kind: 'failed', daysAgo: 0, detail: 'ffmpeg exited 1: Conversion failed!' }
-		}),
-		movie({
-			id: 12,
-			name: 'Glass Half',
-			year: 2015,
-			lang: 'eng',
-			addedDays: 260,
-			minutes: 3,
-			// A surround mix nobody tagged: not English as far as the rules can
-			// tell, so no stereo is made from it until the tag is set.
-			tracks: [video(8_000_000), audio(1, 'aac', 6, undefined, 448_000, DEFAULT)]
-		}),
-		movie({
-			id: 13,
-			name: 'Hero',
-			year: 2018,
-			lang: 'eng',
-			addedDays: 210,
-			minutes: 4,
-			source: 'WEBDL-1080p',
-			tracks: stereo('eng')
-		}),
-		movie({
-			id: 14,
-			name: 'Caminandes: Llamigos',
-			year: 2016,
-			lang: 'eng',
-			addedDays: 240,
-			minutes: 3,
-			source: 'WEBDL-1080p',
-			tracks: stereo('eng')
-		}),
 		// Public domain films.
-		movie({
-			id: 20,
-			name: 'Nosferatu',
-			year: 1922,
-			lang: 'ger',
-			rating: 7.9,
-			addedDays: 320,
-			minutes: 94,
-			tracks: score()
-		}),
 		movie({
 			id: 21,
 			name: 'Metropolis',
@@ -380,10 +318,13 @@ export function catalogue(): TitleSpec[] {
 			rating: 8.3,
 			addedDays: 310,
 			minutes: 153,
+			// The score in surround and a commentary in stereo: the original
+			// language owes a stereo mix of its own, and a commentary is never
+			// its source.
 			tracks: [
 				video(9_000_000),
 				audio(1, 'dts', 6, 'ger', 1_509_000, { ...DEFAULT, title: 'Score' }),
-				audio(2, 'ac3', 2, 'ger', 448_000, { title: 'Score' }),
+				audio(2, 'aac', 2, 'eng', 160_000, { title: 'Commentary', flags: ['commentary'] }),
 				subtitle(3, 'eng'),
 				subtitle(4, 'ger')
 			]
@@ -506,7 +447,10 @@ export function catalogue(): TitleSpec[] {
 			lang: 'eng',
 			rating: 7.5,
 			addedDays: 230,
-			minutes: 82
+			minutes: 82,
+			// A surround mix nobody tagged: not English as far as the rules can
+			// tell, so no stereo is made from it until the tag is set.
+			tracks: [video(8_000_000), audio(1, 'aac', 6, undefined, 448_000, DEFAULT)]
 		}),
 		movie({
 			id: 31,
@@ -522,33 +466,6 @@ export function catalogue(): TitleSpec[] {
 				video(4_000_000),
 				audio(1, 'ac3', 2, 'ger', 192_000, { ...DEFAULT, title: 'Erzähler' }),
 				subtitle(2, 'eng')
-			]
-		}),
-		movie({
-			id: 32,
-			name: 'Man with a Movie Camera',
-			year: 1929,
-			lang: 'rus',
-			rating: 8.3,
-			addedDays: 220,
-			minutes: 68,
-			tracks: score()
-		}),
-		movie({
-			id: 33,
-			name: 'Häxan',
-			year: 1922,
-			lang: 'swe',
-			rating: 7.6,
-			addedDays: 215,
-			minutes: 105,
-			// The score in surround and the 1968 narration in stereo: the original
-			// language owes a stereo mix of its own.
-			tracks: [
-				video(5_000_000),
-				audio(1, 'dts', 6, 'swe', 1_509_000, { ...DEFAULT, title: 'Score' }),
-				audio(2, 'aac', 2, 'eng', 160_000, { title: 'Narration' }),
-				subtitle(3, 'eng')
 			]
 		}),
 		movie({
@@ -597,50 +514,6 @@ export function catalogue(): TitleSpec[] {
 			]
 		}),
 		series({
-			id: 41,
-			name: 'Flash Gordon',
-			year: 1954,
-			lang: 'eng',
-			rating: 6.2,
-			addedDays: 170,
-			minutes: 25,
-			tracks: [
-				video(3_500_000),
-				audio(1, 'dts', 6, 'eng', 1_509_000, { ...DEFAULT, title: 'Surround 5.1 HDTV' }),
-				audio(2, 'aac', 2, 'eng', 160_000),
-				subtitle(3, 'eng')
-			],
-			episodes: [
-				{ title: 'Flash Gordon and the Planet of Death' },
-				{ title: 'The Claim Jumpers' },
-				{ title: 'Deadline at Noon' },
-				{ title: 'Saboteurs from Space' }
-			]
-		}),
-		series({
-			id: 42,
-			name: 'Pioneer One',
-			year: 2010,
-			lang: 'eng',
-			rating: 7.4,
-			addedDays: 12,
-			minutes: 32,
-			tracks: [
-				video(4_000_000),
-				audio(1, 'eac3', 6, 'eng', 640_000, DEFAULT),
-				generated(2, 'eng'),
-				subtitle(3, 'eng')
-			],
-			episodes: [
-				{ title: 'Earthfall', history: { kind: 'rewritten', daysAgo: 12 } },
-				{ title: 'The Man from Mars', history: { kind: 'rewritten', daysAgo: 12 } },
-				{ title: 'Alone in the Night', history: { kind: 'rewritten', daysAgo: 12 } },
-				{ title: 'Triangular Diplomacy', history: { kind: 'rewritten', daysAgo: 12 } },
-				{ title: 'Exposure', history: { kind: 'rewritten', daysAgo: 12 } },
-				{ title: 'Redemption', history: { kind: 'rewritten', daysAgo: 12 } }
-			]
-		}),
-		series({
 			id: 43,
 			name: 'Tales of Tomorrow',
 			year: 1951,
@@ -648,29 +521,25 @@ export function catalogue(): TitleSpec[] {
 			rating: 7.1,
 			addedDays: 160,
 			minutes: 25,
-			tracks: [video(3_000_000), audio(1, 'aac', 2, 'eng', 160_000, DEFAULT)],
+			// A restoration's surround remix, with the stereo this tool made when
+			// the season landed.
+			tracks: [
+				video(3_000_000),
+				audio(1, 'ac3', 6, 'eng', 448_000, DEFAULT),
+				generated(2, 'eng'),
+				subtitle(3, 'eng')
+			],
 			episodes: [
-				{ title: 'Verdict from Space' },
-				{ title: 'Blunder' },
-				{ title: 'The Dark Angel' },
-				{ title: 'The Crystal Egg' },
+				{ title: 'Verdict from Space', history: { kind: 'rewritten', daysAgo: 12 } },
+				{ title: 'Blunder', history: { kind: 'rewritten', daysAgo: 12 } },
+				{ title: 'The Dark Angel', history: { kind: 'rewritten', daysAgo: 12 } },
+				{ title: 'The Crystal Egg', history: { kind: 'rewritten', daysAgo: 12 } },
 				// Copied in by hand after the sweep walked past.
-				{ title: 'Frankenstein', history: { kind: 'unchecked' } }
-			]
-		}),
-		series({
-			id: 44,
-			name: 'Rocky Jones, Space Ranger',
-			year: 1954,
-			lang: 'eng',
-			rating: 6.0,
-			addedDays: 150,
-			minutes: 25,
-			tracks: stereo('eng'),
-			episodes: [
-				{ title: 'Beyond the Curtain of Space', ext: '.mp4' },
-				{ title: "Bobby's Comet", ext: '.mp4' },
-				{ title: 'Escape into Space', ext: '.mp4' }
+				{
+					title: 'Frankenstein',
+					history: { kind: 'unchecked' },
+					tracks: [video(3_000_000), audio(1, 'ac3', 6, 'eng', 448_000, DEFAULT)]
+				}
 			]
 		}),
 		{
@@ -684,19 +553,6 @@ export function catalogue(): TitleSpec[] {
 			folder: `${TV}/One Step Beyond`,
 			files: [],
 			arr: 'sonarr'
-		},
-		// A folder neither *arr claims, so no original language and no poster
-		// source; the sweep judges it all the same.
-		{
-			id: `dir:${MOVIES}/Caminandes`,
-			name: 'Caminandes',
-			kind: 'folder',
-			addedDays: 240,
-			folder: `${MOVIES}/Caminandes`,
-			files: [
-				{ name: 'Caminandes 1 - Llama Drama (2013)', ext: '.mkv', seconds: 90, tracks: score() },
-				{ name: 'Caminandes 2 - Gran Dillama (2013)', ext: '.mkv', seconds: 150, tracks: score() }
-			]
 		}
 	];
 }

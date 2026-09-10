@@ -25,7 +25,6 @@ import type { SettingsSnapshot, SettingValue } from '$lib/settings';
 import { catalogue, type FileSpec, type TitleSpec } from './catalogue';
 import { chronicle } from './history';
 import { added, judge, type Settings } from './judge';
-import { register } from './posters';
 import { DEFAULTS, ENV_PINNED, problems, RULE_SETTINGS, SECRETS, snapshot } from './settings';
 import { publish } from './stream';
 import { DAY_MS, digest, HOUR_MS, lastAt, MINUTE_MS, slug, stamp, VERSION } from './util';
@@ -213,10 +212,6 @@ function titleOf(world: World, spec: TitleSpec, now: number, sweptAt: number): T
 				: now - REWRITTEN_IN_RUN_AGO_MS;
 			rewrittenBefore(file, when);
 		}
-		if (history?.kind === 'failed') {
-			file.status = 'failed';
-			file.why = { ...file.why, failed: history.detail };
-		}
 		world.byPath.set(file.path, file);
 	});
 	return title;
@@ -254,7 +249,6 @@ function build(now: number): World {
 		const title = titleOf(world, spec, now, sweptAt);
 		world.titles.push(title);
 		world.byId.set(spec.id, title);
-		register(spec.id, { name: spec.name, year: spec.year, kind: spec.kind });
 	}
 	const metropolis = world.byId.get('arr:radarr:21')!;
 	world.holds.push({

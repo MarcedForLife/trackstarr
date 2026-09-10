@@ -30,7 +30,7 @@ the copies of the palette tokens to each other.
 behind them. Under `vite --mode demo` the `$demo` alias names
 `src/lib/demo/hooks.ts`, and through it `$lib/api` answers every request from
 `src/lib/demo` in the browser, `$lib/stream` opens the demo's stand-in for the
-event stream, and `$lib/library` draws posters rather than fetching them. Any
+event stream, and `$lib/library` takes posters from the build. Any
 other mode names `none.ts`, which imports nothing, so the normal build carries
 none of the demo.
 
@@ -43,6 +43,13 @@ publishes to the stream as it goes; `history.ts` writes three weeks of events
 around the moment the page opened. Nothing is stored, so a reload starts over.
 `src/demo.test.ts` holds the demo's answers to the same checks
 `fixtures.test.ts` puts the service's through.
+
+Every title has a poster or still on Wikimedia Commons under CC BY or in the
+public domain, named in `src/lib/demo/posters.json`: `npm run posters:demo`
+fetches them into the gitignored `src/lib/demo/posters/`, checking each licence
+on the way, and `posters.ts` picks them up with a build-time glob. The workflow
+runs it before the build, so the images never enter the repo; the notice over
+the demo's pages credits every one shown.
 
 `.github/workflows/demo.yml` publishes it to GitHub Pages under the
 repository's name, which is what `BASE_PATH` is for: `routeOf` in `$lib/nav`

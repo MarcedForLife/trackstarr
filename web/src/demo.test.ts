@@ -3,7 +3,9 @@
 // its runs move the library the way the service's would.
 
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { catalogue } from '$lib/demo/catalogue';
 import { nextRuns } from '$lib/demo/cron';
+import manifest from '$lib/demo/posters.json';
 import { answer } from '$lib/demo/routes';
 import { stopTicking, tick } from '$lib/demo/runs';
 import { reset, world } from '$lib/demo/world';
@@ -78,7 +80,6 @@ describe('the library', () => {
 			for (const word of Object.keys(card.counts ?? {})) expect(asVerdict(word)).toBe(word);
 		}
 		for (const state of [
-			'failed',
 			'pending',
 			'skip',
 			'unsupported',
@@ -89,7 +90,10 @@ describe('the library', () => {
 		]) {
 			expect([...states], state).toContain(state);
 		}
-		for (const state of FILTERS) expect(tally(shelf.titles)[state], state).toBeGreaterThan(0);
+		// Nothing in the sample library has failed: a demo that opens on a broken
+		// rewrite looks unhealthy, so that chip alone stays empty.
+		for (const state of FILTERS.filter((state) => state !== 'failed'))
+			expect(tally(shelf.titles)[state], state).toBeGreaterThan(0);
 	});
 
 	test('plans a pending file and records a rewritten one', async () => {
@@ -154,11 +158,7 @@ describe('the runs', () => {
 		const sweep = activity.runs.find((run) => run.kind === 'sweep')!;
 		expect(sweep.active[0].stage).toBe('encoding');
 		expect(sweep.upcoming?.length).toBeGreaterThan(2);
-		expect(sweep.recent?.map((row) => row.status).sort()).toEqual([
-			'deferred',
-			'failed',
-			'modified'
-		]);
+		expect(sweep.recent?.map((row) => row.status).sort()).toEqual(['deferred', 'modified']);
 		expect(sweep.done + sweep.active.length + (sweep.queued ?? 0)).toBe(sweep.total);
 		expect(activity.rewrites).toBe(1);
 		expect(activity.may_rewrite).toBe(true);
@@ -190,9 +190,11 @@ describe('the runs', () => {
 		advance(6000);
 		const activity = await get<Activity>('/api/runs');
 		expect(activity.runs).toEqual([]);
-		// Only the film a download client still holds is left owing a rewrite.
+		// Only the held film and the one a download client still holds are left
+		// owing a rewrite.
 		const shelf = await get<Shelf>('/api/library');
 		expect(shelf.titles.filter((card) => card.state === 'pending').map((card) => card.id)).toEqual([
+			'arr:radarr:21',
 			'arr:radarr:27'
 		]);
 		const page = await get<EventPage>('/api/events?limit=30');
@@ -246,7 +248,7 @@ describe('the runs', () => {
 
 describe('the sheet', () => {
 	test('tags an untagged surround track and the downmix rule finds its source', async () => {
-		const before = await get<TitleDetail>('/api/library/title?id=arr:radarr:12');
+		const before = await get<TitleDetail>('/api/library/title?id=arr:radarr:30');
 		expect(before.files[0].status).toBe('conform');
 		const outcome = await post<{ results: { status: string; verdict: string }[] }>(
 			'/api/library/retag',
@@ -256,16 +258,16 @@ describe('the sheet', () => {
 			}
 		);
 		expect(outcome.results[0]).toMatchObject({ status: 'retagged', verdict: 'pending' });
-		const after = await get<TitleDetail>('/api/library/title?id=arr:radarr:12');
+		const after = await get<TitleDetail>('/api/library/title?id=arr:radarr:30');
 		expect(after.files[0].why.reasons?.[0]).toContain('add 2.0 downmix');
 		const page = await get<EventPage>('/api/events?limit=1');
 		expect(page.events[0].event).toBe('retagged');
 	});
 
 	test('refuses to edit an MP4 in place', async () => {
-		const agent = await get<TitleDetail>('/api/library/title?id=arr:radarr:8');
+		const cosmos = await get<TitleDetail>('/api/library/title?id=arr:radarr:5');
 		const outcome = await post<{ results: { status: string }[] }>('/api/library/retag', {
-			tracks: [{ path: agent.files[0].path, index: 1 }],
+			tracks: [{ path: cosmos.files[0].path, index: 1 }],
 			lang: 'fre'
 		});
 		expect(outcome.results[0].status).toBe('refused');
@@ -330,5 +332,19 @@ describe('the schedule', () => {
 		expect(nextRuns('0 4 * * 0', from, 1)![0].getDay()).toBe(0);
 		expect(nextRuns('nonsense', from, 1)).toBeNull();
 		expect(nextRuns('0 4 * *', from, 1)).toBeNull();
+	});
+});
+
+describe('the posters', () => {
+	test('names only titles in the catalogue, under licences the demo may show', () => {
+		const ids = new Set(catalogue().map((title) => title.id));
+		for (const [id, poster] of Object.entries(manifest)) {
+			expect(ids.has(id), id).toBe(true);
+			expect(poster.file.startsWith('File:'), id).toBe(true);
+			expect(poster.by.length, id).toBeGreaterThan(0);
+			expect(['CC BY 3.0', 'CC BY 4.0', 'CC BY-SA 3.0', 'CC0', 'Public domain'], id).toContain(
+				poster.licence
+			);
+		}
 	});
 });

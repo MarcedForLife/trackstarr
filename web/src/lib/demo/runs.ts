@@ -197,8 +197,6 @@ function doneRow(world: World, file: File, now: number): DoneFile | null {
 			detail: rewriteDetail(world, file)
 		};
 	}
-	if (file.why.failed)
-		return { path: file.path, status: 'failed', seconds: 95.3, detail: file.why.failed };
 	if (file.hardlinked)
 		return { path: file.path, status: 'deferred', seconds: 0.4, detail: HARDLINKED };
 	return null;

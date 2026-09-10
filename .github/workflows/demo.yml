@@ -4,8 +4,9 @@ name: Demo
 # the browser, published to GitHub Pages. See web/README.md, "The demo".
 #
 # Pages has to be switched on once, under Settings, Pages, with GitHub Actions
-# as the source. The feature branch is here so the demo can go up before the UI
-# reaches main; drop it once that has happened.
+# as the source, and its github-pages environment has to allow each branch
+# here. The feature branch is here so the demo can go up before the UI reaches
+# main; drop it, and its branch policy, once that has happened.
 on:
   push:
     branches: [main, feature/demo-site]
@@ -39,6 +40,11 @@ jobs:
           cache-dependency-path: web/package-lock.json
 
       - run: npm ci
+
+      # The posters, from Wikimedia Commons under the licences
+      # src/lib/demo/posters.json records. Not kept in the repo; a title whose
+      # poster does not arrive gets a drawn one.
+      - run: npm run posters:demo
 
       # A project site sits under the repository's name. With a custom domain
       # attached to Pages, set BASE_PATH to nothing.

@@ -1,0 +1,127 @@
+{
+	"arr:radarr:1": {
+		"file": "File:Big buck bunny poster big.jpg",
+		"by": "Blender Foundation",
+		"licence": "CC BY 3.0"
+	},
+	"arr:radarr:2": {
+		"file": "File:Sintel poster.jpg",
+		"by": "Blender Foundation",
+		"licence": "CC BY 3.0"
+	},
+	"arr:radarr:3": {
+		"file": "File:Tos-poster.png",
+		"by": "Blender Foundation",
+		"licence": "CC BY 3.0"
+	},
+	"arr:radarr:4": {
+		"file": "File:ElephantsDreamPoster.jpg",
+		"by": "Bassam Kurdali, Andy Goralczyk and the Blender Foundation",
+		"licence": "CC BY 4.0"
+	},
+	"arr:radarr:5": {
+		"file": "File:CosmosLaundromatPoster.jpg",
+		"by": "Andy Goralczyk and the Blender Foundation",
+		"licence": "CC BY 4.0"
+	},
+	"arr:radarr:6": {
+		"file": "File:Spring2019AlphaPosterBlender.jpg",
+		"by": "Blender Foundation",
+		"licence": "CC BY 4.0"
+	},
+	"arr:radarr:7": {
+		"file": "File:Sprite Fright-movie poster.jpg",
+		"by": "Blender Studio",
+		"licence": "CC BY 4.0"
+	},
+	"arr:radarr:9": {
+		"file": "File:Coffee Run-movie poster.png",
+		"by": "Hjalti Hjalmarsson, Blender Studio",
+		"licence": "CC BY 4.0"
+	},
+	"arr:radarr:10": {
+		"file": "File:Charge-movie poster.jpg",
+		"by": "Blender Studio",
+		"licence": "CC BY 4.0"
+	},
+	"arr:radarr:21": {
+		"file": "File:Boris Bilinski - Filmplakat für Metropolis restored.jpg",
+		"by": "Boris Bilinsky",
+		"licence": "Public domain"
+	},
+	"arr:radarr:22": {
+		"file": "File:The Cabinet of Doctor Caligari Movie poster.jpg",
+		"by": "Lionel S. Reiss",
+		"licence": "Public domain"
+	},
+	"arr:radarr:23": {
+		"file": "File:Night Of The Living Dead (1968) - Poster.jpg",
+		"by": "Unknown artist, for Continental Distributing",
+		"licence": "Public domain"
+	},
+	"arr:radarr:24": {
+		"file": "File:His Girl Friday (1940 poster).jpg",
+		"by": "Columbia Pictures",
+		"licence": "Public domain"
+	},
+	"arr:radarr:25": {
+		"file": "File:Charade (1963 poster).jpg",
+		"by": "Universal Pictures",
+		"licence": "Public domain"
+	},
+	"arr:radarr:26": {
+		"file": "File:Buster Keaton in The General; poster.jpg",
+		"by": "Unknown artist, for United Artists",
+		"licence": "Public domain"
+	},
+	"arr:radarr:27": {
+		"file": "File:Sherlock jr poster.jpg",
+		"by": "Unknown artist, for Metro Pictures",
+		"licence": "Public domain"
+	},
+	"arr:radarr:28": {
+		"file": "File:Plan 9 Alternative poster.jpg",
+		"by": "Distributors Corporation of America",
+		"licence": "Public domain"
+	},
+	"arr:radarr:29": {
+		"file": "File:Carnival of Souls (1962 one-sheet poster).jpg",
+		"by": "F. Germain for Herts-Lion International",
+		"licence": "Public domain"
+	},
+	"arr:radarr:30": {
+		"file": "File:Sita STB Poster.jpg",
+		"by": "Nina Paley",
+		"licence": "CC BY-SA 3.0"
+	},
+	"arr:radarr:31": {
+		"file": "File:Vintage Potemkin.jpg",
+		"by": "Unknown artist, for Goskino",
+		"licence": "Public domain"
+	},
+	"arr:radarr:34": {
+		"file": "File:Detour (poster).jpg",
+		"by": "Producers Releasing Corporation",
+		"licence": "Public domain"
+	},
+	"arr:radarr:35": {
+		"file": "File:Safety last poster.jpg",
+		"by": "Unknown artist, for Pathé Exchange",
+		"licence": "Public domain"
+	},
+	"arr:sonarr:40": {
+		"file": "File:Meg Lemonnier in Sherlock Holmes (The Case of the Cunningham Heritage).jpg",
+		"by": "Guild Films",
+		"licence": "Public domain"
+	},
+	"arr:sonarr:43": {
+		"file": "File:Edgar Stehli in Tales of Tomorrow (The Invader).jpg",
+		"by": "ABC",
+		"licence": "Public domain"
+	},
+	"arr:sonarr:45": {
+		"file": "File:John Newland - 1959 (One Step Beyond).jpg",
+		"by": "World Television Programming",
+		"licence": "Public domain"
+	}
+}

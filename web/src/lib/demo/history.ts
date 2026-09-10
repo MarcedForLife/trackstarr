@@ -35,18 +35,16 @@ const SINTEL = 'arr:radarr:2';
 const TEARS = 'arr:radarr:3';
 const ELEPHANTS = 'arr:radarr:4';
 const COFFEE = 'arr:radarr:9';
-const WING_IT = 'arr:radarr:11';
 const METROPOLIS = 'arr:radarr:21';
 const CALIGARI = 'arr:radarr:22';
 const CHARADE = 'arr:radarr:25';
 const SHERLOCK_JR = 'arr:radarr:27';
-const HAXAN = 'arr:radarr:33';
 const SAFETY_LAST = 'arr:radarr:35';
 const HOLMES = 'arr:sonarr:40';
-const PIONEER = 'arr:sonarr:42';
+const TALES = 'arr:sonarr:43';
 
 // The files a pending verdict was first reached on, and by which change.
-const PENDING_FROM_THE_START = [TEARS, HAXAN, ELEPHANTS];
+const PENDING_FROM_THE_START = [TEARS, METROPOLIS, ELEPHANTS];
 const PENDING_SINCE_NARROWED = [SINTEL, CHARADE, CALIGARI];
 
 type Story = {
@@ -243,16 +241,11 @@ export function chronicle(world: World, now: number): Event[] {
 	});
 
 	// Two imports the service rewrote as they landed.
-	const pioneer = world.byId.get(PIONEER)!.files;
-	const pioneerRun = runId(Date.parse(pioneer[0].modified!.at) - 6 * MINUTE_MS);
-	webhook(
-		story,
-		'sonarr',
-		pioneer,
-		pioneerRun,
-		Date.parse(pioneer[0].modified!.at) - 6 * MINUTE_MS
-	);
-	for (const episode of pioneer) imported(story, episode, pioneerRun);
+	const tales = world.byId.get(TALES)!.files.filter((episode) => episode.modified);
+	const talesAt = Date.parse(tales[0].modified!.at) - 6 * MINUTE_MS;
+	const talesRun = runId(talesAt);
+	webhook(story, 'sonarr', tales, talesRun, talesAt);
+	for (const episode of tales) imported(story, episode, talesRun);
 	const safety = file(SAFETY_LAST);
 	const safetyRun = runId(Date.parse(safety.modified!.at) - 4 * MINUTE_MS);
 	webhook(story, 'radarr', [safety], safetyRun, Date.parse(safety.modified!.at) - 4 * MINUTE_MS);
@@ -283,26 +276,15 @@ export function chronicle(world: World, now: number): Event[] {
 		ts: stamp(dayAt(now, 6, 9, 5)),
 		event: 'retagged',
 		version,
-		path: file(HAXAN).path,
+		path: file(METROPOLIS).path,
 		index: 2,
 		kind: 'audio',
 		changed: { lang: { from: 'und', to: 'eng' } },
 		by: story.by,
-		title: HAXAN
+		title: METROPOLIS
 	});
 	settingsChange(story, story.narrowedAt, {
 		LANGUAGES: { from: WIDE_LANGUAGES, to: world.settings.LANGUAGES }
-	});
-
-	// An import whose rewrite broke, and has gone on breaking.
-	const wingIt = file(WING_IT);
-	const wingItAt = dayAt(now, 3, 21, 5);
-	const wingItRun = runId(wingItAt);
-	webhook(story, 'radarr', [wingIt], wingItRun, wingItAt);
-	verdict(story, 'failed', wingIt, wingItRun, 'webhook', wingItAt + 2 * MINUTE_MS, {
-		seconds: 95.3,
-		duration: wingIt.seconds,
-		detail: wingIt.why.failed
 	});
 
 	story.lines.push({ ts: stamp(dayAt(now, 2, 8, 0)), event: 'paused', version, by: story.by });
@@ -347,11 +329,6 @@ export function chronicle(world: World, now: number): Event[] {
 		duration: elephants.seconds,
 		bytes_before: elephants.modified!.bytes_before,
 		bytes_after: elephants.modified!.bytes_after
-	});
-	verdict(story, 'failed', wingIt, sweepRun, 'sweep', now - 12 * MINUTE_MS, {
-		seconds: 95.3,
-		duration: wingIt.seconds,
-		detail: wingIt.why.failed
 	});
 	const sherlockJr = file(SHERLOCK_JR);
 	verdict(story, 'deferred', sherlockJr, sweepRun, 'sweep', now - 9 * MINUTE_MS, {

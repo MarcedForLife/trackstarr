@@ -14,7 +14,7 @@ export const fetcher: (path: string, init?: RequestInit) => Promise<Response> = 
 /** Opens the stand-in for the event stream, in place of an EventSource. */
 export const source: () => import('./stream').Source = demoSource;
 
-/** A title's poster as a data URI, in place of the cover endpoint. */
+/** A title's poster from the build, in place of the cover endpoint. */
 export const cover: (id: string) => string = poster;
 
 /** The notice over every page, loaded on demand. */
