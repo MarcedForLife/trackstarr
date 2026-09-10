@@ -41,7 +41,7 @@
 >
 	<div>
 		<div class="flex items-center gap-2.5">
-			<Mark size={20} class="text-accent" />
+			<Mark size={20} class="text-accent" motion="drop" />
 			<h1 class="text-2xl font-semibold tracking-tight">Trackstarr</h1>
 		</div>
 		<p class="mt-1 text-sm text-dim">Sign in</p>

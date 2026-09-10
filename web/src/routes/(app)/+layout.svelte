@@ -8,6 +8,7 @@
 	import { setStage } from '$lib/scroller';
 	import { notice } from '$demo';
 	import { overlay } from '$lib/overlay';
+	import { running } from '$lib/paused.svelte';
 	import Mark from '$lib/components/Mark.svelte';
 	import NavProgress from '$lib/components/NavProgress.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
@@ -207,11 +208,19 @@
 		>
 			<div class="flex h-14 items-center gap-2 px-4">
 				<!-- The mark and name are the way home. Negative margin against its
-				     padding so only the pressable area grows; no hover, or a wordmark
-				     reads as a button. -->
-				<a href={resolve('/')} class="-ml-2 flex items-center gap-2 rounded-md px-2 py-1.5">
-					<Mark size={17} class="flex-none text-accent" />
-					<span class="text-[15px] font-semibold tracking-tight">Trackstarr</span>
+				     padding so only the pressable area grows; no background on hover, or
+				     a wordmark reads as a button. The mark beats while a run is on. -->
+				<a
+					href={resolve('/')}
+					class="mark-press -ml-2 flex items-center gap-2 rounded-md px-2 py-1.5"
+				>
+					<Mark
+						size={19}
+						class="flex-none text-accent"
+						motion={running.current ? 'travel' : 'none'}
+						press
+					/>
+					<span class="text-[16px] font-semibold tracking-tight">Trackstarr</span>
 				</a>
 				<!-- A gear, not a hamburger: everything behind it is settings and the
 				     account. On the right, where the drawer comes in from. -->
