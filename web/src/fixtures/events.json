@@ -1,0 +1,414 @@
+{
+	"events": [
+		{
+			"ts": "2026-03-01T11:19:00+13:00",
+			"event": "held",
+			"version": "0.0.0",
+			"path": "/data/media/tv/The Bear",
+			"title": "arr:sonarr:31",
+			"reason": "not until I say",
+			"by": "admin"
+		},
+		{
+			"ts": "2026-03-01T11:17:00+13:00",
+			"event": "webhook",
+			"version": "0.0.0",
+			"run": "2026-03-01T11:55:00+13:00#c3d4",
+			"arr": "radarr",
+			"files": 1,
+			"paths": [
+				"/data/media/movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv"
+			]
+		},
+		{
+			"ts": "2026-03-01T11:16:00+13:00",
+			"event": "settings",
+			"version": "0.0.0",
+			"changed": {
+				"PLEX_URL": {
+					"from": "",
+					"to": "http://plex:32400"
+				},
+				"RULE_COMMENTARY": {
+					"from": "never",
+					"to": "always"
+				}
+			},
+			"by": "admin"
+		},
+		{
+			"ts": "2026-03-01T11:15:00+13:00",
+			"event": "resumed",
+			"version": "0.0.0",
+			"by": "admin"
+		},
+		{
+			"ts": "2026-03-01T11:14:00+13:00",
+			"event": "paused",
+			"version": "0.0.0",
+			"by": "admin"
+		},
+		{
+			"ts": "2026-03-01T11:12:00+13:00",
+			"event": "retagged",
+			"version": "0.0.0",
+			"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
+			"index": 1,
+			"kind": "audio",
+			"changed": {
+				"lang": {
+					"from": "und",
+					"to": "jpn"
+				},
+				"commentary": {
+					"from": false,
+					"to": true
+				}
+			},
+			"by": "admin",
+			"title": "arr:sonarr:12"
+		},
+		{
+			"ts": "2026-03-01T11:11:00+13:00",
+			"event": "skipped",
+			"version": "0.0.0",
+			"run": "2026-02-28T03:00:00+13:00#9f8e",
+			"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
+			"by": "admin",
+			"title": "arr:sonarr:12"
+		},
+		{
+			"ts": "2026-03-01T11:10:00+13:00",
+			"event": "lifted",
+			"version": "0.0.0",
+			"path": "/data/media/tv/Severance",
+			"title": "arr:sonarr:12",
+			"by": "admin"
+		},
+		{
+			"ts": "2026-03-01T11:09:00+13:00",
+			"event": "held",
+			"version": "0.0.0",
+			"path": "/data/media/tv/Severance",
+			"title": "arr:sonarr:12",
+			"seconds": 14400,
+			"reason": "watching it",
+			"by": "admin"
+		},
+		{
+			"ts": "2026-03-01T11:07:00+13:00",
+			"event": "recheck",
+			"version": "0.0.0",
+			"run": "2026-02-28T21:30:00+13:00#5b4a",
+			"dry_run": true,
+			"titles": 1,
+			"files": 2,
+			"config_id": "39455871742b",
+			"counts": {
+				"conform": 1,
+				"failed": 1
+			},
+			"seconds": 41.7
+		},
+		{
+			"ts": "2026-03-01T11:06:00+13:00",
+			"event": "pending",
+			"version": "0.0.0",
+			"run": "2026-02-28T19:12:40+13:00#7d6c",
+			"source": "webhook",
+			"config_id": "39455871742b",
+			"path": "/data/media/movies/Dune (2024)/Dune (2024) Bluray-2160p.mkv",
+			"reasons": [
+				"add 2.0 downmix (from track 1)"
+			],
+			"rules": [
+				"downmix"
+			],
+			"incidental": [],
+			"incidental_rules": [],
+			"downmixed": [
+				"2.0"
+			],
+			"title": "arr:radarr:7"
+		},
+		{
+			"ts": "2026-03-01T11:05:00+13:00",
+			"event": "webhook",
+			"version": "0.0.0",
+			"run": "2026-02-28T19:12:40+13:00#7d6c",
+			"arr": "radarr",
+			"files": 1,
+			"paths": [
+				"/data/media/movies/Dune (2024)/Dune (2024) Bluray-2160p.mkv"
+			],
+			"title": "arr:radarr:7"
+		},
+		{
+			"ts": "2026-03-01T11:04:00+13:00",
+			"event": "failed",
+			"version": "0.0.0",
+			"run": "2026-02-28T03:00:00+13:00#9f8e",
+			"source": "sweep",
+			"config_id": "39455871742b",
+			"reasons": [
+				"add 2.0 downmix (from track 1)"
+			],
+			"rules": [
+				"downmix"
+			],
+			"seconds": 95.3,
+			"duration": 3305.0,
+			"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
+			"detail": "ffmpeg exited 1: Conversion failed!",
+			"title": "arr:sonarr:12"
+		},
+		{
+			"ts": "2026-03-01T11:03:00+13:00",
+			"event": "deferred",
+			"version": "0.0.0",
+			"run": "2026-02-28T03:00:00+13:00#9f8e",
+			"source": "sweep",
+			"config_id": "39455871742b",
+			"reasons": [
+				"add 2.0 downmix (from track 1)"
+			],
+			"rules": [
+				"downmix"
+			],
+			"seconds": 0.4,
+			"duration": 3305.0,
+			"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
+			"detail": "hard-linked 2 times; a download client still has it",
+			"title": "arr:sonarr:12"
+		},
+		{
+			"ts": "2026-03-01T11:02:00+13:00",
+			"event": "modified",
+			"version": "0.0.0",
+			"run": "2026-02-28T03:00:00+13:00#9f8e",
+			"source": "sweep",
+			"config_id": "39455871742b",
+			"reasons": [
+				"remux to mkv (RULE_REMUX)",
+				"add 2.0 downmix (from track 1)"
+			],
+			"rules": [
+				"downmix",
+				"remux"
+			],
+			"seconds": 1834.2,
+			"waited": 12.5,
+			"duration": 3420.0,
+			"path": "/data/media/tv/Severance/Season 01/Severance - S01E01 - Good News About Hell.mkv",
+			"from_path": "/data/media/tv/Severance/Season 01/Severance - S01E01 - Good News About Hell.mp4",
+			"incidental": [
+				"clear release tags on audio 1 ('Surround 5.1')"
+			],
+			"incidental_rules": [
+				"release_tags"
+			],
+			"downmixed": [
+				"2.0"
+			],
+			"bytes_before": 2147483648,
+			"bytes_after": 2251799813,
+			"title": "arr:sonarr:12"
+		},
+		{
+			"ts": "2026-03-01T11:01:00+13:00",
+			"event": "sweep",
+			"version": "0.0.0",
+			"run": "2026-02-28T03:00:00+13:00#9f8e",
+			"dry_run": false,
+			"files": 1180,
+			"library_bytes": 24189255811072,
+			"config": {
+				"version": "0.0.0",
+				"languages": [
+					"original:downmix",
+					"eng:downmix"
+				],
+				"allowed_exts": [
+					".m4v",
+					".mkv",
+					".mp4"
+				],
+				"rule_modes": [
+					[
+						"commentary",
+						"never"
+					],
+					[
+						"cover_art",
+						"always"
+					],
+					[
+						"languages",
+						"always"
+					],
+					[
+						"order",
+						"always"
+					],
+					[
+						"regenerate",
+						"never"
+					],
+					[
+						"release_tags",
+						"alongside"
+					],
+					[
+						"remux",
+						"never"
+					],
+					[
+						"sdh",
+						"alongside"
+					],
+					[
+						"stray_streams",
+						"alongside"
+					]
+				],
+				"regenerate_scope": "generated",
+				"regenerate_below": 80,
+				"regenerate_above": 0,
+				"audio_layouts": [
+					"2.0:downmix:aac:320k",
+					"5.1:downmix:ac3:640k"
+				],
+				"skip_hardlinks": true,
+				"commentary_re": "comment|descriptive|described\\s*video|audio\\s*description|isolated\\s*score|director'?s?\\s*track|interview|behind\\s*the\\s*scenes",
+				"sdh_re": "\\bsdh\\b|\\bcc\\b|hearing[\\s._-]*impaired",
+				"forced_re": "\\bforced\\b",
+				"release_tag_re": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b"
+			},
+			"config_id": "39455871742b",
+			"cached": 1174,
+			"counts": {
+				"conform": 1177,
+				"modified": 1,
+				"failed": 1,
+				"unsupported": 1
+			},
+			"seconds": 5423.5
+		},
+		{
+			"ts": "2026-03-01T11:00:00+13:00",
+			"event": "config",
+			"version": "0.0.0",
+			"config": {
+				"version": "0.0.0",
+				"languages": [
+					"original:downmix",
+					"eng:downmix"
+				],
+				"allowed_exts": [
+					".m4v",
+					".mkv",
+					".mp4"
+				],
+				"rule_modes": [
+					[
+						"commentary",
+						"never"
+					],
+					[
+						"cover_art",
+						"always"
+					],
+					[
+						"languages",
+						"always"
+					],
+					[
+						"order",
+						"always"
+					],
+					[
+						"regenerate",
+						"never"
+					],
+					[
+						"release_tags",
+						"alongside"
+					],
+					[
+						"remux",
+						"never"
+					],
+					[
+						"sdh",
+						"alongside"
+					],
+					[
+						"stray_streams",
+						"alongside"
+					]
+				],
+				"regenerate_scope": "generated",
+				"regenerate_below": 80,
+				"regenerate_above": 0,
+				"audio_layouts": [
+					"2.0:downmix:aac:320k",
+					"5.1:downmix:ac3:640k"
+				],
+				"skip_hardlinks": true,
+				"commentary_re": "comment|descriptive|described\\s*video|audio\\s*description|isolated\\s*score|director'?s?\\s*track|interview|behind\\s*the\\s*scenes",
+				"sdh_re": "\\bsdh\\b|\\bcc\\b|hearing[\\s._-]*impaired",
+				"forced_re": "\\bforced\\b",
+				"release_tag_re": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b"
+			},
+			"config_id": "39455871742b"
+		}
+	],
+	"titles": {
+		"arr:sonarr:31": {
+			"id": "arr:sonarr:31",
+			"name": "The Bear",
+			"kind": "series",
+			"state": "missing",
+			"year": 2022,
+			"lang": "eng",
+			"added": 1772180100
+		},
+		"arr:sonarr:12": {
+			"id": "arr:sonarr:12",
+			"name": "Severance",
+			"kind": "series",
+			"state": "failed",
+			"year": 2022,
+			"lang": "eng",
+			"added": 1737144000,
+			"files": 2,
+			"bytes": 4399283461,
+			"counts": {
+				"conform": 1,
+				"failed": 1
+			},
+			"modified": 1,
+			"processed": 1772233500
+		},
+		"arr:radarr:7": {
+			"id": "arr:radarr:7",
+			"name": "Dune",
+			"kind": "movie",
+			"state": "pending",
+			"year": 2024,
+			"lang": "eng",
+			"added": 1709285400,
+			"files": 1,
+			"bytes": 58720256000,
+			"counts": {
+				"pending": 1
+			},
+			"adds": [
+				"Stereo"
+			],
+			"weight": 1.0,
+			"processed": 1772146800
+		}
+	},
+	"next": null
+}

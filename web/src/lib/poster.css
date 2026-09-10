@@ -1,0 +1,143 @@
+/* What the field draws with: $lib/field puts the classes on and writes the
+ * custom properties every frame, so the two files must agree. Keyed on the
+ * data attributes, since Svelte classes are scoped and the field is not a
+ * component. Unlayered, so it beats the utilities. */
+
+[data-tilt] {
+	--rx: 0deg;
+	--ry: 0deg;
+	/* The effects multiplier, with the middle stop as 1. The markup writes it;
+	   this is the fallback. */
+	--fx: 1;
+	/* The eye's distance from the card, set by the field against each card's
+	   own width: a fixed 900px made thirteen degrees two pixels of keystone
+	   on a phone. On the card's own transform so the vanishing point is the
+	   artwork's middle, not the button's.
+
+	   A resting card must not carry it: Chrome promotes any 3D transform to a
+	   composited layer whatever its value, and a grid at rotateX(0deg) was
+	   161 layers where the page needs 51. It goes on when a card has an
+	   angle and off when it scrolls out; see forget() in $lib/field. */
+	/* The lift jumps from 1 to 1.06 when a card is raised, so it needs a
+	   transition where the angle beside it in the same `transform` does not;
+	   splitting it into --lift allows that. The angle's transition is on the
+	   turning card below, and absent from a resting one, or removing the
+	   transform would keep the card composited for 420ms of invisible ease. */
+	transition: --lift 240ms cubic-bezier(0.22, 1, 0.36, 1);
+	will-change: auto;
+}
+
+/* The transform, on from a card's first reach until it scrolls out. `is-near`
+   is the inner pair; removing it restores the transition that eases home. */
+[data-tilt].is-turning,
+[data-tilt].is-raised {
+	transform: perspective(var(--depth, 900px)) rotateX(var(--rx)) rotateY(var(--ry))
+		scale(var(--lift));
+	transition:
+		transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
+		--lift 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* While a card is in reach: no transition, or every card trails the cursor
+   by 420ms. After the rule above, since source order settles which wins. */
+[data-tilt].is-near {
+	transition: --lift 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The card a pointer is held on, raised. Follows the pointer, not the press. */
+[data-tilt].is-raised {
+	/* Six percent at the middle stop. */
+	--lift: calc(1 + 0.06 * var(--fx, 1));
+	transition: --lift 240ms cubic-bezier(0.22, 1, 0.36, 1);
+	will-change: transform;
+	z-index: 1;
+}
+
+[data-sheen] {
+	box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+	/* Matched to the lift, so the shadow does not trail the card. */
+	transition: box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
+	/* The cover. Unset on a card showing initials, which takes the layers below
+	   out with it. */
+	background-image: var(--cover);
+	background-clip: padding-box;
+	background-origin: padding-box;
+	background-position: center;
+	background-size: cover;
+	background-repeat: no-repeat;
+}
+
+[data-tilt].is-raised [data-sheen] {
+	/* Thrown opposite the lean. Half fixed, half scaled: a raised card at
+	   Subtle is still off the page, and doubling at the top stop threw the
+	   shadow further than the poster is wide. */
+	box-shadow:
+		0 calc(7px + 7px * var(--fx, 1)) calc(17px + 17px * var(--fx, 1)) rgb(0 0 0 / 0.45),
+		0 2px 6px rgb(0 0 0 / 0.3);
+}
+
+/* The light as a layer over the cover, with the sheen in each stop's alpha
+   since a background layer has no opacity. No transition; catchUp() in
+   $lib/field does the fade. */
+
+[data-sheen].is-gloss {
+	background-image:
+		radial-gradient(
+			circle at var(--mx) var(--my),
+			rgb(255 255 255 / calc(0.45 * var(--sheen))),
+			transparent 45%
+		),
+		var(--cover);
+	background-blend-mode: soft-light, normal;
+}
+
+/* One band of colour angled with the lean. A gradient: nothing to download. */
+[data-sheen].is-foil {
+	background-image:
+		linear-gradient(
+			calc(var(--hue) * 1deg),
+			transparent 30%,
+			hsl(var(--hue) 95% 62% / calc(0.3 * var(--sheen))) 45%,
+			hsl(calc(var(--hue) + 70) 95% 66% / calc(0.28 * var(--sheen))) 55%,
+			transparent 70%
+		),
+		radial-gradient(
+			circle at var(--mx) var(--my),
+			rgb(255 255 255 / calc(0.45 * var(--sheen))),
+			transparent 45%
+		),
+		var(--cover);
+	background-blend-mode: color-dodge, soft-light, normal;
+}
+
+/* Three bands round most of the wheel. The same layer and blend; the extra
+   stops are settled at paint. */
+[data-sheen].is-holo {
+	background-image:
+		linear-gradient(
+			calc(var(--hue) * 1deg),
+			transparent 4%,
+			hsl(var(--hue) 95% 62% / calc(0.31 * var(--sheen))) 18%,
+			hsl(calc(var(--hue) + 60) 95% 64% / calc(0.28 * var(--sheen))) 30%,
+			transparent 44%,
+			hsl(calc(var(--hue) + 140) 95% 62% / calc(0.26 * var(--sheen))) 58%,
+			hsl(calc(var(--hue) + 210) 95% 66% / calc(0.28 * var(--sheen))) 72%,
+			transparent 88%
+		),
+		radial-gradient(
+			circle at var(--mx) var(--my),
+			rgb(255 255 255 / calc(0.45 * var(--sheen))),
+			transparent 45%
+		),
+		var(--cover);
+	background-blend-mode: color-dodge, soft-light, normal;
+}
+
+/* Reduced motion: no turn, and so no sheen either. */
+@media (prefers-reduced-motion: reduce) {
+	[data-tilt],
+	[data-tilt].is-turning,
+	[data-tilt].is-raised {
+		transform: none;
+	}
+}

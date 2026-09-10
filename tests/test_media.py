@@ -1,9 +1,6 @@
-"""probe's failure paths, and the tag readers that meet junk values.
-
-A sweep points ffprobe at a whole library, so it eventually meets a
-truncated download, a stalled mount, and tags saying something ridiculous.
-Each has to become a ProbeError or a None, never a traceback.
-"""
+"""probe's failure paths and the tag readers meeting junk. A truncated
+download, a stalled mount or a ridiculous tag must become a ProbeError or a
+None, never a traceback."""
 
 import json
 import subprocess
@@ -26,7 +23,7 @@ def test_a_probe_timeout_is_a_probe_error(monkeypatch):
     """A file on a stalled mount must not hang the sweep for ever."""
 
     def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(cmd="ffprobe", timeout=config.PROBE_TIMEOUT)
+        raise subprocess.TimeoutExpired(cmd="ffprobe", timeout=config.current().PROBE_TIMEOUT)
 
     monkeypatch.setattr(subprocess, "run", timeout)
     with pytest.raises(ProbeError, match="timed out"):
@@ -96,10 +93,42 @@ def test_a_junk_bps_tag_does_not_mask_a_real_bit_rate():
     assert stream_bitrate({"bit_rate": "448000", "tags": {"BPS": "N/A"}}) == 448000
 
 
+@pytest.mark.parametrize(
+    ("stream", "lossless"),
+    [
+        ({"codec_name": "truehd"}, True),
+        ({"codec_name": "flac"}, True),
+        # One variant per sample format, so the family is matched by prefix.
+        ({"codec_name": "pcm_s24le"}, True),
+        # DTS-HD MA rides in a dts stream; the lossy profiles do too.
+        ({"codec_name": "dts", "profile": "DTS-HD MA"}, True),
+        ({"codec_name": "dts", "profile": "DTS-HD HRA"}, False),
+        ({"codec_name": "dts"}, False),
+        ({"codec_name": "eac3"}, False),
+        ({}, False),
+    ],
+    ids=["truehd", "flac", "pcm", "dts-hd ma", "dts-hd hra", "dts", "eac3", "nothing reported"],
+)
+def test_a_master_is_told_from_a_mix(stream, lossless):
+    """What the regenerate rule refuses to re-encode: the loss a re-rip cannot
+    undo."""
+    assert media.is_lossless(stream) is lossless
+
+
 def test_generated_settings_only_reads_our_own_tag():
     assert media.generated_settings({"tags": {media.GENERATED_TAG: "aac 192k"}}) == "aac 192k"
     assert media.generated_settings({"tags": {"title": "aac 192k"}}) is None
     assert media.generated_settings({}) is None
+
+
+def test_a_track_we_encoded_reads_its_rate_off_its_own_tag():
+    """ffmpeg writes neither bit_rate nor BPS on an encode, so without this a
+    generated downmix is the one track in the file showing no rate."""
+    downmix = audio(1, 2, title="2.0")
+    downmix["tags"][media.GENERATED_TAG] = "aac 320k"
+    assert media.summary_bitrate(downmix) == 320_000
+    # A reported rate still wins: the tag says what it was made at.
+    assert media.summary_bitrate(downmix | {"bit_rate": "192000"}) == 192_000
 
 
 def test_track_summary_distils_a_stream():

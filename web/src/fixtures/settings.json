@@ -1,0 +1,438 @@
+{
+	"rules": {
+		"languages": {
+			"default": "always",
+			"summary": "Drop audio and subtitle tracks in a language LANGUAGES does not name. Untagged tracks always stay."
+		},
+		"commentary": {
+			"default": "never",
+			"summary": "Drop commentary, described-audio and isolated-score tracks. They are never downmix sources either way."
+		},
+		"sdh": {
+			"default": "alongside",
+			"summary": "Drop an SDH (deaf and hard-of-hearing) subtitle when the same language keeps a full one. Forced subtitles always stay."
+		},
+		"regenerate": {
+			"default": "never",
+			"summary": "Rebuild the downmixes trackstarr made when their codec or bitrate no longer matches the settings (REGENERATE_SCOPE=generated). With REGENERATE_SCOPE=all, also replace any layout-sized track reported under REGENERATE_BELOW_PERCENT of its layout's rate where a surviving bigger track has more to give. A replacement is a fresh downmix from the best surviving bigger track. REGENERATE_ABOVE_PERCENT re-encodes a track that far over its layout's rate from itself, lossless tracks aside."
+		},
+		"cover_art": {
+			"default": "always",
+			"summary": "Drop embedded cover art."
+		},
+		"release_tags": {
+			"default": "alongside",
+			"summary": "Clear release tags from track and container titles."
+		},
+		"stray_streams": {
+			"default": "alongside",
+			"summary": "Drop data and timecode streams nothing plays."
+		},
+		"order": {
+			"default": "always",
+			"summary": "Order streams: video, audio in AUDIO_LAYOUTS order then other sizes by channel count, subtitles, attachments."
+		},
+		"remux": {
+			"default": "never",
+			"summary": "Rewrite MP4 and M4V into Matroska, the container every rule works in and the only one whose track tags the library can edit in place. Text subtitles convert to SRT. Only the usual downmixes are encoded."
+		}
+	},
+	"modes": [
+		"never",
+		"alongside",
+		"always"
+	],
+	"languages": {
+		"afr": "Afrikaans",
+		"alb": "Albanian",
+		"ara": "Arabic",
+		"ben": "Bengali",
+		"bos": "Bosnian",
+		"bul": "Bulgarian",
+		"cat": "Catalan",
+		"chi": "Chinese",
+		"hrv": "Croatian",
+		"cze": "Czech",
+		"dan": "Danish",
+		"dut": "Dutch",
+		"eng": "English",
+		"est": "Estonian",
+		"fin": "Finnish",
+		"fre": "French",
+		"geo": "Georgian",
+		"ger": "German",
+		"gre": "Greek",
+		"heb": "Hebrew",
+		"hin": "Hindi",
+		"hun": "Hungarian",
+		"ice": "Icelandic",
+		"ind": "Indonesian",
+		"ita": "Italian",
+		"jpn": "Japanese",
+		"kan": "Kannada",
+		"kor": "Korean",
+		"lav": "Latvian",
+		"lit": "Lithuanian",
+		"mac": "Macedonian",
+		"mal": "Malayalam",
+		"mar": "Marathi",
+		"mon": "Mongolian",
+		"nor": "Norwegian",
+		"per": "Persian",
+		"pol": "Polish",
+		"por": "Portuguese",
+		"rum": "Romanian",
+		"roh": "Romansh",
+		"rus": "Russian",
+		"srp": "Serbian",
+		"slo": "Slovak",
+		"slv": "Slovenian",
+		"spa": "Spanish",
+		"swe": "Swedish",
+		"tgl": "Tagalog",
+		"tam": "Tamil",
+		"tel": "Telugu",
+		"tha": "Thai",
+		"tur": "Turkish",
+		"ukr": "Ukrainian",
+		"urd": "Urdu",
+		"vie": "Vietnamese"
+	},
+	"zones": [
+		"Pacific/Auckland",
+		"UTC"
+	],
+	"containers": [
+		".m4v",
+		".mkv",
+		".mp4"
+	],
+	"actions": [
+		"downmix",
+		"keep",
+		"remove"
+	],
+	"lang_actions": [
+		"downmix",
+		"keep"
+	],
+	"original_lang": "original",
+	"stock": {
+		"1.0": [
+			"aac",
+			"160k"
+		],
+		"2.0": [
+			"aac",
+			"320k"
+		],
+		"5.1": [
+			"ac3",
+			"640k"
+		],
+		"6.1": [
+			"aac",
+			"704k"
+		],
+		"7.1": [
+			"aac",
+			"768k"
+		]
+	},
+	"rates": {
+		"1.0": [
+			"96k",
+			"128k",
+			"160k",
+			"192k"
+		],
+		"2.0": [
+			"128k",
+			"192k",
+			"256k",
+			"320k",
+			"384k"
+		],
+		"5.1": [
+			"384k",
+			"448k",
+			"512k",
+			"640k"
+		],
+		"6.1": [
+			"512k",
+			"640k",
+			"704k",
+			"768k"
+		],
+		"7.1": [
+			"512k",
+			"640k",
+			"768k",
+			"896k"
+		]
+	},
+	"codecs": [
+		{
+			"name": "aac",
+			"max_channels": 8,
+			"containers": [
+				".m4v",
+				".mkv",
+				".mp4"
+			],
+			"lossless": false
+		},
+		{
+			"name": "ac3",
+			"max_channels": 6,
+			"containers": [
+				".m4v",
+				".mkv",
+				".mp4"
+			],
+			"lossless": false
+		},
+		{
+			"name": "eac3",
+			"max_channels": 6,
+			"containers": [
+				".m4v",
+				".mkv",
+				".mp4"
+			],
+			"lossless": false
+		},
+		{
+			"name": "libopus",
+			"max_channels": 8,
+			"containers": [
+				".mkv"
+			],
+			"lossless": false
+		},
+		{
+			"name": "libfdk_aac",
+			"max_channels": 8,
+			"containers": [
+				".m4v",
+				".mkv",
+				".mp4"
+			],
+			"lossless": false
+		},
+		{
+			"name": "flac",
+			"max_channels": 8,
+			"containers": [
+				".mkv"
+			],
+			"lossless": true
+		}
+	],
+	"secrets": [
+		"JELLYFIN_API_KEY",
+		"PLEX_TOKEN",
+		"RADARR_API_KEY",
+		"SONARR_API_KEY"
+	],
+	"settings": {
+		"ALLOWED_EXTS": {
+			"value": [
+				".m4v",
+				".mkv",
+				".mp4"
+			],
+			"env": false
+		},
+		"AUDIO_LAYOUTS": {
+			"value": [
+				"2.0",
+				"5.1"
+			],
+			"env": false
+		},
+		"COMMENTARY_PATTERN": {
+			"value": "comment|descriptive|described\\s*video|audio\\s*description|isolated\\s*score|director'?s?\\s*track|interview|behind\\s*the\\s*scenes",
+			"env": false
+		},
+		"FFMPEG_TIMEOUT": {
+			"value": "7200",
+			"env": false
+		},
+		"FORCED_PATTERN": {
+			"value": "\\bforced\\b",
+			"env": false
+		},
+		"HARDLINK_RECHECK": {
+			"value": "900",
+			"env": false
+		},
+		"IMDB_RATINGS": {
+			"value": true,
+			"env": false
+		},
+		"JELLYFIN_PATH_MAP": {
+			"value": [],
+			"env": false
+		},
+		"JELLYFIN_PUBLIC_URL": {
+			"value": "",
+			"env": false
+		},
+		"JELLYFIN_URL": {
+			"value": "",
+			"env": false
+		},
+		"LANGUAGES": {
+			"value": [
+				"original",
+				"eng"
+			],
+			"env": false
+		},
+		"MAX_CONCURRENT_REWRITES": {
+			"value": "1",
+			"env": false
+		},
+		"MEDIA_DIRS": {
+			"value": [
+				"/data/media/movies",
+				"/data/media/tv"
+			],
+			"env": true
+		},
+		"PLEX_PATH_MAP": {
+			"value": [],
+			"env": false
+		},
+		"PLEX_PUBLIC_URL": {
+			"value": "",
+			"env": false
+		},
+		"PLEX_URL": {
+			"value": "http://plex:32400",
+			"env": false
+		},
+		"PROBE_TIMEOUT": {
+			"value": "180",
+			"env": false
+		},
+		"PROBE_WORKERS": {
+			"value": "4",
+			"env": false
+		},
+		"RADARR_PUBLIC_URL": {
+			"value": "",
+			"env": false
+		},
+		"RADARR_URL": {
+			"value": "http://radarr:7878",
+			"env": false
+		},
+		"REGENERATE_ABOVE_PERCENT": {
+			"value": "0",
+			"env": false
+		},
+		"REGENERATE_BELOW_PERCENT": {
+			"value": "80",
+			"env": false
+		},
+		"REGENERATE_SCOPE": {
+			"value": "generated",
+			"env": false
+		},
+		"RELEASE_TAG_PATTERN": {
+			"value": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b",
+			"env": false
+		},
+		"REWRITE_MODE": {
+			"value": "imports",
+			"env": false
+		},
+		"SDH_PATTERN": {
+			"value": "\\bsdh\\b|\\bcc\\b|hearing[\\s._-]*impaired",
+			"env": false
+		},
+		"SKIP_HARDLINKS": {
+			"value": true,
+			"env": false
+		},
+		"SONARR_PUBLIC_URL": {
+			"value": "",
+			"env": false
+		},
+		"SONARR_URL": {
+			"value": "http://sonarr:8989",
+			"env": false
+		},
+		"SWEEP_AT": {
+			"value": "0 3 * * *",
+			"env": false
+		},
+		"TZ": {
+			"value": "Pacific/Auckland",
+			"env": false
+		},
+		"WEBHOOK_URL": {
+			"value": "http://trackstarr:5120",
+			"env": false
+		},
+		"RULE_LANGUAGES": {
+			"value": "always",
+			"env": false
+		},
+		"RULE_COMMENTARY": {
+			"value": "never",
+			"env": false
+		},
+		"RULE_SDH": {
+			"value": "alongside",
+			"env": false
+		},
+		"RULE_REGENERATE": {
+			"value": "never",
+			"env": false
+		},
+		"RULE_COVER_ART": {
+			"value": "always",
+			"env": false
+		},
+		"RULE_RELEASE_TAGS": {
+			"value": "alongside",
+			"env": false
+		},
+		"RULE_STRAY_STREAMS": {
+			"value": "alongside",
+			"env": false
+		},
+		"RULE_ORDER": {
+			"value": "always",
+			"env": false
+		},
+		"RULE_REMUX": {
+			"value": "never",
+			"env": false
+		},
+		"JELLYFIN_API_KEY": {
+			"value": "",
+			"env": false,
+			"set": false
+		},
+		"PLEX_TOKEN": {
+			"value": "",
+			"env": false,
+			"set": true
+		},
+		"RADARR_API_KEY": {
+			"value": "",
+			"env": false,
+			"set": false
+		},
+		"SONARR_API_KEY": {
+			"value": "",
+			"env": false,
+			"set": false
+		}
+	}
+}

@@ -4,8 +4,7 @@ updates:
     directory: /
     schedule:
       interval: monthly
-    # One PR a month for the lot: they are all bumped and reviewed together
-    # anyway, and six separate PRs for the same CI run is just noise.
+    # One PR a month for the lot; they are reviewed together anyway.
     groups:
       actions:
         patterns: ["*"]
@@ -15,8 +14,16 @@ updates:
     schedule:
       interval: monthly
 
-  # There are no runtime dependencies; this is the dev group in uv.lock.
-  # Grouped for the same reason, and because a ruff bump is one lint run.
+  # The UI's lockfile, which the Dockerfile and the ci web job install from.
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: monthly
+    groups:
+      web:
+        patterns: ["*"]
+
+  # The dev group in uv.lock, plus cryptography.
   - package-ecosystem: uv
     directory: /
     schedule:

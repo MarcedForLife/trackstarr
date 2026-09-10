@@ -10,3 +10,7 @@ uv.lock
 __pycache__
 *.egg-info
 .venv
+web/node_modules
+web/probes
+web/build
+web/.svelte-kit

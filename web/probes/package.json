@@ -1,0 +1,9 @@
+{
+	"name": "trackstarr-probes",
+	"private": true,
+	"type": "module",
+	"description": "Browser probes over the built web UI. Playwright lives here so npm ci in web/ and the image's web stage never see it.",
+	"devDependencies": {
+		"playwright": "1.63.0"
+	}
+}

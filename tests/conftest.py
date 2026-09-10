@@ -4,32 +4,45 @@ The unit suite builds ffprobe-shaped dicts by hand. The integration suite
 makes real files with ffmpeg, which :func:`pytest_configure` insists on.
 """
 
+import http.client
 import json
 import os
 import shutil
 import signal
 import subprocess
 import tempfile
+import threading
 import types
 from dataclasses import replace
+from http.server import ThreadingHTTPServer
 
 import pytest
 
-from trackstarr import config, processing
+from trackstarr import (
+    config,
+    covers,
+    holds,
+    jobs,
+    library,
+    processing,
+    rewrites,
+    runlog,
+    runs,
+    users,
+    webhook,
+)
 from trackstarr.arr import Arr, radarr, sonarr
 from trackstarr.executor import Outcome
 from trackstarr.planner import Plan
+from trackstarr.policy import Policy
+from trackstarr.status import Status
+from trackstarr.sweep_cache import FileKey, SweepCache, Verdict
 
 
 def _mp4_titles_round_trip() -> bool:
-    """Whether this ffmpeg can store a per-stream title in MP4.
-
-    The mov muxer only learned the ``name`` atom in 8.1; before that it
-    accepts the option and drops it. Two tests and their fixtures turn on it.
-
-    Detected rather than compared against a version string, since
-    distributions backport and rebuild. Costs a tenth of a second.
-    """
+    """Whether this ffmpeg can store a per-stream title in MP4. The mov muxer
+    learned the ``name`` atom in 8.1. Detected rather than version-compared,
+    since distributions backport."""
     with tempfile.TemporaryDirectory() as work:
         sample = os.path.join(work, "probe.mp4")
         try:
@@ -76,12 +89,8 @@ def _mp4_titles_round_trip() -> bool:
 
 
 def pytest_configure() -> None:
-    """Refuse to run at all without the ffmpeg the tests are written against.
-
-    trackstarr is an ffmpeg wrapper, so an environment without one is
-    unconfigured rather than limited. Saying so up front beats skipping a
-    third of the suite where nobody looks.
-    """
+    """Refuse to run without ffmpeg: an environment without one is
+    unconfigured, and skipping a third of the suite would go unnoticed."""
     if not (shutil.which("ffmpeg") and shutil.which("ffprobe")):
         raise pytest.UsageError("ffmpeg and ffprobe must be on PATH to run the tests")
     if not _mp4_titles_round_trip():
@@ -91,40 +100,129 @@ def pytest_configure() -> None:
         )
 
 
+def set_config(**values) -> None:
+    """Make these settings live for one test: ``set_config(MEDIA_DIRS=[root])``.
+
+    Names and shapes are config.Settings', which is what the parsers left, so
+    a layout list arrives as a tuple. Undone by _isolated_state.
+    """
+    config.apply(replace(config.current(), **values))
+
+
+#: The services a developer's own environment sets, blanked for every test.
+#: Each is enough on its own to put an "Open in" link on a title, so one would
+#: show up in tests asserting a sheet offers none.
+_SERVICES = (
+    "RADARR_URL",
+    "RADARR_API_KEY",
+    "RADARR_PUBLIC_URL",
+    "SONARR_URL",
+    "SONARR_API_KEY",
+    "SONARR_PUBLIC_URL",
+    "PLEX_URL",
+    "PLEX_TOKEN",
+    "PLEX_PUBLIC_URL",
+    "JELLYFIN_URL",
+    "JELLYFIN_API_KEY",
+    "JELLYFIN_PUBLIC_URL",
+)
+
+
 @pytest.fixture(autouse=True)
 def _isolated_state(monkeypatch, tmp_path):
     """Point STATE_DIR at the test's tmp dir, so nothing reaches a real
-    /config, and drop whatever settings file a real one held at import."""
+    /config, and hand every test the settings a bare install has."""
     monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
-    monkeypatch.setattr(config, "_SETTINGS", {})
+    set_config(file={}, WEB_DIR="", **dict.fromkeys(_SERVICES, ""))
+    # Memoised on the file's mark, which two tmp dirs can share.
+    holds.forget()
+    rewrites.forget()
+    yield
+    config.reset()
+
+
+#: Environment names settings_state scrubs, since a save reads both sources
+#: back and would otherwise pick up a developer's real services.
+_SAVE_SENSITIVE = (
+    # Would point every read at a developer's real key instead of the one the
+    # test's own state directory mints.
+    "TRACKSTARR_KEY_FILE",
+    # The developer's own zone, which config would otherwise apply to the
+    # process running the suite.
+    "TZ",
+    *_SERVICES,
+)
+
+
+@pytest.fixture
+def settings_state(monkeypatch, tmp_path):
+    """For tests that run settings.update(): the save reads the environment
+    and the file back, so the isolation has to be in the environment rather
+    than in the snapshot the other tests patch."""
+    for name in _SAVE_SENSITIVE:
+        monkeypatch.delenv(name, raising=False)
+    # What the deploy said about the zone, read once at package import: a
+    # developer's own would pin TZ and refuse every write a test makes.
+    monkeypatch.setattr(config, "STATED_TZ", "")
+    config.apply(config.load())
+    return tmp_path / "state"
+
+
+@pytest.fixture(autouse=True)
+def _reset_accounts():
+    yield
+    users.reset()
+
+
+@pytest.fixture(autouse=True)
+def _drain_queue():
+    """Here rather than in one file: a POST to the listener queues too."""
+    yield
+    jobs.reset()
+
+
+@pytest.fixture(autouse=True)
+def _no_worker_threads(monkeypatch):
+    """A real worker waits on the queue for ever, and a settings save brings the
+    pool up. Left running, one drains the queue of every test that follows."""
+    monkeypatch.setattr(jobs, "worker", lambda: None)
+    monkeypatch.setattr(jobs, "_workers", 0)
+    monkeypatch.setattr(jobs, "_worker_names", 0)
+
+
+@pytest.fixture
+def fast_scrypt(monkeypatch):
+    """Interactive-cost scrypt would make this suite crawl. Each hash stores
+    its own parameters, so tiny ones exercise the same paths; the one test of
+    the real cost settings skips this."""
+    monkeypatch.setattr(users, "_SCRYPT_N", 8)
 
 
 @pytest.fixture(autouse=True)
 def _restore_sigterm():
-    """Put the SIGTERM disposition back after every test.
-
-    main() installs a handler and most of this suite calls it, so otherwise
-    the first test to do so changes how pytest itself handles a signal.
-    """
+    """Put the SIGTERM disposition back after every test, since main() installs
+    a handler."""
     original = signal.getsignal(signal.SIGTERM)
     yield
     signal.signal(signal.SIGTERM, original)
 
 
-@pytest.fixture(autouse=True)
-def _no_services(monkeypatch):
-    """Keep locally set service env vars from leaking into any test's clients."""
-    for name in (
-        "RADARR_URL",
-        "RADARR_API_KEY",
-        "SONARR_URL",
-        "SONARR_API_KEY",
-        "PLEX_URL",
-        "PLEX_TOKEN",
-        "JELLYFIN_URL",
-        "JELLYFIN_API_KEY",
-    ):
-        monkeypatch.setattr(config, name, "")
+def set_rules(**modes: str) -> None:
+    """Set named rules' modes, leaving the rest at their defaults:
+    ``set_rules(remux="always", sdh="never")``."""
+    set_config(RULE_MODES=config.current().RULE_MODES | modes)
+
+
+def set_layouts(*entries: str) -> None:
+    """AUDIO_LAYOUTS in order, each entry as the service reads it:
+    ``set_layouts("2.0", "5.1:eac3:448k", "7.1:remove")``."""
+    set_config(AUDIO_LAYOUTS=tuple(entries))
+
+
+def set_langs(*entries: str) -> None:
+    """LANGUAGES in order, each entry as the service reads it:
+    ``set_langs("original", "eng:keep", "hin:remove")``."""
+    set_config(LANGUAGES=tuple(entries))
 
 
 def fake_run(returncode: int = 0, stdout: str = "", stderr: str = ""):
@@ -133,11 +231,7 @@ def fake_run(returncode: int = 0, stdout: str = "", stderr: str = ""):
 
 
 def read_events() -> list[dict]:
-    """Every event recorded under the test's STATE_DIR, in written order.
-
-    The service only writes the history. This lives here because the tests
-    are the only thing that reads it back.
-    """
+    """Every event recorded under the test's STATE_DIR, in written order."""
     try:
         with open(os.path.join(config.STATE_DIR, "events.jsonl")) as events_file:
             return [json.loads(line) for line in events_file if line.strip()]
@@ -150,38 +244,115 @@ _ARR_URLS = {"radarr": "http://radarr:7878", "sonarr": "http://sonarr:8989"}
 
 
 def configured_arr(name: str = "radarr", key: str = "key") -> Arr:
-    """A reachable-looking *arr, for the paths gated on ``Arr.enabled``.
-
-    One with no url or key returns before it touches the network, so a test
-    of a real call has to start here.
-    """
+    """A reachable-looking *arr, for the paths gated on ``Arr.enabled``."""
     arr = sonarr() if name == "sonarr" else radarr()
     return replace(arr, url=_ARR_URLS[name], key=key)
 
 
-def needed_plan(path: str = "/x.mkv", **overrides) -> Plan:
-    """A plan with work to do, since ``Plan.needed`` is having a reason.
+@pytest.fixture
+def media(tmp_path) -> str:
+    root = tmp_path / "media" / "movies"
+    root.mkdir(parents=True)
+    set_config(MEDIA_DIRS=[str(root)])
+    return str(root)
 
-    The reason is a placeholder; most tests want *a* plan that would be
-    rewritten. Pass ``reasons`` where it matters, and ``rules`` with it: the
-    planner writes the two together, so setting one alone would let a test
-    assert against a pairing the real thing cannot produce.
-    """
+
+def movie(
+    item_id: int,
+    title: str,
+    folder: str,
+    year: int = 2024,
+    added: str = "2024-01-01T00:00:00Z",
+) -> dict:
+    return {
+        "id": item_id,
+        "title": title,
+        "year": year,
+        "path": folder,
+        "added": added,
+        "originalLanguage": {"name": "English"},
+    }
+
+
+def stub_arrs(monkeypatch, items: list[dict], name: str = "radarr") -> None:
+    """One reachable *arr answering with these movies."""
+    arr = configured_arr(name)
+    monkeypatch.setattr(library, "all_arrs", lambda: [arr])
+    monkeypatch.setattr(type(arr), "all_items", lambda self: items)
+
+
+def cache(*entries: tuple[str, Verdict], size: int = 100) -> None:
+    """Write a sweep cache holding these verdicts, as a sweep would."""
+    os.makedirs(config.STATE_DIR, exist_ok=True)
+    store = SweepCache(
+        os.path.join(config.STATE_DIR, "sweep-cache.json"), Policy.from_config().fingerprint()
+    )
+    for path, verdict in entries:
+        store.record(path, FileKey(size, 1, 1, "eng"), verdict)
+    store.save()
+
+
+#: What a rewrite of ours leaves behind; see
+#: :func:`trackstarr.processing._modified`.
+REWROTE = {
+    "at": "2026-03-01T12:00:00+13:00",
+    "bytes_before": 2_000,
+    "bytes_after": 1_800,
+    "added": [1],
+}
+
+
+def rewrote(*paths: str, made: dict | None = None, size: int = 100) -> None:
+    """Book a rewrite of ours against these paths, keyed as :func:`cache` keys
+    its verdicts so the two join."""
+    for path in paths:
+        rewrites.record(path, FileKey(size, 1, 1, "eng"), made or REWROTE)
+
+
+def pending() -> Verdict:
+    return Verdict(
+        Status.PENDING,
+        "add 2.0 downmix from stream 1 (6ch eng)",
+        tracks=[
+            {"index": 0, "kind": "video", "codec": "h264"},
+            {"index": 1, "kind": "audio", "codec": "eac3", "channels": 6, "lang": "eng"},
+        ],
+        planned=[
+            {"index": 0, "src": 0, "kind": "video", "codec": "h264"},
+            {
+                "index": 1,
+                "src": 1,
+                "kind": "audio",
+                "codec": "aac",
+                "channels": 2,
+                "title": "2.0",
+                "flags": ["generated"],
+            },
+            {"index": 2, "src": 1, "kind": "audio", "codec": "eac3", "channels": 6},
+        ],
+        why={"reasons": ["add 2.0 downmix from stream 1 (6ch eng)"], "rules": ["downmix"]},
+    )
+
+
+def needed_plan(path: str = "/x.mkv", **overrides) -> Plan:
+    """A plan with work to do. Pass ``reasons`` where it matters, and ``rules``
+    with it, since the planner writes the two together."""
     return Plan(path=path, reasons=["reorder streams"], rules={"order"}, **overrides)
 
 
 @pytest.fixture
 def stub_rewrite(monkeypatch):
     """Give process() a prepared plan and a canned apply_plan result.
-
-    The outcome handling is what these tests are about, so the probe and the
-    ffmpeg run are stubbed. ``stub_rewrite(plan)`` for the applied case, or
-    pass an ``outcome`` and ``detail``.
-    """
+    ``stub_rewrite(plan)`` for the applied case, or pass ``outcome`` and
+    ``detail``."""
 
     def _stub(plan: Plan, outcome: Outcome = Outcome.APPLIED, detail: str = "") -> None:
         monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
-        monkeypatch.setattr(processing, "apply_plan", lambda plan: (outcome, detail))
+        monkeypatch.setattr(
+            processing,
+            "apply_plan",
+            lambda plan, on_progress=None, on_encoded=None: (outcome, detail),
+        )
 
     return _stub
 
@@ -204,12 +375,8 @@ def audio(
     comment: int = 0,
     bitrate: str | None = None,
 ) -> dict:
-    """An ffprobe-shaped audio stream.
-
-    ``bitrate`` is the per-stream ``bit_rate`` MP4 reports and Matroska
-    usually omits. Left off rather than defaulted, since "the container
-    doesn't say" is a case the rules treat differently.
-    """
+    """An ffprobe-shaped audio stream. ``bitrate`` is left off rather than
+    defaulted, since an unreported rate is a case the rules treat differently."""
     stream = {
         "index": index,
         "codec_type": "audio",
@@ -338,3 +505,131 @@ def make_file(tmp_path):
         return str(dest)
 
     return _make
+
+
+@pytest.fixture
+def listener():
+    """A live Handler on a loopback socket."""
+    server = ThreadingHTTPServer(("127.0.0.1", 0), webhook.Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    yield server
+    server.shutdown()
+    server.server_close()
+
+
+def api(server, method: str, path: str, body=None, cookie: str = "", headers=None):
+    """One API request, returning (status, JSON payload, response headers). A
+    dict or list body goes as JSON unless the test supplies a content type."""
+    all_headers = dict(headers or {})
+    if cookie:
+        all_headers["Cookie"] = cookie
+    payload = None
+    if body is not None:
+        all_headers.setdefault("Content-Type", "application/json")
+        payload = json.dumps(body).encode()
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+    try:
+        conn.request(method, path, payload, all_headers)
+        response = conn.getresponse()
+        return response.status, json.loads(response.read()), dict(response.getheaders())
+    finally:
+        conn.close()
+
+
+def request(server, method: str, path: str, body: bytes | None = None, headers=None):
+    """One HTTP request against a listener, returning (status code, JSON body)."""
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+    try:
+        conn.request(method, path, body, headers or {})
+        response = conn.getresponse()
+        return response.status, json.loads(response.read())
+    finally:
+        conn.close()
+
+
+def get_raw(server, path: str) -> tuple[int, dict, bytes]:
+    """One GET, returning (status, headers, body) with the body unparsed."""
+    conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+    try:
+        conn.request("GET", path)
+        response = conn.getresponse()
+        return response.status, dict(response.getheaders()), response.read()
+    finally:
+        conn.close()
+
+
+def keep_alive(server):
+    """A connection the caller drives request by request, so a test can see
+    whether the listener leaves it usable."""
+    return http.client.HTTPConnection("127.0.0.1", server.server_address[1])
+
+
+def sign_in(server, name: str, password: str = "right password") -> str:
+    """A session cookie for an existing account, as the Cookie header value."""
+    status, _, headers = api(
+        server, "POST", "/api/auth/login", {"username": name, "password": password}
+    )
+    assert status == 200
+    return headers["Set-Cookie"].split(";")[0]
+
+
+@pytest.fixture
+def clean_registry():
+    """Cleared both sides: an assertion that fails mid-test still has to hand
+    the suite back a running service."""
+    runs.reset()
+    runlog.forget()
+    yield runs
+    runs.reset()
+    runlog.forget()
+
+
+@pytest.fixture
+def web_dir(tmp_path):
+    """A built UI: the shell plus one hashed asset, with WEB_DIR pointing at it."""
+    root = tmp_path / "webui"
+    (root / "_app" / "immutable").mkdir(parents=True)
+    (root / "index.html").write_text("<!doctype html><title>trackstarr</title>")
+    (root / "_app" / "immutable" / "app.abc123.js").write_text("console.log('hi')")
+    set_config(WEB_DIR=str(root))
+    return root
+
+
+@pytest.fixture
+def one_title(monkeypatch, tmp_path):
+    """One film, swept once: the *arr answering for the title and a cached
+    verdict under it. Yields the title's folder."""
+    root = tmp_path / "media" / "movies"
+    folder = root / "Dune (2024)"
+    folder.mkdir(parents=True)
+    set_config(MEDIA_DIRS=[str(root)])
+    arr = configured_arr()
+    monkeypatch.setattr(library, "all_arrs", lambda: [arr])
+    monkeypatch.setattr(
+        type(arr),
+        "all_items",
+        lambda self: [
+            {
+                "id": 7,
+                "title": "Dune",
+                "year": 2024,
+                "path": str(folder),
+                # What Radarr's own pages route on, which is its TMDB id.
+                "titleSlug": "693134",
+            }
+        ],
+    )
+    library.forget()
+    os.makedirs(config.STATE_DIR, exist_ok=True)
+    swept = SweepCache(
+        os.path.join(config.STATE_DIR, "sweep-cache.json"), Policy.from_config().fingerprint()
+    )
+    swept.record(
+        str(folder / "Dune.mkv"),
+        FileKey(10, 1, 1, "eng"),
+        Verdict(Status.PENDING, "add 2.0 downmix", tracks=[{"index": 0, "kind": "video"}]),
+    )
+    swept.save()
+    yield str(folder)
+    library.forget()
+    covers.forget()

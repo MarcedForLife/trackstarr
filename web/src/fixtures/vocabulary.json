@@ -1,0 +1,46 @@
+{
+	"states": [
+		"failed",
+		"pending",
+		"skip",
+		"unsupported",
+		"conform",
+		"unchecked",
+		"missing"
+	],
+	"mixed": "mixed",
+	"filters": [
+		"failed",
+		"pending",
+		"skip",
+		"unsupported",
+		"conform",
+		"modified",
+		"unchecked",
+		"missing"
+	],
+	"services": [
+		{
+			"name": "radarr",
+			"label": "Radarr"
+		},
+		{
+			"name": "sonarr",
+			"label": "Sonarr"
+		},
+		{
+			"name": "plex",
+			"label": "Plex"
+		},
+		{
+			"name": "jellyfin",
+			"label": "Jellyfin"
+		}
+	],
+	"kinds": [
+		"runs",
+		"events",
+		"library",
+		"progress"
+	]
+}

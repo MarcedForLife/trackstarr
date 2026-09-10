@@ -1,0 +1,5 @@
+# A private service behind a sign-in, the way the rest of the *arr stack
+# answers this: nothing here is for an index, and a listing of it is a map of
+# somebody's library.
+User-agent: *
+Disallow: /

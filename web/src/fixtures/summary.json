@@ -1,0 +1,75 @@
+{
+	"titles": 4,
+	"counts": {
+		"failed": 1,
+		"conform": 2,
+		"modified": 1,
+		"pending": 1,
+		"unsupported": 1,
+		"missing": 1
+	},
+	"head": [
+		{
+			"id": "dir:/data/media/movies/Home Videos",
+			"name": "Home Videos",
+			"kind": "folder",
+			"state": "mixed",
+			"added": 1737759600,
+			"files": 2,
+			"bytes": 1807745024,
+			"counts": {
+				"unsupported": 1,
+				"conform": 1
+			},
+			"processed": 1772233500
+		},
+		{
+			"id": "arr:sonarr:12",
+			"name": "Severance",
+			"kind": "series",
+			"state": "failed",
+			"year": 2022,
+			"lang": "eng",
+			"added": 1737144000,
+			"files": 2,
+			"bytes": 4399283461,
+			"counts": {
+				"conform": 1,
+				"failed": 1
+			},
+			"modified": 1,
+			"processed": 1772233500
+		},
+		{
+			"id": "arr:radarr:7",
+			"name": "Dune",
+			"kind": "movie",
+			"state": "pending",
+			"year": 2024,
+			"lang": "eng",
+			"added": 1709285400,
+			"files": 1,
+			"bytes": 58720256000,
+			"counts": {
+				"pending": 1
+			},
+			"adds": [
+				"Stereo"
+			],
+			"weight": 1.0,
+			"processed": 1772146800
+		},
+		{
+			"id": "arr:sonarr:31",
+			"name": "The Bear",
+			"kind": "series",
+			"state": "missing",
+			"year": 2022,
+			"lang": "eng",
+			"added": 1772180100
+		}
+	],
+	"complete": true,
+	"current": true,
+	"swept": 5
+}

@@ -1,0 +1,590 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/instrument-sans';
+@import '@fontsource-variable/jetbrains-mono';
+
+/* The three the tilt field writes every frame. Registered for
+   `inherits: false`: inherited, a write on a card invalidated everything
+   inside it, 1.4ms of style recalc a frame on a 400 poster grid. */
+@property --rx {
+	syntax: '<angle>';
+	inherits: false;
+	initial-value: 0deg;
+}
+@property --ry {
+	syntax: '<angle>';
+	inherits: false;
+	initial-value: 0deg;
+}
+@property --depth {
+	syntax: '<length>';
+	inherits: false;
+	initial-value: 900px;
+}
+
+/* The raised card's scale, kept out of the transform: the angle must land
+   the frame the pointer moves while the lift wants a transition. Registered
+   so it interpolates; an unregistered property is a string. */
+@property --lift {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 1;
+}
+
+/* The light a card catches: how much, where, and what colour. Registered so
+   they are values before anything writes one, or the sheen's gradients and
+   the cover under them would be invalid. `inherits: false` as above. A
+   write to any of them rebuilds the artwork's background-image, which is
+   why $lib/field holds them still while a row moves. */
+@property --sheen {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 0;
+}
+@property --mx {
+	syntax: '<percentage>';
+	inherits: false;
+	initial-value: 50%;
+}
+@property --my {
+	syntax: '<percentage>';
+	inherits: false;
+	initial-value: 50%;
+}
+@property --hue {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 200;
+}
+
+/* Registered as <color> so the theme swap animates: a registered property
+   interpolates, and every element reading it eases on its own. The initial
+   values are the default dark palette. */
+@property --surface {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #121317;
+}
+@property --sunken {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #0d0e11;
+}
+@property --raised {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #1b1d23;
+}
+@property --field {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #191b21;
+}
+@property --line {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: rgba(255, 255, 255, 0.07);
+}
+@property --line-strong {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: rgba(255, 255, 255, 0.13);
+}
+@property --fg {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #e9eaee;
+}
+@property --dim {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #9a9da8;
+}
+@property --faint {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #686b74;
+}
+@property --accent {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #e3b25e;
+}
+@property --on-accent {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #241a05;
+}
+@property --accent-soft {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: rgba(227, 178, 94, 0.13);
+}
+@property --ok {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #5fc08a;
+}
+@property --on-ok {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #0a2416;
+}
+@property --danger {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #ef6f66;
+}
+@property --toggle-off {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #2c2e36;
+}
+@property --knob {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #f4f5f7;
+}
+@property --knob-on {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #f4f5f7;
+}
+
+/* Six palettes in light and dark on one set of tokens. app.html resolves
+   the stored pair before first paint. The selectors match any element, so
+   the Appearance swatches paint themselves. Brass is the original; the rest
+   are tuned to match its contrast (faint text 3:1, accent text 4.4:1). The
+   knob has two colours because Graphite's dark on-track is near-white. */
+:root {
+	/* Shared by anything keeping step with the swap. Ease-in-out, so the
+	   mid-grey where the palettes meet and text loses contrast passes quickly. */
+	--theme-swap: 700ms;
+	--theme-swap-ease: cubic-bezier(0.65, 0, 0.35, 1);
+
+	/* What the tab bar takes off the bottom, without its safe-area inset,
+	   which every offset below adds itself. Three bottom-anchored things read
+	   it. */
+	--tabbar: 3.5rem;
+
+	/* Shared by both halves of the reveal below, which must agree to cancel. */
+	--reveal: 180ms cubic-bezier(0.33, 0, 0.2, 1);
+}
+
+/* From lg the rail is the nav and there is no bar to clear. */
+@media (min-width: 1024px) {
+	:root {
+		--tabbar: 0px;
+	}
+}
+
+/* What a bar standing over the page casts. Per theme rather than per palette,
+   since a shadow is depth rather than hue. Tailwind's own are 10% black, which
+   a dark surface swallows, so the dark pair is heavier. */
+[data-theme='dark'] {
+	color-scheme: dark;
+	--float-shadow: 0 12px 32px rgba(0, 0, 0, 0.62), 0 3px 10px rgba(0, 0, 0, 0.45);
+}
+[data-theme='light'] {
+	color-scheme: light;
+	--float-shadow: 0 12px 28px rgba(24, 20, 12, 0.16), 0 3px 8px rgba(24, 20, 12, 0.08);
+}
+
+/* The page and every swatch ease between palettes on the same curve. */
+[data-palette] {
+	transition:
+		--surface var(--theme-swap) var(--theme-swap-ease),
+		--sunken var(--theme-swap) var(--theme-swap-ease),
+		--raised var(--theme-swap) var(--theme-swap-ease),
+		--field var(--theme-swap) var(--theme-swap-ease),
+		--line var(--theme-swap) var(--theme-swap-ease),
+		--line-strong var(--theme-swap) var(--theme-swap-ease),
+		--fg var(--theme-swap) var(--theme-swap-ease),
+		--dim var(--theme-swap) var(--theme-swap-ease),
+		--faint var(--theme-swap) var(--theme-swap-ease),
+		--accent var(--theme-swap) var(--theme-swap-ease),
+		--on-accent var(--theme-swap) var(--theme-swap-ease),
+		--accent-soft var(--theme-swap) var(--theme-swap-ease),
+		--ok var(--theme-swap) var(--theme-swap-ease),
+		--on-ok var(--theme-swap) var(--theme-swap-ease),
+		--danger var(--theme-swap) var(--theme-swap-ease),
+		--toggle-off var(--theme-swap) var(--theme-swap-ease),
+		--knob var(--theme-swap) var(--theme-swap-ease),
+		--knob-on var(--theme-swap) var(--theme-swap-ease);
+}
+
+/* Cool grey under amber. The original, and the default. */
+[data-palette='brass'][data-theme='dark'] {
+	--surface: #121317;
+	--sunken: #0d0e11;
+	--raised: #1b1d23;
+	--field: #191b21;
+	--line: rgba(255, 255, 255, 0.07);
+	--line-strong: rgba(255, 255, 255, 0.13);
+	--fg: #e9eaee;
+	--dim: #9a9da8;
+	--faint: #686b74;
+	--accent: #e3b25e;
+	--on-accent: #241a05;
+	--accent-soft: rgba(227, 178, 94, 0.13);
+	--ok: #5fc08a;
+	--on-ok: #0a2416;
+	--danger: #ef6f66;
+	--toggle-off: #2c2e36;
+	--knob: #f4f5f7;
+	--knob-on: #f4f5f7;
+}
+
+[data-palette='brass'][data-theme='light'] {
+	--surface: #fbfbfa;
+	--sunken: #f3f2ee;
+	--raised: #ffffff;
+	--field: #ffffff;
+	--line: rgba(26, 22, 12, 0.09);
+	--line-strong: rgba(26, 22, 12, 0.18);
+	--fg: #1d1d21;
+	--dim: #5c5f66;
+	--faint: #8f929b;
+	--accent: #9c6c10;
+	--on-accent: #fffcf4;
+	--accent-soft: rgba(156, 108, 16, 0.1);
+	--ok: #157f47;
+	--on-ok: #f4fff8;
+	--danger: #c2362f;
+	/* Dark enough for 3:1 against the page and the knob; iOS's paler track read
+	   as a smudge here. */
+	--toggle-off: #948f84;
+	--knob: #ffffff;
+	--knob-on: #ffffff;
+}
+
+/* No hue: the accent is the ink, so the knob goes dark on the on-track. */
+[data-palette='graphite'][data-theme='dark'] {
+	--surface: #111111;
+	--sunken: #0b0b0b;
+	--raised: #1b1b1b;
+	--field: #181818;
+	--line: rgba(255, 255, 255, 0.08);
+	--line-strong: rgba(255, 255, 255, 0.15);
+	--fg: #ececec;
+	--dim: #a0a0a0;
+	--faint: #707070;
+	--accent: #ececec;
+	--on-accent: #111111;
+	--accent-soft: rgba(255, 255, 255, 0.1);
+	--ok: #6cc28a;
+	--on-ok: #111111;
+	--danger: #ee6b62;
+	--toggle-off: #2c2c2c;
+	--knob: #f5f5f5;
+	--knob-on: #111111;
+}
+
+[data-palette='graphite'][data-theme='light'] {
+	--surface: #fafafa;
+	--sunken: #f0f0f0;
+	--raised: #ffffff;
+	--field: #ffffff;
+	--line: rgba(0, 0, 0, 0.08);
+	--line-strong: rgba(0, 0, 0, 0.16);
+	--fg: #161616;
+	--dim: #5f5f5f;
+	--faint: #8b8b8b;
+	--accent: #161616;
+	--on-accent: #fafafa;
+	--accent-soft: rgba(0, 0, 0, 0.06);
+	--ok: #1a7f45;
+	--on-ok: #fafafa;
+	--danger: #c4362f;
+	--toggle-off: #8e8e8e;
+	--knob: #ffffff;
+	--knob-on: #ffffff;
+}
+
+/* Blue-grey slate under frost blue. */
+[data-palette='fjord'][data-theme='dark'] {
+	--surface: #161a21;
+	--sunken: #10131a;
+	--raised: #1e232c;
+	--field: #1c2129;
+	--line: rgba(196, 212, 236, 0.08);
+	--line-strong: rgba(196, 212, 236, 0.15);
+	--fg: #e4e9f1;
+	--dim: #9aa7ba;
+	--faint: #6a778c;
+	--accent: #8cb9d9;
+	--on-accent: #0c1a26;
+	--accent-soft: rgba(140, 185, 217, 0.14);
+	--ok: #7cc39a;
+	--on-ok: #0c2619;
+	--danger: #e37c7c;
+	--toggle-off: #2a313d;
+	--knob: #f3f6fa;
+	--knob-on: #f3f6fa;
+}
+
+[data-palette='fjord'][data-theme='light'] {
+	--surface: #f5f7fa;
+	--sunken: #eaeef4;
+	--raised: #ffffff;
+	--field: #ffffff;
+	--line: rgba(24, 40, 66, 0.09);
+	--line-strong: rgba(24, 40, 66, 0.18);
+	--fg: #1b2331;
+	--dim: #56637a;
+	--faint: #7f8da2;
+	--accent: #2c6a99;
+	--on-accent: #f5fbff;
+	--accent-soft: rgba(44, 106, 153, 0.1);
+	--ok: #237a4b;
+	--on-ok: #f2fdf6;
+	--danger: #bd3f3f;
+	--toggle-off: #8290a3;
+	--knob: #ffffff;
+	--knob-on: #ffffff;
+}
+
+/* Indigo-tinted near-black under lavender. */
+[data-palette='dusk'][data-theme='dark'] {
+	--surface: #15141c;
+	--sunken: #0f0e14;
+	--raised: #1f1d29;
+	--field: #1b1a24;
+	--line: rgba(196, 186, 255, 0.08);
+	--line-strong: rgba(196, 186, 255, 0.17);
+	--fg: #e8e6f1;
+	--dim: #9f9bb6;
+	--faint: #6f6b84;
+	--accent: #b3a3f3;
+	--on-accent: #171130;
+	--accent-soft: rgba(179, 163, 243, 0.14);
+	--ok: #72cc99;
+	--on-ok: #10261a;
+	--danger: #f0737a;
+	--toggle-off: #2e2b3c;
+	--knob: #f4f2fb;
+	--knob-on: #f4f2fb;
+}
+
+[data-palette='dusk'][data-theme='light'] {
+	--surface: #faf9fc;
+	--sunken: #f0eef6;
+	--raised: #ffffff;
+	--field: #ffffff;
+	--line: rgba(48, 38, 92, 0.09);
+	--line-strong: rgba(48, 38, 92, 0.18);
+	--fg: #1d1a2c;
+	--dim: #5c5870;
+	--faint: #8c88a0;
+	--accent: #5f45c4;
+	--on-accent: #fbfaff;
+	--accent-soft: rgba(95, 69, 196, 0.1);
+	--ok: #1f7d4c;
+	--on-ok: #f6fdf9;
+	--danger: #c1363b;
+	--toggle-off: #8f8aa3;
+	--knob: #ffffff;
+	--knob-on: #ffffff;
+}
+
+/* Green-tinted charcoal under sage; ok leans mint so it and the accent
+   stay two colours. */
+[data-palette='moss'][data-theme='dark'] {
+	--surface: #121613;
+	--sunken: #0c0f0d;
+	--raised: #1b201c;
+	--field: #181d19;
+	--line: rgba(200, 228, 206, 0.07);
+	--line-strong: rgba(200, 228, 206, 0.14);
+	--fg: #e6ebe6;
+	--dim: #98a39a;
+	--faint: #697369;
+	--accent: #a3c684;
+	--on-accent: #12240c;
+	--accent-soft: rgba(163, 198, 132, 0.14);
+	--ok: #5ec3a8;
+	--on-ok: #06241d;
+	--danger: #e8766c;
+	--toggle-off: #29302b;
+	--knob: #f2f6f2;
+	--knob-on: #f2f6f2;
+}
+
+[data-palette='moss'][data-theme='light'] {
+	--surface: #f8faf6;
+	--sunken: #eef2eb;
+	--raised: #ffffff;
+	--field: #ffffff;
+	--line: rgba(28, 48, 30, 0.09);
+	--line-strong: rgba(28, 48, 30, 0.18);
+	--fg: #1a201b;
+	--dim: #576259;
+	--faint: #85908a;
+	--accent: #4a7a37;
+	--on-accent: #f5fbf1;
+	--accent-soft: rgba(74, 122, 55, 0.1);
+	--ok: #147a66;
+	--on-ok: #f1fdf8;
+	--danger: #c1392f;
+	--toggle-off: #869087;
+	--knob: #ffffff;
+	--knob-on: #ffffff;
+}
+
+/* Warm brown-black under terracotta; danger leans crimson for the same
+   reason. */
+[data-palette='clay'][data-theme='dark'] {
+	--surface: #171311;
+	--sunken: #100d0b;
+	--raised: #211c19;
+	--field: #1e1916;
+	--line: rgba(255, 228, 208, 0.07);
+	--line-strong: rgba(255, 228, 208, 0.14);
+	--fg: #eee8e2;
+	--dim: #a69b92;
+	--faint: #746b62;
+	--accent: #e68e6d;
+	--on-accent: #2b1208;
+	--accent-soft: rgba(230, 142, 109, 0.14);
+	--ok: #6dbf8f;
+	--on-ok: #0a2417;
+	--danger: #ee5f7c;
+	--toggle-off: #322a26;
+	--knob: #f7f2ee;
+	--knob-on: #f7f2ee;
+}
+
+[data-palette='clay'][data-theme='light'] {
+	--surface: #fbf8f5;
+	--sunken: #f3ede7;
+	--raised: #ffffff;
+	--field: #ffffff;
+	--line: rgba(64, 36, 20, 0.09);
+	--line-strong: rgba(64, 36, 20, 0.18);
+	--fg: #241c18;
+	--dim: #655a52;
+	--faint: #948980;
+	--accent: #ad4e2b;
+	--on-accent: #fff7f2;
+	--accent-soft: rgba(173, 78, 43, 0.1);
+	--ok: #1f7e4b;
+	--on-ok: #f4fdf7;
+	--danger: #c22f50;
+	--toggle-off: #98887e;
+	--knob: #ffffff;
+	--knob-on: #ffffff;
+}
+
+@theme inline {
+	--font-sans: 'Instrument Sans Variable', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+	--color-surface: var(--surface);
+	--color-sunken: var(--sunken);
+	--color-raised: var(--raised);
+	--color-field: var(--field);
+	--color-line: var(--line);
+	--color-line-strong: var(--line-strong);
+	--color-fg: var(--fg);
+	--color-dim: var(--dim);
+	--color-faint: var(--faint);
+	--color-accent: var(--accent);
+	--color-on-accent: var(--on-accent);
+	--color-accent-soft: var(--accent-soft);
+	--color-ok: var(--ok);
+	--color-on-ok: var(--on-ok);
+	--color-danger: var(--danger);
+	--color-toggle-off: var(--toggle-off);
+	--color-knob: var(--knob);
+	--color-knob-on: var(--knob-on);
+	--shadow-float: var(--float-shadow);
+}
+
+html {
+	/* The canvas past the body, seen on overscroll. app.html paints it inline
+	   until the stylesheet arrives. */
+	background: var(--surface);
+	/* Stop iOS inflating body text when a phone is turned sideways. */
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+
+body {
+	background: var(--surface);
+	color: var(--fg);
+	font-family: var(--font-sans);
+	/* The grey flash on tap says nothing our own :active states don't. */
+	-webkit-tap-highlight-color: transparent;
+}
+
+/* Defaults a page may overrule, so in the base layer where utilities win. */
+@layer base {
+	/* Touch has no hover, so every control answers the finger itself. Drag
+	   handles say `touch-none` over this. */
+	button,
+	a,
+	[role='switch'] {
+		touch-action: manipulation;
+	}
+
+	/* The reset gives buttons no cursor, so a page of controls read as
+	   unpressable. Drag handles overrule with `cursor-grab`; anchors are the
+	   browser's. */
+	button,
+	select {
+		cursor: pointer;
+	}
+
+	button:disabled,
+	select:disabled {
+		cursor: default;
+	}
+
+	/* Pointer users get no ring, keyboard users an obvious one. No radius: an
+	   outline follows the element's corners, and stating one squared them. */
+	:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+}
+
+/* A panel opening, shared by every disclosure. No layout, which a phone will
+   not animate smoothly: two transforms cancel instead, the window sliding
+   down and clipping while the panel slides up by as much, so only the
+   window's edge travels, like a blind. Both share `--reveal`. The box is its
+   full height from the first frame; `$lib/shift` moves what follows to
+   match. */
+.reveal {
+	overflow: hidden;
+}
+
+/* The window's clip is the animation; without it the transforms cancel to
+   an instant open. */
+.reveal > * {
+	overflow: hidden;
+	animation: reveal-window var(--reveal) both;
+}
+
+.reveal > * > * {
+	animation: reveal-panel var(--reveal) both;
+}
+
+@keyframes reveal-window {
+	from {
+		transform: translateY(-100%);
+	}
+}
+
+@keyframes reveal-panel {
+	from {
+		transform: translateY(100%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+	}
+}

@@ -4,12 +4,11 @@ import logging
 import os
 import signal
 import time
-from dataclasses import replace
 
 import pytest
 
-from conftest import needed_plan
-from trackstarr import auth, config
+from conftest import needed_plan, set_config, set_rules
+from trackstarr import auth, config, policy, sessions, sweep_cache, users
 from trackstarr.arr import LibraryIndex, LibraryItem, radarr
 from trackstarr.cli import handle_sigterm, main
 from trackstarr.media import ProbeError
@@ -17,21 +16,23 @@ from trackstarr.planner import OutStream, Plan
 from trackstarr.policy import Policy
 from trackstarr.processing import ProcessResult
 from trackstarr.status import Status
+from trackstarr.sweep_cache import read
+from trackstarr.tracks import Lang
 
 
 @pytest.mark.parametrize(
     ("setting", "value"),
     [
-        # A typo would silently leave the rule on.
-        ("DISABLED_RULES", {"langauges"}),
+        # A typo would silently leave the rule doing what it did before.
+        ("RULE_MODES", {"langauges": "never"}),
         # A typo would silently drop the layout.
-        ("DOWNMIX_LAYOUTS", {"surround"}),
+        ("AUDIO_LAYOUTS", ("surround",)),
         # A typo (or a bare "true") would silently regenerate nothing.
-        ("REGENERATE_DOWNMIXES", "true"),
+        ("REGENERATE_SCOPE", "true"),
     ],
 )
-def test_bad_config_fails_fast(monkeypatch, setting, value):
-    monkeypatch.setattr(config, setting, value)
+def test_bad_config_fails_fast(setting, value):
+    set_config(**{setting: value})
     assert main(["plan", "f.mkv"]) == 1
 
 
@@ -39,7 +40,7 @@ def test_bad_config_fails_fast(monkeypatch, setting, value):
 def startup_ok(monkeypatch, tmp_path):
     """Pass main()'s environment checks: ffmpeg "on PATH", writable WORK_DIR."""
     monkeypatch.setattr("trackstarr.cli.shutil.which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(config, "WORK_DIR", str(tmp_path / "work"))
+    set_config(WORK_DIR=str(tmp_path / "work"))
 
 
 def test_sigterm_ends_the_process():
@@ -66,10 +67,8 @@ def test_every_command_installs_the_sigterm_handler(startup_ok):
 def test_an_unusable_state_dir_stops_a_rewriting_command(
     startup_ok, monkeypatch, tmp_path, caplog
 ):
-    """serve takes a slot lock before it binds, so this would otherwise be a
-    traceback from a restart loop. Asserted on the message, not the exit code:
-    a fix of a missing file exits 1 anyway, so the code alone would pass with
-    the check unwired."""
+    """Otherwise a traceback from a restart loop. Asserted on the message: a fix
+    of a missing file exits 1 anyway."""
     blocker = tmp_path / "not-a-dir"
     blocker.write_bytes(b"")
     monkeypatch.setattr(config, "STATE_DIR", str(blocker))
@@ -82,19 +81,17 @@ def test_a_missing_media_dir_is_reported_at_startup(startup_ok, monkeypatch, tmp
     """The mistake the README singles out, and a quiet one: walk_library says so
     as it walks, which under serve is whenever SWEEP_AT next fires, and with
     no schedule is never. Startup is where it can still be acted on."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "wrong-mount")])
+    set_config(MEDIA_DIRS=[str(tmp_path / "wrong-mount")])
     monkeypatch.setattr("trackstarr.cli.sweep", lambda dry_run: dict.fromkeys(Status, 0))
     with caplog.at_level(logging.WARNING):
         assert main(["sweep"]) == 0
     assert "wrong-mount" in caplog.text
 
 
-def test_a_command_handed_its_files_says_nothing_about_media_dirs(
-    startup_ok, monkeypatch, tmp_path, caplog
-):
+def test_a_command_handed_its_files_says_nothing_about_media_dirs(startup_ok, tmp_path, caplog):
     """plan runs against a single file wherever it lives, so MEDIA_DIRS has nothing
     to do with it."""
-    monkeypatch.setattr(config, "MEDIA_DIRS", [str(tmp_path / "wrong-mount")])
+    set_config(MEDIA_DIRS=[str(tmp_path / "wrong-mount")])
     with caplog.at_level(logging.WARNING):
         main(["plan", "--original", "eng", "/nowhere/missing.mkv"])
     assert "wrong-mount" not in caplog.text
@@ -125,7 +122,7 @@ def test_fix_rewrites_files_and_reports_failures(startup_ok, monkeypatch, capsys
     when any was not rewritten. A deferral counts: a fix's retry is the
     caller, who must not read it as success."""
     results = {
-        "/lib/a.mkv": ProcessResult(Status.FIXED, needed_plan("/lib/a.mkv")),
+        "/lib/a.mkv": ProcessResult(Status.MODIFIED, needed_plan("/lib/a.mkv")),
         "/lib/b.mkv": ProcessResult(Status.FAILED, detail="ffmpeg failed (1): boom"),
         "/lib/c.mkv": ProcessResult(Status.DEFERRED, detail="source changed"),
     }
@@ -171,7 +168,7 @@ def test_fix_still_matches_arr_items_when_original_is_given(startup_ok, monkeypa
 
 
 def test_fix_refuses_when_an_arr_cannot_answer(startup_ok, monkeypatch, caplog):
-    """lang=None would judge against ALWAYS_KEEP_LANGS alone and drop a foreign
+    """lang=None would leave the original row unresolved and drop a foreign
     film's own track. A one-shot command can wait, or be told the language."""
     monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: LibraryIndex({}, False))
     monkeypatch.setattr(
@@ -180,6 +177,21 @@ def test_fix_refuses_when_an_arr_cannot_answer(startup_ok, monkeypatch, caplog):
     )
     assert main(["fix", "/lib/a.mkv"]) == 1
     assert "could not be listed" in caplog.text
+
+
+def test_fix_proceeds_when_the_policy_never_asks_the_language(startup_ok, monkeypatch):
+    """No row names the original language, so the outage withholds nothing a
+    verdict needed and the fix runs without --original."""
+    set_config(LANGUAGES=("eng",))
+    monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: LibraryIndex({}, False))
+    jobs = []
+    monkeypatch.setattr(
+        "trackstarr.cli.process",
+        lambda job, dry_run, source: jobs.append(job) or ProcessResult(Status.CONFORM),
+    )
+    assert main(["fix", "/lib/a.mkv"]) == 0
+    (job,) = jobs
+    assert job.lang is None
 
 
 def test_fix_with_original_proceeds_through_an_arr_outage(startup_ok, monkeypatch):
@@ -246,28 +258,38 @@ def _planned(monkeypatch, plan):
 def test_plan_prints_the_policy_it_judged_under(startup_ok, monkeypatch, capsys):
     """The summary is how a user works out why a file was left alone, so the
     policy belongs on screen beside the verdict, not inferred from env."""
-    plan = Plan(path="f.mkv", original_lang="jpn", keep_langs={"jpn", "eng"})
+    plan = Plan(
+        path="f.mkv", original_lang="jpn", langs=(Lang("jpn", "add"), Lang("eng", "keep"))
+    )
     _planned(monkeypatch, plan)
 
     assert main(["plan", "f.mkv"]) == 0
     out = capsys.readouterr().out
     assert "original language : jpn" in out
-    assert "keeping languages : eng, jpn" in out
-    # Every configured layout, with the bitrate each would be encoded at.
-    assert "downmix layouts" in out
+    assert "languages         : jpn (add), eng (keep)" in out
+    # Every named layout, with the bitrate each added one is encoded at.
+    assert "audio layouts" in out
     assert "conforms, no action" in out
 
 
-def test_plan_omits_the_rules_that_are_off(startup_ok, monkeypatch, capsys):
-    """Blank rows are dropped, so the summary stays as short as the policy."""
-    policy = Policy.from_config()
-    plan = Plan(path="f.mkv", policy=replace(policy, drop_commentary=False, remux_to_mkv=False))
-    _planned(monkeypatch, plan)
+def test_plan_groups_the_rules_by_mode_and_omits_the_empty_groups(
+    startup_ok, monkeypatch, capsys
+):
+    """A plan that did nothing is usually a rule that is off or riding along, so
+    the summary has to say where each one sits. Blank rows are dropped, so a
+    policy with nothing in a group spends no line on it."""
+    _planned(monkeypatch, Plan(path="f.mkv", policy=Policy.from_config()))
 
     main(["plan", "f.mkv"])
     out = capsys.readouterr().out
-    assert "drop commentary" not in out
-    assert "remux to mkv" not in out
+    assert "rules always" in out and "languages" in out
+    assert "rules alongside" in out and "release_tags" in out
+    assert "rules never" in out and "remux" in out
+
+    set_rules(**dict.fromkeys(policy.RULES, "always"))
+    _planned(monkeypatch, Plan(path="f.mkv", policy=Policy.from_config()))
+    main(["plan", "f.mkv"])
+    assert "rules never" not in capsys.readouterr().out
 
 
 def test_plan_prints_a_skip_and_stops_there(startup_ok, monkeypatch, capsys):
@@ -280,17 +302,36 @@ def test_plan_prints_a_skip_and_stops_there(startup_ok, monkeypatch, capsys):
     assert "ffmpeg" not in out
 
 
+def test_plan_names_what_the_ride_alongs_are_waiting_for(startup_ok, monkeypatch, capsys):
+    """Otherwise "conforms" is the whole answer for a file with named faults
+    nobody thought worth a rewrite, and the setting that would change that is
+    invisible."""
+    plan = Plan(
+        path="f.mkv",
+        incidental=["clear release tags on audio 1"],
+        incidental_rules={"release_tags"},
+    )
+    _planned(monkeypatch, plan)
+
+    assert main(["plan", "f.mkv"]) == 0
+    out = capsys.readouterr().out
+    assert "conforms, no action" in out
+    assert "clear release tags on audio 1 (waiting on a rewrite)" in out
+    # Nothing is being rewritten, so there is no command to show.
+    assert "ffmpeg" not in out
+
+
 def test_plan_prints_the_reasons_and_the_command(startup_ok, monkeypatch, capsys):
     """The printed ffmpeg line is the tool showing its work, so it has to be the
     command that would really run."""
-    plan = Plan(path="f.mkv", reasons=["drop audio jpn"], incidental=["strip junk title"])
+    plan = Plan(path="f.mkv", reasons=["drop audio jpn"], incidental=["strip release tags"])
     plan.streams.append(OutStream(src=0, kind="video"))
     _planned(monkeypatch, plan)
 
     assert main(["plan", "f.mkv"]) == 0
     out = capsys.readouterr().out
     assert "- drop audio jpn" in out
-    assert "strip junk title (rides along)" in out
+    assert "strip release tags (rides along)" in out
     # The real command, not a summary of it: the stream map is the part a user
     # would copy out to run by hand.
     assert "ffmpeg -hide_banner -nostdin -y -loglevel error -i f.mkv -map 0:0" in out
@@ -333,16 +374,26 @@ def test_sweep_exit_code_ignores_deferrals_but_not_failures(startup_ok, monkeypa
     assert main(["sweep"]) == 1
 
 
-def test_fix_says_so_when_dry_run_is_set(startup_ok, monkeypatch, capsys):
-    """fix is the command that writes, so a global DRY_RUN has to be stated or it
-    reports "conforms" for files it never touched."""
-    monkeypatch.setattr(config, "DRY_RUN", True)
+def test_a_sweep_typed_into_a_paused_install_runs_and_says_so(startup_ok, monkeypatch, caplog):
+    """The pause lives in the listener's memory and this is another process,
+    so refusing here would refuse a command somebody meant. It sweeps, and
+    the line is what stops the result reading as the pause not working."""
+    monkeypatch.setattr("trackstarr.cli.runs.paused_on_disk", lambda: True)
+    monkeypatch.setattr("trackstarr.cli.sweep", lambda dry_run: dict.fromkeys(Status, 0))
+    assert main(["sweep"]) == 0
+    assert "runs anyway" in caplog.text
+
+
+def test_fix_says_so_in_report_mode(startup_ok, monkeypatch, capsys):
+    """fix is the command that writes, so the bottom rung of REWRITE_MODE has to
+    be stated or it reports "conforms" for files it never touched."""
+    set_config(REWRITE_MODE="report")
     monkeypatch.setattr(
         "trackstarr.cli.process",
         lambda job, dry_run, source: ProcessResult(Status.CONFORM),
     )
     main(["fix", "f.mkv"])
-    assert "DRY_RUN is set" in capsys.readouterr().out
+    assert "REWRITE_MODE is report" in capsys.readouterr().out
 
 
 def test_fix_prints_why_a_file_was_skipped(startup_ok, monkeypatch, capsys):
@@ -356,6 +407,23 @@ def test_fix_prints_why_a_file_was_skipped(startup_ok, monkeypatch, capsys):
     assert "hardlinked, left for the download client" in capsys.readouterr().out
 
 
+def test_fix_books_its_verdict_where_the_collection_reads_it(startup_ok, monkeypatch, tmp_path):
+    """The same gap the webhook had: a command that judges a handful of files
+    has none of a sweep's bookkeeping, so its verdicts reached the history and
+    nothing the library looks at."""
+    media = tmp_path / "f.mkv"
+    media.write_bytes(b"x" * 10)
+    plan = needed_plan(str(media))
+    monkeypatch.setattr(
+        "trackstarr.cli.process",
+        lambda job, dry_run, source: ProcessResult(Status.PENDING, plan),
+    )
+    assert main(["fix", str(media), "--original", "eng"]) == 0
+
+    stored = read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    assert stored.files[str(media)]["status"] == "pending"
+
+
 def test_secret_reports_a_state_dir_it_cannot_write(monkeypatch, caplog):
     """A read-only or unmounted /config is the usual cause, and the user needs
     telling rather than a traceback."""
@@ -366,3 +434,113 @@ def test_secret_reports_a_state_dir_it_cannot_write(monkeypatch, caplog):
     monkeypatch.setattr("trackstarr.cli.auth.mint", refuse)
     assert main(["secret", "radarr"]) == 1
     assert "could not store the secret" in caplog.text
+
+
+def test_user_add_and_list(fast_scrypt, capsys):
+    """No startup_ok: accounts must be manageable on a host without ffmpeg."""
+    assert main(["user", "add", "watcher", "--password", "long enough"]) == 0
+    assert main(["user", "add", "boss", "--role", "admin", "--password", "long enough"]) == 0
+    assert main(["user", "list"]) == 0
+    out = capsys.readouterr().out
+    assert "watcher  viewer" in out
+    assert "boss  admin" in out
+    assert users.verify("watcher", "long enough").role == "viewer"
+
+
+def test_user_add_prompts_without_echo_when_no_flag(fast_scrypt, monkeypatch):
+    monkeypatch.setattr("trackstarr.cli.getpass.getpass", lambda prompt: "long enough")
+    assert main(["user", "add", "watcher"]) == 0
+    assert users.verify("watcher", "long enough")
+
+
+def test_user_add_without_a_terminal_says_so(fast_scrypt, monkeypatch, caplog):
+    """`docker exec` without -it, which is what the README's reset path used
+    to be: getpass raises EOFError and a locked-out admin got a traceback."""
+
+    def no_terminal(prompt):
+        raise EOFError
+
+    monkeypatch.setattr("trackstarr.cli.getpass.getpass", no_terminal)
+    assert main(["user", "add", "watcher"]) == 1
+    assert "docker exec -it" in caplog.text
+    assert users.accounts() == []
+
+
+def test_user_refuses_a_short_password(fast_scrypt, caplog):
+    assert main(["user", "add", "watcher", "--password", "short"]) == 1
+    assert "at least 8 characters" in caplog.text
+    assert users.accounts() == []
+
+
+def test_user_passwd_resets_and_signs_out_everywhere(fast_scrypt):
+    """The recovery path for a forgotten admin password, via docker exec, so
+    it must also clear a forced change left over from bootstrap."""
+    users.add("watcher", "old password", "viewer", must_change=True)
+    token = sessions.create(users.Account("watcher", "viewer", True))
+    assert main(["user", "passwd", "watcher", "--password", "new password"]) == 0
+    assert sessions.get(token) is None
+    assert users.verify("watcher", "new password") == users.Account("watcher", "viewer", False)
+
+
+def test_user_rm_removes_and_signs_out_but_keeps_the_last_admin(fast_scrypt, caplog):
+    users.add("admin", "a password", "admin")
+    users.add("watcher", "a password", "viewer")
+    token = sessions.create(users.Account("watcher", "viewer", False))
+    assert main(["user", "rm", "watcher"]) == 0
+    assert sessions.get(token) is None
+    assert main(["user", "rm", "admin"]) == 1
+    assert "last admin" in caplog.text
+
+
+def test_user_list_flags_a_pending_password_change(fast_scrypt, capsys):
+    users.add("admin", "a password", "admin", must_change=True)
+    assert main(["user", "list"]) == 0
+    assert "(must change password)" in capsys.readouterr().out
+
+
+def test_user_mistakes_are_messages_not_tracebacks(fast_scrypt, caplog):
+    users.add("watcher", "a password", "viewer")
+    assert main(["user", "add", "watcher", "--password", "long enough"]) == 1
+    assert "already exists" in caplog.text
+
+
+def test_user_reports_a_state_dir_it_cannot_write(monkeypatch, caplog):
+    def refuse(name, password, role):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr("trackstarr.cli.users.add", refuse)
+    assert main(["user", "add", "watcher", "--password", "long enough"]) == 1
+    assert "could not update the account store" in caplog.text
+
+
+def test_an_unknown_log_level_is_refused(capsys):
+    """Read through getattr with a fallback, a typo meant INFO in silence, so a
+    session asked for as DEBUG looked like a quiet one. Checked before
+    basicConfig, which is why it prints rather than logs."""
+    assert main(["--log-level", "verbose", "plan", "f.mkv"]) == 1
+    assert "verbose" in capsys.readouterr().err
+
+
+def test_a_lowercase_log_level_still_works(startup_ok, monkeypatch):
+    """--log-level debug has always worked, and argparse choices= would have
+    quietly taken that away."""
+    monkeypatch.setattr(
+        "trackstarr.cli.build_plan", lambda path, lang: Plan(path=path, skip="nothing to do")
+    )
+    assert main(["--log-level", "debug", "plan", "--original", "eng", "f.mkv"]) == 0
+
+
+def test_a_rule_that_cannot_fire_is_reported_to_a_command_handed_its_files(
+    startup_ok, monkeypatch, caplog
+):
+    """Unlike the MEDIA_DIRS warning, these are about rules rather than the
+    library, so plan and fix want them too: the switch reads as on and the rule
+    never appears in the plan being explained."""
+    set_rules(remux="always")
+    set_config(ALLOWED_EXTS={".mkv"})
+    monkeypatch.setattr(
+        "trackstarr.cli.build_plan", lambda path, lang: Plan(path=path, skip="nothing to do")
+    )
+    with caplog.at_level(logging.WARNING):
+        main(["plan", "--original", "eng", "f.mkv"])
+    assert "RULE_REMUX" in caplog.text

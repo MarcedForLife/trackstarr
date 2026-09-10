@@ -4,9 +4,16 @@ import urllib.error
 
 import pytest
 
-from conftest import configured_arr
+from conftest import configured_arr, set_config
 from trackstarr import auth
-from trackstarr.arr import AUTH_HEADER, WEBHOOK_NAME, _sent_secret, radarr
+from trackstarr.arr import (
+    AUTH_HEADER,
+    WEBHOOK_NAME,
+    _sent_secret,
+    radarr,
+    reregister_webhooks,
+    webhook_url,
+)
 
 URL = "http://trackstarr:5120"
 
@@ -158,6 +165,27 @@ def test_disabled_arr_needs_no_registration():
     assert radarr().register_webhook(URL) is True
 
 
+def test_registration_points_the_arrs_at_the_webhook_path():
+    """The base URL is the setting; the path is the listener's own contract,
+    appended here so both ends always agree."""
+    set_config(WEBHOOK_URL="http://trackstarr:5120")
+    assert webhook_url() == "http://trackstarr:5120/webhook"
+
+
+def test_re_registration_is_one_pass_over_the_enabled_arrs(monkeypatch):
+    """Not register_webhooks' retry loop: a save naming an unreachable *arr
+    would leave a second loop polling it for ever, and every later save
+    another."""
+    calls = []
+    enabled = configured_arr("radarr")
+    monkeypatch.setattr(enabled, "register_webhook", lambda url: calls.append(url) or False)
+    disabled = configured_arr("sonarr", key="")
+    monkeypatch.setattr("trackstarr.arr.all_arrs", lambda: [enabled, disabled])
+
+    reregister_webhooks()
+    assert calls == [webhook_url()]
+
+
 @pytest.mark.parametrize(
     "value", [None, "not-a-list", [], [{"key": "X-Other", "value": "v"}], ["junk"]]
 )
@@ -167,3 +195,26 @@ def test_a_malformed_headers_field_is_not_a_secret(value):
     notification = registration()
     notification["fields"] = [{"name": "headers", "value": value}]
     assert _sent_secret(notification) == ""
+
+
+@pytest.mark.parametrize(
+    ("existing", "expected"),
+    [
+        ([], "missing"),
+        ([{"id": 3, "name": "Discord"}], "missing"),
+        ([registration(url="http://old-name:9999")], "stale"),
+        ([registration(secret=UNMINTED)], "stale"),
+    ],
+)
+def test_webhook_status_reports_what_the_arr_holds(existing, expected):
+    """What the connections page shows. Asked without saving anything, so it
+    must never be the registration call in disguise."""
+    calls: list[tuple] = []
+    arr = make_arr(existing, calls)
+    assert arr.webhook_status(URL) == expected
+    assert [recorded[0] for recorded in calls] == ["GET"]
+
+
+def test_webhook_status_is_connected_only_for_a_secret_we_would_accept():
+    arr = make_arr([registration(secret=auth.mint("radarr"))], [])
+    assert arr.webhook_status(URL) == "connected"
