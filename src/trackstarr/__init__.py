@@ -2,7 +2,7 @@
 
 import os
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 #: The zone the deploy stated, read before anything else runs. The service
 #: writes a saved zone into TZ itself, and :mod:`trackstarr.config` is reloaded
