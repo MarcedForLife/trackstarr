@@ -5,6 +5,7 @@
 	import { dropPendingCovers } from '$lib/covers';
 	import { behind, keyboard } from '$lib/modal';
 	import { PRIMARY, routeOf, SETTINGS } from '$lib/nav';
+	import { setStage } from '$lib/scroller';
 	import { notice } from '$demo';
 	import { overlay } from '$lib/overlay';
 	import Mark from '$lib/components/Mark.svelte';
@@ -42,12 +43,53 @@
 		};
 	});
 
-	// A new page fades in rather than cutting. Retriggered by hand rather than
-	// {#key}, which would rebuild the component for an animation.
+	// The page's frame, and from lg up what scrolls it; see $lib/scroller.
 	let stage: HTMLElement | null = $state(null);
+	$effect(() => {
+		setStage(stage);
+		return () => setStage(null);
+	});
 
-	afterNavigate(() => {
+	// Where each page was left, by URL. From lg up SvelteKit's own restore puts
+	// back the window's scroll, which is not the page's, so back and forward
+	// are put back here. A shallow entry spent, as the selection bar's is,
+	// changes no page and is left alone. Nothing renders from it, so not
+	// SvelteMap.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const left = new Map<string, number>();
+
+	// How long a page gets to grow to a saved position before it is left where
+	// it is.
+	const FILLING_MS = 1000;
+
+	// The page is still filling as it mounts, so a deep position is clamped
+	// short. Asked for again each frame until it is reached or the time is up;
+	// a reader who moves first is left alone.
+	function putBack(at: number) {
 		if (!stage) return;
+		stage.scrollTop = at;
+		// Where it landed, which the reader has not moved from while it holds.
+		let held = stage.scrollTop;
+		if (held >= at) return;
+		const began = performance.now();
+		const step = () => {
+			if (!stage || stage.scrollTop !== held) return;
+			stage.scrollTop = at;
+			held = stage.scrollTop;
+			if (held < at && performance.now() - began < FILLING_MS) requestAnimationFrame(step);
+		};
+		requestAnimationFrame(step);
+	}
+
+	afterNavigate((navigation) => {
+		if (!stage) return;
+		// On entry `from` has a null url, whatever its type says.
+		const from = navigation.from?.url?.href;
+		const to = navigation.to?.url?.href ?? '';
+		if (from !== to) putBack(navigation.type === 'popstate' ? (left.get(to) ?? 0) : 0);
+
+		// A new page fades in rather than cutting. Retriggered by hand rather than
+		// {#key}, which would rebuild the component for an animation.
 		stage.classList.remove('entering');
 		// Reading a layout property flushes the removal, so re-adding restarts the
 		// animation.
@@ -92,6 +134,8 @@
 	}
 
 	beforeNavigate((navigation) => {
+		if (stage && navigation.from?.url) left.set(navigation.from.url.href, stage.scrollTop);
+
 		// Here because the overview draws posters too, and the page is still
 		// whole, which is the only moment the browser listens. Only on a real
 		// route change, or a same-page navigation would blank arriving posters.
@@ -134,7 +178,10 @@
 
 <NavProgress />
 
-<div class="flex min-h-dvh">
+<!-- From lg up the frame is the viewport and main scrolls inside it, so the
+     rail and the notice hold still while the page overscrolls. Below, the
+     document scrolls as ever. -->
+<div class="flex min-h-dvh lg:h-dvh lg:overflow-hidden">
 	<Sidebar user={data.user} {open} onclose={close} />
 
 	<!-- Tapping off the drawer closes it. A button, so a keyboard reaches it. -->
@@ -149,7 +196,7 @@
 		}`}
 	></button>
 
-	<div class="flex min-w-0 flex-1 flex-col">
+	<div class="flex min-w-0 flex-1 flex-col lg:min-h-0">
 		{#if DemoNotice}
 			<DemoNotice />
 		{/if}
@@ -197,7 +244,10 @@
 			</div>
 		</header>
 
-		<main bind:this={stage} class="min-w-0 flex-1">
+		<main
+			bind:this={stage}
+			class="min-w-0 flex-1 lg:min-h-0 lg:overflow-y-auto lg:overscroll-y-contain"
+		>
 			{@render children()}
 		</main>
 	</div>

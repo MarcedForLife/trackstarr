@@ -134,7 +134,9 @@
 		}
 
 		// Moved by the scroll delta, as Chrome's own toolbar tracks the finger.
-		// Passive and one read a frame, on a page of several hundred cards.
+		// Passive and one read a frame, on a page of several hundred cards. The
+		// window's scroll, not $lib/scroller's: the bar only shows below lg,
+		// where the document is the page.
 		function onScroll() {
 			// Momentum outlives the finger; a settle in progress is abandoned.
 			stopSettling();

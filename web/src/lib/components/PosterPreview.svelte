@@ -4,6 +4,7 @@
 	import { tiltField, type Driver } from '$lib/field';
 	import type { Card } from '$lib/library';
 	import { moving } from '$lib/motion.svelte';
+	import { pageTop } from '$lib/scroller';
 
 	// The settings under this strip govern something that only happens under a
 	// pointer, so five posters come here to demonstrate it. The real PosterCard
@@ -142,7 +143,7 @@
 		const began = performance.now();
 		// The scroll at measurement; everything below corrects for it on the way
 		// out rather than re-measuring six boxes a frame.
-		const from0 = window.scrollY;
+		const from0 = pageTop();
 		const step = (now: number) => {
 			const t = Math.min(1, (now - began) / PASS);
 			// Eased across the row, linear past either end, so the slow stretch is
@@ -154,7 +155,7 @@
 			// the middle.
 			const y = midY + Math.sin(t * Math.PI * WAVES) * stray;
 			// The field wants viewport coordinates; the ghost moved with the page.
-			const shift = from0 - window.scrollY;
+			const shift = from0 - pageTop();
 			driver?.aim(x, y + shift);
 			// Written onto the element, not through state, at sixty a second.
 			if (ghost) {

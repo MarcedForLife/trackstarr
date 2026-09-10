@@ -38,11 +38,13 @@ vi.mock('$lib/overlay', () => ({
 /** The back gesture, or the hardware key: the entry goes, then the page hears. */
 const back = () => harness.close();
 
-// Enough of a window for the scroll restore to be observable.
+// Enough of a window for the scroll restore to be observable. Below lg, so the
+// document is what scrolls; see $lib/scroller.
 let scrolledTo: number[];
 globalThis.window = {
 	scrollY: 0,
-	scrollTo: (_x: number, y: number) => scrolledTo.push(y)
+	scrollTo: (_x: number, y: number) => scrolledTo.push(y),
+	matchMedia: () => ({ matches: false })
 } as unknown as Window & typeof globalThis;
 globalThis.requestAnimationFrame = ((run: () => void) => {
 	run();

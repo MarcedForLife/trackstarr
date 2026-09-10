@@ -12,6 +12,7 @@
 // across it, and, while a pointer is held anywhere, which card is raised. The
 // raise follows the pointer, not the card the press began on.
 
+import { pageTop } from '$lib/scroller';
 // The classes and properties written below. Imported here so both halves of
 // the mechanism are read together.
 import './poster.css';
@@ -129,7 +130,7 @@ export function tiltField(
 	function place(near: Near, el: Element) {
 		const box = el.getBoundingClientRect();
 		near.cx = box.left + box.width / 2 + node.scrollLeft;
-		near.cy = box.top + box.height / 2 + window.scrollY;
+		near.cy = box.top + box.height / 2 + pageTop();
 		near.hw = box.width / 2;
 		near.hh = box.height / 2;
 	}
@@ -239,7 +240,7 @@ export function tiltField(
 
 	function draw() {
 		frame = 0;
-		const top = window.scrollY;
+		const top = pageTop();
 		// Zero for a grid, which never scrolls sideways.
 		const left = node.scrollLeft;
 		const spread = chosen?.() ?? REACH;
@@ -451,9 +452,6 @@ export function tiltField(
 
 	for (const child of node.children) seen.observe(child);
 	restocked.observe(node, { childList: true });
-	// A row sliding under a finger is the same gesture as the page doing so. A
-	// grid never fires this.
-	node.addEventListener('scroll', onScroll, { passive: true });
 	window.addEventListener('pointermove', onPointer, { passive: true });
 	// A press is a position too, or a cursor that pressed without moving would
 	// raise whatever the field last saw.
@@ -464,7 +462,10 @@ export function tiltField(
 	window.addEventListener('touchmove', onTouch, { passive: true });
 	window.addEventListener('touchend', away, { passive: true });
 	window.addEventListener('touchcancel', away, { passive: true });
-	window.addEventListener('scroll', onScroll, { passive: true });
+	// Captured, since scroll does not bubble: the page's, whether that is the
+	// document or main, and a row sliding under a finger, which is the same
+	// gesture.
+	window.addEventListener('scroll', onScroll, { passive: true, capture: true });
 	window.addEventListener('resize', onResize, { passive: true });
 	// The cursor leaving the window sends no pointermove.
 	document.addEventListener('pointerleave', away);
@@ -482,7 +483,6 @@ export function tiltField(
 			restocked.disconnect();
 			cancelAnimationFrame(frame);
 			fields.delete(request);
-			node.removeEventListener('scroll', onScroll);
 			window.removeEventListener('pointermove', onPointer);
 			window.removeEventListener('pointerdown', onPointer);
 			window.removeEventListener('pointerup', onPointer);
@@ -490,7 +490,7 @@ export function tiltField(
 			window.removeEventListener('touchmove', onTouch);
 			window.removeEventListener('touchend', away);
 			window.removeEventListener('touchcancel', away);
-			window.removeEventListener('scroll', onScroll);
+			window.removeEventListener('scroll', onScroll, { capture: true });
 			window.removeEventListener('resize', onResize);
 			document.removeEventListener('pointerleave', away);
 			lower();
