@@ -12,7 +12,6 @@
 // across it, and, while a pointer is held anywhere, which card is raised. The
 // raise follows the pointer, not the card the press began on.
 
-import { pageTop } from '$lib/scroller';
 // The classes and properties written below. Imported here so both halves of
 // the mechanism are read together.
 import './poster.css';
@@ -59,9 +58,12 @@ export function pressing(on: boolean) {
 	for (const wake of fields) wake();
 }
 
-// A card in the field, with its centre in content coordinates (page scroll on
-// one axis, container scroll on the other), so a scroll costs no re-measure and
-// one field drives both a page-scrolled grid and a self-scrolling row.
+// A card in the field, with its centre measured from the field's own box plus
+// the field's scroll. The field's box is read once a frame, so a scroll costs
+// no re-measure, one field drives both a page-scrolled grid and a
+// self-scrolling row, and the grid moving whole is followed: a settings group
+// above the Appearance strip opens by sliding everything under it down, and
+// cards measured mid-slide were leaning at a pointer a panel's height away.
 type Near = {
 	tilt: HTMLElement;
 	// The artwork the light is painted on. Separate because the sheen properties
@@ -126,16 +128,17 @@ export function tiltField(
 	// causes, cleared when the pointer lifts.
 	let dragging = false;
 
-	// Re-measure a card in place, keeping the angle and light it carries.
-	function place(near: Near, el: Element) {
+	// Re-measure a card in place, keeping the angle and light it carries. `field`
+	// is the node's box, read once by the caller for every card it places.
+	function place(near: Near, el: Element, field: DOMRect) {
 		const box = el.getBoundingClientRect();
-		near.cx = box.left + box.width / 2 + node.scrollLeft;
-		near.cy = box.top + box.height / 2 + pageTop();
+		near.cx = box.left - field.left + box.width / 2 + node.scrollLeft;
+		near.cy = box.top - field.top + box.height / 2;
 		near.hw = box.width / 2;
 		near.hh = box.height / 2;
 	}
 
-	function measure(el: Element): Near | null {
+	function measure(el: Element, field: DOMRect): Near | null {
 		const tilt = el.querySelector<HTMLElement>('[data-tilt]');
 		if (!tilt) return null;
 		const near: Near = {
@@ -149,7 +152,7 @@ export function tiltField(
 			on: false,
 			lit: 0
 		};
-		place(near, el);
+		place(near, el, field);
 		return near;
 	}
 
@@ -170,9 +173,10 @@ export function tiltField(
 				forget(going);
 				cards.delete(entry.target);
 			}
+			const field = node.getBoundingClientRect();
 			for (const entry of entries) {
 				if (!entry.isIntersecting) continue;
-				const near = measure(entry.target);
+				const near = measure(entry.target, field);
 				if (near) cards.set(entry.target, near);
 			}
 			request();
@@ -240,9 +244,11 @@ export function tiltField(
 
 	function draw() {
 		frame = 0;
-		const top = pageTop();
-		// Zero for a grid, which never scrolls sideways.
-		const left = node.scrollLeft;
+		// Where the field's content sits on screen this frame: its box, less its
+		// own scroll, which is zero for a grid.
+		const field = node.getBoundingClientRect();
+		const left = field.left - node.scrollLeft;
+		const top = field.top;
 		const spread = chosen?.() ?? REACH;
 		// Read every frame so the Appearance slider takes effect as it moves.
 		// Zero never gets here; the field is inactive at that stop.
@@ -262,8 +268,8 @@ export function tiltField(
 				fading = catchUp(near, 0) || fading;
 				continue;
 			}
-			const dx = px - (near.cx - left);
-			const dy = py - (near.cy - top);
+			const dx = px - (near.cx + left);
+			const dy = py - (near.cy + top);
 			// Judged by the card's box, not the field: a card at the edge of a
 			// narrow spread barely leans but a press on it should still raise it.
 			if (holds) {
@@ -382,8 +388,9 @@ export function tiltField(
 
 	// Re-measure every card on screen, dropping any the grid has removed.
 	function remeasure() {
+		const field = node.getBoundingClientRect();
 		for (const [el, near] of cards) {
-			if (el.isConnected) place(near, el);
+			if (el.isConnected) place(near, el, field);
 			else cards.delete(el);
 		}
 		request();
