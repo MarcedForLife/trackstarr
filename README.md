@@ -5,111 +5,23 @@
 [![Image: ghcr.io](https://img.shields.io/badge/ghcr.io-trackstarr-blue.svg)](https://github.com/MarcedForLife/trackstarr/pkgs/container/trackstarr)
 [![Demo](https://img.shields.io/badge/demo-live-brightgreen.svg)](https://marcedforlife.github.io/trackstarr/)
 
-Trackstarr keeps the audio and subtitle tracks in a movie and TV library tidy,
-driven by Radarr and Sonarr webhooks. It drops the languages you will never
-play, downmixes a stereo or 5.1 track in the title's own language and any you
-choose, where one is missing, at a bitrate you set, and puts what is left in a
-sensible order.
+Trackstarr tidies audio and subtitle tracks in your movie and TV library.
+It processes Radarr and Sonarr imports, removes unwanted tracks, creates missing
+audio downmixes and puts the remaining tracks in your preferred order.
+Video is always copied without re-encoding.
 
-**[Try the demo](https://marcedforlife.github.io/trackstarr/)**: the web UI
-over a sample library of openly licensed films, with no service behind it. Any
-name and password sign you in.
+- **Audio and language rules:** keep original-language audio and selected dubs,
+  add stereo or surround mixes, choose codecs and bitrates, and remove unwanted layouts.
+- **Track cleanup:** remove commentary, redundant SDH subtitles, embedded artwork
+  and release tags; optionally convert MP4/M4V to MKV.
+- **Controlled processing:** preview plans, schedule library sweeps, hold individual
+  titles, pause processing and defer hard-linked files.
+- **Live web UI:** browse and search your library, inspect planned changes, edit MKV
+  track tags, follow progress and review event history.
+- **Media server integration:** refresh Plex, Jellyfin or Emby after a rewrite.
 
-## The rules
-
-Every rule runs in one of three modes, set by its own `RULE_<NAME>` variable.
-`always` acts whenever the file needs it. `never` switches the rule off.
-`alongside` acts only on a file another rule is already rewriting, which is the
-answer for a change worth having but not worth a 60GB rewrite of its own.
-
-| Rule            | Unset       |                                                                                                                                                                  |
-| --------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `languages`     | `always`    | Drop audio and subtitles in a language `LANGUAGES` does not name. Untagged tracks always stay                                                                    |
-| `commentary`    | `never`     | Drop commentary, described-audio and isolated-score tracks. They are never downmix sources either way                                                            |
-| `sdh`           | `alongside` | Drop an SDH subtitle when the same language keeps a full one. Forced subtitles are always kept                                                                   |
-| `regenerate`    | `never`     | Rebuild downmixes whose settings have moved on; see `REGENERATE_SCOPE` and `REGENERATE_ABOVE_PERCENT`. Matroska only                                             |
-| `cover_art`     | `always`    | Drop embedded artwork, which players read as a second video track                                                                                                |
-| `release_tags`  | `alongside` | Clear release tags from track and container titles                                                                                                               |
-| `stray_streams` | `alongside` | Drop data and timecode streams nothing plays                                                                                                                     |
-| `order`         | `always`    | Video, then audio in `AUDIO_LAYOUTS` order, then subtitles, then attachments                                                                                     |
-| `remux`         | `never`     | Rewrite MP4 and M4V into Matroska, where every rule works and track tags can be edited in place. `alongside` converts a file something else is already rewriting |
-
-Every rule is idempotent, so a sweep is safe to run as often as you like. A rule
-riding along never causes a rewrite, even indirectly: what the others would do
-is decided first, with the ride-alongs held back. Trackstarr never transcodes
-video, never upmixes, and never touches a file whose every audio track would
-fail the language test.
-
-## Audio layouts
-
-`AUDIO_LAYOUTS` is one ordered list of every size this library has an opinion
-about, each entry carrying that opinion. Out of the box it is `2.0,5.1`, both
-downmixed at the rates below.
-
-```
-AUDIO_LAYOUTS: 2.0:libopus:192k,5.1:eac3:448k,7.1:remove
-```
-
-An entry is read by how many colon-separated fields it holds:
-
-| Entry           |                                                                                             |
-| --------------- | ------------------------------------------------------------------------------------------- |
-| `5.1`           | Downmix, at the encoder and rate shipped for that size: 1.0, 2.0, 5.1, 6.1 and 7.1 have one |
-| `5.1:eac3:448k` | Downmix, at that encoder and rate. Any other size has to say, since nothing is guessed      |
-| `7.1:remove`    | Delete every track this size, wherever a file has one                                       |
-| `7.1:keep`      | Leave the size alone. Worth naming for the order alone, which is the whole list's           |
-
-Downmix guarantees a non-commentary track this size exists, made from the best
-surviving bigger track of the same language. It is the only action that encodes
-anything, so it is the only one carrying an encoder and rate, and a size with
-nothing bigger above it is simply not made.
-
-One entry per channel count, so a size cannot be downmixed and removed at once:
-that pair would have every rewrite make a track the next takes away. Startup
-refuses two entries of one count for the same reason, `4.2` and `5.1` included.
-
-Downmixing and removing have no `RULE_` of their own. The entry is the whole
-switch, and both always act, since making or removing a mix is worth its own
-rewrite where a release tag is not. The written order is the audio track order:
-2.0 first means a disposition-blind player lands on stereo.
-
-Removing is the one thing here you cannot take back. Every other rule adds a
-track or drops something a re-rip would restore; a removed mix is gone, and
-nothing can be downmixed or regenerated from it afterwards. It runs after the
-downmix, so a track on its way out is still the source for the ones replacing
-it, and it never takes a file's last audio track. Both directions are useful:
-removing 7.1 keeps the source mixes off the disk once their downmixes exist,
-and downmixing only 5.1 while removing 2.0 suits a house that plays through a
-receiver and nothing else.
-
-## Languages
-
-`LANGUAGES` is the same list on the other axis: every language the library
-keeps, and which of them layouts are made in. A track is generated where a row
-of each says downmix, the one action both lists share. Out of the box it is
-`original,eng`.
-
-```
-LANGUAGES: original,eng,fre:keep
-```
-
-| Entry      |                                                              |
-| ---------- | ------------------------------------------------------------ |
-| `eng`      | Downmix: keep it, and guarantee every downmixed layout in it |
-| `fre:keep` | Keep it, generate nothing                                    |
-
-There is no `remove`, because everything the list does not name is already
-dropped by `RULE_LANGUAGES`: `never` keeps them, `always` drops them,
-`alongside` drops them only on a file something else is already rewriting.
-
-`original` is whatever Radarr or Sonarr reports the title was made in, so no
-TMDB key is needed. It applies only to a language no row names explicitly, and
-where the *arrs cannot answer, the row does not act.
-
-Names normalise as track tags do, so `en`, `eng` and `English` all mean the
-same. The written order is which language a downmix is taken from when none of
-the downmixed ones has a track to use. That stand-in goes again once a downmixed
-language has a source, say after an `und` track is tagged.
+**[Try the demo](https://marcedforlife.github.io/trackstarr/)** — a sample library
+with no backend. Any username and password work.
 
 ## Quick start
 
@@ -126,245 +38,315 @@ services:
       - /srv/media:/data
       - /srv/config/trackstarr:/config
     environment:
-      MEDIA_DIRS: /data/media/movies:/data/media/tv
+      MEDIA_DIRS: /data/movies:/data/tv
       TZ: Pacific/Auckland
 ```
 
-1. Create the config directory as the container's user. The image never runs
-   as root, so it cannot fix a root-owned volume for you:
-   `install -d -o 1000 -g 1000 /srv/config/trackstarr`
-2. Start the container and browse to port 5120. Sign in as `admin` with the
-   password printed once in the log.
-3. Add Radarr and Sonarr on the Connections page. Trackstarr registers its
-   own webhooks, so nothing needs configuring in either.
+1. Create `/srv/config/trackstarr` with ownership matching the container user,
+   for example `sudo install -d -o 1000 -g 1000 /srv/config/trackstarr`.
+   That user also needs write access to the media and staging directory
+   (`/data/trackstarr-work` by default).
+2. Save the example as `compose.yaml`, adjust the paths and timezone, and run
+   `docker compose up -d`.
+3. Open port 5120 in your browser. Sign in as `admin` using the password printed
+   in the container log, then change it when prompted.
+4. Add Radarr and Sonarr under **Settings → Connections**. Trackstarr registers
+   their webhooks automatically.
 
-`MEDIA_DIRS` is in the container's paths and has to match the mount above. A
-wrong entry only warns, at startup and again as the sweep walks nothing, so
-check the log after first start. Set `WEBHOOK_URL` if the *arrs reach the
-container by a name other than `trackstarr`. Any setting can also go in the
-environment, which pins it and greys out its field in the UI.
+`MEDIA_DIRS` and paths received from the *arrs must refer to files inside the
+container. The example maps `/srv/media/movies` to `/data/movies`;
+change the mount or `MEDIA_DIRS` to match your library. Missing sweep directories
+produce warnings, so check the startup log. Set `WEBHOOK_URL` if the *arrs cannot
+reach `http://trackstarr:5120`.
 
-## How it runs
+The default `REWRITE_MODE=imports` rewrites new imports but only reports changes
+for library sweeps. Use `report` to preview all processing first; use `all` to
+allow scheduled sweeps to rewrite the existing library. Review
+`/config/pending.tsv` before enabling `all`.
 
-**Imports.** Radarr and Sonarr call the webhook as each file lands and it is
-rewritten straight away. A file the download client still hard-links is parked
-and re-checked every `HARDLINK_RECHECK` seconds, so it is done minutes after
-seeding ends.
+## Rules
 
-**Sweeps.** `SWEEP_AT` walks `MEDIA_DIRS` on a cron schedule. Verdicts are
-cached, so after the first night an unchanged file costs a stat rather than an
-ffprobe run. Changing a rule drops the cache.
+Each `RULE_<NAME>` accepts `always`, `alongside` or `never`:
 
-**Rewrite mode** is a ladder. `report` rewrites nothing anywhere and records
-what it would do, so a new install can watch a real week first. `imports`, the
-default, rewrites what the *arrs deliver and leaves the sweep writing
-`/config/pending.tsv`. `all` lets the sweep rewrite the existing library too.
-Read `pending.tsv` before going to `all`.
+- `always`: apply whenever needed.
+- `alongside`: apply only when another rule already requires a rewrite.
+- `never`: disable the rule.
 
-**Holds.** A title can be held from its page in the UI, for a few hours or
-until you lift it, which is the answer for something you are part way through
-watching. A held file is still probed, planned and reported, so the library
-goes on showing the work; only the rewrite waits. Holds are kept in
-`/config/holds.json` and survive a restart, and each one lapses on its own.
+| Rule            | Default     | Action                                                                                                         |
+| --------------- | ----------- | -------------------------------------------------------------------------------------------------------------- |
+| `languages`     | `always`    | Remove audio and subtitles in languages absent from `LANGUAGES`. Untagged tracks stay.                         |
+| `commentary`    | `never`     | Remove commentary, described audio and isolated scores. These are never downmix sources.                       |
+| `sdh`           | `alongside` | Remove an SDH subtitle if a full subtitle survives in the same language. This rule preserves forced subtitles. |
+| `regenerate`    | `never`     | Rebuild outdated downmixes or replace tracks under the configured bitrate rules. MKV only.                     |
+| `cover_art`     | `always`    | Remove embedded artwork.                                                                                       |
+| `release_tags`  | `alongside` | Clear release tags from track and container titles.                                                            |
+| `stray_streams` | `alongside` | Remove data and timecode streams.                                                                              |
+| `order`         | `always`    | Order video, audio by `AUDIO_LAYOUTS` (then other sizes by channel count), subtitles and attachments.          |
+| `remux`         | `never`     | Convert MP4/M4V to MKV, converting text subtitles to SRT. Video is copied.                                     |
 
-**Safety.** A rewrite is staged in `WORK_DIR` and published over the original
-only once its duration and stream count verify, so an interrupted job leaves
-the library untouched. A file that changes mid-rewrite is deferred to the next
-webhook or sweep. If an enabled *arr cannot be reached, an applying sweep
-downgrades itself to report-only, since without original languages a foreign
-film's own track would look like one to drop.
+Rules are idempotent: an unchanged file does not need another rewrite.
+`alongside` rules cannot trigger a rewrite indirectly. Trackstarr never upmixes
+or applies a language filter that would remove every audio track. Forced
+subtitles are protected from SDH cleanup, but still follow the language filter.
 
-**Media servers.** Configure Plex or Jellyfin (Emby speaks the same API) and
-each rewrite nudges the server to refresh that file. The nudge names a path,
-so when the server mounts the library elsewhere, map the difference with
+### Audio layouts
+
+`AUDIO_LAYOUTS` controls which audio sizes to create, retain or remove, and their
+output order. The default `2.0,5.1` creates missing stereo AAC at 320k and 5.1 AC3
+at 640k.
+
+```yaml
+AUDIO_LAYOUTS: 2.0:libopus:192k,5.1:eac3:448k,7.1:remove
+```
+
+| Entry           | Meaning                                                             |
+| --------------- | ------------------------------------------------------------------- |
+| `5.1`           | Create a missing mix using the defaults for this layout.            |
+| `5.1:eac3:448k` | Create a missing mix with this encoder and bitrate.                 |
+| `7.1:keep`      | Keep this size without creating it; include it in the output order. |
+| `7.1:remove`    | Remove this size after creating any replacement downmixes.          |
+
+Bare-layout defaults are `1.0:aac:160k`, `2.0:aac:320k`, `5.1:ac3:640k`,
+`6.1:aac:704k` and `7.1:aac:768k`. Other sizes need an explicit encoder and rate.
+Each channel count may appear only once, including equivalent counts such as
+`4.2` and `5.1`.
+
+A missing mix uses the best eligible larger track in the same language. Without
+a larger source, it cannot be created. Downmix and removal entries need no
+separate `RULE_` switch: either can trigger a rewrite. Removal can use the outgoing
+track as a downmix source, but never removes the last audio track. Removed tracks
+are not backed up and cannot be used for future regeneration.
+
+### Languages
+
+`LANGUAGES` controls which languages survive and which receive downmixes.
+The default is `original,eng`.
+
+```yaml
+LANGUAGES: original,eng,fre:keep
+```
+
+| Entry      | Meaning                                                                             |
+| ---------- | ----------------------------------------------------------------------------------- |
+| `eng`      | Keep English and create the requested downmix layouts where sources exist.          |
+| `fre:keep` | Keep French without creating mixes.                                                 |
+| `original` | Use the title's original language reported by Radarr or Sonarr; no TMDB key needed. |
+
+Explicit language entries take precedence over `original`. If the *arrs cannot
+identify the original language, that entry contributes no language. Names
+normalise: `en`, `eng` and `English` are equivalent.
+
+Unlisted languages follow `RULE_LANGUAGES`; untagged tracks always stay. If none
+of the requested downmix languages can fill a layout, Trackstarr can use another
+surviving language, preferring `LANGUAGES` order. A generated fallback is removed
+once a requested language can supply that layout.
+
+### Regeneration
+
+Enable `RULE_REGENERATE` to update existing mixes in MKV files:
+
+- `REGENERATE_SCOPE=generated` rebuilds Trackstarr's own tracks when their codec
+  or bitrate settings change.
+- `REGENERATE_SCOPE=all` also replaces tracks below `REGENERATE_BELOW_PERCENT`
+  of the target bitrate, when a larger surviving source can improve them.
+  The default `80` means below 80% of the target, not 80% below it.
+- `REGENERATE_ABOVE_PERCENT` re-encodes oversized lossy tracks from themselves.
+  `0` disables this; `150` means above 150% of the target bitrate. Lossless
+  tracks are excluded. This option trades quality for space.
+
+## Processing and safety
+
+**Imports and sweeps.** Webhooks queue imported files. `SWEEP_AT` schedules a walk
+of `MEDIA_DIRS` using a five-field cron expression in the configured timezone.
+Unchanged files use cached verdicts; policy or version changes invalidate them.
+Sweeps write actionable results to `/config/pending.tsv`.
+
+**Hard links.** With `SKIP_HARDLINKS=true`, files with multiple hard links are
+deferred. They are rechecked every `HARDLINK_RECHECK` seconds (900 by default).
+Processing resumes once the extra links are removed; stopping seeding alone does
+not remove a hard link. Set the interval to `0` to leave retries to sweeps.
+
+**Holds and pause.** Hold a title for a set time or indefinitely. Held files are
+still planned and reported, but rewrites wait. Holds and the global processing
+pause survive restarts. The UI also supports stopping after the current file,
+stopping all work and skipping an individual file.
+
+**Verified replacement.** Rewrites are staged in `WORK_DIR`. Trackstarr checks
+duration and stream count before replacing the original and defers files that
+change during processing. Staging needs space for the output; a different
+filesystem adds a copy. Track removal is permanent; Trackstarr does not keep a
+backup of the original.
+
+**Connection failures.** If a configured *arr library cannot be listed and the
+policy uses `original`, an applying sweep falls back to report-only to avoid
+removing audio based on incomplete language information.
+
+**Media servers.** Configure Plex or Jellyfin (also used for Emby) to refresh
+rewritten files. If the server uses different paths, set a mapping such as
 `PLEX_PATH_MAP=/data/media=/srv/media`.
 
 ## Web UI
 
-- **Overview.** The running sweep or import with per-file progress and time
-  remaining, the queue behind it, and the controls: sweep now, stop after the
-  current file, pause all processing (survives a restart), and stop
-  everything. Any one file can be skipped, which takes it off the run it is in
-  and kills its rewrite where one is under way.
-- **Library.** Every title as a poster, filtered by verdict and sorted by
-  name, size, last processed and more. Open a title to see its files and
-  their plans, hold it, or select titles to plan or rewrite them now. An
-  admin can set an `.mkv` track's language and its commentary, forced and
-  SDH flags, across every episode carrying the same track. `mkvpropedit`
-  rewrites the header in place and the file is judged again, so tagging an
-  `und` track with the title's language hands the downmix rule the source it
-  was missing.
-- **Events.** Every rewrite, failure, deferral, sweep and settings change,
-  read back from `events.jsonl` with the settings it was judged under.
-- **Settings.** General, Rules, Sweep and Connections edit every setting live,
-  with a Test button per connection.
+- **Overview:** live progress, estimated time remaining, queued work and processing controls.
+- **Library:** search movies and series, filter verdicts, sort titles and inspect
+  per-file plans. Missing downloads and unsupported containers have distinct
+  verdicts. Admins can hold titles or select them for immediate planning or rewriting.
+- **Track editing:** admins can edit MKV track languages and commentary, forced
+  and SDH flags, including matching tracks across episodes. `mkvpropedit` updates
+  headers in place, then Trackstarr reassesses the file.
+- **Events:** rewrite, failure, deferral, sweep and settings history from
+  `events.jsonl`, with the policy used for each decision.
+- **Settings:** edit runtime settings and test connections. Non-empty environment
+  overrides pin the corresponding fields.
+- **Appearance:** light, dark or system theme, colour palettes, poster effects,
+  cover-art visibility and default library filters and ordering, saved per browser.
+- **Account:** change your password. Accounts have admin or viewer roles;
+  administrators manage accounts through the CLI.
 
-Accounts are admin or viewer. First start creates `admin` with a generated
-password printed once in the log, or `ADMIN_PASSWORD` if set. `trackstarr
-user` adds accounts, and `docker exec -it trackstarr trackstarr user passwd
-admin` resets a forgotten password. Anonymous callers get `GET /health` and
-nothing else.
-
-Live updates ride a server-sent stream on `/api/stream`. A reverse proxy that
-buffers responses needs buffering switched off for that path.
+First start creates `admin` using `ADMIN_PASSWORD`, or a generated password logged
+once. To reset it, run `docker exec -it trackstarr trackstarr user passwd admin`.
+The UI and its data API require sign-in; `/health` is public and webhooks use
+separate secrets. Reverse proxies must allow streaming on `/api/stream` without
+response buffering for live updates.
 
 ## Commands
 
 ```sh
-trackstarr serve              # webhook listener plus the scheduled sweep
-trackstarr sweep              # walk the library and report to /config/pending.tsv
-trackstarr sweep --apply      # ... and rewrite what it finds
-trackstarr fix FILE...        # plan and rewrite specific files now
-trackstarr plan FILE...       # explain the decision, print the ffmpeg command
-trackstarr secret NAME        # mint NAME's webhook secret and print it once
-trackstarr user add NAME      # create a web UI account (--role admin|viewer)
-trackstarr user passwd NAME   # reset a password and sign that account out
-trackstarr user rm NAME       # delete an account; the last admin stays
-trackstarr user list          # every account and its role
+trackstarr serve              # web UI, API, webhooks and scheduled sweeps
+trackstarr sweep              # report library changes in /config/pending.tsv
+trackstarr sweep --apply      # apply library changes, unless mode is report
+trackstarr fix FILE...        # plan and rewrite selected files
+trackstarr plan FILE...       # explain changes and print the ffmpeg command
+trackstarr secret NAME        # create a caller's webhook secret
+trackstarr user add NAME      # create an account (--role admin|viewer)
+trackstarr user passwd NAME   # reset a password and invalidate sessions
+trackstarr user rm NAME       # delete an account; preserves the last admin
+trackstarr user list          # list accounts and roles
 ```
 
-`plan` is the one to reach for when a file did something surprising. `plan`
-and `fix` both take `--original LANG` for a file outside an *arr library.
+`plan` and `fix` accept `--original LANG` for files outside an *arr library:
 
 ```sh
-$ trackstarr plan --original eng "Tears of Steel (2012).mkv"
-
-Tears of Steel (2012).mkv
-  original language : eng
-  keeping languages : eng
-  audio layouts     : 2.0 (aac 320k), 5.1 (ac3 640k)
-  - add 2.0 downmix from stream 3 (6ch eng)
-  ffmpeg -i ... -map 0:0 -map 0:3 -map 0:1 -map 0:2 -map 0:3 ...
+trackstarr plan --original eng "Tears of Steel (2012).mkv"
 ```
 
-## Configuration
+`REWRITE_MODE=report` prevents rewrites even with `fix` or `sweep --apply`.
+Title holds also apply to these commands.
 
-Every setting is an environment variable, and all but the service settings
-marked below can also live in `/config/settings.json`, which is the file the
-settings pages write. The environment wins where both name a setting, and a
-key nothing reads is warned about at startup as the typo it usually is.
+## Configuration reference
 
-### Rules
+Runtime settings can be saved in `/config/settings.json` through the UI.
+Non-empty environment variables take precedence. Unknown settings-file keys
+produce startup warnings. The service settings in the last table are configured
+through the environment and require a restart.
 
-| Variable                   | Default          |                                                                                        |
-| -------------------------- | ---------------- | -------------------------------------------------------------------------------------- |
-| `LANGUAGES`                | `original,eng`   | every language named, in downmix source order, each with what happens to it; see above |
-| `RULE_LANGUAGES` and so on | see above        | one per rule: `never`, `alongside` or `always`                                         |
-| `ALLOWED_EXTS`             | `.mkv,.mp4,.m4v` | containers a rewrite may touch                                                         |
-| `COMMENTARY_PATTERN`       | see `config.py`  | regex; likewise `SDH_PATTERN`, `FORCED_PATTERN` and `RELEASE_TAG_PATTERN`              |
+### Rules and audio
 
-### Audio
-
-| Variable                   | Default     |                                                                                                                                                        |
-| -------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `AUDIO_LAYOUTS`            | `2.0,5.1`   | every layout named, in output order, each with what happens to it; see above                                                                           |
-| `REGENERATE_SCOPE`         | `generated` | how far `RULE_REGENERATE` reaches: `generated` rebuilds this tool's own tracks when their settings change, `all` also replaces low-bitrate real tracks |
-| `REGENERATE_BELOW_PERCENT` | `80`        | how far under its layout's rate a track must report before `all` replaces it; 10 to 90                                                                 |
-| `REGENERATE_ABOVE_PERCENT` | `0`         | how far over its layout's rate a track must sit before it is re-encoded from itself, lossless tracks aside; 0 is off, otherwise 110 to 400             |
+| Variable                                                                     | Default                                   | Purpose                                                   |
+| ---------------------------------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------- |
+| `LANGUAGES`                                                                  | `original,eng`                            | Languages to keep and downmix; see above.                 |
+| `AUDIO_LAYOUTS`                                                              | `2.0,5.1`                                 | Layout actions, encoders, bitrates and order.             |
+| `RULE_<NAME>`                                                                | See Rules                                 | `never`, `alongside` or `always`.                         |
+| `ALLOWED_EXTS`                                                               | `.mkv,.mp4,.m4v`                          | Containers eligible for rewriting.                        |
+| `REGENERATE_SCOPE`                                                           | `generated`                               | `generated` or `all`.                                     |
+| `REGENERATE_BELOW_PERCENT`                                                   | `80`                                      | Low-bitrate threshold as a percentage of target; 10–90.   |
+| `REGENERATE_ABOVE_PERCENT`                                                   | `0`                                       | Oversized-track threshold; 0 disables, otherwise 110–400. |
+| `COMMENTARY_PATTERN`, `SDH_PATTERN`, `FORCED_PATTERN`, `RELEASE_TAG_PATTERN` | See [config.py](src/trackstarr/config.py) | Track-title detection regexes.                            |
 
 ### Connections
 
-| Variable                              | Default                  |                                                                          |
-| ------------------------------------- | ------------------------ | ------------------------------------------------------------------------ |
-| `RADARR_URL` / `RADARR_API_KEY`       | (unset)                  | omit to disable; likewise `SONARR_URL` / `SONARR_API_KEY`                |
-| `PLEX_URL` / `PLEX_TOKEN`             | (unset)                  | refresh after rewrites; likewise `JELLYFIN_URL` / `JELLYFIN_API_KEY`     |
-| `PLEX_PATH_MAP` / `JELLYFIN_PATH_MAP` | (unset)                  | `LOCAL=REMOTE` pairs, comma-separated                                    |
-| `RADARR_PUBLIC_URL` and so on         | (the address above)      | where a browser reaches each service, for the Open in buttons on a title |
-| `WEBHOOK_URL`                         | `http://trackstarr:5120` | how the *arrs reach the listener                                         |
-| `SKIP_HARDLINKS`                      | `true`                   | park files the download client still links until it releases them        |
-| `HARDLINK_RECHECK`                    | `900`                    | seconds between re-checks; 0 leaves parked files to the sweep            |
+| Variable                                                                           | Default                  | Purpose                                                                   |
+| ---------------------------------------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------- |
+| `RADARR_URL` / `RADARR_API_KEY`                                                    | Unset                    | Radarr connection; both required to enable.                               |
+| `SONARR_URL` / `SONARR_API_KEY`                                                    | Unset                    | Sonarr connection; both required to enable.                               |
+| `PLEX_URL` / `PLEX_TOKEN`                                                          | Unset                    | Plex refreshes and title links.                                           |
+| `JELLYFIN_URL` / `JELLYFIN_API_KEY`                                                | Unset                    | Jellyfin or Emby refreshes and title links.                               |
+| `PLEX_PATH_MAP` / `JELLYFIN_PATH_MAP`                                              | Unset                    | Comma-separated `LOCAL=REMOTE` path prefixes.                             |
+| `RADARR_PUBLIC_URL`, `SONARR_PUBLIC_URL`, `PLEX_PUBLIC_URL`, `JELLYFIN_PUBLIC_URL` | Service URL              | Browser-accessible addresses for title links.                             |
+| `WEBHOOK_URL`                                                                      | `http://trackstarr:5120` | Address the *arrs use to reach Trackstarr; default follows `LISTEN_PORT`. |
 
-### Service
+### Processing
 
-| Variable                           | Default                             |                                                                                                                            |
-| ---------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `MEDIA_DIRS`                       | `/data/media/movies:/data/media/tv` | where the sweep walks, colon-separated, in the container's paths                                                           |
-| `REWRITE_MODE`                     | `imports`                           | `report`, `imports` or `all`                                                                                               |
-| `SWEEP_AT`                         | (unset)                             | cron schedule in local time (`0 4 * * *`); empty disables                                                                  |
-| `TZ`                               | (unset, so UTC)                     | IANA zone for the schedule, the log and every event stamp                                                                  |
-| `IMDB_RATINGS` *                   | `true`                              | fetch IMDb's public ratings dataset once a day for the score on a title; IMDb licenses it for personal, non-commercial use |
-| `MAX_CONCURRENT_REWRITES`          | `1`                                 | shared across webhooks and sweeps; 1 suits spinning disks. If 3 is no faster, disk is the bottleneck                       |
-| `PROBE_WORKERS`                    | `4`                                 | files a sweep probes at once                                                                                               |
-| `FFMPEG_TIMEOUT` / `PROBE_TIMEOUT` | `7200` / `180`                      | seconds                                                                                                                    |
-| `WORK_DIR` *                       | `/data/trackstarr-work`             | staging; a different filesystem from the library costs a copy per rewrite                                                  |
-| `STATE_DIR` *                      | `/config`                           | settings, cache, history, accounts, secrets and locks                                                                      |
-| `TRACKSTARR_KEY_FILE` *            | `$STATE_DIR/key`                    | seals saved credentials; see below                                                                                         |
-| `LISTEN_ADDR` / `LISTEN_PORT` *    | `0.0.0.0` / `5120`                  | bind address and port                                                                                                      |
-| `WEB_DIR` *                        | `/web` in the image                 | the built web UI; empty serves no pages                                                                                    |
-| `ADMIN_PASSWORD` *                 | (generated)                         | first run only; also takes `_FILE` / `FILE__`                                                                              |
-| `LOG_LEVEL` *                      | `INFO`                              | `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`                                                                          |
+| Variable                           | Default                             | Purpose                                                                                   |
+| ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------- |
+| `MEDIA_DIRS`                       | `/data/media/movies:/data/media/tv` | Colon-separated sweep roots inside the container.                                         |
+| `REWRITE_MODE`                     | `imports`                           | `report`, `imports` or `all`.                                                             |
+| `SWEEP_AT`                         | Unset                               | Local-time cron schedule, e.g. `0 4 * * *`; empty disables.                               |
+| `TZ`                               | Unset                               | IANA timezone; container defaults to UTC.                                                 |
+| `SKIP_HARDLINKS`                   | `true`                              | Defer files with multiple hard links.                                                     |
+| `HARDLINK_RECHECK`                 | `900`                               | Retry interval in seconds; 0 leaves retries to sweeps.                                    |
+| `IMDB_RATINGS`                     | `true`                              | Fetch IMDb ratings daily for title scores; dataset is for personal, non-commercial use.   |
+| `MAX_CONCURRENT_REWRITES`          | `1`                                 | Shared rewrite limit across imports, sweeps and processes using the same state directory. |
+| `PROBE_WORKERS`                    | `4`                                 | Concurrent sweep probes.                                                                  |
+| `FFMPEG_TIMEOUT` / `PROBE_TIMEOUT` | `7200` / `180`                      | Timeouts in seconds.                                                                      |
 
-\* environment only.
+### Service environment
+
+| Variable                      | Default                 | Purpose                                                                                 |
+| ----------------------------- | ----------------------- | --------------------------------------------------------------------------------------- |
+| `WORK_DIR`                    | `/data/trackstarr-work` | Rewrite staging directory.                                                              |
+| `STATE_DIR`                   | `/config`               | Settings, cache, events, accounts, holds, secrets and locks.                            |
+| `TRACKSTARR_KEY_FILE`         | `$STATE_DIR/key`        | Encryption key for saved credentials.                                                   |
+| `LISTEN_ADDR` / `LISTEN_PORT` | `0.0.0.0` / `5120`      | Listener address and port.                                                              |
+| `WEB_DIR`                     | `/web` in the image     | Static UI directory; empty disables pages.                                              |
+| `ADMIN_PASSWORD`              | Generated               | Initial admin password, ignored once the user store exists. Supports secret-file forms. |
+| `LOG_LEVEL`                   | `INFO`                  | `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`.                                      |
 
 ### Credentials
 
-Radarr, Sonarr, Plex and Jellyfin each need a key Trackstarr replays on every
-call. Three ways to supply one, using Radarr's as the example:
+Supply connection credentials in one of three ways:
 
-| How                                             | Where the value lands           | In `docker inspect` | Editable in the UI |
-| ----------------------------------------------- | ------------------------------- | ------------------- | ------------------ |
-| Connections page                                | `settings.json`, sealed, `0600` | no                  | yes                |
-| `RADARR_API_KEY`                                | the environment                 | yes                 | no, pinned         |
-| `RADARR_API_KEY_FILE` or `FILE__RADARR_API_KEY` | the file you mount              | no                  | no, pinned         |
+| Method                                          | Storage                                       | Editable in UI |
+| ----------------------------------------------- | --------------------------------------------- | -------------- |
+| Connections page                                | Encrypted in `settings.json` with mode `0600` | Yes            |
+| `RADARR_API_KEY` (or equivalent)                | Environment; visible in `docker inspect`      | No             |
+| `RADARR_API_KEY_FILE` or `FILE__RADARR_API_KEY` | Mounted secret file                           | No             |
 
-Naming the same credential both ways is refused at startup rather than
-resolved by precedence, so a stale key cannot survive a rotation.
+Using multiple environment forms for the same credential is a startup error.
+Environment credentials override saved values.
 
-Keys saved through the page are sealed with a random key in `/config/key`,
-minted by the first save. That means anyone holding the whole `/config`
-directory holds both halves. To close that, mount a key of your own from
-elsewhere and back it up:
+By default, Trackstarr creates `/config/key` when first saving a credential.
+Anyone with the entire config directory therefore has both the encrypted values
+and their key. To keep the key separately, generate one and mount it at the path
+set by `TRACKSTARR_KEY_FILE`:
 
 ```sh
-openssl rand -hex 32 > trackstarr.key   # 0600
+(umask 077; openssl rand -hex 32 > trackstarr.key)
 ```
 
-```yaml
-environment:
-  TRACKSTARR_KEY_FILE: /run/secrets/trackstarr_key
-secrets:
-  - trackstarr_key
-```
+Ensure the container user can read the mounted key, and back it up. An explicitly
+configured key file is never generated automatically. If it is missing or invalid,
+the service starts with affected connections disabled. Restore the key, or provide
+a valid replacement and re-enter the connection credentials.
 
-A named key file is only ever read, never minted. Losing it does not stop
-Trackstarr starting: each affected service reads as unset and says so in the
-log, and re-entering the key on the Connections page seals it again.
-
-Webhook secrets are kept only as SHA-256 digests in `/config/webhook-secrets`,
-verified and re-provisioned at startup, so a wiped `/config` heals itself and
-a copied one leaks nothing. Delete a digest to lock that caller out. Passwords
-are scrypt hashes in `/config/users.json`.
+Webhook secrets are stored as SHA-256 digests in `/config/webhook-secrets` and
+*arr webhooks are verified and provisioned at startup. Account passwords are
+stored as scrypt hashes in `/config/users.json`.
 
 ## Development
 
+Use Python 3.14+, uv, Node.js/npm (CI uses Node 26), ffmpeg/ffprobe 8.1+ and
+mkvtoolnix.
+
 ```sh
-uv sync                 # the dev group, at the versions CI uses
-cp .env.example .env    # WORK_DIR and STATE_DIR under dev/, loaded at startup
-uv run dev.py           # API and the SvelteKit UI on one port with hot reload
-uv run pytest           # needs ffmpeg 8.1+ and mkvtoolnix on PATH
-uv run pytest --cov     # what CI measures; fails under the floor in pyproject
-uv run ruff check && uv run ruff format
+uv sync --locked
+cp .env.example .env          # local state and staging under dev/
+uv run dev.py                # starts API and UI with hot reload
+uv run pytest
+uv run pytest --cov          # enforces 100% coverage
+uv run ruff check
+uv run ruff format --check
 uv run mypy
-cd web && npm run posters:demo && npm run dev:demo   # the demo, no service needed
 ```
 
-The rules in `planner.py` are pure functions of ffprobe output and a `Policy`
-snapshot, so `tests/test_planner.py` covers them with hand-built stream dicts
-and no media at all. `command.py` turns a plan into an ffmpeg argument list and
-`executor.py` runs it, which is what lets `plan` print the exact command
-without touching a file. `tests/test_integration.py` generates real media
-with ffmpeg. The tests that edit tags in place skip where `mkvpropedit` is
-missing; CI and the image both have it.
+`dev.py` installs missing web dependencies on first run. Pure planner tests use
+stream dictionaries; integration tests generate real media with ffmpeg. Tag-editing
+tests skip if `mkvpropedit` is unavailable. `cryptography` is the only Python runtime
+dependency. After dependency changes, update and commit `uv.lock`.
 
-`cryptography` is the only runtime dependency, and the bar for a second is
-high. `uv.lock` is committed; after changing dependencies, run `uv lock` and
-commit the result.
-
-[web/README.md](web/README.md) covers the UI's own scripts and conventions, and
-[tools/uireview](tools/uireview/README.md) the scripts for reviewing it at phone
-metrics.
+See [web development](web/README.md), [browser probes](web/probes/README.md) and
+[UI review tools](tools/uireview/README.md) for frontend commands and conventions.
 
 ## Licence
 
-MIT. Trackstarr is an independent project, not affiliated with or endorsed by
-the Radarr, Sonarr, Plex, Jellyfin or Emby teams.
+MIT. Trackstarr is independent of the Radarr, Sonarr, Plex, Jellyfin and Emby teams.

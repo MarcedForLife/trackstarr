@@ -150,11 +150,28 @@
 			</span>
 		{/snippet}
 
-		<!-- The bar for a rewrite, a probe being over inside a second, and Skip
-		     outside the summary rather than inside it: a control within a control
-		     is neither valid nor reachable by keyboard. -->
+		<!-- Skip on the summary's line, after the time it stands beside, so a
+		     queued row stays one line. -->
+		{#snippet after()}
+			{#if skippable}
+				<!-- The ::after is the tap target around a small pill. -->
+				<button
+					onclick={onskip}
+					disabled={busy}
+					aria-label={`Skip ${titled(row.path)}`}
+					title={live
+						? 'Skip. The rewrite under way is killed, so the file is untouched.'
+						: 'Skip. This run leaves the file alone. The next sweep still reaches it.'}
+					class="relative flex-none rounded border border-line-strong px-1.5 py-0.5 text-[10.5px] leading-none font-medium text-faint transition-colors after:absolute after:-inset-3 after:content-[''] hover:border-danger/45 hover:text-danger disabled:opacity-50"
+				>
+					Skip
+				</button>
+			{/if}
+		{/snippet}
+
+		<!-- The bar for a rewrite, or a probe being over inside a second. -->
 		{#snippet aside()}
-			{#if bar || said || skippable}
+			{#if bar || said}
 				<div class="mt-1.5 ml-3.5 flex items-center gap-2.5">
 					{#if bar && row.live}
 						<Bar
@@ -172,20 +189,6 @@
 						>
 							{said}
 						</span>
-					{/if}
-					{#if skippable}
-						<!-- The ::after is the tap target around a small pill. -->
-						<button
-							onclick={onskip}
-							disabled={busy}
-							aria-label={`Skip ${titled(row.path)}`}
-							title={live
-								? 'Skip. The rewrite under way is killed, so the file is untouched.'
-								: 'Skip. This run leaves the file alone. The next sweep still reaches it.'}
-							class="relative ml-auto flex-none rounded border border-line-strong px-1.5 py-0.5 text-[10.5px] leading-none font-medium text-faint transition-colors after:absolute after:-inset-3 after:content-[''] hover:border-danger/45 hover:text-danger disabled:opacity-50"
-						>
-							Skip
-						</button>
 					{/if}
 				</div>
 			{/if}

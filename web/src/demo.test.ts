@@ -10,7 +10,15 @@ import { answer } from '$lib/demo/routes';
 import { stopTicking, tick } from '$lib/demo/runs';
 import { reset, world } from '$lib/demo/world';
 import { chips, detail, details, headline, verdicts as counted, type EventPage } from '$lib/events';
-import { asVerdict, FILTERS, pip, type Shelf, type Summary, type TitleDetail } from '$lib/library';
+import {
+	asVerdict,
+	FILTERS,
+	pip,
+	type Shelf,
+	type Summary,
+	type TitleDetail,
+	type TitleLink
+} from '$lib/library';
 import { FLOW } from '$lib/order.svelte';
 import type { Activity, Run } from '$lib/runs';
 import type { SettingsSnapshot } from '$lib/settings';
@@ -299,6 +307,24 @@ describe('the sheet', () => {
 		expect(tears.files[0].modified).toBeDefined();
 		const page = await get<EventPage>('/api/events?limit=5');
 		expect(page.events.some((entry) => entry.event === 'recheck')).toBe(true);
+	});
+
+	test('offers the *arr and IMDb pages with the title, and again among its links', async () => {
+		const sintel = await get<TitleDetail>('/api/library/title?id=arr:radarr:2');
+		const { links } = await get<{ links: TitleLink[] }>('/api/library/links?id=arr:radarr:2');
+		const known = sintel.servers.filter((server) => server.url);
+		expect(known.map((server) => server.server)).toEqual(['radarr', 'imdb']);
+		expect(links.map((link) => link.server)).toEqual(['plex', 'radarr', 'imdb']);
+		expect(links.slice(1)).toEqual(known);
+		expect(links[1].url).toBe('http://localhost:7878/movie/sintel');
+		expect(links[2].url).toBe('https://www.imdb.com/title/tt1727587/');
+		// A viewer's click on a server that does not exist stays on their machine.
+		expect(links[0].url.startsWith('http://localhost:')).toBe(true);
+
+		const holmes = await get<{ links: TitleLink[] }>('/api/library/links?id=arr:sonarr:40');
+		expect(holmes.links.find((link) => link.server === 'sonarr')?.url).toBe(
+			'http://localhost:8989/series/sherlock-holmes'
+		);
 	});
 });
 

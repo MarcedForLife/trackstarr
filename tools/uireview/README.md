@@ -1,121 +1,98 @@
 # UI review harness
 
-Six scripts for looking at the web UI at phone metrics. Review tools, not a
-suite; nothing runs in CI. Only `gestures.mjs` has a right answer to check
-against.
+Six tools for reviewing a running Trackstarr UI: screenshots, animation timings,
+frame contact sheets and mouse/touch gesture checks. These run manually, outside
+CI. `gestures.mjs` reports pass/fail results; the recording tools need visual review.
 
-Playwright is pinned here rather than in `web/package.json` because the app does
-not depend on it and the version is chosen for the CDP screencast.
+For fixture-backed Chromium and Firefox checks, use the
+[browser probes](../../web/probes/README.md).
+
+## Setup
+
+Run commands from the repository root:
 
 ```sh
-npm install --prefix tools/uireview
-npx --prefix tools/uireview playwright install chromium   # first run only
+npm ci --prefix tools/uireview
+npx --prefix tools/uireview playwright install chromium
+npm run build --prefix web
+node tools/uireview/serve-build.mjs
 ```
 
-`filmstrip.mjs` and `device.mjs` also need `ffmpeg` and `ffprobe` on PATH.
+The server exposes `web/build` at `http://localhost:5190` and proxies `/api` to
+port 5120. Start the Python listener separately. With `uv run dev.py`, the API
+is normally on 5121, so pass `TRACKSTARR_API_PORT=5121` to `serve-build.mjs`.
+`filmstrip.mjs` and `device.mjs` also require `ffmpeg` and `ffprobe` on `PATH`.
+Playwright is pinned here independently of the app.
 
-## Credentials
-
-The scripts log in when a page asks. Either export the account:
+In the shell running the review scripts, set the URL and credentials:
 
 ```sh
-export UIREVIEW_USER=screenshot UIREVIEW_PASS=...
+export BASE=http://localhost:5190
+export UIREVIEW_USER=screenshot
+export UIREVIEW_PASS='your-password'
 ```
 
-or write `dev/ui-review.env` (gitignored, and the default) as `KEY=value` a line
-at a time. Any key holding `USER`, `EMAIL` or `NAME` is read as the username and
-any key holding `PASS` as the password. `UIREVIEW_ENV` points somewhere else.
+Alternatively, put credentials in the gitignored `dev/ui-review.env` as
+`KEY=value` lines. Keys containing `USER`, `EMAIL` or `NAME` supply the username;
+keys containing `PASS` supply the password. `UIREVIEW_ENV` selects another file.
+Scripts sign in automatically when shown a login page. Use an account that has
+completed its first password change; gesture checks need an admin account.
 
-## The scripts
+## Tools
 
-Run them from the repo root.
-
-### serve-build.mjs
-
-Serves `web/build` as the image does, with `/api` proxied to the listener, so a
-measurement runs against the real bundle. Build first with
-`npm run build --prefix web`.
-
-```sh
-node tools/uireview/serve-build.mjs          # :5190, /api to :5120
-```
-
-### shot.mjs
-
-Full-page screenshots at phone metrics. Settles layout, wrapping, tap targets,
-theme and overflow. Says nothing about smoothness.
+| Script              | Purpose                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `serve-build.mjs`   | Serve the production bundle with an API proxy.                                                   |
+| `shot.mjs`          | Full-page screenshots for layout, wrapping, themes and overflow.                                 |
+| `expand-frames.mjs` | Measure event-row animation frame gaps, height and position. Requires at least three event rows. |
+| `filmstrip.mjs`     | Click a selector and tile screencast frames into a contact sheet.                                |
+| `gestures.mjs`      | Check library poster interactions with desktop mouse and emulated phone touch.                   |
+| `device.mjs`        | Record an interaction in Chrome on a real Android phone via ADB/CDP.                             |
 
 ```sh
-node tools/uireview/shot.mjs /activity /sweep
-```
-
-### expand-frames.mjs
-
-Frame gaps for the expanding event row, plus the panel's height and position
-per frame, which catches an animation that is not animating. Wants the built
-app on :5190.
-
-```sh
+node tools/uireview/shot.mjs /events /settings/sweep
 node tools/uireview/expand-frames.mjs baseline
 CURVE="240ms cubic-bezier(0.22,1,0.36,1)" node tools/uireview/expand-frames.mjs slower
-THROTTLE=20 node tools/uireview/expand-frames.mjs composited
-```
-
-`CURVE` retimes without a rebuild. `THROTTLE=20` proves whether something is
-composited: the main thread drops frames and a compositor animation carries on.
-
-### filmstrip.mjs
-
-Clicks a selector and tiles the screencast frames into one contact sheet.
-`page.screenshot()` finishes a running animation first, so it only shows the
-end state. Dropping frames and not animating read the same in a number and have
-opposite fixes; the sheet tells them apart.
-
-```sh
+THROTTLE=20 node tools/uireview/expand-frames.mjs throttled
 node tools/uireview/filmstrip.mjs /events 'button[aria-controls^="event-"]'
-```
-
-### gestures.mjs
-
-Runs one scenario over the library grid with a mouse at desktop metrics, then
-with touch events at phone metrics, and checks a poster answers the same way.
-Says ok or FAIL per step. Wants an admin account, since a viewer cannot pick.
-
-```sh
 node tools/uireview/gestures.mjs
 ```
 
-### device.mjs
+Screenshots show layout; screencasts show motion. Compare frame timings with the
+contact sheet to distinguish a dropped frame from an element that never animates.
+CPU throttling helps expose main-thread work, but desktop emulation does not
+establish how smooth an animation feels on a phone.
 
-The same recording on a real phone, which is what settles smoothness. Desktop
-Chromium at phone metrics models the main thread and nothing else.
+### Real phone recording
+
+Enable wireless debugging and connect the Android device:
 
 ```sh
 adb connect <phone-ip>:<port>
 adb forward tcp:9222 localabstract:chrome_devtools_remote
-BASE=http://<this-box-on-the-lan>:5190 SLOW=2000 \
+BASE=http://<computer-lan-ip>:5190 SLOW=2000 \
   node tools/uireview/device.mjs /events 'button[aria-controls^="event-"]'
 ```
 
-`BASE` has to be this box's LAN address, since the phone cannot reach its
-localhost. The screen has to be on with Chrome in the foreground, or the
-compositor produces no frames. The screencast delivers about 22 frames a second,
-so a 180ms animation gets two or three samples; `SLOW=2000` stretches it until
-the sheet has enough to read.
+The phone must be able to reach `BASE`. Keep its screen on with Chrome in the
+foreground. `SLOW=2000` stretches supported reveal animations for more samples;
+use normal speed to judge how they feel.
 
-## Environment
+## Environment reference
 
-| Variable | Default | Used by |
-| --- | --- | --- |
-| `BASE` | `http://localhost:5180`, `:5190` for `expand-frames` and `gestures`, required for `device` | all but `serve-build` |
-| `OUT` | `dev/shots` | `shot`, `filmstrip`, `device` |
-| `UIREVIEW_USER` / `UIREVIEW_PASS` | none | all but `serve-build` |
-| `UIREVIEW_ENV` | `dev/ui-review.env` | all but `serve-build` |
-| `WIDTH` / `HEIGHT` | `412` / `915` | all but `serve-build` |
-| `PORT` / `BUILD` / `TRACKSTARR_API_PORT` | `5190` / `web/build` / `5120` | `serve-build` |
-| `THROTTLE` | `4` for `expand-frames`, off for `filmstrip` | `expand-frames`, `filmstrip` |
-| `NAME` / `WINDOW` / `TILES` / `COLS` / `DEPTH` | script name / `600` or `400` / `16` / `4` / `300` | `filmstrip`, `device` |
-| `CDP` | `http://localhost:9222` | `device` |
+| Variable                                 | Default                                                                                      | Used by                              |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `BASE`                                   | `http://localhost:5180`; port 5190 for `expand-frames` and `gestures`; required for `device` | All clients                          |
+| `OUT`                                    | `dev/shots`                                                                                  | `shot`, `filmstrip`, `device`        |
+| `UIREVIEW_USER` / `UIREVIEW_PASS`        | Unset                                                                                        | All clients                          |
+| `UIREVIEW_ENV`                           | `dev/ui-review.env`                                                                          | All clients                          |
+| `WIDTH` / `HEIGHT`                       | `412` / `915`                                                                                | Desktop phone emulation              |
+| `PORT` / `BUILD` / `TRACKSTARR_API_PORT` | `5190` / `web/build` / `5120`                                                                | `serve-build`                        |
+| `THROTTLE`                               | `4` for `expand-frames`, off for `filmstrip`                                                 | `expand-frames`, `filmstrip`         |
+| `RUNS` / `CURVE`                         | `5` / unchanged                                                                              | `expand-frames`                      |
+| `NAME`                                   | `filmstrip` or `device`                                                                      | Contact sheet filename               |
+| `WINDOW`                                 | `600` ms for `filmstrip`, `400` ms for `device`                                              | Recording duration after click       |
+| `TILES` / `COLS` / `DEPTH`               | `16` / `4` / `300`                                                                           | Contact sheet layout and crop height |
+| `CDP` / `SLOW`                           | `http://localhost:9222` / unchanged                                                          | `device`                             |
 
-Throwaway probes belong in the gitignored `dev/uireview/`, not here. These six
-are the ones worth keeping.
+Keep throwaway experiments in the gitignored `dev/uireview/` directory.

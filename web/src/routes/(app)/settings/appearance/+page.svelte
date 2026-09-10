@@ -130,7 +130,7 @@
 		</SettingRow>
 	</Section>
 
-	<Section heading="Posters" note={posterNote} spaced>
+	<Section heading="Posters" note={posterNote} spaced open>
 		<!-- Above the three rows that govern it, belonging to none alone. -->
 		<PosterPreview />
 

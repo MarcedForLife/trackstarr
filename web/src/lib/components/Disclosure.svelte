@@ -30,6 +30,9 @@
 		aside,
 		// Something left of the summary; the panel still takes the full width.
 		beside,
+		// A control right of the summary, on its line but outside the button: a
+		// control within a control is neither valid nor reachable by keyboard.
+		after,
 		panel
 	}: {
 		id: string;
@@ -43,6 +46,7 @@
 		summary: Snippet<[Snippet]>;
 		aside?: Snippet;
 		beside?: Snippet;
+		after?: Snippet;
 		panel?: Snippet;
 	} = $props();
 
@@ -67,7 +71,7 @@
 	</span>
 {/snippet}
 
-{#snippet row()}
+{#snippet toggle()}
 	<!-- The whole summary is the target. -->
 	<button
 		onclick={ontoggle}
@@ -78,6 +82,17 @@
 	>
 		{@render summary(chevron)}
 	</button>
+{/snippet}
+
+{#snippet row()}
+	{#if after}
+		<div class="flex items-center gap-3">
+			<div class="min-w-0 flex-1">{@render toggle()}</div>
+			{@render after()}
+		</div>
+	{:else}
+		{@render toggle()}
+	{/if}
 	{@render aside?.()}
 {/snippet}
 

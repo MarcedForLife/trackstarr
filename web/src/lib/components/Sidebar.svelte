@@ -83,7 +83,7 @@
 <aside
 	id="app-sidebar"
 	aria-label="Main"
-	class={`fixed inset-y-0 right-0 z-50 flex w-[17rem] flex-none flex-col overflow-x-hidden overflow-y-auto overscroll-contain border-l border-line bg-sunken p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] transition-[transform,visibility] duration-300 ease-out lg:visible lg:sticky lg:top-0 lg:right-auto lg:left-0 lg:z-auto lg:h-dvh lg:translate-x-0 lg:border-r lg:border-l-0 lg:pt-3 lg:transition-[width] ${
+	class={`fixed inset-y-0 right-0 z-50 flex w-[17rem] flex-none flex-col overflow-x-hidden overflow-y-auto overscroll-contain border-l border-line bg-sunken p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] transition-[transform,visibility] duration-300 ease-out lg:visible lg:static lg:z-auto lg:h-dvh lg:translate-x-0 lg:border-r lg:border-l-0 lg:pt-3 lg:transition-[width] ${
 		open ? 'visible translate-x-0' : 'invisible translate-x-full'
 	} ${collapsed ? 'lg:w-16' : 'lg:w-60'}`}
 >

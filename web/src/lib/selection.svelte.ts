@@ -10,6 +10,7 @@
 import { SvelteSet } from 'svelte/reactivity';
 import type { Card } from '$lib/library';
 import { overlay, type Overlay } from '$lib/overlay';
+import { pageTop, scrollPageTo } from '$lib/scroller';
 import type { Recheck } from '$lib/recheck.svelte';
 
 type Options = {
@@ -110,7 +111,7 @@ export class Selection {
 	leave() {
 		// Spend the entry, or the next back press would raise the bar again over
 		// a cleared selection.
-		this.#putBack = window.scrollY;
+		this.#putBack = pageTop();
 		if (!this.#picker.lower()) this.#putBack = null;
 	}
 
@@ -142,7 +143,7 @@ export class Selection {
 		this.#putBack = null;
 		// After SvelteKit's popstate listener restores the entry's scroll, which
 		// this would otherwise lose to; still before the paint.
-		requestAnimationFrame(() => window.scrollTo(0, at));
+		requestAnimationFrame(() => scrollPageTo(at));
 	}
 
 	// Let go of what the bar is drawing. Split from shutting it because the bar

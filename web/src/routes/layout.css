@@ -499,9 +499,19 @@
 }
 
 html {
-	/* The canvas past the body, seen on overscroll. app.html paints it inline
-	   until the stylesheet arrives. */
+	/* The canvas past the body. app.html paints it inline until the stylesheet
+	   arrives. */
 	background: var(--surface);
+}
+
+/* From lg up main scrolls and the document does not, yet Safari still bounces
+   a page that fits when a wheel reaches it: over the notice, or the rail once
+   it has nothing left to scroll. Not below lg, where the page is the document
+   and its bounce is wanted. */
+@media (min-width: 1024px) {
+	html {
+		overscroll-behavior: none;
+	}
 	/* Stop iOS inflating body text when a phone is turned sideways. */
 	-webkit-text-size-adjust: 100%;
 	text-size-adjust: 100%;
