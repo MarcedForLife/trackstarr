@@ -74,7 +74,7 @@
 
 	<button
 		disabled={busy}
-		class="rounded-lg bg-accent px-3 py-2.5 font-medium text-on-accent disabled:opacity-50"
+		class="rounded-lg bg-accent px-3 py-2.5 font-medium text-surface disabled:opacity-(--disabled)"
 	>
 		Change password
 	</button>

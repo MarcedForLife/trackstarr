@@ -81,7 +81,7 @@
 
 	.bar {
 		height: 100%;
-		background: var(--accent);
+		background: var(--accent-fill);
 		/* scaleX, so the crawl is a compositor job. Written here because
 		   Tailwind v4 composes `transform` from its own variables. */
 		transform: scaleX(var(--p));

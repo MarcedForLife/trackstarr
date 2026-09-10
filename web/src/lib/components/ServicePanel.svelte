@@ -486,7 +486,7 @@
 								<button
 									onclick={() => release(hold)}
 									disabled={!!busy}
-									class="relative flex-none rounded border border-line-strong px-1.5 py-0.5 text-[10.5px] leading-none font-medium text-faint transition-colors after:absolute after:-inset-3 after:content-[''] hover:text-fg disabled:opacity-50"
+									class="relative flex-none rounded border border-line-strong px-1.5 py-0.5 text-[10.5px] leading-none font-medium text-faint transition-colors after:absolute after:-inset-3 after:content-[''] hover:text-fg disabled:opacity-(--disabled)"
 								>
 									{busy === `lift-${hold.path}` ? 'Lifting…' : 'Lift'}
 								</button>

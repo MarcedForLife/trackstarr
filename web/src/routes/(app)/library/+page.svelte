@@ -436,7 +436,7 @@
 					title={selection.picking ? 'Stop selecting titles' : 'Select titles to plan or process'}
 					class={`flex ${control} ${radius} flex-none items-center gap-1.5 border px-2.5 text-[13px] font-medium transition-colors sm:px-3 ${
 						selection.picking
-							? 'border-accent/50 bg-accent/12 text-fg'
+							? 'border-accent-fill/50 bg-accent-fill/12 text-fg'
 							: 'border-line-strong bg-field text-dim'
 					}`}
 				>

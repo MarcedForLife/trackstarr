@@ -83,7 +83,7 @@
 		/* A hard stop: the fill's edge lands under the thumb. */
 		background: linear-gradient(
 			to right,
-			var(--accent) 0 calc(var(--along) * 100%),
+			var(--accent-fill) 0 calc(var(--along) * 100%),
 			var(--toggle-off) calc(var(--along) * 100%) 100%
 		);
 	}
@@ -136,7 +136,7 @@
 		/* WebKit hangs the thumb from the track's top; this centres it. */
 		margin-top: -7px;
 		border-radius: 9999px;
-		border: 2px solid var(--accent);
+		border: 2px solid var(--accent-fill);
 		background: var(--knob);
 		box-shadow:
 			0 1px 3px rgb(0 0 0 / 0.3),
@@ -153,7 +153,7 @@
 		height: 20px;
 		width: 20px;
 		border-radius: 9999px;
-		border: 2px solid var(--accent);
+		border: 2px solid var(--accent-fill);
 		background: var(--knob);
 		box-shadow:
 			0 1px 3px rgb(0 0 0 / 0.3),

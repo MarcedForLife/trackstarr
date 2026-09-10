@@ -198,7 +198,8 @@ rewritten files. If the server uses different paths, set a mapping such as
   `events.jsonl`, with the policy used for each decision.
 - **Settings:** edit runtime settings and test connections. Non-empty environment
   overrides pin the corresponding fields.
-- **Appearance:** light, dark or system theme, colour palettes, poster effects,
+- **Appearance:** light, dark or system theme, six colour palettes or one from a
+  hue of your own, poster effects,
   cover-art visibility and default library filters and ordering, saved per browser.
 - **Account:** change your password. Accounts have admin or viewer roles;
   administrators manage accounts through the CLI.

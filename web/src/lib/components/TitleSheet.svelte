@@ -600,7 +600,7 @@
 												<button
 													onclick={() => keep(span.seconds)}
 													disabled={!!holdBusy}
-													class="flex h-10 w-full items-center rounded-lg px-2.5 text-[13px] font-medium transition-colors hover:bg-sunken disabled:opacity-50"
+													class="flex h-10 w-full items-center rounded-lg px-2.5 text-[13px] font-medium transition-colors hover:bg-sunken disabled:opacity-(--disabled)"
 												>
 													{holdBusy === String(span.seconds) ? 'Holding…' : span.label}
 												</button>

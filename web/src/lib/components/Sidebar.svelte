@@ -98,7 +98,7 @@
 		>
 			<Mark
 				size={22}
-				class="flex-none text-accent"
+				class="flex-none text-accent-fill"
 				motion={running.current ? 'travel' : 'none'}
 				press
 			/>

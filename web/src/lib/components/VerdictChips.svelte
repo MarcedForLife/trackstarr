@@ -60,7 +60,7 @@
 		class={`${chip} ${
 			chosen.length
 				? 'border-line font-medium text-dim'
-				: 'border-line-strong bg-raised font-semibold text-fg'
+				: 'border-line-control bg-raised font-semibold text-fg'
 		}`}
 	>
 		<!-- All carries no dot, or it would read as one more verdict. -->

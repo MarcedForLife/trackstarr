@@ -201,7 +201,7 @@
 									type="button"
 									onclick={onall}
 									disabled={!selectable}
-									class="rounded-md px-2 py-1 text-[12px] font-medium text-dim transition-colors hover:text-fg disabled:opacity-50"
+									class="rounded-md px-2 py-1 text-[12px] font-medium text-dim transition-colors hover:text-fg disabled:opacity-(--disabled)"
 								>
 									Select all
 								</button>

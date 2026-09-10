@@ -125,7 +125,7 @@
 		<button
 			onclick={addLang}
 			disabled={locked}
-			class="-my-1 flex h-11 w-[6.5rem] flex-none items-center px-2 text-[13px] font-medium text-faint hover:text-fg disabled:opacity-50 sm:my-0 sm:h-8 sm:w-24"
+			class="-my-1 flex h-11 w-[6.5rem] flex-none items-center px-2 text-[13px] font-medium text-faint hover:text-fg disabled:opacity-(--disabled) sm:my-0 sm:h-8 sm:w-24"
 		>
 			+ Add
 		</button>

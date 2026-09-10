@@ -105,7 +105,7 @@
 		aria-label={label}
 		tabindex="-1"
 		inert={!open}
-		class={`relative flex max-h-[88dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-line bg-surface shadow-2xl outline-none sm:mb-4 sm:rounded-2xl ${
+		class={`relative flex max-h-[88dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl border border-line bg-raised shadow-2xl outline-none sm:mb-4 sm:rounded-2xl ${
 			dragging ? '' : 'transition-transform duration-400 ease-[cubic-bezier(0.33,1,0.68,1)]'
 		} ${open ? 'translate-y-0' : 'tucked translate-y-full'}`}
 	>

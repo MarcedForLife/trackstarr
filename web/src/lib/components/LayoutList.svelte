@@ -114,7 +114,7 @@
 
 	// One rate chip. They share the strip evenly, so a row reads as a scale from
 	// its lowest rate to its highest.
-	const rateChip = `${control} ${radius} min-w-0 flex-1 border px-1 font-mono text-base transition-colors disabled:opacity-50 sm:text-xs`;
+	const rateChip = `${control} ${radius} min-w-0 flex-1 border px-1 font-mono text-base transition-colors disabled:opacity-(--disabled) sm:text-xs`;
 </script>
 
 <div
@@ -175,7 +175,7 @@
 								aria-label={`${rate} for ${row.name}`}
 								class={`${rateChip} ${
 									held
-										? 'border-accent bg-accent/12 text-fg'
+										? 'border-accent-fill bg-accent-fill/12 text-fg'
 										: 'border-line text-faint hover:text-fg'
 								}`}
 							>
@@ -209,7 +209,7 @@
 		<button
 			onclick={addLayout}
 			disabled={locked}
-			class="-my-1 flex h-11 items-center px-2 text-[13px] font-medium text-faint hover:text-fg disabled:opacity-50 sm:my-0 sm:h-8"
+			class="-my-1 flex h-11 items-center px-2 text-[13px] font-medium text-faint hover:text-fg disabled:opacity-(--disabled) sm:my-0 sm:h-8"
 		>
 			+ Add layout
 		</button>

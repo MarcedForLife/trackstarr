@@ -26,21 +26,26 @@
 				// Each palette's surfaces, mirroring layout.css, so the document never
 				// paints white while the stylesheet loads.
 				var SURFACE = {
-					brass: ['#121317', '#fbfbfa'],
-					graphite: ['#111111', '#fafafa'],
-					fjord: ['#161a21', '#f5f7fa'],
-					dusk: ['#15141c', '#faf9fc'],
-					moss: ['#121613', '#f8faf6'],
-					clay: ['#171311', '#fbf8f5']
+					brass: ['#121317', '#f4f2ec'],
+					graphite: ['#111111', '#f2f2f2'],
+					fjord: ['#161a21', '#eef2f7'],
+					dusk: ['#15141c', '#f1eff7'],
+					moss: ['#121613', '#eff3ec'],
+					clay: ['#171311', '#f5f0ea']
 				};
 				var theme = null;
 				var palette = null;
+				var custom = [];
 				try {
 					theme = localStorage.getItem('theme');
 					palette = localStorage.getItem('palette');
+					// The Custom palette's pair, written by $lib/theme.svelte.ts, which
+					// derives it; this script cannot.
+					custom = (localStorage.getItem('hue-surface') || '').split(',');
 				} catch (err) {
 					/* storage blocked: fall through to the defaults */
 				}
+				if (custom.length === 2) SURFACE.custom = custom;
 				if (!SURFACE[palette]) palette = 'brass';
 				var dark =
 					theme === 'dark' ||

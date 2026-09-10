@@ -41,7 +41,7 @@
 >
 	<div>
 		<div class="flex items-center gap-2.5">
-			<Mark size={20} class="text-accent" motion="drop" />
+			<Mark size={20} class="text-accent-fill" motion="drop" />
 			<h1 class="text-2xl font-semibold tracking-tight">Trackstarr</h1>
 		</div>
 		<p class="mt-1 text-sm text-dim">Sign in</p>
@@ -77,7 +77,7 @@
 
 		<button
 			disabled={busy}
-			class="rounded-lg bg-accent px-3 py-2.5 font-medium text-on-accent disabled:opacity-50"
+			class="rounded-lg bg-accent px-3 py-2.5 font-medium text-surface disabled:opacity-(--disabled)"
 		>
 			Sign in
 		</button>

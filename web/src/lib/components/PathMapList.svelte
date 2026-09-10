@@ -124,7 +124,7 @@
 		<button
 			onclick={addPair}
 			disabled={locked}
-			class="-my-1 flex h-11 items-center px-2 text-[13px] font-medium text-faint hover:text-fg disabled:opacity-50 sm:my-0 sm:ml-auto sm:h-8 sm:pr-0"
+			class="-my-1 flex h-11 items-center px-2 text-[13px] font-medium text-faint hover:text-fg disabled:opacity-(--disabled) sm:my-0 sm:ml-auto sm:h-8 sm:pr-0"
 		>
 			+ Add a pair
 		</button>

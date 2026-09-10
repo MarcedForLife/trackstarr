@@ -205,7 +205,7 @@
 	// The box grows to the pattern, bounded above. `rows` is the floor for a
 	// browser without field-sizing.
 	const area =
-		'w-full resize-y rounded-lg border border-line-strong bg-field px-2.5 py-2 font-mono text-base leading-snug field-sizing-content min-h-[calc(2lh+1rem)] max-h-[14lh] disabled:opacity-50 sm:text-xs';
+		'w-full resize-y rounded-lg border border-line-strong bg-field px-2.5 py-2 font-mono text-base leading-snug field-sizing-content min-h-[calc(2lh+1rem)] max-h-[14lh] disabled:opacity-(--disabled) sm:text-xs';
 
 	// The line under a bitrate box, about the entry rather than the setting.
 	const id = $props.id();
@@ -486,9 +486,9 @@
 								aria-pressed={on}
 								disabled={envLocked('ALLOWED_EXTS')}
 								onclick={() => toggleExt(ext, !on)}
-								class={`${box} flex-none border px-3 font-mono disabled:opacity-50 ${
+								class={`${box} flex-none border px-3 font-mono disabled:opacity-(--disabled) ${
 									on
-										? 'border-accent bg-accent-soft font-semibold text-accent'
+										? 'border-accent-fill bg-accent-soft font-semibold text-accent'
 										: 'border-line-strong bg-field text-dim hover:text-fg'
 								}`}
 							>

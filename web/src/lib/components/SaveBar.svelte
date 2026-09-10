@@ -21,7 +21,7 @@
 	     floating 1rem clear. The safe-area inset keeps it off a phone's home
 	     indicator, and --tabbar off the tab bar over that. -->
 	<div
-		class="bar sticky bottom-[calc(env(safe-area-inset-bottom)+var(--tabbar))] z-20 -mx-5 mt-6 -mb-10 flex flex-col rounded-t-xl rounded-b-none border border-b-0 border-accent/40 bg-raised/95 py-2 pr-3 pl-5 shadow-float backdrop-blur-md sm:bottom-[calc(1rem+env(safe-area-inset-bottom)+var(--tabbar))] sm:mx-0 sm:mb-0 sm:rounded-xl sm:border-b sm:py-2.5 sm:pr-2.5 sm:pl-4 lg:bottom-5"
+		class="bar sticky bottom-[calc(env(safe-area-inset-bottom)+var(--tabbar))] z-20 -mx-5 mt-6 -mb-10 flex flex-col rounded-t-xl rounded-b-none border border-b-0 border-accent-fill/40 bg-raised/95 py-2 pr-3 pl-5 shadow-float backdrop-blur-md sm:bottom-[calc(1rem+env(safe-area-inset-bottom)+var(--tabbar))] sm:mx-0 sm:mb-0 sm:rounded-xl sm:border-b sm:py-2.5 sm:pr-2.5 sm:pl-4 lg:bottom-5"
 	>
 		<!-- With the bar rather than at the foot of the page: a refusal lands on
 		     the rules page a screen and a half below where the reader is looking.
@@ -39,7 +39,7 @@
 		<div class="flex items-center gap-2 sm:gap-3">
 			<!-- The dot a changed row wears too, so the count and what it counts are
 			     marked alike. -->
-			<span class="h-1.5 w-1.5 flex-none rounded-full bg-accent"></span>
+			<span class="h-1.5 w-1.5 flex-none rounded-full bg-accent-fill"></span>
 			<span class="min-w-0 flex-1 truncate text-[13px] font-medium">
 				{settings.count} unsaved{settings.count === 1 ? ' change' : ' changes'}
 			</span>
