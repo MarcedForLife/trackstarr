@@ -77,6 +77,14 @@ def test_rekeying_a_file_with_no_record_invents_nothing(media):
     assert rewrites.records() == {}
 
 
+def test_rekeying_with_no_key_leaves_the_record_as_it_was(media):
+    """The file went between the edit and the stat, so there is nothing to
+    move the record onto."""
+    rewrites.record(media, cache_key(media, "eng"), REWROTE)
+    rewrites.rekey(media, None)
+    assert rewrites.records()[media].made == REWROTE
+
+
 def test_a_record_with_no_key_is_not_booked(tmp_path):
     """Nothing could then tell the file from a later one."""
     rewrites.record(str(tmp_path / "gone.mkv"), None, REWROTE)
