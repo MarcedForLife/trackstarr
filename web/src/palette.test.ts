@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
+import { TOKENS } from '$lib/hue';
 
 const read = (name: string) => readFileSync(fileURLToPath(new URL(name, import.meta.url)), 'utf8');
 const css = read('./routes/layout.css');
@@ -71,6 +72,12 @@ describe('the palettes layout.css writes', () => {
 	// wrong colour for one frame of the swap.
 	test('start at the default palette', () => {
 		expect(Object.fromEntries(initial)).toEqual(palettes.get(DEFAULT));
+	});
+
+	// The Custom palette writes the same set inline, so a token added here
+	// without a derivation would be missing from it.
+	test('are the tokens $lib/hue derives', () => {
+		expect(Object.keys(palettes.get(DEFAULT) ?? {})).toEqual([...TOKENS]);
 	});
 
 	// Registering them is also what lets the swap animate: an unregistered

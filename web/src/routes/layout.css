@@ -181,7 +181,11 @@
 
    Light puts white cards on a tinted page, a step of 1.12, the same lift the
    dark palettes get from raised over surface; on a white page a card was
-   only its hairline. */
+   only its hairline.
+
+   A seventh palette, Custom, has no block here: $lib/hue derives the same
+   tokens from a hue to the same targets, and $lib/theme writes them inline
+   on the root. */
 :root {
 	/* Shared by anything keeping step with the swap. Ease-in-out, so the
 	   mid-grey where the palettes meet and text loses contrast passes quickly. */
@@ -243,6 +247,13 @@
 		--toggle-off var(--theme-swap) var(--theme-swap-ease),
 		--knob var(--theme-swap) var(--theme-swap-ease),
 		--knob-on var(--theme-swap) var(--theme-swap-ease);
+}
+
+/* While the hue slider moves. The root carries the attribute and every
+   swatch under it follows; a 700ms ease behind each step read as smear. */
+[data-live][data-palette],
+[data-live] [data-palette] {
+	transition-duration: 0s;
 }
 
 /* Cool grey under amber in the dark, warm paper under brass in the light.

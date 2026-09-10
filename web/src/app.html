@@ -35,12 +35,17 @@
 				};
 				var theme = null;
 				var palette = null;
+				var custom = [];
 				try {
 					theme = localStorage.getItem('theme');
 					palette = localStorage.getItem('palette');
+					// The Custom palette's pair, written by $lib/theme.svelte.ts, which
+					// derives it; this script cannot.
+					custom = (localStorage.getItem('hue-surface') || '').split(',');
 				} catch (err) {
 					/* storage blocked: fall through to the defaults */
 				}
+				if (custom.length === 2) SURFACE.custom = custom;
 				if (!SURFACE[palette]) palette = 'brass';
 				var dark =
 					theme === 'dark' ||

@@ -120,7 +120,7 @@
 
 		<SettingRow
 			label="Palette"
-			desc="The colours everything is drawn in. Each has a light and a dark version, and Theme picks which."
+			desc="The colours everything is drawn in. Each has a light and a dark version, and Theme picks which. Custom works both out from a hue."
 			align="start"
 			stack
 		>
