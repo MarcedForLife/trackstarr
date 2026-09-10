@@ -4,7 +4,6 @@
 	import { tiltField, type Driver } from '$lib/field';
 	import type { Card } from '$lib/library';
 	import { moving } from '$lib/motion.svelte';
-	import { pageTop } from '$lib/scroller';
 
 	// The settings under this strip govern something that only happens under a
 	// pointer, so five posters come here to demonstrate it. The real PosterCard
@@ -132,37 +131,38 @@
 	function sweep() {
 		stop();
 		if (!strip || !driver || !tilting()) return;
-		const box = strip.getBoundingClientRect();
-		if (!box.width) return;
+		const first = strip.getBoundingClientRect();
+		if (!first.width) return;
 		// How far outside the row the pass begins and ends, from the lead.
-		const lead = box.width * (LEAD / (1 - 2 * LEAD));
-		// The artwork's box, not the strip's, which includes the labels.
-		const art = strip.querySelector<HTMLElement>('[data-tilt]')?.getBoundingClientRect() ?? box;
-		const midY = art.top + art.height / 2;
+		const lead = first.width * (LEAD / (1 - 2 * LEAD));
+		// The artwork's box, not the strip's, which includes the labels. Kept as
+		// offsets down the strip: the strip itself is measured every frame, since
+		// a scroll or a group folding above moves it mid-pass, and the aim must
+		// move with the ghost.
+		const art = strip.querySelector<HTMLElement>('[data-tilt]')?.getBoundingClientRect() ?? first;
+		const midY = art.top - first.top + art.height / 2;
 		const stray = art.height * STRAY;
 		const began = performance.now();
-		// The scroll at measurement; everything below corrects for it on the way
-		// out rather than re-measuring six boxes a frame.
-		const from0 = pageTop();
 		const step = (now: number) => {
+			if (!strip) return;
+			const box = strip.getBoundingClientRect();
 			const t = Math.min(1, (now - began) / PASS);
 			// Eased across the row, linear past either end, so the slow stretch is
 			// not spent where there is nothing to look at.
 			const inner = (t - LEAD) / (1 - 2 * LEAD);
 			const along = inner <= 0 || inner >= 1 ? inner : inner * inner * (3 - 2 * inner);
-			const x = box.left + along * box.width;
+			const x = along * box.width;
 			// Whole half-turns on the clock, so the pointer leaves and arrives at
 			// the middle.
 			const y = midY + Math.sin(t * Math.PI * WAVES) * stray;
-			// The field wants viewport coordinates; the ghost moved with the page.
-			const shift = from0 - pageTop();
-			driver?.aim(x, y + shift);
+			// The field wants viewport coordinates.
+			driver?.aim(box.left + x, box.top + y);
 			// Written onto the element, not through state, at sixty a second.
 			if (ghost) {
-				ghost.style.setProperty('--cx', `${x - box.left}px`);
-				ghost.style.setProperty('--cy', `${y - box.top}px`);
+				ghost.style.setProperty('--cx', `${x}px`);
+				ghost.style.setProperty('--cy', `${y}px`);
 				// Full over the row, faded only in the lead.
-				const outside = Math.max(0, box.left - x, x - box.right);
+				const outside = Math.max(0, -x, x - box.width);
 				ghost.style.setProperty('--on', `${Math.max(0, 1 - outside / lead)}`);
 			}
 			if (t < 1) {
@@ -239,7 +239,20 @@
 			hide();
 		});
 		seen.observe(on);
-		return () => seen.disconnect();
+		// The first answer comes while the disclosure around the strip is still
+		// opening, with the strip clipped out of sight, and Firefox says nothing
+		// more when that animation ends: the pass never started. Its end bubbles
+		// to `.reveal`, and observing afresh asks again, as $lib/reveal does.
+		const reveal = on.closest('.reveal');
+		const rearm = () => {
+			seen.unobserve(on);
+			seen.observe(on);
+		};
+		reveal?.addEventListener('animationend', rearm);
+		return () => {
+			reveal?.removeEventListener('animationend', rearm);
+			seen.disconnect();
+		};
 	});
 
 	// What the current pass demonstrates, so a re-render changing nothing does

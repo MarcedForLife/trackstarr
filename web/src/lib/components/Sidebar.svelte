@@ -8,7 +8,7 @@
 	import NavIcon from '$lib/components/NavIcon.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 	import { PRIMARY, routeOf } from '$lib/nav';
-	import { pause, watchPause } from '$lib/paused.svelte';
+	import { pause, running, watchPause } from '$lib/paused.svelte';
 	import { keepFlag, storedFlag } from '$lib/prefs';
 
 	// Below lg the aside is an off-canvas drawer the layout opens; from lg up it
@@ -88,15 +88,21 @@
 	} ${collapsed ? 'lg:w-16' : 'lg:w-60'}`}
 >
 	<div class={`flex items-center gap-2 pt-1 pb-3 ${collapsed ? 'px-3 lg:justify-center' : 'px-3'}`}>
-		<!-- The mark and name are the way home. No hover, or a wordmark reads as a
+		<!-- The mark and name are the way home. The mark presses under the pointer
+		     and beats while a run is on; no background, or a wordmark reads as a
 		     button. Hidden whole on the collapsed rail, or a keyboard lands on an
 		     empty link. -->
 		<a
 			href={resolve('/')}
-			class={`-mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 ${hideOnRail}`}
+			class={`mark-press -mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 ${hideOnRail}`}
 		>
-			<Mark size={19} class="flex-none text-accent" />
-			<span class="truncate text-[15px] font-semibold tracking-tight whitespace-nowrap">
+			<Mark
+				size={22}
+				class="flex-none text-accent"
+				motion={running.current ? 'travel' : 'none'}
+				press
+			/>
+			<span class="truncate text-[17px] font-semibold tracking-tight whitespace-nowrap">
 				Trackstarr
 			</span>
 		</a>
