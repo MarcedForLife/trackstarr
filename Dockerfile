@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir --break-system-packages --no-compile \
     --only-binary=cryptography --root=/out --prefix=/usr .
 
 # Web build stage: Node exists only here. The UI compiles to static files.
-FROM node:22-alpine AS web
+FROM node:26-alpine AS web
 
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
