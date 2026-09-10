@@ -24,6 +24,38 @@ Tests sit beside what they test, in the node environment: no DOM, no
 components. `src/palette.test.ts` parses `layout.css` and `app.html` and holds
 the copies of the palette tokens to each other.
 
+## The demo
+
+`npm run dev:demo` and `npm run build:demo` build the same pages with no service
+behind them. Under `vite --mode demo` the `$demo` alias names
+`src/lib/demo/hooks.ts`, and through it `$lib/api` answers every request from
+`src/lib/demo` in the browser, `$lib/stream` opens the demo's stand-in for the
+event stream, and `$lib/library` takes posters from the build. Any
+other mode names `none.ts`, which imports nothing, so the normal build carries
+none of the demo.
+
+The sample library in `catalogue.ts` is the Blender open movies, a CC0 film and
+public domain films and series, with invented files around them so every
+verdict shows. `judge.ts` is enough of the planner to judge those files against
+the settings, so a settings change, a retag or a re-check moves the library the
+way the service would. `runs.ts` carries a sweep along a second at a time and
+publishes to the stream as it goes; `history.ts` writes three weeks of events
+around the moment the page opened. Nothing is stored, so a reload starts over.
+`src/demo.test.ts` holds the demo's answers to the same checks
+`fixtures.test.ts` puts the service's through.
+
+Every title has a poster or still on Wikimedia Commons under CC BY or in the
+public domain, named in `src/lib/demo/posters.json`: `npm run posters:demo`
+fetches them into the gitignored `src/lib/demo/posters/`, checking each licence
+on the way, and `posters.ts` picks them up with a build-time glob. The workflow
+runs it before the build, so the images never enter the repo; the notice over
+the demo's pages credits every one shown.
+
+`.github/workflows/demo.yml` publishes it to GitHub Pages under the
+repository's name, which is what `BASE_PATH` is for: `routeOf` in `$lib/nav`
+takes the base off a pathname before the routes compare it, and every link and
+redirect goes through `resolve` from `$app/paths`.
+
 ## Conventions
 
 `src/routes/layout.css` carries every design token, the base element rules and

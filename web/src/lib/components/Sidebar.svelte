@@ -7,7 +7,7 @@
 	import Mark from '$lib/components/Mark.svelte';
 	import NavIcon from '$lib/components/NavIcon.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
-	import { PRIMARY } from '$lib/nav';
+	import { PRIMARY, routeOf } from '$lib/nav';
 	import { pause, watchPause } from '$lib/paused.svelte';
 	import { keepFlag, storedFlag } from '$lib/prefs';
 
@@ -19,7 +19,7 @@
 		onclose
 	}: { user: Account | null; open?: boolean; onclose?: () => void } = $props();
 
-	const path = $derived(page.url.pathname);
+	const path = $derived(routeOf(page.url.pathname));
 
 	const COLLAPSED_KEY = 'sidebar-collapsed';
 

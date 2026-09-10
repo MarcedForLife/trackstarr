@@ -3,12 +3,17 @@
 [![CI](https://github.com/MarcedForLife/trackstarr/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcedForLife/trackstarr/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 [![Image: ghcr.io](https://img.shields.io/badge/ghcr.io-trackstarr-blue.svg)](https://github.com/MarcedForLife/trackstarr/pkgs/container/trackstarr)
+[![Demo](https://img.shields.io/badge/demo-live-brightgreen.svg)](https://marcedforlife.github.io/trackstarr/)
 
 Trackstarr keeps the audio and subtitle tracks in a movie and TV library tidy,
 driven by Radarr and Sonarr webhooks. It drops the languages you will never
 play, downmixes a stereo or 5.1 track in the title's own language and any you
 choose, where one is missing, at a bitrate you set, and puts what is left in a
 sensible order.
+
+**[Try the demo](https://marcedforlife.github.io/trackstarr/)**: the web UI
+over a sample library of openly licensed films, with no service behind it. Any
+name and password sign you in.
 
 ## The rules
 
@@ -17,17 +22,17 @@ Every rule runs in one of three modes, set by its own `RULE_<NAME>` variable.
 `alongside` acts only on a file another rule is already rewriting, which is the
 answer for a change worth having but not worth a 60GB rewrite of its own.
 
-| Rule            | Unset       |                                                                                                                                                                                            |
-| --------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `languages`     | `always`    | Drop audio and subtitles in a language `LANGUAGES` does not name. Untagged tracks always stay                                                                                              |
-| `commentary`    | `never`     | Drop commentary, described-audio and isolated-score tracks. They are never downmix sources either way                                                                                      |
-| `sdh`           | `alongside` | Drop an SDH subtitle when the same language keeps a full one. Forced subtitles are always kept                                                                                             |
-| `regenerate`    | `never`     | Rebuild downmixes whose settings have moved on; see `REGENERATE_SCOPE` and `REGENERATE_ABOVE_PERCENT`. Matroska only                                                                       |
-| `cover_art`     | `always`    | Drop embedded artwork, which players read as a second video track                                                                                                                          |
-| `release_tags`  | `alongside` | Clear release tags from track and container titles                                                                                                                                        |
-| `stray_streams` | `alongside` | Drop data and timecode streams nothing plays                                                                                                                                              |
-| `order`         | `always`    | Video, then audio in `AUDIO_LAYOUTS` order, then subtitles, then attachments                                                                                                              |
-| `remux`         | `never`     | Rewrite MP4 and M4V into Matroska, where every rule works and track tags can be edited in place. `alongside` converts a file something else is already rewriting                                                                 |
+| Rule            | Unset       |                                                                                                                                                                  |
+| --------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `languages`     | `always`    | Drop audio and subtitles in a language `LANGUAGES` does not name. Untagged tracks always stay                                                                    |
+| `commentary`    | `never`     | Drop commentary, described-audio and isolated-score tracks. They are never downmix sources either way                                                            |
+| `sdh`           | `alongside` | Drop an SDH subtitle when the same language keeps a full one. Forced subtitles are always kept                                                                   |
+| `regenerate`    | `never`     | Rebuild downmixes whose settings have moved on; see `REGENERATE_SCOPE` and `REGENERATE_ABOVE_PERCENT`. Matroska only                                             |
+| `cover_art`     | `always`    | Drop embedded artwork, which players read as a second video track                                                                                                |
+| `release_tags`  | `alongside` | Clear release tags from track and container titles                                                                                                               |
+| `stray_streams` | `alongside` | Drop data and timecode streams nothing plays                                                                                                                     |
+| `order`         | `always`    | Video, then audio in `AUDIO_LAYOUTS` order, then subtitles, then attachments                                                                                     |
+| `remux`         | `never`     | Rewrite MP4 and M4V into Matroska, where every rule works and track tags can be edited in place. `alongside` converts a file something else is already rewriting |
 
 Every rule is idempotent, so a sweep is safe to run as often as you like. A rule
 riding along never causes a rewrite, even indirectly: what the others would do
@@ -47,12 +52,12 @@ AUDIO_LAYOUTS: 2.0:libopus:192k,5.1:eac3:448k,7.1:remove
 
 An entry is read by how many colon-separated fields it holds:
 
-| Entry           | |
-| --------------- | ------------------------------------------------------------------------------------------------------ |
-| `5.1`           | Downmix, at the encoder and rate shipped for that size: 1.0, 2.0, 5.1, 6.1 and 7.1 have one             |
-| `5.1:eac3:448k` | Downmix, at that encoder and rate. Any other size has to say, since nothing is guessed                  |
-| `7.1:remove`    | Delete every track this size, wherever a file has one                                                   |
-| `7.1:keep`      | Leave the size alone. Worth naming for the order alone, which is the whole list's                       |
+| Entry           |                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `5.1`           | Downmix, at the encoder and rate shipped for that size: 1.0, 2.0, 5.1, 6.1 and 7.1 have one |
+| `5.1:eac3:448k` | Downmix, at that encoder and rate. Any other size has to say, since nothing is guessed      |
+| `7.1:remove`    | Delete every track this size, wherever a file has one                                       |
+| `7.1:keep`      | Leave the size alone. Worth naming for the order alone, which is the whole list's           |
 
 Downmix guarantees a non-commentary track this size exists, made from the best
 surviving bigger track of the same language. It is the only action that encodes
@@ -88,10 +93,10 @@ of each says downmix, the one action both lists share. Out of the box it is
 LANGUAGES: original,eng,fre:keep
 ```
 
-| Entry      | |
-| ---------- | ------------------------------------------------------------- |
-| `eng`      | Downmix: keep it, and guarantee every downmixed layout in it   |
-| `fre:keep` | Keep it, generate nothing                                     |
+| Entry      |                                                              |
+| ---------- | ------------------------------------------------------------ |
+| `eng`      | Downmix: keep it, and guarantee every downmixed layout in it |
+| `fre:keep` | Keep it, generate nothing                                    |
 
 There is no `remove`, because everything the list does not name is already
 dropped by `RULE_LANGUAGES`: `never` keeps them, `always` drops them,
@@ -241,53 +246,53 @@ key nothing reads is warned about at startup as the typo it usually is.
 
 ### Rules
 
-| Variable                    | Default          |                                                                                                    |
-| --------------------------- | ---------------- | -------------------------------------------------------------------------------------------------- |
-| `LANGUAGES`                 | `original,eng`   | every language named, in downmix source order, each with what happens to it; see above             |
-| `RULE_LANGUAGES` and so on  | see above        | one per rule: `never`, `alongside` or `always`                                                     |
-| `ALLOWED_EXTS`              | `.mkv,.mp4,.m4v` | containers a rewrite may touch                                                                     |
-| `COMMENTARY_PATTERN`        | see `config.py`  | regex; likewise `SDH_PATTERN`, `FORCED_PATTERN` and `RELEASE_TAG_PATTERN`                          |
+| Variable                   | Default          |                                                                                        |
+| -------------------------- | ---------------- | -------------------------------------------------------------------------------------- |
+| `LANGUAGES`                | `original,eng`   | every language named, in downmix source order, each with what happens to it; see above |
+| `RULE_LANGUAGES` and so on | see above        | one per rule: `never`, `alongside` or `always`                                         |
+| `ALLOWED_EXTS`             | `.mkv,.mp4,.m4v` | containers a rewrite may touch                                                         |
+| `COMMENTARY_PATTERN`       | see `config.py`  | regex; likewise `SDH_PATTERN`, `FORCED_PATTERN` and `RELEASE_TAG_PATTERN`              |
 
 ### Audio
 
-| Variable                     | Default         |                                                                                                      |
-| ---------------------------- | --------------- | ---------------------------------------------------------------------------------------------------- |
-| `AUDIO_LAYOUTS`              | `2.0,5.1`       | every layout named, in output order, each with what happens to it; see above                         |
-| `REGENERATE_SCOPE`           | `generated`     | how far `RULE_REGENERATE` reaches: `generated` rebuilds this tool's own tracks when their settings change, `all` also replaces low-bitrate real tracks |
-| `REGENERATE_BELOW_PERCENT`   | `80`            | how far under its layout's rate a track must report before `all` replaces it; 10 to 90               |
-| `REGENERATE_ABOVE_PERCENT`   | `0`             | how far over its layout's rate a track must sit before it is re-encoded from itself, lossless tracks aside; 0 is off, otherwise 110 to 400 |
+| Variable                   | Default     |                                                                                                                                                        |
+| -------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AUDIO_LAYOUTS`            | `2.0,5.1`   | every layout named, in output order, each with what happens to it; see above                                                                           |
+| `REGENERATE_SCOPE`         | `generated` | how far `RULE_REGENERATE` reaches: `generated` rebuilds this tool's own tracks when their settings change, `all` also replaces low-bitrate real tracks |
+| `REGENERATE_BELOW_PERCENT` | `80`        | how far under its layout's rate a track must report before `all` replaces it; 10 to 90                                                                 |
+| `REGENERATE_ABOVE_PERCENT` | `0`         | how far over its layout's rate a track must sit before it is re-encoded from itself, lossless tracks aside; 0 is off, otherwise 110 to 400             |
 
 ### Connections
 
-| Variable                              | Default                  |                                                                            |
-| ------------------------------------- | ------------------------ | -------------------------------------------------------------------------- |
-| `RADARR_URL` / `RADARR_API_KEY`       | (unset)                  | omit to disable; likewise `SONARR_URL` / `SONARR_API_KEY`                  |
-| `PLEX_URL` / `PLEX_TOKEN`             | (unset)                  | refresh after rewrites; likewise `JELLYFIN_URL` / `JELLYFIN_API_KEY`       |
-| `PLEX_PATH_MAP` / `JELLYFIN_PATH_MAP` | (unset)                  | `LOCAL=REMOTE` pairs, comma-separated                                      |
-| `RADARR_PUBLIC_URL` and so on         | (the address above)      | where a browser reaches each service, for the Open in buttons on a title   |
-| `WEBHOOK_URL`                         | `http://trackstarr:5120` | how the *arrs reach the listener                                           |
-| `SKIP_HARDLINKS`                      | `true`                   | park files the download client still links until it releases them          |
-| `HARDLINK_RECHECK`                    | `900`                    | seconds between re-checks; 0 leaves parked files to the sweep              |
+| Variable                              | Default                  |                                                                          |
+| ------------------------------------- | ------------------------ | ------------------------------------------------------------------------ |
+| `RADARR_URL` / `RADARR_API_KEY`       | (unset)                  | omit to disable; likewise `SONARR_URL` / `SONARR_API_KEY`                |
+| `PLEX_URL` / `PLEX_TOKEN`             | (unset)                  | refresh after rewrites; likewise `JELLYFIN_URL` / `JELLYFIN_API_KEY`     |
+| `PLEX_PATH_MAP` / `JELLYFIN_PATH_MAP` | (unset)                  | `LOCAL=REMOTE` pairs, comma-separated                                    |
+| `RADARR_PUBLIC_URL` and so on         | (the address above)      | where a browser reaches each service, for the Open in buttons on a title |
+| `WEBHOOK_URL`                         | `http://trackstarr:5120` | how the *arrs reach the listener                                         |
+| `SKIP_HARDLINKS`                      | `true`                   | park files the download client still links until it releases them        |
+| `HARDLINK_RECHECK`                    | `900`                    | seconds between re-checks; 0 leaves parked files to the sweep            |
 
 ### Service
 
-| Variable                           | Default                             |                                                                             |
-| ---------------------------------- | ----------------------------------- | --------------------------------------------------------------------------- |
-| `MEDIA_DIRS`                       | `/data/media/movies:/data/media/tv` | where the sweep walks, colon-separated, in the container's paths            |
-| `REWRITE_MODE`                     | `imports`                           | `report`, `imports` or `all`                                                |
-| `SWEEP_AT`                         | (unset)                             | cron schedule in local time (`0 4 * * *`); empty disables                   |
-| `TZ`                               | (unset, so UTC)                     | IANA zone for the schedule, the log and every event stamp                   |
+| Variable                           | Default                             |                                                                                                                            |
+| ---------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `MEDIA_DIRS`                       | `/data/media/movies:/data/media/tv` | where the sweep walks, colon-separated, in the container's paths                                                           |
+| `REWRITE_MODE`                     | `imports`                           | `report`, `imports` or `all`                                                                                               |
+| `SWEEP_AT`                         | (unset)                             | cron schedule in local time (`0 4 * * *`); empty disables                                                                  |
+| `TZ`                               | (unset, so UTC)                     | IANA zone for the schedule, the log and every event stamp                                                                  |
 | `IMDB_RATINGS` *                   | `true`                              | fetch IMDb's public ratings dataset once a day for the score on a title; IMDb licenses it for personal, non-commercial use |
-| `MAX_CONCURRENT_REWRITES`          | `1`                                 | shared across webhooks and sweeps; 1 suits spinning disks. If 3 is no faster, disk is the bottleneck |
-| `PROBE_WORKERS`                    | `4`                                 | files a sweep probes at once                                                |
-| `FFMPEG_TIMEOUT` / `PROBE_TIMEOUT` | `7200` / `180`                      | seconds                                                                     |
-| `WORK_DIR` *                       | `/data/trackstarr-work`             | staging; a different filesystem from the library costs a copy per rewrite   |
-| `STATE_DIR` *                      | `/config`                           | settings, cache, history, accounts, secrets and locks                       |
-| `TRACKSTARR_KEY_FILE` *            | `$STATE_DIR/key`                    | seals saved credentials; see below                                          |
-| `LISTEN_ADDR` / `LISTEN_PORT` *    | `0.0.0.0` / `5120`                  | bind address and port                                                       |
-| `WEB_DIR` *                        | `/web` in the image                 | the built web UI; empty serves no pages                                     |
-| `ADMIN_PASSWORD` *                 | (generated)                         | first run only; also takes `_FILE` / `FILE__`                               |
-| `LOG_LEVEL` *                      | `INFO`                              | `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`                           |
+| `MAX_CONCURRENT_REWRITES`          | `1`                                 | shared across webhooks and sweeps; 1 suits spinning disks. If 3 is no faster, disk is the bottleneck                       |
+| `PROBE_WORKERS`                    | `4`                                 | files a sweep probes at once                                                                                               |
+| `FFMPEG_TIMEOUT` / `PROBE_TIMEOUT` | `7200` / `180`                      | seconds                                                                                                                    |
+| `WORK_DIR` *                       | `/data/trackstarr-work`             | staging; a different filesystem from the library costs a copy per rewrite                                                  |
+| `STATE_DIR` *                      | `/config`                           | settings, cache, history, accounts, secrets and locks                                                                      |
+| `TRACKSTARR_KEY_FILE` *            | `$STATE_DIR/key`                    | seals saved credentials; see below                                                                                         |
+| `LISTEN_ADDR` / `LISTEN_PORT` *    | `0.0.0.0` / `5120`                  | bind address and port                                                                                                      |
+| `WEB_DIR` *                        | `/web` in the image                 | the built web UI; empty serves no pages                                                                                    |
+| `ADMIN_PASSWORD` *                 | (generated)                         | first run only; also takes `_FILE` / `FILE__`                                                                              |
+| `LOG_LEVEL` *                      | `INFO`                              | `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`                                                                          |
 
 \* environment only.
 
@@ -340,6 +345,7 @@ uv run pytest           # needs ffmpeg 8.1+ and mkvtoolnix on PATH
 uv run pytest --cov     # what CI measures; fails under the floor in pyproject
 uv run ruff check && uv run ruff format
 uv run mypy
+cd web && npm run posters:demo && npm run dev:demo   # the demo, no service needed
 ```
 
 The rules in `planner.py` are pure functions of ffprobe output and a `Policy`

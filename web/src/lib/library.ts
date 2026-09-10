@@ -1,6 +1,7 @@
 // The library API. Everything here came out of the sweep cache, so a title with
 // no verdicts is one nothing has walked yet.
 
+import { cover } from '$demo';
 import { request } from '$lib/api';
 import type { Sort } from '$lib/order.svelte';
 // Re-exported: a file's size is read straight off the card that carries it.
@@ -258,7 +259,8 @@ export function runTitles(ids: string[], mode: RunMode): Promise<{ run: string; 
 }
 
 export function coverUrl(id: string): string {
-	return `/api/library/cover?id=${encodeURIComponent(id)}`;
+	// The demo draws its own posters; there is no service to fetch one from.
+	return cover?.(id) ?? `/api/library/cover?id=${encodeURIComponent(id)}`;
 }
 
 // Which current tracks survive and which planned ones are new, paired by source
