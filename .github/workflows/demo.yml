@@ -9,7 +9,7 @@ name: Demo
 # main; drop it, and its branch policy, once that has happened.
 on:
   push:
-    branches: [main, feature/demo-site]
+    branches: [main]
     paths: [web/**, .github/workflows/demo.yml]
   workflow_dispatch:
 
@@ -35,7 +35,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 26
           cache: npm
           cache-dependency-path: web/package-lock.json
 
