@@ -38,6 +38,9 @@ export type TitleSpec = {
 	folder: string;
 	files: FileSpec[];
 	arr?: 'radarr' | 'sonarr';
+	/** The IMDb id the *arr carried, which the sheet's IMDb button opens. A
+	 * folder no *arr claims has none. */
+	imdb?: string;
 };
 
 const MOVIES = '/data/media/movies';
@@ -110,6 +113,7 @@ type MovieSpec = {
 	year: number;
 	lang: string;
 	rating?: number;
+	imdb: string;
 	addedDays: number;
 	minutes: number;
 	/** Nothing downloaded yet: Radarr tracks it and that is all. */
@@ -136,6 +140,7 @@ function movie(spec: MovieSpec): TitleSpec {
 		kind: 'movie',
 		lang: spec.lang,
 		rating: spec.rating,
+		imdb: spec.imdb,
 		addedDays: spec.addedDays,
 		folder,
 		files: spec.missing ? [] : [file],
@@ -151,6 +156,7 @@ type SeriesSpec = {
 	year: number;
 	lang: string;
 	rating?: number;
+	imdb: string;
 	addedDays: number;
 	minutes: number;
 	tracks: Track[];
@@ -166,6 +172,7 @@ function series(spec: SeriesSpec): TitleSpec {
 		kind: 'series',
 		lang: spec.lang,
 		rating: spec.rating,
+		imdb: spec.imdb,
 		addedDays: spec.addedDays,
 		folder,
 		files: spec.episodes.map((episode, at) => ({
@@ -188,6 +195,7 @@ export function catalogue(): TitleSpec[] {
 			id: 1,
 			name: 'Big Buck Bunny',
 			year: 2008,
+			imdb: 'tt1254207',
 			lang: 'eng',
 			rating: 6.5,
 			addedDays: 400,
@@ -197,6 +205,7 @@ export function catalogue(): TitleSpec[] {
 			id: 2,
 			name: 'Sintel',
 			year: 2010,
+			imdb: 'tt1727587',
 			lang: 'eng',
 			rating: 7.3,
 			addedDays: 380,
@@ -215,6 +224,7 @@ export function catalogue(): TitleSpec[] {
 			id: 3,
 			name: 'Tears of Steel',
 			year: 2012,
+			imdb: 'tt2285752',
 			lang: 'eng',
 			rating: 6.0,
 			addedDays: 370,
@@ -225,6 +235,7 @@ export function catalogue(): TitleSpec[] {
 			id: 4,
 			name: 'Elephants Dream',
 			year: 2006,
+			imdb: 'tt0807840',
 			lang: 'eng',
 			rating: 5.9,
 			addedDays: 400,
@@ -241,6 +252,7 @@ export function catalogue(): TitleSpec[] {
 			id: 5,
 			name: 'Cosmos Laundromat',
 			year: 2015,
+			imdb: 'tt4957236',
 			lang: 'eng',
 			rating: 6.8,
 			addedDays: 300,
@@ -254,6 +266,7 @@ export function catalogue(): TitleSpec[] {
 			id: 6,
 			name: 'Spring',
 			year: 2019,
+			imdb: 'tt9249278',
 			lang: 'eng',
 			rating: 7.1,
 			addedDays: 200,
@@ -275,6 +288,7 @@ export function catalogue(): TitleSpec[] {
 			id: 7,
 			name: 'Sprite Fright',
 			year: 2021,
+			imdb: 'tt15804252',
 			lang: 'eng',
 			rating: 6.5,
 			addedDays: 150,
@@ -293,6 +307,7 @@ export function catalogue(): TitleSpec[] {
 			id: 9,
 			name: 'Coffee Run',
 			year: 2020,
+			imdb: 'tt13716914',
 			lang: 'eng',
 			addedDays: 0,
 			minutes: 3,
@@ -304,6 +319,7 @@ export function catalogue(): TitleSpec[] {
 			id: 10,
 			name: 'Charge',
 			year: 2022,
+			imdb: 'tt24787066',
 			lang: 'eng',
 			addedDays: 2,
 			minutes: 4,
@@ -314,6 +330,7 @@ export function catalogue(): TitleSpec[] {
 			id: 21,
 			name: 'Metropolis',
 			year: 1927,
+			imdb: 'tt0017136',
 			lang: 'ger',
 			rating: 8.3,
 			addedDays: 310,
@@ -333,6 +350,7 @@ export function catalogue(): TitleSpec[] {
 			id: 22,
 			name: 'The Cabinet of Dr. Caligari',
 			year: 1920,
+			imdb: 'tt0010323',
 			lang: 'ger',
 			rating: 8.0,
 			addedDays: 305,
@@ -352,6 +370,7 @@ export function catalogue(): TitleSpec[] {
 			id: 23,
 			name: 'Night of the Living Dead',
 			year: 1968,
+			imdb: 'tt0063350',
 			lang: 'eng',
 			rating: 7.8,
 			addedDays: 290,
@@ -367,6 +386,7 @@ export function catalogue(): TitleSpec[] {
 			id: 24,
 			name: 'His Girl Friday',
 			year: 1940,
+			imdb: 'tt0032599',
 			lang: 'eng',
 			rating: 7.8,
 			addedDays: 280,
@@ -377,6 +397,7 @@ export function catalogue(): TitleSpec[] {
 			id: 25,
 			name: 'Charade',
 			year: 1963,
+			imdb: 'tt0056923',
 			lang: 'eng',
 			rating: 7.9,
 			addedDays: 270,
@@ -397,6 +418,7 @@ export function catalogue(): TitleSpec[] {
 			id: 26,
 			name: 'The General',
 			year: 1926,
+			imdb: 'tt0017925',
 			lang: 'eng',
 			rating: 8.1,
 			addedDays: 265,
@@ -407,6 +429,7 @@ export function catalogue(): TitleSpec[] {
 			id: 27,
 			name: 'Sherlock Jr.',
 			year: 1924,
+			imdb: 'tt0015324',
 			lang: 'eng',
 			rating: 8.2,
 			addedDays: 1,
@@ -422,6 +445,7 @@ export function catalogue(): TitleSpec[] {
 			id: 28,
 			name: 'Plan 9 from Outer Space',
 			year: 1957,
+			imdb: 'tt0052077',
 			lang: 'eng',
 			rating: 4.0,
 			addedDays: 250,
@@ -434,6 +458,7 @@ export function catalogue(): TitleSpec[] {
 			id: 29,
 			name: 'Carnival of Souls',
 			year: 1962,
+			imdb: 'tt0055830',
 			lang: 'eng',
 			rating: 7.0,
 			addedDays: 245,
@@ -444,6 +469,7 @@ export function catalogue(): TitleSpec[] {
 			id: 30,
 			name: 'Sita Sings the Blues',
 			year: 2008,
+			imdb: 'tt1172203',
 			lang: 'eng',
 			rating: 7.5,
 			addedDays: 230,
@@ -456,6 +482,7 @@ export function catalogue(): TitleSpec[] {
 			id: 31,
 			name: 'Battleship Potemkin',
 			year: 1925,
+			imdb: 'tt0015648',
 			lang: 'rus',
 			rating: 7.9,
 			addedDays: 225,
@@ -472,6 +499,7 @@ export function catalogue(): TitleSpec[] {
 			id: 34,
 			name: 'Detour',
 			year: 1945,
+			imdb: 'tt0037638',
 			lang: 'eng',
 			rating: 7.3,
 			addedDays: 200,
@@ -482,6 +510,7 @@ export function catalogue(): TitleSpec[] {
 			id: 35,
 			name: 'Safety Last!',
 			year: 1923,
+			imdb: 'tt0014429',
 			lang: 'eng',
 			rating: 8.1,
 			addedDays: 5,
@@ -499,6 +528,7 @@ export function catalogue(): TitleSpec[] {
 			id: 40,
 			name: 'Sherlock Holmes',
 			year: 1954,
+			imdb: 'tt0046642',
 			lang: 'eng',
 			rating: 7.6,
 			addedDays: 180,
@@ -517,6 +547,7 @@ export function catalogue(): TitleSpec[] {
 			id: 43,
 			name: 'Tales of Tomorrow',
 			year: 1951,
+			imdb: 'tt0043238',
 			lang: 'eng',
 			rating: 7.1,
 			addedDays: 160,
@@ -546,6 +577,7 @@ export function catalogue(): TitleSpec[] {
 			id: 'arr:sonarr:45',
 			name: 'One Step Beyond',
 			year: 1959,
+			imdb: 'tt0052442',
 			kind: 'series',
 			lang: 'eng',
 			rating: 7.7,

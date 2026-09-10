@@ -103,8 +103,8 @@ export type World = {
 	born: number;
 };
 
-// Where a title's own page is in its *arr, for the sheet's Open in button.
-const ARR_URLS = { radarr: 'http://radarr:7878/movie', sonarr: 'http://sonarr:8989/series' };
+// The route to a title's own page in its *arr, followed by the slug.
+const ARR_ROUTES = { radarr: '/movie/', sonarr: '/series/' };
 
 // How long before the demo opened its one rewrite of the day landed.
 const REWRITTEN_IN_RUN_AGO_MS = 14 * MINUTE_MS;
@@ -397,19 +397,39 @@ export function summary(world: World, sort: Sort): Summary {
 	};
 }
 
+/** The links built from what the title already carries, its *arr page and
+ * its IMDb page, so no server need be asked. As in the service, they ride
+ * along with the title and are in the links answer too. */
+function known(world: World, title: Title): TitleLink[] {
+	const { settings } = world;
+	const { arr, imdb, name } = title.spec;
+	const found: TitleLink[] = [];
+	if (arr) {
+		const base =
+			arr === 'radarr'
+				? settings.RADARR_PUBLIC_URL || settings.RADARR_URL
+				: settings.SONARR_PUBLIC_URL || settings.SONARR_URL;
+		if (base) {
+			found.push({
+				server: arr,
+				label: arr === 'radarr' ? 'Radarr' : 'Sonarr',
+				url: `${base}${ARR_ROUTES[arr]}${slug(name)}`
+			});
+		}
+	}
+	if (imdb) {
+		found.push({ server: 'imdb', label: 'IMDb', url: `https://www.imdb.com/title/${imdb}/` });
+	}
+	return found;
+}
+
+/** Every service the sheet can offer for the title: the media servers the
+ * settings name, still to be asked, and the known links filled in. */
 function servers(world: World, title: Title): TitleServer[] {
 	const listed: TitleServer[] = [];
 	if (world.settings.PLEX_URL) listed.push({ server: 'plex', label: 'Plex' });
 	if (world.settings.JELLYFIN_URL) listed.push({ server: 'jellyfin', label: 'Jellyfin' });
-	const arr = title.spec.arr;
-	if (arr) {
-		listed.push({
-			server: arr,
-			label: arr === 'radarr' ? 'Radarr' : 'Sonarr',
-			url: `${ARR_URLS[arr]}/${slug(title.spec.name)}`
-		});
-	}
-	return listed;
+	return [...listed, ...known(world, title)];
 }
 
 function wireFile(file: File): LibraryFile {
@@ -445,26 +465,30 @@ export function detail(world: World, title: Title): TitleDetail {
 	return made;
 }
 
-/** Where a title opens in the media servers the settings name. The addresses
- * lead nowhere, since the servers do not exist. */
+/** Where a title opens in the media servers the settings name, then the
+ * known links. The media servers do not exist, so the demo's settings put them
+ * on localhost, where a click goes nowhere rather than to somebody's host. */
 export function links(world: World, title: Title): TitleLink[] {
+	const { settings } = world;
 	const found: TitleLink[] = [];
 	const item = 10_000 + parseInt(digest(title.spec.id, 4), 16);
-	if (world.settings.PLEX_URL) {
+	const plex = settings.PLEX_PUBLIC_URL || settings.PLEX_URL;
+	if (plex) {
 		found.push({
 			server: 'plex',
 			label: 'Plex',
-			url: `${world.settings.PLEX_URL}/web/index.html#!/server/demo/details?key=%2Flibrary%2Fmetadata%2F${item}`
+			url: `${plex}/web/index.html#!/server/demo/details?key=%2Flibrary%2Fmetadata%2F${item}`
 		});
 	}
-	if (world.settings.JELLYFIN_URL) {
+	const jellyfin = settings.JELLYFIN_PUBLIC_URL || settings.JELLYFIN_URL;
+	if (jellyfin) {
 		found.push({
 			server: 'jellyfin',
 			label: 'Jellyfin',
-			url: `${world.settings.JELLYFIN_URL}/web/index.html#!/details?id=${digest(title.spec.id, 32)}`
+			url: `${jellyfin}/web/index.html#!/details?id=${digest(title.spec.id, 32)}`
 		});
 	}
-	return found;
+	return [...found, ...known(world, title)];
 }
 
 // Holds.

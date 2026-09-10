@@ -40,7 +40,7 @@
 	aria-describedby={describedBy}
 	onkeydown={steer}
 	tabindex={-1}
-	class="grid w-full grid-cols-3 gap-x-3 gap-y-3.5 sm:w-60 sm:gap-x-2.5"
+	class="grid w-full grid-cols-3 gap-x-3 gap-y-3.5"
 >
 	{#each PALETTES as option, index (option.value)}
 		{@const selected = theme.palette === option.value}
