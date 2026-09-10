@@ -1,7 +1,7 @@
 name: Release
 
-# Always releases develop: bumps the version there, merges it into main, tags,
-# and publishes, regardless of which ref the dispatch ran from.
+# Always releases main: bumps the version there, tags, and publishes,
+# regardless of which ref the dispatch ran from.
 on:
   workflow_dispatch:
     inputs:
@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: develop
+          ref: main
           fetch-depth: 0
 
       - name: Calculate new version
@@ -44,22 +44,17 @@ jobs:
           echo "new=$NEW" >> "$GITHUB_OUTPUT"
           echo "Bumping $CURRENT -> $NEW (${{ inputs.bump }})"
 
-      - name: Bump version on develop
+      - name: Bump version and tag
         run: |
           sed -i 's/^__version__ = ".*"/__version__ = "${{ steps.version.outputs.new }}"/' \
             src/trackstarr/__init__.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "Bump version to ${{ steps.version.outputs.new }}"
-
-      - name: Merge into main and tag
-        run: |
-          git checkout main
-          git merge --no-ff develop -m "Release ${{ steps.version.outputs.new }}"
+          git commit -am "Release ${{ steps.version.outputs.new }}"
           git tag "v${{ steps.version.outputs.new }}"
 
       - name: Push
-        run: git push origin develop main "v${{ steps.version.outputs.new }}"
+        run: git push origin main "v${{ steps.version.outputs.new }}"
 
       - name: Create GitHub release
         env:
