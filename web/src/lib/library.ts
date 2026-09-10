@@ -435,8 +435,8 @@ const VOCABULARY: Record<Verdict, Words> = {
 	pending: {
 		label: 'Pending',
 		hint: 'A rewrite would change this file. Nothing has been written yet.',
-		pip: 'bg-accent',
-		tint: 'border-accent/50 bg-accent/12',
+		pip: 'bg-accent-fill',
+		tint: 'border-accent-fill/50 bg-accent-fill/12',
 		text: 'text-accent'
 	},
 	deferred: {
@@ -449,17 +449,17 @@ const VOCABULARY: Record<Verdict, Words> = {
 		label: 'Skipped',
 		hint: 'Not eligible for a rewrite at all.',
 		pip: 'bg-faint',
-		tint: 'border-line-strong bg-raised',
+		tint: 'border-line-control bg-raised',
 		text: 'text-faint'
 	},
 	unsupported: {
 		label: 'Unsupported',
 		hint: 'A container trackstarr does not rewrite, so the file was never opened. Containers under Rules decides which.',
 		// Hollow in the accent: something to attend to that is not ours to do.
-		pip: 'border border-accent',
-		onArt: 'bg-accent/70',
+		pip: 'border border-accent-fill',
+		onArt: 'bg-accent-fill/70',
 		// Edge coloured, fill neutral, since a filled one is Pending's.
-		tint: 'border-accent/50 bg-raised',
+		tint: 'border-accent-fill/50 bg-raised',
 		text: 'text-accent'
 	},
 	conform: {
@@ -494,7 +494,7 @@ const VOCABULARY: Record<Verdict, Words> = {
 		label: 'Unknown',
 		hint: 'No verdict yet. The files exist, but no sweep has reached them since they were written.',
 		pip: 'bg-line-strong',
-		tint: 'border-line-strong bg-raised',
+		tint: 'border-line-control bg-raised',
 		text: 'text-faint'
 	},
 	missing: {
@@ -505,7 +505,7 @@ const VOCABULARY: Record<Verdict, Words> = {
 		// Filled for a poster: a 1px ring at 6px over artwork is mostly poster
 		// showing through, and two side by side read as one smudge.
 		onArt: 'bg-white/40',
-		tint: 'border-line-strong bg-raised',
+		tint: 'border-line-control bg-raised',
 		text: 'text-faint'
 	}
 };

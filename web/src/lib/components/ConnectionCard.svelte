@@ -152,7 +152,7 @@
 				<span class="flex items-center gap-2">
 					<span class="text-sm font-semibold">{service.label}</span>
 					{#if edited}
-						<span class="h-1.5 w-1.5 flex-none rounded-full bg-accent"></span>
+						<span class="h-1.5 w-1.5 flex-none rounded-full bg-accent-fill"></span>
 						<span class="sr-only">Unsaved changes</span>
 					{/if}
 				</span>

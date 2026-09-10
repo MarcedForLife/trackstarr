@@ -98,7 +98,7 @@
 		title={mayRewrite
 			? 'Reads every file and applies the rules. Changes files on disk.'
 			: REPORT_ONLY_NOTE}
-		class={`${spread} ${button} aria-disabled:opacity-50`}
+		class={`${spread} ${button} aria-disabled:opacity-(--disabled)`}
 	>
 		<Glyph name="play" />
 		{busy === 'apply' ? 'Processing…' : 'Process'}

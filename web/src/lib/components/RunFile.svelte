@@ -69,7 +69,7 @@
 	);
 	// A row with no verdict yet takes the neutral dot, the same one `unchecked`
 	// draws.
-	const dot = $derived(live ? 'bg-accent' : row.verdict ? pip[row.verdict] : 'bg-line-strong');
+	const dot = $derived(live ? 'bg-accent-fill' : row.verdict ? pip[row.verdict] : 'bg-line-strong');
 
 	// The line under the name: how far through, or the detail.
 	const said = $derived(live ? status : row.detail);
@@ -162,7 +162,7 @@
 					title={live
 						? 'Skip. The rewrite under way is killed, so the file is untouched.'
 						: 'Skip. This run leaves the file alone. The next sweep still reaches it.'}
-					class="relative flex-none rounded border border-line-strong px-1.5 py-0.5 text-[10.5px] leading-none font-medium text-faint transition-colors after:absolute after:-inset-3 after:content-[''] hover:border-danger/45 hover:text-danger disabled:opacity-50"
+					class="relative flex-none rounded border border-line-strong px-1.5 py-0.5 text-[10.5px] leading-none font-medium text-faint transition-colors after:absolute after:-inset-3 after:content-[''] hover:border-danger/45 hover:text-danger disabled:opacity-(--disabled)"
 				>
 					Skip
 				</button>

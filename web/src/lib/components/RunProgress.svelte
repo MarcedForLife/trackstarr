@@ -55,7 +55,7 @@
 		<button
 			onclick={onstop}
 			disabled={stopping || run.stopping}
-			class="relative -my-1 flex-none rounded-md border border-line-strong px-2 py-1 text-[11.5px] leading-none font-medium text-dim transition-colors after:absolute after:-inset-2.5 after:content-[''] hover:border-danger/45 hover:text-danger active:bg-danger/10 disabled:opacity-50"
+			class="relative -my-1 flex-none rounded-md border border-line-strong px-2 py-1 text-[11.5px] leading-none font-medium text-dim transition-colors after:absolute after:-inset-2.5 after:content-[''] hover:border-danger/45 hover:text-danger active:bg-danger/10 disabled:opacity-(--disabled)"
 		>
 			<span class="inline-flex items-center gap-1.5">
 				<Glyph name="stop" size={9} />

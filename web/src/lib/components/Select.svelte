@@ -36,7 +36,7 @@
 		aria-labelledby={labelledBy}
 		aria-describedby={describedBy}
 		onchange={(event) => onchange(event.currentTarget.value)}
-		class={`${control} ${radius} appearance-none border border-line-strong bg-field pr-7 pl-2.5 text-[13px] disabled:opacity-50 sm:pr-8 sm:pl-3 ${
+		class={`${control} ${radius} appearance-none border border-line-strong bg-field pr-7 pl-2.5 text-[13px] disabled:opacity-(--disabled) sm:pr-8 sm:pl-3 ${
 			grow ? 'w-full' : ''
 		}`}
 	>

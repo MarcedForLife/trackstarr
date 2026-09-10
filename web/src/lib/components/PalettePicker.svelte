@@ -33,7 +33,9 @@
 </script>
 
 <!-- Each swatch carries layout.css's two attributes, so it paints itself in its
-     own palette. tabindex -1 makes the grid the element the arrows are heard on. -->
+     own palette: a rail in the sunken tone, a card in the raised, and the
+     accent where the app puts it, as a dot and as a bar. tabindex -1 makes the
+     grid the element the arrows are heard on. -->
 <div
 	role="radiogroup"
 	aria-labelledby={labelledBy}
@@ -55,16 +57,24 @@
 			<span
 				data-palette={option.value}
 				data-theme={theme.resolved}
-				class={`flex aspect-[3/2] w-full flex-col justify-between rounded-lg border border-line-strong bg-surface p-2 outline-2 outline-offset-2 transition-[outline-color] ${
-					selected ? 'outline-accent' : 'outline-transparent group-hover:outline-line-strong'
+				class={`flex aspect-[3/2] w-full overflow-hidden rounded-lg border border-line-strong bg-surface text-fg outline-2 outline-offset-2 transition-[outline-color] ${
+					selected ? 'outline-accent-fill' : 'outline-transparent group-hover:outline-line-strong'
 				}`}
 			>
-				<span class="flex items-center gap-1.5">
-					<span class="h-2 w-2 flex-none rounded-full bg-accent"></span>
-					<span class="h-1 flex-1 rounded-full bg-fg"></span>
+				<span class="flex w-[30%] flex-none flex-col gap-1.5 border-r border-line bg-sunken p-1.5">
+					<span class="h-1.5 w-1.5 rounded-full bg-accent-fill"></span>
+					<span class="h-1 w-full rounded-full bg-dim"></span>
+					<span class="h-1 w-3/4 rounded-full bg-faint"></span>
 				</span>
-				<span class="h-1 w-2/3 rounded-full bg-dim"></span>
-				<span class="block h-3.5 rounded-[5px] border border-line-strong bg-raised"></span>
+				<span class="flex min-w-0 flex-1 flex-col justify-end gap-1.5 p-1.5">
+					<span class="h-1 w-1/2 rounded-full bg-fg"></span>
+					<span class="flex flex-col gap-1 rounded-[5px] border border-line bg-raised p-1.5">
+						<span class="h-1 w-2/3 rounded-full bg-dim"></span>
+						<span class="h-1 overflow-hidden rounded-full bg-sunken">
+							<span class="block h-full w-3/5 rounded-full bg-accent-fill"></span>
+						</span>
+					</span>
+				</span>
 			</span>
 			<span
 				class={`text-[12px] leading-none ${selected ? 'font-semibold text-fg' : 'font-medium text-dim group-hover:text-fg'}`}

@@ -89,6 +89,11 @@
 	inherits: true;
 	initial-value: rgba(255, 255, 255, 0.13);
 }
+@property --line-control {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: rgba(255, 255, 255, 0.34);
+}
 @property --fg {
 	syntax: '<color>';
 	inherits: true;
@@ -105,6 +110,11 @@
 	initial-value: #686b74;
 }
 @property --accent {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #e3b25e;
+}
+@property --accent-fill {
 	syntax: '<color>';
 	inherits: true;
 	initial-value: #e3b25e;
@@ -153,8 +163,25 @@
 /* Six palettes in light and dark on one set of tokens. app.html resolves
    the stored pair before first paint. The selectors match any element, so
    the Appearance swatches paint themselves. Brass is the original; the rest
-   are tuned to match its contrast (faint text 3:1, accent text 4.4:1). The
-   knob has two colours because Graphite's dark on-track is near-white. */
+   are tuned to match its contrast: dim text 6:1, faint text 3.5:1, accent
+   text 5.2:1. The knob has two colours because Graphite's dark on-track is
+   near-white.
+
+   The accent is two tokens, since no yellow reaches 4.5:1 on a light page.
+   `--accent` is ink, for text and links, at 5.2:1 on the page, which leaves
+   4.5:1 under an `--accent-soft` pill. `--accent-fill` paints shapes (the
+   mark, bars, dots, toggles, the primary button, the focus ring) at 3:1
+   against `--surface`, the darkest ground any lands on. Dark sets both the
+   same. `--on-accent` is text on the fill.
+
+   Lines come in three weights. `--line` rules a list, `--line-strong` edges a
+   control or a floating panel, and `--line-control` is the verdict chips
+   alone, at 3:1 against every ground it touches: a chip that is on carries a
+   raised fill its ground already matches, so the edge is all it has.
+
+   Light puts white cards on a tinted page, a step of 1.12, the same lift the
+   dark palettes get from raised over surface; on a white page a card was
+   only its hairline. */
 :root {
 	/* Shared by anything keeping step with the swap. Ease-in-out, so the
 	   mid-grey where the palettes meet and text loses contrast passes quickly. */
@@ -183,10 +210,14 @@
 [data-theme='dark'] {
 	color-scheme: dark;
 	--float-shadow: 0 12px 32px rgba(0, 0, 0, 0.62), 0 3px 10px rgba(0, 0, 0, 0.45);
+	--disabled: 0.5;
 }
 [data-theme='light'] {
 	color-scheme: light;
 	--float-shadow: 0 12px 28px rgba(24, 20, 12, 0.16), 0 3px 8px rgba(24, 20, 12, 0.08);
+	/* Fading toward white costs more contrast than fading toward black, so the
+	   same 0.5 read two steps lighter here. 0.6 matches the dark fade. */
+	--disabled: 0.6;
 }
 
 /* The page and every swatch ease between palettes on the same curve. */
@@ -198,10 +229,12 @@
 		--field var(--theme-swap) var(--theme-swap-ease),
 		--line var(--theme-swap) var(--theme-swap-ease),
 		--line-strong var(--theme-swap) var(--theme-swap-ease),
+		--line-control var(--theme-swap) var(--theme-swap-ease),
 		--fg var(--theme-swap) var(--theme-swap-ease),
 		--dim var(--theme-swap) var(--theme-swap-ease),
 		--faint var(--theme-swap) var(--theme-swap-ease),
 		--accent var(--theme-swap) var(--theme-swap-ease),
+		--accent-fill var(--theme-swap) var(--theme-swap-ease),
 		--on-accent var(--theme-swap) var(--theme-swap-ease),
 		--accent-soft var(--theme-swap) var(--theme-swap-ease),
 		--ok var(--theme-swap) var(--theme-swap-ease),
@@ -212,7 +245,8 @@
 		--knob-on var(--theme-swap) var(--theme-swap-ease);
 }
 
-/* Cool grey under amber. The original, and the default. */
+/* Cool grey under amber in the dark, warm paper under brass in the light.
+   The original, and the default. */
 [data-palette='brass'][data-theme='dark'] {
 	--surface: #121317;
 	--sunken: #0d0e11;
@@ -220,10 +254,12 @@
 	--field: #191b21;
 	--line: rgba(255, 255, 255, 0.07);
 	--line-strong: rgba(255, 255, 255, 0.13);
+	--line-control: rgba(255, 255, 255, 0.34);
 	--fg: #e9eaee;
 	--dim: #9a9da8;
 	--faint: #686b74;
 	--accent: #e3b25e;
+	--accent-fill: #e3b25e;
 	--on-accent: #241a05;
 	--accent-soft: rgba(227, 178, 94, 0.13);
 	--ok: #5fc08a;
@@ -235,24 +271,24 @@
 }
 
 [data-palette='brass'][data-theme='light'] {
-	--surface: #fbfbfa;
-	--sunken: #f3f2ee;
+	--surface: #f4f2ec;
+	--sunken: #ebe8df;
 	--raised: #ffffff;
 	--field: #ffffff;
-	--line: rgba(26, 22, 12, 0.09);
-	--line-strong: rgba(26, 22, 12, 0.18);
-	--fg: #1d1d21;
-	--dim: #5c5f66;
-	--faint: #8f929b;
-	--accent: #9c6c10;
-	--on-accent: #fffcf4;
-	--accent-soft: rgba(156, 108, 16, 0.1);
+	--line: rgba(42, 34, 16, 0.1);
+	--line-strong: rgba(42, 34, 16, 0.2);
+	--line-control: rgba(42, 34, 16, 0.5);
+	--fg: #1e1c17;
+	--dim: #5c5851;
+	--faint: #837e74;
+	--accent: #855c14;
+	--accent-fill: #be7f13;
+	--on-accent: #2a1c05;
+	--accent-soft: rgba(190, 127, 19, 0.16);
 	--ok: #157f47;
 	--on-ok: #f4fff8;
 	--danger: #c2362f;
-	/* Dark enough for 3:1 against the page and the knob; iOS's paler track read
-	   as a smudge here. */
-	--toggle-off: #948f84;
+	--toggle-off: #928c7f;
 	--knob: #ffffff;
 	--knob-on: #ffffff;
 }
@@ -265,10 +301,12 @@
 	--field: #181818;
 	--line: rgba(255, 255, 255, 0.08);
 	--line-strong: rgba(255, 255, 255, 0.15);
+	--line-control: rgba(255, 255, 255, 0.34);
 	--fg: #ececec;
 	--dim: #a0a0a0;
 	--faint: #707070;
 	--accent: #ececec;
+	--accent-fill: #ececec;
 	--on-accent: #111111;
 	--accent-soft: rgba(255, 255, 255, 0.1);
 	--ok: #6cc28a;
@@ -280,22 +318,24 @@
 }
 
 [data-palette='graphite'][data-theme='light'] {
-	--surface: #fafafa;
-	--sunken: #f0f0f0;
+	--surface: #f2f2f2;
+	--sunken: #e8e8e8;
 	--raised: #ffffff;
 	--field: #ffffff;
-	--line: rgba(0, 0, 0, 0.08);
-	--line-strong: rgba(0, 0, 0, 0.16);
+	--line: rgba(0, 0, 0, 0.1);
+	--line-strong: rgba(0, 0, 0, 0.2);
+	--line-control: rgba(0, 0, 0, 0.43);
 	--fg: #161616;
-	--dim: #5f5f5f;
-	--faint: #8b8b8b;
+	--dim: #595959;
+	--faint: #7f7f7f;
 	--accent: #161616;
+	--accent-fill: #161616;
 	--on-accent: #fafafa;
-	--accent-soft: rgba(0, 0, 0, 0.06);
+	--accent-soft: rgba(22, 22, 22, 0.08);
 	--ok: #1a7f45;
 	--on-ok: #fafafa;
 	--danger: #c4362f;
-	--toggle-off: #8e8e8e;
+	--toggle-off: #908b8b;
 	--knob: #ffffff;
 	--knob-on: #ffffff;
 }
@@ -308,10 +348,12 @@
 	--field: #1c2129;
 	--line: rgba(196, 212, 236, 0.08);
 	--line-strong: rgba(196, 212, 236, 0.15);
+	--line-control: rgba(196, 212, 236, 0.42);
 	--fg: #e4e9f1;
 	--dim: #9aa7ba;
 	--faint: #6a778c;
 	--accent: #8cb9d9;
+	--accent-fill: #8cb9d9;
 	--on-accent: #0c1a26;
 	--accent-soft: rgba(140, 185, 217, 0.14);
 	--ok: #7cc39a;
@@ -323,22 +365,24 @@
 }
 
 [data-palette='fjord'][data-theme='light'] {
-	--surface: #f5f7fa;
-	--sunken: #eaeef4;
+	--surface: #eef2f7;
+	--sunken: #e3e9f1;
 	--raised: #ffffff;
 	--field: #ffffff;
-	--line: rgba(24, 40, 66, 0.09);
-	--line-strong: rgba(24, 40, 66, 0.18);
+	--line: rgba(24, 40, 66, 0.1);
+	--line-strong: rgba(24, 40, 66, 0.2);
+	--line-control: rgba(24, 40, 66, 0.52);
 	--fg: #1b2331;
-	--dim: #56637a;
-	--faint: #7f8da2;
-	--accent: #2c6a99;
-	--on-accent: #f5fbff;
-	--accent-soft: rgba(44, 106, 153, 0.1);
+	--dim: #505966;
+	--faint: #737f91;
+	--accent: #25689c;
+	--accent-fill: #4491cb;
+	--on-accent: #0c1a26;
+	--accent-soft: rgba(68, 145, 203, 0.16);
 	--ok: #237a4b;
 	--on-ok: #f2fdf6;
 	--danger: #bd3f3f;
-	--toggle-off: #8290a3;
+	--toggle-off: #808d9f;
 	--knob: #ffffff;
 	--knob-on: #ffffff;
 }
@@ -351,10 +395,12 @@
 	--field: #1b1a24;
 	--line: rgba(196, 186, 255, 0.08);
 	--line-strong: rgba(196, 186, 255, 0.17);
+	--line-control: rgba(196, 186, 255, 0.46);
 	--fg: #e8e6f1;
 	--dim: #9f9bb6;
 	--faint: #6f6b84;
 	--accent: #b3a3f3;
+	--accent-fill: #b3a3f3;
 	--on-accent: #171130;
 	--accent-soft: rgba(179, 163, 243, 0.14);
 	--ok: #72cc99;
@@ -366,22 +412,24 @@
 }
 
 [data-palette='dusk'][data-theme='light'] {
-	--surface: #faf9fc;
-	--sunken: #f0eef6;
+	--surface: #f1eff7;
+	--sunken: #e7e4f1;
 	--raised: #ffffff;
 	--field: #ffffff;
-	--line: rgba(48, 38, 92, 0.09);
-	--line-strong: rgba(48, 38, 92, 0.18);
+	--line: rgba(48, 38, 92, 0.1);
+	--line-strong: rgba(48, 38, 92, 0.2);
+	--line-control: rgba(48, 38, 92, 0.53);
 	--fg: #1d1a2c;
-	--dim: #5c5870;
-	--faint: #8c88a0;
-	--accent: #5f45c4;
-	--on-accent: #fbfaff;
-	--accent-soft: rgba(95, 69, 196, 0.1);
+	--dim: #5a5568;
+	--faint: #807a92;
+	--accent: #664bd2;
+	--accent-fill: #907cde;
+	--on-accent: #171130;
+	--accent-soft: rgba(144, 124, 222, 0.16);
 	--ok: #1f7d4c;
 	--on-ok: #f6fdf9;
 	--danger: #c1363b;
-	--toggle-off: #8f8aa3;
+	--toggle-off: #8e87a1;
 	--knob: #ffffff;
 	--knob-on: #ffffff;
 }
@@ -395,10 +443,12 @@
 	--field: #181d19;
 	--line: rgba(200, 228, 206, 0.07);
 	--line-strong: rgba(200, 228, 206, 0.14);
+	--line-control: rgba(200, 228, 206, 0.39);
 	--fg: #e6ebe6;
 	--dim: #98a39a;
 	--faint: #697369;
 	--accent: #a3c684;
+	--accent-fill: #a3c684;
 	--on-accent: #12240c;
 	--accent-soft: rgba(163, 198, 132, 0.14);
 	--ok: #5ec3a8;
@@ -410,22 +460,24 @@
 }
 
 [data-palette='moss'][data-theme='light'] {
-	--surface: #f8faf6;
-	--sunken: #eef2eb;
+	--surface: #eff3ec;
+	--sunken: #e4eae0;
 	--raised: #ffffff;
 	--field: #ffffff;
-	--line: rgba(28, 48, 30, 0.09);
-	--line-strong: rgba(28, 48, 30, 0.18);
+	--line: rgba(28, 48, 30, 0.1);
+	--line-strong: rgba(28, 48, 30, 0.2);
+	--line-control: rgba(28, 48, 30, 0.53);
 	--fg: #1a201b;
-	--dim: #576259;
-	--faint: #85908a;
-	--accent: #4a7a37;
-	--on-accent: #f5fbf1;
-	--accent-soft: rgba(74, 122, 55, 0.1);
+	--dim: #515b51;
+	--faint: #748274;
+	--accent: #426f2b;
+	--accent-fill: #589c37;
+	--on-accent: #12240c;
+	--accent-soft: rgba(88, 156, 55, 0.16);
 	--ok: #147a66;
 	--on-ok: #f1fdf8;
 	--danger: #c1392f;
-	--toggle-off: #869087;
+	--toggle-off: #7e917e;
 	--knob: #ffffff;
 	--knob-on: #ffffff;
 }
@@ -439,10 +491,12 @@
 	--field: #1e1916;
 	--line: rgba(255, 228, 208, 0.07);
 	--line-strong: rgba(255, 228, 208, 0.14);
+	--line-control: rgba(255, 228, 208, 0.37);
 	--fg: #eee8e2;
 	--dim: #a69b92;
 	--faint: #746b62;
 	--accent: #e68e6d;
+	--accent-fill: #e68e6d;
 	--on-accent: #2b1208;
 	--accent-soft: rgba(230, 142, 109, 0.14);
 	--ok: #6dbf8f;
@@ -454,18 +508,20 @@
 }
 
 [data-palette='clay'][data-theme='light'] {
-	--surface: #fbf8f5;
-	--sunken: #f3ede7;
+	--surface: #f5f0ea;
+	--sunken: #ece5dd;
 	--raised: #ffffff;
 	--field: #ffffff;
-	--line: rgba(64, 36, 20, 0.09);
-	--line-strong: rgba(64, 36, 20, 0.18);
+	--line: rgba(64, 36, 20, 0.1);
+	--line-strong: rgba(64, 36, 20, 0.2);
+	--line-control: rgba(64, 36, 20, 0.53);
 	--fg: #241c18;
-	--dim: #655a52;
-	--faint: #948980;
-	--accent: #ad4e2b;
-	--on-accent: #fff7f2;
-	--accent-soft: rgba(173, 78, 43, 0.1);
+	--dim: #605650;
+	--faint: #897b72;
+	--accent: #a5461d;
+	--accent-fill: #d76d41;
+	--on-accent: #2b1208;
+	--accent-soft: rgba(215, 109, 65, 0.16);
 	--ok: #1f7e4b;
 	--on-ok: #f4fdf7;
 	--danger: #c22f50;
@@ -483,10 +539,12 @@
 	--color-field: var(--field);
 	--color-line: var(--line);
 	--color-line-strong: var(--line-strong);
+	--color-line-control: var(--line-control);
 	--color-fg: var(--fg);
 	--color-dim: var(--dim);
 	--color-faint: var(--faint);
 	--color-accent: var(--accent);
+	--color-accent-fill: var(--accent-fill);
 	--color-on-accent: var(--on-accent);
 	--color-accent-soft: var(--accent-soft);
 	--color-ok: var(--ok);
@@ -551,7 +609,7 @@ body {
 	/* Pointer users get no ring, keyboard users an obvious one. No radius: an
 	   outline follows the element's corners, and stating one squared them. */
 	:focus-visible {
-		outline: 2px solid var(--accent);
+		outline: 2px solid var(--accent-fill);
 		outline-offset: 2px;
 	}
 }

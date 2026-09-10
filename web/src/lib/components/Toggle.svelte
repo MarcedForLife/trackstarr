@@ -24,11 +24,11 @@
 	aria-describedby={describedBy}
 	{disabled}
 	onclick={() => onchange(!on)}
-	class="group -m-3 flex-none p-3 disabled:opacity-50 sm:-m-2 sm:p-2"
+	class="group -m-3 flex-none p-3 disabled:opacity-(--disabled) sm:-m-2 sm:p-2"
 >
 	<span
 		class={`relative block h-[22px] w-9 rounded-full ring-0 ring-line-strong transition-[background-color,box-shadow] duration-200 group-active:ring-4 ${
-			on ? 'bg-accent' : 'bg-toggle-off'
+			on ? 'bg-accent-fill' : 'bg-toggle-off'
 		}`}
 	>
 		<!-- translate, not left: left is a layout property, so the browser reflows

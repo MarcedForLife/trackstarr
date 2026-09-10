@@ -41,7 +41,7 @@
 {#snippet line(chevron: Snippet)}
 	<span class="flex-none text-[17px] font-semibold tracking-tight">{heading}</span>
 	{#if changed}
-		<span class="-ml-1.5 h-1.5 w-1.5 flex-none rounded-full bg-accent"></span>
+		<span class="-ml-1.5 h-1.5 w-1.5 flex-none rounded-full bg-accent-fill"></span>
 		<span class="sr-only">Unsaved changes</span>
 	{/if}
 	<span class="min-w-0 flex-1 truncate text-right text-[12.5px] text-dim">{note}</span>

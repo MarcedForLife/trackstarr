@@ -96,7 +96,7 @@
 		...(card.adds ?? []).map((layout) => ({ chip: `+${layout}`, tone: 'bg-ok/90 text-on-ok' })),
 		...(card.rebuilds ?? []).map((layout) => ({
 			chip: layout,
-			tone: 'bg-accent/90 text-on-accent'
+			tone: 'bg-accent-fill/90 text-on-accent'
 		}))
 	]);
 
@@ -177,7 +177,7 @@
 			style:--cover={missing || display.art === 'hide' ? undefined : `url("${art}")`}
 			class={`art absolute inset-0 block overflow-hidden rounded-xl border bg-sunken ${
 				flat || !display.lights ? '' : `is-${display.sheen}`
-			} ${selected || armed ? 'border-accent' : 'border-line'}`}
+			} ${selected || armed ? 'border-accent-fill' : 'border-line'}`}
 		>
 			{#if missing || display.art === 'hide'}
 				<span class={TILE}>{mark}</span>
@@ -268,7 +268,7 @@
 					aria-hidden="true"
 					class={`pointer-events-none absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
 						selected || armed
-							? 'border-accent bg-accent text-on-accent'
+							? 'border-accent-fill bg-accent-fill text-on-accent'
 							: 'border-white/75 bg-black/45 text-transparent'
 					}`}
 				>

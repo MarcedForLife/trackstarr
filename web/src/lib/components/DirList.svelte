@@ -92,7 +92,7 @@
 	<button
 		onclick={addDir}
 		disabled={locked}
-		class="-my-1 flex h-11 items-center self-start px-2 text-[13px] font-medium text-faint hover:text-fg disabled:opacity-50 sm:my-0 sm:h-8"
+		class="-my-1 flex h-11 items-center self-start px-2 text-[13px] font-medium text-faint hover:text-fg disabled:opacity-(--disabled) sm:my-0 sm:h-8"
 	>
 		+ Add a directory
 	</button>

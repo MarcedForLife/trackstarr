@@ -39,8 +39,8 @@
 	<div
 		class={`h-full origin-left rounded-full ${
 			file
-				? 'bg-accent/70 transition-transform duration-1000 ease-linear'
-				: `transition-transform duration-500 ease-out ${done ? 'bg-ok' : 'bg-accent'}`
+				? 'bg-accent-fill/70 transition-transform duration-1000 ease-linear'
+				: `transition-transform duration-500 ease-out ${done ? 'bg-ok' : 'bg-accent-fill'}`
 		}`}
 		style={`transform: scaleX(${fill})`}
 	></div>
