@@ -1,97 +1,92 @@
-# trackstarr web
+# Trackstarr web UI
 
-A SvelteKit app built to static files, served by the Python listener from
-`WEB_DIR`. No Node in the runtime image and no SSR: `ssr = false` in
-`src/routes/+layout.ts`, with `index.html` standing in for every route.
+A Svelte 5 / SvelteKit app with Tailwind CSS v4. It builds to static files in
+`build/`, served by the Python listener from `WEB_DIR`. SSR is disabled and
+`index.html` is the route fallback; the runtime image needs no Node.js.
 
-## Working on it
+## Development
 
-Start both halves with `uv run dev.py` from the repo root. Vite takes the
-listener's port and proxies the API to it one port along, so the browser sees
-one origin as in the image. Leave `WEB_DIR` unset in `.env`, or the listener
-serves a stale build over the dev server.
+From the repository root, run `uv run dev.py` to start the API and UI together.
+Vite serves on `LISTEN_PORT` (5120 by default) and proxies `/api`, `/health` and
+`/webhook` to the listener one port higher. The launcher installs web dependencies
+if `node_modules` is missing. Leave `WEB_DIR` unset for development.
 
-```bash
-npm run check     # svelte-check, what CI runs
-npm run lint      # prettier --check and eslint
-npm run format    # prettier --write
-npm run test      # vitest over the modules that are answers rather than markup
-npm run build     # static bundle into build/
-npm run probe     # the bundle in two browsers; see probes/README.md
+Run these commands from `web/`:
+
+```sh
+npm ci                  # install locked dependencies
+npm run check           # Svelte and TypeScript checks
+npm run lint            # Prettier and ESLint
+npm run format          # apply formatting
+npm test                # Vitest; no browser required
+npm run test:watch      # rerun tests during development
+npm run build           # static production bundle
+npm run probe           # build and run focus probes in Chromium and Firefox
+npm run probe:sweep     # build and measure library interaction frame times
 ```
 
-Tests sit beside what they test, in the node environment: no DOM, no
-components. `src/palette.test.ts` parses `layout.css` and `app.html` and holds
-the copies of the palette tokens to each other.
+Tests live beside the modules they cover and run in Node, without a DOM.
+`src/palette.test.ts` checks palette tokens across CSS and the initial HTML.
+For browser-only behaviour, see [probes](probes/README.md). For screenshots,
+gesture checks and recordings against a running service, see the
+[UI review harness](../tools/uireview/README.md).
 
-## The demo
+## Standalone demo
 
-`npm run dev:demo` and `npm run build:demo` build the same pages with no service
-behind them. Under `vite --mode demo` the `$demo` alias names
-`src/lib/demo/hooks.ts`, and through it `$lib/api` answers every request from
-`src/lib/demo` in the browser, `$lib/stream` opens the demo's stand-in for the
-event stream, and `$lib/library` takes posters from the build. Any
-other mode names `none.ts`, which imports nothing, so the normal build carries
-none of the demo.
+```sh
+npm ci
+npm run posters:demo    # fetch licensed poster assets
+npm run dev:demo        # run locally without the Python service
+npm run build:demo      # build a static demo
+```
 
-The sample library in `catalogue.ts` is the Blender open movies, a CC0 film and
-public domain films and series, with invented files around them so every
-verdict shows. `judge.ts` is enough of the planner to judge those files against
-the settings, so a settings change, a retag or a re-check moves the library the
-way the service would. `runs.ts` carries a sweep along a second at a time and
-publishes to the stream as it goes; `history.ts` writes three weeks of events
-around the moment the page opened. Nothing is stored, so a reload starts over.
-`src/demo.test.ts` holds the demo's answers to the same checks
-`fixtures.test.ts` puts the service's through.
+Any username and password sign in. Demo mode substitutes browser implementations
+of the API, event stream and poster loading through `$demo` in `vite.config.ts`.
+The normal build selects `none.ts` and does not import the demo backend.
 
-Every title has a poster or still on Wikimedia Commons under CC BY or in the
-public domain, named in `src/lib/demo/posters.json`: `npm run posters:demo`
-fetches them into the gitignored `src/lib/demo/posters/`, checking each licence
-on the way, and `posters.ts` picks them up with a build-time glob. The workflow
-runs it before the build, so the images never enter the repo; the notice over
-the demo's pages credits every one shown.
+The sample library uses open films and public-domain titles with invented media
+files. It supports simulated sweeps, rule changes, retagging and rechecks, plus
+three weeks of generated event history. Library and processing changes reset on
+reload; browser appearance preferences persist.
 
-`.github/workflows/demo.yml` publishes it to GitHub Pages under the
-repository's name, which is what `BASE_PATH` is for: `routeOf` in `$lib/nav`
-takes the base off a pathname before the routes compare it, and every link and
-redirect goes through `resolve` from `$app/paths`.
+`src/lib/demo/posters.json` records image sources and licences.
+`posters:demo` checks licences and downloads assets to the gitignored
+`src/lib/demo/posters/`; the demo credits displayed images. The GitHub Pages
+workflow fetches these before building and uses `BASE_PATH` for the repository
+subpath.
 
 ## Conventions
 
-`src/routes/layout.css` carries every design token, the base element rules and
-the shared keyframes. Element rules sit in `@layer base` so a utility overrules
-them; only reduced-motion is unlayered, since its `!important` is the point.
-Tailwind v4 moves elements with `translate`, so a hand-written
-`transition: transform` animates nothing.
+- **Reactivity:** runes mode is enabled outside `node_modules`. Use `$state`,
+  `$derived` and `$props`. Use `let x = $derived(data.x)` for loader values that
+  should reset when data reloads. Reserve `svelte-ignore state_referenced_locally`
+  for deliberate one-time reads, such as a class constructor's initial state.
+- **Shared updates:** create one `Snapshot` per page and pass it to readers such
+  as `ServicePanel` and `Recheck`. Readers request their own polling intervals;
+  the shortest wins, avoiding duplicate `/api/runs` requests.
+- **Styling:** keep design tokens, base styles and shared keyframes in
+  `src/routes/layout.css`. Base element styles use `@layer base`; reduced-motion
+  overrides remain unlayered. Animate the CSS property being changed: Tailwind v4
+  translation utilities use `translate`, not `transform`.
+- **Pages and sections:** `Page.svelte` sets the document title and page width.
+  Rules and Appearance use collapsible `Section` groups with short summaries of
+  their current settings.
+- **Routing:** use `resolve` from `$app/paths` for links and redirects, and
+  `$lib/nav`'s `routeOf` for comparisons that exclude the deployment base path.
+- **Versions:** keep `package.json` aligned with the backend version.
+- **Mobile review:** check layouts around 412×915, as well as desktop. Use a real
+  phone to assess animation smoothness.
 
-Runes are forced on for everything outside `node_modules` (see
-`vite.config.ts`), so `$state`/`$derived`/`$props` throughout and no legacy
-reactive statements.
+## API contracts
 
-A page seeds state from the loader in one of two ways. A value the page later
-reassigns is `let x = $derived(data.x)`, so a loader re-run re-seeds it. A
-value a class consumes once at construction (`new SettingsDraft(...)`,
-`new Snapshot(...)`, the rows of `DirList`) is read under
-`svelte-ignore state_referenced_locally`, since the read really is once.
+`tests/test_contract.py` writes backend responses to `src/fixtures/*.json`.
+`src/fixtures.test.ts` checks those fixtures against the frontend types;
+`src/demo.test.ts` checks the demo against the same contracts.
 
-A page that watches what the service is doing builds one `Snapshot` and hands
-it to every reader (`ServicePanel`, `new Recheck(...)`), so one stream message
-costs one `/api/runs` request. Each reader keeps its own state and asks the
-snapshot for its own pace; the soonest wins.
+After changing an endpoint, regenerate fixtures from the repository root:
 
-Page titles come from `Page.svelte`, which sets `{title} · Trackstarr` and
-carries the `wide` prop the settings pages leave off. `version` in
-`package.json` tracks the backend's.
+```sh
+UPDATE_FIXTURES=1 uv run pytest tests/test_contract.py
+```
 
-Rules and Appearance fold: each group is a `<Section heading="..." note="...">`
-with the first one `open`. The `note` is what the group answers while shut,
-such as `3 of 5 on` or `System · Brass`, not a row count.
-
-`src/fixtures/*.json` are the service's own answers, written by
-`tests/test_contract.py` and checked by `src/fixtures.test.ts` against the
-types in `$lib`, so a key renamed on one side fails the other. After changing
-an endpoint, run `UPDATE_FIXTURES=1 uv run pytest tests/test_contract.py` from
-the repo root, then `npm run check`.
-
-The UI is used on a phone most of the time. Check anything laid out for a wide
-screen at about 412×915 before calling it done.
+Then run `npm run check` and `npm test` from `web/` and commit the updated fixtures.

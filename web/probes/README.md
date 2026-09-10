@@ -1,22 +1,44 @@
-# Probes
+# Browser probes
 
-Checks that only exist in a browser: a `focus()` refused during a transition,
-an `inert` left behind, a live region that never announces, a dropped frame.
-These drive the built bundle in Chromium and Firefox behind a stub service
-answering with the fixtures in `../src/fixtures`.
+Manual checks against the built UI in Chromium and Firefox, with a stub API backed
+by `../src/fixtures`. They cover browser behaviour that Node tests cannot:
+focus during transitions, lingering `inert` state, live regions and frame timing.
+No running Trackstarr service or account is needed.
 
-Not in CI: they need browsers, and a Gecko answer still wants a real phone.
-Playwright lives in this directory's own `package.json` so `npm ci` in `web/`
-never installs it.
+Playwright lives in this directory so the app's normal `npm ci` does not install
+browser tooling. Probes do not run in CI.
 
-```bash
-npm run probe          # build, then focus.mjs: the pass/fail table, both engines
-npm run probe:sweep    # build, then sweep.mjs: frame times over the shelf
-ENGINES=firefox node probes/focus.mjs    # one engine, on the last build
-SERVE=1 node probes/focus.mjs            # serve it on :5197 for a phone
+## Run
+
+From `web/`, after installing the app dependencies with `npm ci`:
+
+```sh
+npm run probe          # build, install probe dependencies/browsers, run focus checks
+npm run probe:sweep    # same preparation, then measure library interactions
 ```
 
-For a "before": `git stash push -- src`, `npm run build`, copy `build/` aside,
-`git stash pop`, build again, then run a probe with `ROOT=<the copy>`. A probe
-the old bundle also passes is not testing the change. Judge numbers in Zen or
-Firefox and on a phone; desktop Chromium does not transfer.
+Once prepared, reuse the current build:
+
+```sh
+ENGINES=firefox node probes/focus.mjs
+HEADED=1 node probes/focus.mjs
+TITLES=1200 ENGINES=firefox node probes/sweep.mjs
+GESTURES=hover HEADED=1 node probes/sweep.mjs
+SERVE=1 node probes/focus.mjs   # keep the stub site open on port 5197 for manual review
+```
+
+`focus.mjs` reports a pass/fail table. `sweep.mjs` measures frame times for hover,
+wheel and drag gestures over a synthetic library (400 titles by default).
+`ENGINES` defaults to `chromium,firefox`; `SCALE` controls the sweep probe's device
+pixel ratio (default 2).
+
+## Compare a change
+
+Keep a copy of the baseline `build/` before rebuilding the changed UI. Point a
+probe at it with `ROOT=/absolute/path/to/baseline-build`, then repeat against the
+new bundle using the same engine and settings. A regression check should fail
+on the affected baseline and pass after the fix.
+
+Frame timings are diagnostic, not a portable performance score. Compare like
+for like and check the result on a real phone. For recordings against the live
+service, use the [UI review harness](../../tools/uireview/README.md).
