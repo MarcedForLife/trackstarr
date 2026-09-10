@@ -118,6 +118,7 @@ function paintChrome(animated: boolean) {
 }
 
 function apply(animated = false) {
+	if (animated) holdControls();
 	root.dataset.theme = resolved;
 	root.dataset.palette = palette;
 	if (palette === 'custom') {
@@ -132,6 +133,16 @@ function apply(animated = false) {
 }
 
 let liveTimer = 0;
+let swapTimer = 0;
+
+// Holds the controls' own colour transitions off for the length of a swap:
+// Gecko runs one straight to the final token and flashes. The rule is in
+// layout.css, under the attribute this sets.
+function holdControls() {
+	root.dataset.swapping = '';
+	clearTimeout(swapTimer);
+	swapTimer = window.setTimeout(() => delete root.dataset.swapping, SETTLE_MS);
+}
 
 // Holds layout.css's swap transition off while the hue slider moves: a 700ms
 // ease behind every step read as smear. The root carries the attribute and

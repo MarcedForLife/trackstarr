@@ -256,6 +256,20 @@
 	transition-duration: 0s;
 }
 
+/* While a swap runs. Gecko resolves a control's own colour transition against
+   the swap's final token rather than the frame's, so `transition-colors` ran
+   the whole distance in its own 150ms and flashed. A control's colours are the
+   tokens: while those move it has nothing of its own to ease. The toggle's
+   glyph rides the swap from rules that outrank a bare `*`. */
+[data-swapping] * {
+	transition-duration: 0s;
+}
+
+/* A swatch swaps with the page, on the page's curve. */
+[data-swapping] [data-palette] {
+	transition-duration: var(--theme-swap);
+}
+
 /* Cool grey under amber in the dark, warm paper under brass in the light.
    The original, and the default. */
 [data-palette='brass'][data-theme='dark'] {
