@@ -153,8 +153,10 @@
 		{#if DemoNotice}
 			<DemoNotice />
 		{/if}
+		<!-- touch-none: a drag on the bar is not a scroll, so it cannot pull the
+		     page to a refresh. Taps still land. -->
 		<header
-			class="sticky top-0 z-30 border-b border-line bg-surface/85 pt-[env(safe-area-inset-top)] backdrop-blur-md lg:hidden"
+			class="sticky top-0 z-30 touch-none border-b border-line bg-surface/85 pt-[env(safe-area-inset-top)] backdrop-blur-md lg:hidden"
 		>
 			<div class="flex h-14 items-center gap-2 px-4">
 				<!-- The mark and name are the way home. Negative margin against its

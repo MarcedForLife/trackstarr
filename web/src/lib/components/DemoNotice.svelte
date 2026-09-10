@@ -16,7 +16,9 @@
 	class="border-b border-line bg-accent-soft pt-[env(safe-area-inset-top)] text-[12.5px] text-dim lg:pt-0"
 	role="note"
 >
-	<div class="flex items-center gap-3 px-4 py-1.5">
+	<!-- touch-none: a drag on the line is not a scroll, so it cannot pull the
+	     page to a refresh. The credits below scroll as text does. -->
+	<div class="flex touch-none items-center gap-3 px-4 py-1.5">
 		<span class="min-w-0 flex-1 truncate">
 			<span class="font-semibold text-fg">Demo.</span>
 			A sample library of openly licensed films. Nothing here is real, and nothing is saved past a reload.

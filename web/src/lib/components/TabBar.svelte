@@ -166,12 +166,14 @@
 	}
 </script>
 
-<!-- z-30: over the page, under the drawer's scrim and the title sheet. -->
+<!-- z-30: over the page, under the drawer's scrim and the title sheet.
+     touch-none: a drag on the bar is not a scroll, so it cannot pull the page
+     to a refresh. -->
 <nav
 	bind:this={bar}
 	aria-label="Primary"
 	onfocusin={reveal}
-	class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden"
+	class="fixed inset-x-0 bottom-0 z-30 touch-none border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl lg:hidden"
 >
 	<div class="relative grid h-14 auto-cols-fr grid-flow-col">
 		<!-- The pill slides between cells like the segmented switch's thumb.
