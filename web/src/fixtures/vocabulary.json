@@ -16,6 +16,7 @@
 		"unsupported",
 		"conform",
 		"modified",
+		"untagged",
 		"unchecked",
 		"missing"
 	],

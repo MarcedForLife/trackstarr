@@ -8,6 +8,7 @@ import {
 	KINDS,
 	MISSING,
 	MODIFIED,
+	UNTAGGED,
 	type Card,
 	type Kind,
 	type Verdict
@@ -50,12 +51,19 @@ export function kindsOn(titles: readonly Card[]): Kind[] {
 	return [...known, ...rest];
 }
 
+// The chips a card answers with a count. A rewritten file passes and an
+// untagged one usually does, so the count is all that marks either title.
+const COUNTED: Partial<Record<Verdict, keyof Card>> = {
+	[MODIFIED]: 'modified',
+	[UNTAGGED]: 'untagged'
+};
+
 /** Whether a title holds any file in this state. The card carries the tally its
  * files reached, so a mostly-passed title with one skipped file is found under
  * both. A card with no verdicts on it has only its headline to answer with. */
 export function within(card: Card, state: Verdict): boolean {
-	// A rewritten file passes, so only the count marks it as ours.
-	if (state === MODIFIED) return !!card.modified;
+	const counted = COUNTED[state];
+	if (counted) return !!card[counted];
 	if (!card.counts) return card.state === state;
 	return (card.counts[state] ?? 0) > 0;
 }

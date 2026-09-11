@@ -50,7 +50,8 @@ export type Modified = {
 	added?: number[];
 };
 
-// `mixed` and `modified` are a card's words, never a file's. See FILTERS below.
+// `mixed`, `modified` and `untagged` are a card's words, never a file's. See
+// FILTERS below.
 // Closed on purpose: a word off the wire is narrowed by asVerdict() before it
 // reaches anything typed with this, so a misspelling here is a build error and
 // not a chip nothing ever draws.
@@ -62,6 +63,7 @@ export type Verdict =
 	| 'unsupported'
 	| 'conform'
 	| 'modified'
+	| 'untagged'
 	| 'mixed'
 	| 'unchecked'
 	| 'missing';
@@ -96,6 +98,9 @@ export type Card = {
 	// How many of its files trackstarr has rewritten. A rewritten file passes,
 	// so without this a card cannot say it was ever touched.
 	modified?: number;
+	// How many hold an audio track with no language tag. Its own count because
+	// such a file usually passes, so no verdict marks it.
+	untagged?: number;
 	// Those three as the one number the grid and strip sort on. See _weight in
 	// library.py.
 	weight?: number;
@@ -481,6 +486,16 @@ const VOCABULARY: Record<Verdict, Words> = {
 		tint: 'border-ok/50 bg-raised',
 		text: 'text-ok'
 	},
+	untagged: {
+		label: 'Untagged',
+		hint: 'An audio track carries no language tag, so the languages and downmix rules cannot read it. Open the title and set one.',
+		// Half the accent, since it wants attending to less loudly than Pending
+		// and the two filled accents are the rewrites. The surface stays neutral
+		// because the file is still in whatever state its verdict says.
+		pip: 'bg-accent-fill/50',
+		tint: 'border-line-control bg-raised',
+		text: 'text-accent'
+	},
 	mixed: {
 		label: 'Mixed',
 		hint: 'Nothing outstanding, but the files do not all say the same thing. The dots say which states are in it.',
@@ -562,11 +577,12 @@ export const VERDICTS: Verdict[] = [
 	'missing'
 ];
 
-// What a chip row cuts the grid by. `modified` reads off a card's own
-// count, so "what have I rewritten" is a filter and not a badge to go hunting
-// for. Hiding reads VERDICTS above, since it goes on the word a card leads with
-// and `modified` is never one.
+// What a chip row cuts the grid by. The two below read a card's own count, so
+// "what have I rewritten" and "what needs a tag" are filters rather than badges
+// to go hunting for. Hiding reads VERDICTS above, since it goes on the word a
+// card leads with and neither of these is ever one.
 export const MODIFIED: Verdict = 'modified';
+export const UNTAGGED: Verdict = 'untagged';
 export const FILTERS: Verdict[] = [
 	'failed',
 	'pending',
@@ -574,6 +590,7 @@ export const FILTERS: Verdict[] = [
 	'unsupported',
 	'conform',
 	MODIFIED,
+	UNTAGGED,
 	'unchecked',
 	'missing'
 ];

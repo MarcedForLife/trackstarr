@@ -13,7 +13,7 @@
 	import { arrival, coverShow, type Arrival } from '$lib/covers';
 	import { button } from '$lib/controls';
 	import { ago } from '$lib/events';
-	import { bytesFor, describe, duration, rate } from '$lib/format';
+	import { bytesFor, carriesLanguage, describe, duration, rate } from '$lib/format';
 	import {
 		forTitle,
 		getHolds,
@@ -338,9 +338,9 @@
 	// who cannot act still sees a hold.
 	const acting = $derived(!!runner || admin);
 
-	// Whether the rules read tags on this kind of track at all.
+	// The same kinds the row's own line says a language on.
 	function tagged(row: Listed): boolean {
-		return row.track.kind === 'audio' || row.track.kind === 'subtitle';
+		return carriesLanguage(row.track.kind);
 	}
 
 	// Whether this row's tags can be edited: a track the file holds now, of a

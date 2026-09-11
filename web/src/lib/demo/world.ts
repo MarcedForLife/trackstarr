@@ -311,6 +311,7 @@ export function card(world: World, title: Title): Card {
 	const adds = new Set<string>();
 	let drops = 0;
 	let modified = 0;
+	let untagged = 0;
 	let judged = 0;
 	let bytes = 0;
 	for (const file of title.files) {
@@ -318,6 +319,7 @@ export function card(world: World, title: Title): Card {
 		bytes += file.bytes;
 		judged = Math.max(judged, file.judged);
 		if (file.modified) modified += 1;
+		if (file.tracks.some((track) => track.kind === 'audio' && !track.lang)) untagged += 1;
 		for (const name of added(file.planned)) adds.add(name);
 		if (file.planned.length) {
 			drops += file.tracks.filter(
@@ -340,6 +342,7 @@ export function card(world: World, title: Title): Card {
 	if (adds.size) made.adds = [...adds].sort();
 	if (drops) made.drops = drops;
 	if (modified) made.modified = modified;
+	if (untagged) made.untagged = untagged;
 	if (adds.size || drops) {
 		made.weight = Math.round((adds.size + drops / title.files.length) * 100) / 100;
 	}
@@ -374,6 +377,7 @@ function tally(made: Card[]): Record<string, number> {
 			? Object.keys(each.counts).filter((state) => each.counts![state])
 			: [each.state];
 		if (each.modified) states.push('modified');
+		if (each.untagged) states.push('untagged');
 		for (const state of states) counts[state] = (counts[state] ?? 0) + 1;
 	}
 	return counts;

@@ -2,7 +2,7 @@
 // Per browser, like the theme: how this device shows the app, not a service
 // setting.
 
-import { MISSING, UNSUPPORTED, VERDICTS, type Verdict } from '$lib/library';
+import { FILTERS, MISSING, UNSUPPORTED, type Verdict } from '$lib/library';
 import { keep, keepAll, stored, storedAll } from '$lib/prefs';
 
 // How loud the poster effects are. One axis rather than a switch: "steadier on
@@ -80,8 +80,10 @@ let missing = $state<Shown>(stored(MISSING_KEY, ['show', 'hide'], 'hide'));
 // Shown by default: real files nobody has seen yet, to hide once they have
 // looked.
 let unsupported = $state<Shown>(stored(UNSUPPORTED_KEY, ['show', 'hide'], 'show'));
-// Which verdicts the grid opens held; none is All. A per-browser habit.
-let filters = $state<Verdict[]>(storedAll(FILTERS_KEY, VERDICTS));
+// Which chips the grid opens held; none is All. A per-browser habit. Read
+// against the chip row, not the verdicts, or the two chips that are no verdict
+// press on Appearance and never take.
+let filters = $state<Verdict[]>(storedAll(FILTERS_KEY, FILTERS));
 
 export const display = {
 	get effects() {
@@ -174,6 +176,6 @@ export function setUnsupported(next: Shown) {
 
 export function setFilters(next: Verdict[]) {
 	// In vocabulary order, not press order, so both chip rows agree.
-	filters = VERDICTS.filter((state) => next.includes(state));
+	filters = FILTERS.filter((state) => next.includes(state));
 	keepAll(FILTERS_KEY, filters);
 }
