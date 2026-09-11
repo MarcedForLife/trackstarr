@@ -10,7 +10,9 @@ name: Demo
 on:
   push:
     branches: [main]
-    paths: [web/**, .github/workflows/demo.yml]
+    # __init__.py is here because the build bakes the version it holds into the
+    # demo. See web/vite.config.ts.
+    paths: [web/**, src/trackstarr/__init__.py, .github/workflows/demo.yml]
   workflow_dispatch:
 
 permissions:

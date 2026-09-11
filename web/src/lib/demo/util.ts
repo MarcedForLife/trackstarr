@@ -1,8 +1,9 @@
 // Small shared pieces of the demo: stamps, ids and the clock arithmetic the
 // world and its history both do.
 
-/** The version the demo answers with, where the service says its own. */
-export const VERSION = '0.1.0-demo';
+/** The version the demo answers with, where the service says its own. The
+ * build reads it from src/trackstarr/__init__.py. */
+export const VERSION = `${__SERVICE_VERSION__}-demo`;
 
 export const MINUTE_MS = 60_000;
 export const HOUR_MS = 60 * MINUTE_MS;

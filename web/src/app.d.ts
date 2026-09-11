@@ -1,6 +1,9 @@
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
 declare global {
+	// Baked in by vite.config.ts, from the service's own __version__.
+	const __SERVICE_VERSION__: string;
+
 	namespace App {
 		// What the error page is told. See hooks.client.ts.
 		interface Error {

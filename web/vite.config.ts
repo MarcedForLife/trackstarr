@@ -1,7 +1,17 @@
+import { readFileSync } from 'node:fs';
 import tailwindcss from '@tailwindcss/vite';
 import adapter from '@sveltejs/adapter-static';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vitest/config';
+
+// The one place the version is written, which hatch also reads. The demo has
+// no service to ask, so the build bakes it in.
+function serviceVersion(): string {
+	const source = readFileSync(new URL('../src/trackstarr/__init__.py', import.meta.url), 'utf8');
+	const found = source.match(/^__version__ = "([^"]+)"$/m);
+	if (!found) throw new Error('no __version__ in src/trackstarr/__init__.py');
+	return found[1];
+}
 
 // One origin for both halves, as in the image: Vite answers on the listener's
 // port and proxies the listener's paths to the port dev.py moved it to.
@@ -16,6 +26,7 @@ const apiPaths = ['/api', '/health', '/webhook'];
 const basePath = process.env.BASE_PATH ?? '';
 
 export default defineConfig(({ mode }) => ({
+	define: { __SERVICE_VERSION__: JSON.stringify(serviceVersion()) },
 	plugins: [
 		tailwindcss(),
 		sveltekit({

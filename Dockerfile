@@ -16,10 +16,12 @@ RUN pip install --no-cache-dir --break-system-packages --no-compile \
 # Web build stage: Node exists only here. The UI compiles to static files.
 FROM node:26-alpine AS web
 
-WORKDIR /web
+WORKDIR /build/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web ./
+# The build reads the version out of it. See web/vite.config.ts.
+COPY src/trackstarr/__init__.py ../src/trackstarr/__init__.py
 RUN npm run build
 
 # Alpine's ffmpeg carries the native AAC encoder, which is all the downmixes
@@ -29,7 +31,7 @@ FROM alpine:3.24
 
 RUN apk add --no-cache ffmpeg mkvtoolnix python3 tzdata
 COPY --from=build /out /
-COPY --from=web /web/build /web
+COPY --from=web /build/web/build /web
 RUN python3 -m compileall -q /usr/lib/python3*/site-packages/trackstarr
 
 ENV PYTHONUNBUFFERED=1
