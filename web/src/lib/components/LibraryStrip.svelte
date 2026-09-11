@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { flip } from 'svelte/animate';
-	import { cubicOut } from 'svelte/easing';
 	import { fade } from 'svelte/transition';
 	import Glyph from '$lib/components/Glyph.svelte';
 	import PosterCard from '$lib/components/PosterCard.svelte';
@@ -34,15 +32,8 @@
 	// The one number that says whether the library is as it should be.
 	const pending = $derived(library?.counts['pending'] ?? 0);
 
-	// How long a poster slides to its new place; the grid's figure.
-	const SLIDE_MS = 320;
-
-	// The strip is re-read under a sweep and leads with what was last open, so a
-	// title just reached slides to the front.
-	const slide = $derived({ duration: moving() ? SLIDE_MS : 0, easing: cubicOut });
-
-	// How long an arriving poster fades in, for a walk that replaced the whole
-	// head between two reads, which flip cannot mark.
+	// How long an arriving poster fades in. The whole fade, since the cards it
+	// displaces arrive in place rather than sliding; see the row below.
 	const ARRIVE_MS = 200;
 
 	// Whether the strip has been drawn once, so the first pass does not fade in.
@@ -52,8 +43,7 @@
 		drawn = true;
 	});
 
-	// Opacity only, so it does not fight flip's transform. No out: a leaving card
-	// would hold its width while it faded.
+	// Opacity only. No out: a leaving card would hold its width while it faded.
 	const arrive = $derived({ duration: drawn && moving() ? ARRIVE_MS : 0 });
 
 	// The row, so a redraw can put it back where the reader was.
@@ -66,9 +56,41 @@
 		return strip.scrollLeft < (first instanceof HTMLElement ? first.offsetWidth : 0);
 	}
 
+	// Whether the reader is moving the row themselves. Touch events, not pointer:
+	// the browser cancels the pointer once a touch becomes a pan.
+	let fingers = 0;
+	let handled = 0;
+
+	// How long after the last movement the row still counts as theirs.
+	const COAST_MS = 400;
+
+	function driven(): boolean {
+		return fingers > 0 || Date.now() - handled < COAST_MS;
+	}
+
+	$effect(() => {
+		const row = strip;
+		if (!row) return;
+		const counted = (event: TouchEvent) => {
+			fingers = event.touches.length;
+			handled = Date.now();
+		};
+		const moved = () => (handled = Date.now());
+		const passive = { passive: true } as const;
+		row.addEventListener('touchstart', counted, passive);
+		row.addEventListener('touchend', counted, passive);
+		row.addEventListener('touchcancel', counted, passive);
+		row.addEventListener('scroll', moved, passive);
+		return () => {
+			row.removeEventListener('touchstart', counted);
+			row.removeEventListener('touchend', counted);
+			row.removeEventListener('touchcancel', counted);
+			row.removeEventListener('scroll', moved);
+		};
+	});
+
 	// Back to the front once the new row is laid out. Twice, since the browser
-	// may move the row at layout, after tick(). Instant, since the cards are
-	// sliding at the same time.
+	// may move the row at layout, after tick().
 	async function toStart() {
 		await tick();
 		if (strip) strip.scrollLeft = 0;
@@ -82,8 +104,8 @@
 		try {
 			const fetched = await getSummary(fetch, order.strip);
 			// Read before the redraw, which moves the row. Only a new leading card
-			// is worth following.
-			const follow = fetched.head[0]?.id !== library?.head[0]?.id && atStart();
+			// is worth following, and never one the reader has hold of.
+			const follow = fetched.head[0]?.id !== library?.head[0]?.id && atStart() && !driven();
 			library = fetched;
 			if (follow) toStart();
 		} catch {
@@ -141,12 +163,10 @@
 				>
 					{#each library.head as title (title.id)}
 						<!-- Bigger art where there is room. Twelve at 8.5rem still
-						     overflow 1200px, so the row keeps cutting a card off. -->
-						<li
-							animate:flip={slide}
-							in:fade={arrive}
-							class="w-[5.25rem] flex-none lg:w-[7rem] xl:w-[8.5rem]"
-						>
+						     overflow 1200px, so the row keeps cutting a card off. No
+						     animate:flip: a transform on a card mid-restock takes the
+						     phone's document scroll to the top. -->
+						<li in:fade={arrive} class="w-[5.25rem] flex-none lg:w-[7rem] xl:w-[8.5rem]">
 							<PosterCard pan="both" lift={false} card={title} {onopen} />
 						</li>
 					{/each}

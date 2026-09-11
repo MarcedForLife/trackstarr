@@ -190,9 +190,10 @@
 	{/if}
 
 	<!-- Working and finished files in one list, so a verdict lands where the
-	     name already was. -->
+	     name already was. overflow-anchor: none, or the page follows a row as
+	     the queue moves under it. -->
 	{#if rows.length}
-		<ul class="mt-3 flex flex-col gap-2 border-t border-line pt-2.5">
+		<ul class="mt-3 flex flex-col gap-2 border-t border-line pt-2.5 [overflow-anchor:none]">
 			{#each showing as row (row.path)}
 				<RunFile
 					run={run.id}

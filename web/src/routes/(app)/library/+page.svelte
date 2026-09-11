@@ -554,6 +554,8 @@
 	.shelf {
 		--tile: calc(var(--scale, 1) * clamp(6.875rem, 5rem + 5vw, 8.5rem));
 		grid-template-columns: repeat(auto-fill, minmax(var(--tile), 1fr));
+		/* Or a re-sort carries the page to wherever the anchored tile landed. */
+		overflow-anchor: none;
 	}
 
 	/* Tiles the reader has not reached are not styled, laid out or painted.
