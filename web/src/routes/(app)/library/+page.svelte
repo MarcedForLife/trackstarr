@@ -354,7 +354,7 @@
 	     offers for the default. -->
 	<div class="mt-6">
 		<VerdictChips
-			label="Filter by verdict"
+			label="Filter the library"
 			chosen={filters}
 			{counts}
 			{allHint}

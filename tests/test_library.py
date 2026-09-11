@@ -125,7 +125,8 @@ def test_the_shelf_has_a_word_for_every_verdict_a_card_can_hold():
     """
     computed = {library.UNCHECKED, library.MISSING}
     assert set(library.STATES) - computed == set(sweep.CACHEABLE_STATUSES)
-    assert set(library.FILTERS) == set(library.STATES) | {library.MODIFIED}
+    counted = {library.MODIFIED, library.UNTAGGED}
+    assert set(library.FILTERS) == set(library.STATES) | counted
     assert set(library.ACTIONABLE) <= set(library.STATES)
 
 
@@ -810,6 +811,60 @@ def test_a_rewrite_landing_alone_reaches_the_grid(media, monkeypatch):
 
     rewrote(f"{media}/Show/one.mkv")
     assert library.shelf()["titles"][0]["modified"] == 1
+
+
+def audio(index: int, lang: str | None = None) -> dict:
+    """One 5.1 track as track_summary spells it. An empty field is dropped, so
+    an untagged track carries no key at all."""
+    track = {"index": index, "kind": "audio", "codec": "eac3", "channels": 6}
+    return track | {"lang": lang} if lang else track
+
+
+def test_a_card_counts_the_files_with_an_untagged_audio_track(media, monkeypatch):
+    """Such a file usually passes, so no verdict on the poster says the
+    languages and downmix rules cannot read it."""
+    stub_arrs(monkeypatch, [movie(1, "Show", f"{media}/Show")], name="sonarr")
+    cache(
+        (f"{media}/Show/one.mkv", Verdict(Status.CONFORM, tracks=[audio(1), audio(2, "eng")])),
+        (f"{media}/Show/two.mkv", Verdict(Status.CONFORM, tracks=[audio(1)])),
+        (f"{media}/Show/three.mkv", Verdict(Status.CONFORM, tracks=[audio(1, "eng")])),
+    )
+    card = library.shelf()["titles"][0]
+    assert card["state"] == "conform"
+    assert card["untagged"] == 2
+
+
+def test_only_audio_decides_the_untagged_count(media, monkeypatch):
+    """Nothing tags a video stream and an untagged subtitle is ordinary, so a
+    chip counting either would send the reader to a fix nobody can make. A file
+    no probe has reached says nothing either way."""
+    stub_arrs(monkeypatch, [movie(1, "Show", f"{media}/Show")], name="sonarr")
+    video = {"index": 0, "kind": "video", "codec": "h264"}
+    subtitle = {"index": 2, "kind": "subtitle", "codec": "subrip"}
+    cache(
+        (
+            f"{media}/Show/one.mkv",
+            Verdict(Status.CONFORM, tracks=[video, audio(1, "eng"), subtitle]),
+        ),
+        (f"{media}/Show/two.mkv", Verdict(Status.UNSUPPORTED, ".avi is not rewritten")),
+    )
+    assert "untagged" not in library.shelf()["titles"][0]
+
+
+def test_the_summary_counts_untagged_titles_as_the_grids_chip_does(media, monkeypatch):
+    """Both are cut from the same cards, so a chip promising three lands on
+    three."""
+    stub_arrs(
+        monkeypatch,
+        [movie(1, "Show", f"{media}/Show"), movie(2, "Other", f"{media}/Other")],
+        name="sonarr",
+    )
+    cache(
+        (f"{media}/Show/one.mkv", Verdict(Status.CONFORM, tracks=[audio(1)])),
+        (f"{media}/Show/two.mkv", Verdict(Status.CONFORM, tracks=[audio(1)])),
+        (f"{media}/Other/one.mkv", Verdict(Status.CONFORM, tracks=[audio(1, "eng")])),
+    )
+    assert library.summary()["counts"]["untagged"] == 1
 
 
 def test_a_title_lists_what_needs_work_first(media, monkeypatch):

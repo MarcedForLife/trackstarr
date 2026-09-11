@@ -190,7 +190,9 @@ rewritten files. If the server uses different paths, set a mapping such as
 - **Overview:** live progress, estimated time remaining, queued work and processing controls.
 - **Library:** search movies and series, filter verdicts, sort titles and inspect
   per-file plans. Missing downloads and unsupported containers have distinct
-  verdicts. Admins can hold titles or select them for immediate planning or rewriting.
+  verdicts, and an Untagged filter finds the titles whose audio carries no
+  language tag. Admins can hold titles or select them for immediate planning or
+  rewriting.
 - **Track editing:** admins can edit MKV track languages and commentary, forced
   and SDH flags, including matching tracks across episodes. `mkvpropedit` updates
   headers in place, then Trackstarr reassesses the file.

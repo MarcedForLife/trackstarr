@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { bytesFor, named, titled, wholeUnits } from '$lib/format';
+import { bytesFor, describe as line, named, titled, wholeUnits } from '$lib/format';
 
 describe('named', () => {
 	test('an episode is said apart from the series it truncates with', () => {
@@ -85,6 +85,21 @@ describe('titled', () => {
 
 	test('a film has one half and gets one', () => {
 		expect(titled('Dune (2021) [Bluray-2160p][x265]-GRP.mkv')).toBe('Dune (2021)');
+	});
+});
+
+describe('a track on one line', () => {
+	test('says the language on the kinds that carry one, und included', () => {
+		expect(line({ kind: 'audio', codec: 'eac3', channels: 6, lang: 'eng' })).toBe(
+			'EAC3 · 5.1 · eng'
+		);
+		expect(line({ kind: 'audio', codec: 'flac', channels: 2 })).toBe('FLAC · 2.0 · und');
+		expect(line({ kind: 'subtitle', codec: 'subrip' })).toBe('SUBRIP · und');
+	});
+
+	// Nothing tags a video stream, so `und` there is a fix nobody can make.
+	test('leaves a video stream without one', () => {
+		expect(line({ kind: 'video', codec: 'h264' })).toBe('H264');
 	});
 });
 

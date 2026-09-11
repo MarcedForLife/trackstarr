@@ -82,8 +82,13 @@ MODIFIED = Status.MODIFIED
 #: ``modified`` record is a third key again; see :func:`_file`.
 _MODIFIED_FIELD = "modified"
 
+#: Titles holding an audio track with no language tag. Not a verdict, a file
+#: that passes can carry one, and the languages and downmix rules cannot read
+#: it until :mod:`trackstarr.retag` puts one on.
+UNTAGGED = "untagged"
+
 #: What a chip row cuts the grid by. Hiding reads :data:`STATES` instead, since
-#: it goes on the word a card leads with and neither of the two above is one.
+#: it goes on the word a card leads with and none of the three above is one.
 FILTERS = (
     Status.FAILED,
     Status.PENDING,
@@ -91,9 +96,14 @@ FILTERS = (
     Status.UNSUPPORTED,
     Status.CONFORM,
     MODIFIED,
+    UNTAGGED,
     UNCHECKED,
     MISSING,
 )
+
+#: The chips a card answers with a count instead of a verdict, as card field
+#: and chip name. :func:`summary` counts these off the cards.
+_COUNTED_FIELDS = ((_MODIFIED_FIELD, MODIFIED), (UNTAGGED, UNTAGGED))
 
 #: Most files a title's detail returns. A 300-episode series with tracks and
 #: plans is megabytes of JSON; actionable files come first, so the cut falls
@@ -388,6 +398,9 @@ class Rollup:
     #: own tally because a rewritten file passes, and a card saying only
     #: "Passed" cannot tell that from a file the rules never touched.
     modified: int = 0
+    #: How many hold an audio track with no language tag. Its own tally because
+    #: such a file usually passes, so no verdict marks it.
+    untagged: int = 0
     #: When its most recently judged file was judged, in epoch seconds; 0 with
     #: no verdicts. See ``judged`` in :func:`trackstarr.sweep_cache._entry`.
     judged: float = 0.0
@@ -465,6 +478,19 @@ def _changes(entry: dict) -> Changes:
     return Changes(adds, rebuilds, len(dropped))
 
 
+def _untagged(entry: dict) -> bool:
+    """Whether the probe found an audio track with no language tag.
+
+    ``track_summary`` drops an empty field and ``und`` is already None by then,
+    so an absent key is the whole test. Video streams carry no language the
+    rules read, so only audio counts.
+    """
+    return any(
+        track.get("kind") == "audio" and not track.get("lang")
+        for track in entry.get("tracks") or []
+    )
+
+
 def _tally(
     entries: dict[str, dict], folders: dict[str, Title], made: dict[str, dict]
 ) -> dict[str, Rollup]:
@@ -485,6 +511,8 @@ def _tally(
         rollup.counts[status] = rollup.counts.get(status, 0) + 1
         if path in made:
             rollup.modified += 1
+        if _untagged(entry):
+            rollup.untagged += 1
         if entry.get("planned"):
             changes = _changes(entry)
             rollup.adds.update(changes.adds)
@@ -524,6 +552,7 @@ def _card(title: Title, rollup: Rollup | None) -> dict:
         "rebuilds": sorted(rollup.rebuilds),
         "drops": rollup.drops,
         _MODIFIED_FIELD: rollup.modified,
+        UNTAGGED: rollup.untagged,
         "weight": round(_weight(rollup), 2),
         # The newest verdict, which a rewrite stamps by re-judging what it
         # wrote; see :func:`trackstarr.processing._rejudged`.
@@ -664,8 +693,9 @@ def summary(head: int = HEAD, order: str = DEFAULT_ORDER) -> dict:
         for verdict in STATES:
             if held.get(verdict) if held else card["state"] == verdict:
                 counts[verdict] = counts.get(verdict, 0) + 1
-        if card.get(_MODIFIED_FIELD):
-            counts[MODIFIED] = counts.get(MODIFIED, 0) + 1
+        for field_name, chip in _COUNTED_FIELDS:
+            if card.get(field_name):
+                counts[chip] = counts.get(chip, 0) + 1
     return {
         "titles": len(full["titles"]),
         "counts": counts,

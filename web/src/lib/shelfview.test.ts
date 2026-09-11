@@ -58,6 +58,16 @@ describe('within', () => {
 			false
 		);
 	});
+
+	// And an untagged file passes as readily, so the same goes for it.
+	test('reads Untagged off the tag count, not the verdicts', () => {
+		const loose = card('l', 'Loose', 'conform', { counts: { conform: 3 }, untagged: 1 });
+		expect(within(loose, 'untagged')).toBe(true);
+		expect(within(loose, 'conform')).toBe(true);
+		expect(within(card('c', 'Contact', 'conform', { counts: { conform: 3 } }), 'untagged')).toBe(
+			false
+		);
+	});
 });
 
 describe('holds', () => {

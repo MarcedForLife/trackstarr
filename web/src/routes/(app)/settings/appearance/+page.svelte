@@ -24,7 +24,7 @@
 		type Shown,
 		type Spread
 	} from '$lib/display.svelte';
-	import { VERDICTS } from '$lib/library';
+	import { FILTERS } from '$lib/library';
 	import {
 		order,
 		setGridFlow,
@@ -90,10 +90,10 @@
 			? `${label(EFFECTS, display.effects)} · no cover art`
 			: label(EFFECTS, display.effects)
 	);
-	// Every verdict selected is the same grid as none, which the row calls All.
+	// Every chip selected is the same grid as none, which the row calls All.
 	const libraryNote = $derived.by(() => {
 		const kept = display.filters.length;
-		const filter = kept && kept < VERDICTS.length ? `${kept} verdicts` : 'All';
+		const filter = kept && kept < FILTERS.length ? `${kept} filter${kept > 1 ? 's' : ''}` : 'All';
 		return `${filter} · ${label(SORTS, order.grid)}`;
 	});
 	const overviewNote = $derived(label(SORTS, order.strip));
@@ -213,7 +213,7 @@
 		<!-- No counts: there is no shelf on this page. -->
 		<SettingRow
 			label="Library filter"
-			desc="The verdicts the grid opens filtered to. None selected means All. The row above the grid still changes it for a visit. This is the starting point."
+			desc="What the grid opens filtered to. None selected means All. The row above the grid still changes it for a visit. This is the starting point."
 			full
 		>
 			{#snippet children({ labelledBy, describedBy })}

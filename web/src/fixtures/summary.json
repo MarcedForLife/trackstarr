@@ -6,6 +6,7 @@
 		"modified": 1,
 		"pending": 1,
 		"unsupported": 1,
+		"untagged": 1,
 		"missing": 1
 	},
 	"head": [
@@ -21,6 +22,7 @@
 				"unsupported": 1,
 				"conform": 1
 			},
+			"untagged": 1,
 			"processed": 1772233500
 		},
 		{

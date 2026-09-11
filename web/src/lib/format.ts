@@ -73,6 +73,15 @@ export function bytesFor(bitrate: number | undefined, seconds: number | undefine
 	return Math.round((bitrate / 8) * seconds);
 }
 
+// Nothing tags a video stream, so its row says nothing rather than `und`, which
+// reads as a tag to go and fix and is the one thing here nobody can set.
+const LANGUAGE_KINDS = ['audio', 'subtitle'];
+
+/** Whether the rules read a language on this kind of track. */
+export function carriesLanguage(kind: string): boolean {
+	return LANGUAGE_KINDS.includes(kind);
+}
+
 /** A track on one line: codec, layout, language. The same shape for current and
  * planned tracks so the two columns compare. */
 export function describe(track: {
@@ -83,7 +92,7 @@ export function describe(track: {
 }): string {
 	const parts = [track.codec?.toUpperCase()];
 	if (track.kind === 'audio') parts.push(layout(track.channels));
-	parts.push(track.lang ?? 'und');
+	if (carriesLanguage(track.kind)) parts.push(track.lang ?? 'und');
 	return parts.filter(Boolean).join(' · ');
 }
 

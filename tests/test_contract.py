@@ -111,6 +111,12 @@ EPISODE_TRACKS = [
     track(2, "audio", "aac", channels=2, lang="eng", title="Stereo", flags=["generated"]),
     track(3, "subtitle", "subrip", lang="eng", flags=["forced"]),
 ]
+#: A camcorder file the rules are happy with and nobody tagged, which is the
+#: case the Untagged chip is for. Its verdict alone says nothing is owed.
+WANAKA_TRACKS = [
+    track(0, "video", "h264"),
+    track(1, "audio", "aac", channels=2, flags=["default"]),
+]
 #: The same episode before we rewrote it: an mp4 with a tagged 5.1 and
 #: nothing stereo. The downmix lands at position 2 of what came out.
 EPISODE_WAS = [
@@ -307,7 +313,7 @@ def seed_library(monkeypatch, clock: Clock) -> None:
     cache.record(
         WANAKA,
         FileKey(1_073_741_824, 1_625_097_600_000_000_000, 1, None),
-        Verdict(Status.CONFORM, "", duration=612.0),
+        Verdict(Status.CONFORM, "", tracks=WANAKA_TRACKS, duration=612.0),
     )
     cache.save()
 
@@ -599,8 +605,8 @@ def test_vocabulary(ask, monkeypatch):
             # The word a card leads with when nothing is outstanding and its
             # files disagree. Apart from the states: no file is ever in it.
             "mixed": library.MIXED,
-            # What the grid's chips offer: the states, plus one thing a file is
-            # rather than a state it is in.
+            # What the grid's chips offer: the states, plus the two things a
+            # file is rather than a state it is in.
             "filters": list(library.FILTERS),
             "services": [
                 {"name": service.name, "label": service.label}
