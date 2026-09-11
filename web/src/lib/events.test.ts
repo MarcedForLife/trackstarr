@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { detail, details, headline, type Event } from '$lib/events';
+import { detail, details, headline, searchable, type Event } from '$lib/events';
 
 function entry(over: Partial<Event> = {}): Event {
 	return {
@@ -66,5 +66,36 @@ describe('a track edited in place', () => {
 			changed: { forced: { from: true, to: false }, sdh: { from: false, to: true } }
 		});
 		expect(detail(line)).toBe('Track stream ? · forced off · SDH on');
+	});
+});
+
+describe('a line as a search runs over it', () => {
+	const line = entry({
+		event: 'modified',
+		path: '/data/media/tv/The Expanse/Season 01/The.Expanse.S01E03.1080p.mkv',
+		reasons: ['stripped a forced subtitle'],
+		rules: ['drop_commentary'],
+		run: 'run-8f21',
+		title: 'tv:the-expanse'
+	});
+
+	test('holds the headline, the detail and everything the panel opens on', () => {
+		const text = searchable(line, 'The Expanse');
+		// The verdict's own word, what it was about, and the rule that fired.
+		expect(text).toContain('modified the expanse');
+		expect(text).toContain('stripped a forced subtitle');
+		expect(text).toContain('s01e03 1080p mkv');
+		expect(text).toContain('drop commentary');
+		expect(text).toContain('run 8f21');
+	});
+
+	test("holds the event's own name, which no headline says", () => {
+		expect(searchable(entry({ event: 'sweep', files: 412 }))).toContain('sweep');
+	});
+
+	test('is rebuilt when the card for its title lands after the first look', () => {
+		const late = entry({ event: 'held', path: '/data/media/tv/MINDHUNTER (2017)' });
+		expect(searchable(late)).toContain('mindhunter 2017');
+		expect(searchable(late, 'Mindhunter')).toContain('held mindhunter');
 	});
 });

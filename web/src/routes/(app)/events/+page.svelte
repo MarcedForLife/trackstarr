@@ -6,11 +6,12 @@
 	import Segmented from '$lib/components/Segmented.svelte';
 	import TitleSheet from '$lib/components/TitleSheet.svelte';
 	import { Snapshot } from '$lib/activity.svelte';
-	import { count, CUSTOM, key, said, SPANS, THREAD, type Event } from '$lib/events';
+	import { count, CUSTOM, key, said, searchable, SPANS, THREAD, type Event } from '$lib/events';
 	import { button, control, glyph, quiet, radius } from '$lib/controls';
 	import { History } from '$lib/history.svelte';
 	import type { Card } from '$lib/library';
 	import { Recheck } from '$lib/recheck.svelte';
+	import { matches, terms } from '$lib/search';
 	import { whenNear } from '$lib/reveal';
 	import type { PageProps } from './$types';
 
@@ -78,13 +79,39 @@
 	];
 
 	const kinds = $derived(FILTERS.find((option) => option.value === filter)?.kinds ?? []);
+
+	let search = $state('');
+	// The words a line has to answer to. Empty is no search.
+	const needle = $derived(terms(search));
+
+	// The library's name for what a line is about, where the page has the card.
+	function titleOf(entry: Event): string {
+		return (entry.title && history.titles[entry.title]?.name) || '';
+	}
+
 	// `at` is the position, which a config line is diffed against; `id` is what
 	// an open panel is remembered by. Position alone moved open rows as lines
 	// arrived.
 	const rows = $derived(
 		history.entries
 			.map((entry, at) => ({ entry, at, id: key(entry) }))
-			.filter(({ entry }) => !kinds.length || kinds.includes(entry.event))
+			.filter(
+				({ entry }) =>
+					(!kinds.length || kinds.includes(entry.event)) &&
+					// After the kinds, the cheaper cut of the two.
+					(!needle.length || matches(searchable(entry, titleOf(entry)), needle))
+			)
+	);
+
+	// Whether the page is holding lines back, which changes what the footer counts
+	// and what a press reaches for.
+	const cutting = $derived(!!kinds.length || !!needle.length);
+
+	// What to loosen when nothing matches. The search cuts harder of the two.
+	const loosen = $derived(
+		needle.length
+			? { sentence: 'Try fewer words.', phrase: 'try fewer words' }
+			: { sentence: 'Widen the filter.', phrase: 'widen the filter' }
 	);
 
 	// How many rows go in before the reader scrolls: two phone screenfuls. A
@@ -103,6 +130,19 @@
 	function choose(next: string) {
 		filter = next;
 		fromTheTop();
+	}
+
+	// Bounded, since each miss is a fetch and a file can go back years.
+	const PAGES_PER_PRESS = 10;
+
+	// A page the cuts then hide is a press that did nothing, so under a cut one
+	// press keeps reading until something lands.
+	async function reachBack() {
+		const had = rows.length;
+		for (let page = 0; page < (cutting ? PAGES_PER_PRESS : 1); page += 1) {
+			await history.more();
+			if (rows.length > had || history.cursor === null || history.failure) break;
+		}
 	}
 
 	let open = $state<Record<string, boolean>>({});
@@ -227,6 +267,18 @@
 				</div>
 			</div>
 		{/if}
+
+		<!-- Last, since the kinds and the window say which lines the page holds and
+		     this says which of them to read. Capped from sm up, or the box invites a
+		     sentence. -->
+		<input
+			bind:value={search}
+			oninput={fromTheTop}
+			type="search"
+			placeholder="Find a file, rule or run"
+			aria-label="Find in these events"
+			class={`${control} ${radius} min-w-0 border border-line-strong bg-field px-3 text-base placeholder:text-faint sm:max-w-72 sm:text-[13px]`}
+		/>
 	</div>
 
 	{#if history.failure}
@@ -236,11 +288,11 @@
 	{#if !rows.length}
 		<p class="mt-8 text-sm text-dim">
 			{#if history.entries.length}
-				<!-- The kind filter hid everything loaded. Whether there is more is
-				     the cursor's answer. -->
+				<!-- The kind filter or the search hid everything loaded. Whether there
+				     is more is the cursor's answer. -->
 				Nothing loaded matches that. {history.cursor === null
-					? 'Widen the filter.'
-					: 'Load more, or widen the filter.'}
+					? loosen.sentence
+					: `Look further back, or ${loosen.phrase}.`}
 			{:else if history.bounded}
 				<!-- Definite: the window was read to its end. -->
 				Nothing in {said(history.span)}.
@@ -278,19 +330,19 @@
 
 	<div class="mt-2 flex items-center gap-3">
 		{#if history.cursor !== null}
-			<button onclick={() => history.more()} disabled={history.busy} class={button}>
-				{history.busy ? 'Loading…' : 'Load more'}
+			<!-- Says what it does. Under a cut it reads past pages that hold nothing. -->
+			<button onclick={reachBack} disabled={history.busy} class={button}>
+				{history.busy ? 'Loading…' : cutting ? 'Look further back' : 'Load more'}
 			</button>
 		{/if}
-		<!-- The kind filter only sees what is loaded; the window was applied by
-		     the service. "Nothing earlier" must say which. No count when nothing
-		     is loaded: the sentence above already said it. -->
+		<!-- What matched leads, and what was read is the number the presses move.
+		     The window was the service's, so "nothing earlier" must say which. No
+		     count when nothing is loaded, the sentence above already said it. -->
 		{#if history.entries.length}
 			<p class="text-[12px] text-faint">
-				{rows.length === history.entries.length
-					? `${count(history.entries.length, 'event')} loaded`
-					: `${rows.length} of ${count(history.entries.length, 'event')} loaded`}{history.cursor ===
-				null
+				{cutting
+					? `${rows.length} found in ${count(history.entries.length, 'event')} read`
+					: `${count(history.entries.length, 'event')} loaded`}{history.cursor === null
 					? history.bounded
 						? `, nothing earlier in ${said(history.span)}`
 						: ', nothing earlier'
