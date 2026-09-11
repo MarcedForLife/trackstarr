@@ -8,6 +8,7 @@ import { basename, duration, named, size, titled } from '$lib/format';
 // words and colours.
 import { isVerdict, judged, pip, verdictLabel, type Card } from '$lib/library';
 import { phrase, tally } from '$lib/runs';
+import { words } from '$lib/search';
 
 // Every field any event carries; `event` says which to expect.
 export type Event = {
@@ -465,6 +466,27 @@ export function details(entry: Event, before?: Event): Detail[] {
 	add('Settings id', [entry.config_id], true);
 	add('Version', [entry.version], true);
 	return out;
+}
+
+// Kept from one keystroke to the next, since `details` allocates per line and a
+// search runs over everything loaded. Rebuilt if the card landed after it.
+const HAYSTACKS = new WeakMap<Event, { title: string; text: string }>();
+
+/**
+ * A line as the words a search runs against, which is everything the row can
+ * show, opened or not. The event's own name goes in too, since the headline
+ * reads "Swept" rather than "sweep".
+ */
+export function searchable(entry: Event, title = ''): string {
+	const held = HAYSTACKS.get(entry);
+	if (held?.title === title) return held.text;
+	const text = words(
+		[entry.event, headline(entry, title), detail(entry)]
+			.concat(details(entry).flatMap((row) => row.values))
+			.join(' ')
+	);
+	HAYSTACKS.set(entry, { title, text });
+	return text;
 }
 
 // The verdict's colour from the library's pips; everything else is background.
