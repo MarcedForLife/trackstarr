@@ -125,7 +125,8 @@ export function seed(world: World): void {
 		.flatMap((title) => title.files)
 		.filter((file) => file.tracks.length || file.status === 'unsupported');
 	const pending = files.filter(
-		(file) => file.status === 'pending' && !file.hardlinked && !heldTitle(world, file.title)
+		(file) =>
+			file.status === 'pending' && !file.hardlinked && !heldTitle(world, file.title, file.path)
 	);
 	const [first, ...rest] = pending;
 	for (const file of files) {
@@ -150,7 +151,7 @@ export function seed(world: World): void {
 	};
 	sweep.active.push(encoding);
 	log(world, sweep.id, first.path, `probing ${first.name}`);
-	log(world, sweep.id, first.path, `plan: ${(first.why.reasons ?? []).join('; ')}`);
+	log(world, sweep.id, first.path, `plan: ${(first.why.reasons ?? []).join(' · ')}`);
 	log(world, sweep.id, first.path, ffmpegLine(first));
 	for (const file of files) {
 		const done = doneRow(world, file, now);
@@ -202,7 +203,7 @@ function doneRow(world: World, file: File, now: number): DoneFile | null {
 	return null;
 }
 
-const HARDLINKED = 'hard-linked 2 times; a download client still has it';
+const HARDLINKED = 'hard-linked 2 times. A download client still has it';
 
 /** What a rewrite did, for a row: the generated track it added, as the plan
  * said. */
@@ -346,7 +347,7 @@ function judged(world: World, run: SimRun, active: Active, now: number, changed:
 	if (opened || run.kind === 'recheck' || !world.current) probe(file);
 	rejudge(world, file, now);
 	changed.library = true;
-	const hold = heldTitle(world, file.title);
+	const hold = heldTitle(world, file.title, file.path);
 	if (file.status !== 'pending') {
 		settle(
 			world,
@@ -354,7 +355,7 @@ function judged(world: World, run: SimRun, active: Active, now: number, changed:
 			active,
 			file,
 			file.status,
-			(file.why.skip ?? file.why.reasons?.join('; ')) || 'nothing to do',
+			(file.why.skip ?? file.why.reasons?.join(' · ')) || 'nothing to do',
 			now,
 			changed
 		);
@@ -367,7 +368,7 @@ function judged(world: World, run: SimRun, active: Active, now: number, changed:
 	if (run.dry_run || hold) {
 		const detail = hold
 			? `held: ${hold.reason || 'until lifted'}`
-			: (file.why.reasons ?? []).join('; ');
+			: (file.why.reasons ?? []).join(' · ');
 		settle(world, run, active, file, 'pending', detail, now, changed);
 		return;
 	}
@@ -376,7 +377,7 @@ function judged(world: World, run: SimRun, active: Active, now: number, changed:
 	active.done = 0;
 	active.speed = speedOf(file);
 	active.since = now;
-	log(world, run.id, file.path, `plan: ${(file.why.reasons ?? []).join('; ')}`);
+	log(world, run.id, file.path, `plan: ${(file.why.reasons ?? []).join(' · ')}`);
 	log(world, run.id, file.path, ffmpegLine(file));
 	changed.runs = true;
 }
@@ -485,9 +486,9 @@ function complete(world: World, run: SimRun, active: Active, now: number, change
 	});
 	run.counts.modified = (run.counts.modified ?? 0) + 1;
 	run.done += 1;
-	run.recent.unshift({ path: file.path, status: 'modified', seconds, detail: reasons.join('; ') });
+	run.recent.unshift({ path: file.path, status: 'modified', seconds, detail: reasons.join(' · ') });
 	log(world, run.id, file.path, `encoded at ${active.speed}x in ${seconds}s`);
-	log(world, run.id, file.path, 'duration and stream count verify; published over the original');
+	log(world, run.id, file.path, 'duration and stream count verify. Published over the original');
 	remove(run, active);
 	changed.runs = true;
 	changed.library = true;
@@ -505,7 +506,7 @@ function close(world: World, run: SimRun, now: number): void {
 			event: 'sweep',
 			run: run.id,
 			dry_run: run.dry_run,
-			files: run.total,
+			files: run.done,
 			library_bytes: world.titles
 				.flatMap((title) => title.files)
 				.reduce((sum, file) => sum + file.bytes, 0),
@@ -522,7 +523,7 @@ function close(world: World, run: SimRun, now: number): void {
 			run: run.id,
 			dry_run: run.dry_run,
 			titles: run.titles.length,
-			files: run.total,
+			files: run.done,
 			config_id: configId(world),
 			counts: run.counts,
 			seconds,

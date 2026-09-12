@@ -6,7 +6,7 @@
 	let { data }: PageProps = $props();
 </script>
 
-<Page eyebrow="Settings" title="Account" lead={`Signed in as ${data.user?.name}.`}>
+<Page eyebrow="Settings" lead={`Signed in as ${data.user?.name}.`}>
 	<section class="mt-7 border-t border-line pt-4">
 		<p class="text-[13px] font-semibold">Change password</p>
 		<div class="mt-4 max-w-sm">

@@ -12,6 +12,7 @@
 		| 'cross'
 		| 'chevron'
 		| 'refresh'
+		| 'chart'
 		| 'sliders'
 		| 'pencil';
 </script>
@@ -99,6 +100,10 @@
 			<path d="M2.6 8h9.2"></path>
 			<path d="M8.8 4.6 12.4 8l-3.6 3.4"></path>
 		</g>
+	{:else if name === 'chart'}
+		<rect x="2.5" y="8" width="2.5" height="5.5" rx=".7"></rect>
+		<rect x="6.75" y="2.5" width="2.5" height="11" rx=".7"></rect>
+		<rect x="11" y="5.5" width="2.5" height="8" rx=".7"></rect>
 	{:else if name === 'sliders'}
 		<!-- Two rails, each with its knob at a different stop. The knob is filled
 		     rather than ringed: a 3px ring at this size closes up into a dot

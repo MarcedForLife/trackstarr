@@ -310,7 +310,7 @@
 		{#if !tilting()}
 			Posters stay flat.
 		{:else}
-			A poster leans toward a passing pointer and catches the light as it turns; its neighbours lean
+			A poster leans toward a passing pointer and catches the light as it turns. Its neighbours lean
 			with it as far as the spread reaches. Holding one lifts it out of the row, which takes a real
 			finger.
 		{/if}

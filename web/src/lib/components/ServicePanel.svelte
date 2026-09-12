@@ -9,9 +9,9 @@
 	import type { Landed, Snapshot } from '$lib/activity.svelte';
 	import { refusalText } from '$lib/api';
 	import { button, danger, primary } from '$lib/controls';
-	import { ago, headline, type Event } from '$lib/events';
-	import { size, soon, stamp, titled } from '$lib/format';
-	import { lift, type Hold } from '$lib/holds';
+	import type { Event } from '$lib/events';
+	import { size, soon, titled } from '$lib/format';
+	import { lift, place, type Hold } from '$lib/holds';
 	import type { RunMode } from '$lib/library';
 	import { keyboard } from '$lib/modal';
 	import {
@@ -58,7 +58,7 @@
 	// the poll wiped the refusal.
 	let refusal = $state('');
 	let busy = $state('');
-	let detailsOpen = $state(false);
+	let resultsOpen = $state(false);
 	// Which irreversible press is waiting for its second one.
 	let armed = $state<'' | 'rewrite' | 'abort'>('');
 
@@ -75,9 +75,8 @@
 	type Ended = { run: Run; at: number; cut: boolean };
 	let finished = $state<Ended[]>([]);
 
-	// How long an ended run stays up. Ten seconds was too short to open a file's
-	// log under it; keep recent outcomes available for five minutes.
-	const LINGER_MS = 5 * 60 * 1000;
+	// Keep a bounded set of completed runs available until newer runs replace them.
+	const RECENT_RUNS = 4;
 
 	const holding = $derived(activity.paused);
 	// Encoding this second, which is the only way to tell a rewrite from a probe.
@@ -99,7 +98,7 @@
 			...entry,
 			// The summary knows better than a snapshot that may not have caught the
 			// stop.
-			cut: !!summary.stopped,
+			cut: entry.cut || !!summary.stopped,
 			run: {
 				...entry.run,
 				done,
@@ -142,16 +141,40 @@
 	const failed = $derived(
 		showing.reduce((count, entry) => count + (entry.run.counts.failed ?? 0), 0)
 	);
-	const combinedResults = $derived.by(() => {
+	// Combine the work shown on this page. On a fresh idle page, use the last
+	// saved summary rather than adding several old passes over the same files.
+	const results = $derived.by(() => {
+		if (!showing.length)
+			return {
+				done: swept?.files ?? 0,
+				counts: swept?.counts ?? {},
+				seconds: swept?.seconds ?? 0,
+				bytes: swept?.library_bytes,
+				saved: !!swept
+			};
 		const counts: Record<string, number> = {};
 		for (const entry of showing) {
-			for (const [verdict, count] of Object.entries(entry.run.counts))
-				counts[verdict] = (counts[verdict] ?? 0) + count;
+			for (const [state, count] of Object.entries(entry.run.counts)) {
+				counts[state] = (counts[state] ?? 0) + count;
+			}
 		}
-		return counts;
+		const started = Math.min(...showing.map((entry) => Date.parse(entry.run.started)));
+		const ended = Math.max(
+			...showing.map(
+				(entry) =>
+					Date.parse(entry.run.started) +
+					(entry.run.seconds + (entry.ended ? 0 : since(entry.run.seen))) * 1000
+			)
+		);
+		return {
+			done: showing.reduce((count, entry) => count + entry.run.done, 0),
+			counts,
+			seconds: Math.max(0, (ended - started) / 1000),
+			bytes: undefined,
+			saved: false
+		};
 	});
-
-	const resultRows = $derived(tally(combinedResults));
+	let expandedResults = $state(false);
 
 	// Progress covers current work; result counts also retain recent outcomes.
 	const completedCount = $derived(activity.runs.reduce((count, run) => count + run.done, 0));
@@ -204,20 +227,6 @@
 		return told(snapshot.current.runs.length || Date.now() < expecting ? BUSY_MS : IDLE_MS);
 	}
 
-	// One timer armed to the oldest deadline, re-armed when the list changes.
-	$effect(() => {
-		if (!finished.length) return;
-		const soonest = Math.min(...finished.map((entry) => entry.at)) + LINGER_MS;
-		const timer = setTimeout(
-			() => {
-				const now = Date.now();
-				finished = finished.filter((entry) => now - entry.at < LINGER_MS);
-			},
-			Math.max(0, soonest - Date.now())
-		);
-		return () => clearTimeout(timer);
-	});
-
 	// News about a run, not a tick of one: the rows draw clocks and bars from the
 	// last snapshot and its age.
 	function saw({ now: fresh, before, missed }: Landed) {
@@ -234,9 +243,9 @@
 			if (!missed && !restarted) {
 				// Newest first.
 				finished = [
-					...gone.map((run) => ({ run, at: Date.now(), cut: run.stopping })),
+					...gone.map((run) => ({ run, at: Date.now(), cut: run.stopping || busy === 'abort' })),
 					...finished
-				];
+				].slice(0, RECENT_RUNS);
 			}
 			// The run has just written its summary.
 			onmoved(true);
@@ -281,6 +290,19 @@
 	// next sweep still reaches the file.
 	function skip(entry: Run, path: string) {
 		act(`skip-${path}`, () => skipFile(entry.id, path));
+	}
+
+	async function holdFile(entry: Run, path: string, seconds: number) {
+		busy = `hold-${path}`;
+		try {
+			await place({ paths: [path] }, seconds);
+			await skipFile(entry.id, path);
+		} finally {
+			busy = '';
+			await snapshot.look();
+			snapshot.mark();
+			onpressed();
+		}
 	}
 
 	// What is being left alone for now, and how long is left of each.
@@ -355,13 +377,18 @@
 	{/each}
 {/snippet}
 
-{#snippet fileList(items: typeof files)}
+{#snippet fileList(items: typeof files, showOrigin = true)}
 	<ul class="divide-y divide-line [overflow-anchor:none]">
 		{#each items as file (file.key)}
 			<RunFile
 				run={file.run.id}
 				row={file.row}
-				origin={`${source(file.run)}${file.run.dry_run && file.run.kind !== 'import' ? ' · plan only' : ''}`}
+				origin={[
+					showOrigin ? source(file.run) : '',
+					file.run.dry_run && file.run.kind !== 'import' ? 'Plan only' : ''
+				]
+					.filter(Boolean)
+					.join(' · ')}
 				age={file.ended ? 0 : since(file.run.seen)}
 				ended={file.ended}
 				id={`file-${file.run.id}-${file.row.path}`}
@@ -374,43 +401,52 @@
 				busy={!!busy}
 				ontoggle={() => (opened = { ...opened, [file.key]: !opened[file.key] })}
 				onskip={() => skip(file.run, file.row.path)}
+				onhold={(seconds) => holdFile(file.run, file.row.path, seconds)}
 			/>
 		{/each}
 	</ul>
 {/snippet}
 
 <section aria-labelledby="now" class="mt-6 rounded-xl border border-line bg-raised">
-	<div class="flex items-start gap-3 px-4 py-5 sm:px-5">
-		<div class="min-w-0 flex-1">
+	<div class="px-4 py-5 sm:px-5">
+		<div class="flex items-start justify-between gap-3">
 			<h2
 				id="now"
-				class="flex items-center gap-2.5 text-[23px] leading-tight font-semibold tracking-tight"
+				class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1 text-[23px] leading-tight font-semibold tracking-tight"
 			>
 				<span
 					aria-hidden="true"
 					class={`h-2 w-2 flex-none rounded-full ${holding || activity.runs.length ? 'bg-accent-fill' : 'bg-line-strong'}`}
 				></span>
 				{processingState}
-				{#if failed}<span class="ml-auto text-[12px] font-medium tracking-normal text-danger"
+				{#if failed}<span class="text-[12px] font-medium tracking-normal text-danger"
 						>{failed} failed</span
 					>{/if}
 			</h2>
-			{#if sub}
-				<p class="mt-2 text-[12.5px] text-dim">{sub}</p>
-			{:else if !activity.runs.length && !holding}
-				<p class="mt-2 text-[12.5px] text-dim">
-					No sweep is scheduled.
-					{#if admin}
-						<a
-							href={resolve('/settings/sweep')}
-							class="text-accent underline underline-offset-2 hover:text-fg"
-						>
-							Schedule one
-						</a>
-					{/if}
-				</p>
-			{/if}
+			<button
+				onclick={() => (resultsOpen = !resultsOpen)}
+				aria-expanded={resultsOpen}
+				aria-controls="processing-results"
+				class="-my-2 inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[12px] font-medium whitespace-nowrap text-dim hover:bg-sunken"
+			>
+				<Glyph name="chart" size={14} /> Results
+			</button>
 		</div>
+		{#if sub}
+			<p class="mt-2 text-[12.5px] text-dim">{sub}</p>
+		{:else if !activity.runs.length && !holding}
+			<p class="mt-2 text-[12.5px] text-dim">
+				No sweep is scheduled.
+				{#if admin}
+					<a
+						href={resolve('/settings/sweep')}
+						class="text-accent underline underline-offset-2 hover:text-fg"
+					>
+						Schedule one
+					</a>
+				{/if}
+			</p>
+		{/if}
 	</div>
 
 	{#if activity.runs.length}
@@ -495,19 +531,6 @@
 				</button>
 			{/if}
 		{/if}
-		{#if activity.runs.length}
-			<button
-				onclick={() => (detailsOpen = !detailsOpen)}
-				aria-expanded={detailsOpen}
-				aria-controls="processing-details"
-				aria-label="Processing details"
-				class={`${holding && admin ? 'w-full justify-center px-2 sm:ml-auto sm:w-auto sm:px-3' : 'ml-auto px-3'} inline-flex min-h-11 items-center gap-2 rounded-lg text-[12px] font-medium text-dim hover:bg-sunken`}
-			>
-				<Glyph name="sliders" /> <span class="sm:hidden">Details</span><span
-					class="hidden sm:inline">Processing details</span
-				>
-			</button>
-		{/if}
 	</div>
 	{#if arming === 'abort'}
 		<div class="px-4 pb-4 sm:px-5">
@@ -530,7 +553,7 @@
 				<h3 id="stop-title" class="text-[15px] font-semibold">Stop all processing?</h3>
 				<p id="stop-description" class="mt-2 text-[12.5px] leading-relaxed text-dim">
 					Queued files won’t start. {rewriting
-						? 'Current rewrites will be interrupted; their progress will be lost.'
+						? 'Current rewrites will be interrupted and their progress will be lost.'
 						: 'Files already being checked will finish.'}
 				</p>
 				<dl class="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-[12px]">
@@ -574,39 +597,35 @@
 		)}
 	{/if}
 
-	{#if detailsOpen && activity.runs.length}
+	{#if resultsOpen}
 		<div
-			id="processing-details"
+			id="processing-results"
 			role="region"
-			aria-label="Processing details"
+			aria-label="Results"
 			class="border-t border-line bg-sunken/30 px-4 py-4 sm:px-5"
 		>
-			<h3 class="text-[13px] font-semibold">Processing details</h3>
-			<p class="mt-1 text-[12px] text-faint">Results from current and recently completed work.</p>
-			{#if resultRows.length}
-				<table class="mt-3 w-full text-[12px]">
-					<caption class="sr-only">Combined processing outcomes</caption>
-					<thead
-						><tr class="border-b border-line text-faint"
-							><th scope="col" class="pb-2 text-left font-medium">Outcome</th><th
-								scope="col"
-								class="pb-2 text-right font-medium">Files</th
-							></tr
-						></thead
-					>
-					<tbody class="divide-y divide-line">
-						{#each resultRows as result (result.state)}
-							<tr title={result.hint} class={result.trouble ? 'text-danger' : ''}>
-								<th scope="row" class="py-2.5 text-left font-medium">{result.label}</th>
-								<td class="py-2.5 text-right font-semibold tabular-nums"
-									>{result.count.toLocaleString()}</td
-								>
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-			{:else}
-				<p class="mt-3 text-[12px] text-dim">No results yet.</p>
+			<h3 class="mb-1 text-[13px] font-semibold">Results</h3>
+			<p class="text-[11.5px] text-faint">
+				{results.saved ? 'Last completed check.' : 'Current and recently completed work.'}
+			</p>
+			<dl class="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-[12px]">
+				<div>
+					<dt class="text-faint">Files processed</dt>
+					<dd class="mt-1 font-medium tabular-nums">{results.done.toLocaleString()}</dd>
+				</div>
+				<div>
+					<dt class="text-faint">Elapsed</dt>
+					<dd class="mt-1 font-medium tabular-nums">{duration(results.seconds)}</dd>
+				</div>
+				{#if results.bytes}<div>
+						<dt class="text-faint">Library size</dt>
+						<dd class="mt-1 font-medium">{size(results.bytes)}</dd>
+					</div>{/if}
+			</dl>
+			{#if tally(results.counts).length}
+				<ul aria-label="Outcome counts" class={`${tallyList} mt-3 border-t border-line pt-3`}>
+					{@render verdicts(results.counts)}
+				</ul>
 			{/if}
 		</div>
 	{/if}
@@ -637,26 +656,26 @@
 				</div>
 			{/if}
 			{#if waiting}
-				<div class="rounded-lg bg-sunken/60 px-3 pt-3 pb-1">
-					<h3 class="text-[12px] font-semibold">
-						Up next <span class="ml-1 font-normal text-faint tabular-nums"
-							>{waiting.toLocaleString()}</span
-						>
+				<div>
+					<h3 class="text-[13px] font-semibold">
+						Waiting <span class="ml-1 text-faint tabular-nums">{waiting.toLocaleString()}</span>
 					</h3>
-					{@render fileList(queueExpanded ? queuedFiles : queuedFiles.slice(0, 3))}
-					{#if queuedFiles.length > 3}
-						<button
-							class="min-h-11 text-[12px] text-accent hover:text-fg"
-							aria-expanded={queueExpanded}
-							onclick={() => (queueExpanded = !queueExpanded)}
-							>{queueExpanded ? 'Show fewer' : `Show ${queuedFiles.length - 3} more`}</button
-						>
-					{/if}
-					{#if waiting > queuedFiles.length}<p class="py-2 text-[11.5px] text-faint">
-							{queuedFiles.length
-								? 'Showing the available queue preview.'
-								: 'Waiting files will appear as they are discovered.'}
-						</p>{/if}
+					<div class="mt-3 rounded-lg bg-sunken/60 px-3 pb-1">
+						{@render fileList(queueExpanded ? queuedFiles : queuedFiles.slice(0, 3))}
+						{#if queuedFiles.length > 3}
+							<button
+								class="min-h-11 text-[12px] text-accent hover:text-fg"
+								aria-expanded={queueExpanded}
+								onclick={() => (queueExpanded = !queueExpanded)}
+								>{queueExpanded ? 'Show fewer' : `Show ${queuedFiles.length - 3} more`}</button
+							>
+						{/if}
+						{#if waiting > queuedFiles.length}<p class="py-2 text-[11.5px] text-faint">
+								{queuedFiles.length
+									? 'Showing the available queue preview.'
+									: 'Waiting files will appear as they are discovered.'}
+							</p>{/if}
+					</div>
 				</div>
 			{/if}
 		</div>
@@ -702,32 +721,37 @@
 			</div>
 		</details>
 	{/if}
-	{#if recentFiles.length || (swept && !sweeping)}
-		<details class="group/outcomes border-t border-line px-4 sm:px-5">
+	{#if recentFiles.length}
+		<details class="group/recent border-t border-line px-4 sm:px-5">
 			<summary
 				class="flex min-h-12 cursor-pointer list-none items-center gap-2 text-[12.5px] text-dim hover:text-fg [&::-webkit-details-marker]:hidden"
 			>
-				<span class="transition-transform group-open/outcomes:rotate-90"
+				<span class="transition-transform group-open/recent:rotate-90"
 					><Glyph name="chevron" size={10} /></span
 				>
-				Recent outcomes <span class="text-faint tabular-nums">{recentFiles.length || ''}</span>
+				Recently processed <span class="text-faint tabular-nums">{recentFiles.length || ''}</span>
 			</summary>
-			<div class="mb-4 rounded-lg bg-sunken/60 px-3">
-				{#if swept && !sweeping}
-					<ul class={`${tallyList} py-3`}>
-						<li class="flex items-baseline gap-1.5 text-[12.5px]">
-							<span class="text-dim">{headline(swept)}</span>
-							<time datetime={swept.ts} title={stamp(swept.ts)} class="text-faint">
-								{ago(swept.ts)}
-							</time>
-						</li>
-						{@render verdicts(swept.counts ?? {})}
-						{#if swept.library_bytes}
-							<li class="text-faint">{size(swept.library_bytes)}</li>
-						{/if}
-					</ul>
+			<div class="mb-3 rounded-lg bg-sunken/60 px-3 py-2">
+				{#if recentFiles.length}
+					<p class="pt-1 text-[11px] text-faint">A preview of recent file results.</p>
+					{@render fileList(expandedResults ? recentFiles : recentFiles.slice(0, 5), false)}
+					{#if recentFiles.length > 5}
+						<button
+							onclick={() => (expandedResults = !expandedResults)}
+							aria-expanded={expandedResults}
+							class="min-h-11 text-[12px] text-accent hover:text-fg"
+						>
+							{expandedResults ? 'Show fewer' : `Show ${recentFiles.length - 5} more`}
+						</button>
+					{/if}
+				{:else}
+					<p class="py-1 text-[11.5px] text-faint">No recent file details available.</p>
 				{/if}
-				{@render fileList(recentFiles)}
+				<a
+					href={resolve('/events')}
+					class="inline-flex min-h-11 items-center text-[12px] text-accent hover:text-fg"
+					>View all activity</a
+				>
 			</div>
 		</details>
 	{/if}

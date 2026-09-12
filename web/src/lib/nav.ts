@@ -27,6 +27,19 @@ export const SETTINGS: Pathname[] = [
 	'/settings/account'
 ];
 
+// Shared by the mobile header, desktop heading and browser title.
+export const PAGE_TITLES: Partial<Record<Pathname, string>> = {
+	'/': 'Overview',
+	'/library': 'Library',
+	'/events': 'Events',
+	'/settings': 'General',
+	'/settings/rules': 'Rules',
+	'/settings/sweep': 'Sweep',
+	'/settings/connections': 'Connections',
+	'/settings/appearance': 'Appearance',
+	'/settings/account': 'Account'
+};
+
 /** A pathname as the routes above spell it, with the deployment's base path
  * off the front. `page.url.pathname` carries the base, and the demo build sits
  * under one. */

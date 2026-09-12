@@ -506,34 +506,37 @@ export function holdsNow(world: World, now: number): Hold[] {
 	}));
 }
 
-export function heldTitle(world: World, title: Title): Hold | undefined {
-	return holdsNow(world, Date.now()).find((hold) => hold.title === title.spec.id);
+export function heldTitle(world: World, title: Title, path?: string): Hold | undefined {
+	return holdsNow(world, Date.now()).find(
+		(hold) => hold.title === title.spec.id || hold.path === path
+	);
 }
 
 export function placeHolds(
 	world: World,
-	titles: Title[],
+	titles: (Title | string)[],
 	seconds: number,
 	reason: string,
 	by: string,
 	now = Date.now()
 ): void {
-	for (const title of titles) {
-		world.holds = world.holds.filter((hold) => hold.title !== title.spec.id);
+	for (const target of titles) {
+		const spec = typeof target === 'string' ? { folder: target, id: '', name: '' } : target.spec;
+		world.holds = world.holds.filter((hold) => hold.path !== spec.folder);
 		world.holds.push({
-			path: title.spec.folder,
+			path: spec.folder,
 			seconds: seconds || null,
 			until: seconds ? stamp(now + seconds * 1000) : null,
 			by,
 			reason,
 			at: stamp(now),
-			title: title.spec.id,
-			name: title.spec.name
+			title: spec.id,
+			name: spec.name
 		});
 		record(world, {
 			event: 'held',
-			path: title.spec.folder,
-			title: title.spec.id,
+			path: spec.folder,
+			title: spec.id,
 			...(seconds ? { seconds } : {}),
 			reason,
 			by
@@ -543,11 +546,12 @@ export function placeHolds(
 	publish('events');
 }
 
-export function liftHolds(world: World, titles: Title[], by: string): void {
-	for (const title of titles) {
-		if (!world.holds.some((hold) => hold.title === title.spec.id)) continue;
-		world.holds = world.holds.filter((hold) => hold.title !== title.spec.id);
-		record(world, { event: 'lifted', path: title.spec.folder, title: title.spec.id, by });
+export function liftHolds(world: World, titles: (Title | string)[], by: string): void {
+	for (const target of titles) {
+		const spec = typeof target === 'string' ? { folder: target, id: '', name: '' } : target.spec;
+		if (!world.holds.some((hold) => hold.path === spec.folder)) continue;
+		world.holds = world.holds.filter((hold) => hold.path !== spec.folder);
+		record(world, { event: 'lifted', path: spec.folder, title: spec.id, by });
 	}
 	publish('runs');
 	publish('events');

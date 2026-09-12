@@ -207,12 +207,11 @@
 			class="sticky top-0 z-30 touch-none border-b border-line bg-surface/85 pt-[env(safe-area-inset-top)] backdrop-blur-md lg:hidden"
 		>
 			<div class="flex h-14 items-center gap-2 px-4">
-				<!-- The mark and name are the way home. Negative margin against its
-				     padding so only the pressable area grows; no background on hover, or
-				     a wordmark reads as a button. The mark beats while a run is on. -->
+				<!-- Keep the home link separate from the current page heading. -->
 				<a
 					href={resolve('/')}
-					class="mark-press -ml-2 flex items-center gap-2 rounded-md px-2 py-1.5"
+					aria-label="Overview"
+					class="mark-press -ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-md"
 				>
 					<Mark
 						size={19}
@@ -220,8 +219,8 @@
 						motion={running.current ? 'travel' : 'none'}
 						press
 					/>
-					<span class="text-[16px] font-semibold tracking-tight">Trackstarr</span>
 				</a>
+				<h1 class="min-w-0 truncate text-[16px] font-semibold tracking-tight">{data.pageTitle}</h1>
 				<!-- A gear, not a hamburger: everything behind it is settings and the
 				     account. On the right, where the drawer comes in from. -->
 				<button

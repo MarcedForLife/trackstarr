@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Bar from '$lib/components/Bar.svelte';
+	import HoldMenu from '$lib/components/HoldMenu.svelte';
 	import Disclosure from '$lib/components/Disclosure.svelte';
 	import { verdictHint, verdictLabel } from '$lib/library';
 	import {
@@ -26,7 +27,8 @@
 		skippable = false,
 		busy = false,
 		ontoggle,
-		onskip
+		onskip,
+		onhold
 	}: {
 		// The run id, which is half of what names a file's log.
 		run: string;
@@ -44,10 +46,13 @@
 		busy?: boolean;
 		ontoggle: () => void;
 		onskip?: () => void;
+		onhold?: (seconds: number) => Promise<void>;
 	} = $props();
 
 	const live = $derived(!ended && !!row.live);
 	const waiting = $derived(!ended && !!row.waiting);
+	const active = $derived(live && row.live?.stage !== 'waiting');
+	const action = $derived(active ? 'Cancel' : 'Skip');
 	const shown = $derived(named(row.path));
 	const status = $derived(live && row.live ? fileStatus(row.live, age) : '');
 	const bar = $derived(live && !!row.live && fileBar(row.live));
@@ -166,6 +171,19 @@
 			</span>
 		{/snippet}
 
+		{#snippet after()}
+			{#if skippable}
+				<button
+					onclick={onskip}
+					disabled={busy}
+					aria-label={`${action} ${titled(row.path)}`}
+					title={active ? 'Cancel this file. The original stays untouched.' : undefined}
+					class="inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg px-3 text-[12px] font-medium text-dim hover:bg-sunken hover:text-danger disabled:opacity-(--disabled)"
+					>{action}</button
+				>
+			{/if}
+		{/snippet}
+
 		<!-- The bar for a rewrite, or a probe being over inside a second. -->
 		{#snippet aside()}
 			{#if bar || said}
@@ -192,6 +210,20 @@
 		{/snippet}
 
 		{#snippet panel()}
+			{#if skippable && onhold}
+				<div class="mb-2">
+					<HoldMenu
+						label={titled(row.path)}
+						disabled={busy}
+						onchoose={onhold}
+						hint={active
+							? 'Stops this attempt. After the hold ends, a later sweep can restart the rewrite from the beginning.'
+							: 'A later sweep can process this file after the hold ends.'}
+						class="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 text-[12px] font-medium text-dim hover:bg-sunken disabled:opacity-(--disabled)"
+					/>
+				</div>
+			{/if}
+
 			<div class="rounded-lg border border-line bg-sunken px-2.5 py-2">
 				<p class="font-mono text-[11px] wrap-anywhere text-faint">{row.path}</p>
 				{#if failure}
@@ -209,24 +241,6 @@
 					</div>
 				{/if}
 			</div>
-			{#if skippable}
-				<div
-					class="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-2"
-				>
-					<p class="text-[11.5px] text-faint">
-						{live
-							? 'Stops this file; leaves the original untouched.'
-							: 'Leaves this file out of this run.'}
-					</p>
-					<button
-						onclick={onskip}
-						disabled={busy}
-						aria-label={`Skip ${titled(row.path)}`}
-						class="inline-flex min-h-11 items-center justify-center rounded-lg px-3 text-[12px] font-medium text-danger hover:bg-danger/10 disabled:opacity-(--disabled)"
-						>Skip file</button
-					>
-				</div>
-			{/if}
 		{/snippet}
 	</Disclosure>
 </li>

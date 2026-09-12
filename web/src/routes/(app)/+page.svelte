@@ -105,7 +105,7 @@
 	}
 </script>
 
-<Page wide title="Overview">
+<Page wide>
 	<ServicePanel {snapshot} {admin} {recent} {swept} onmoved={moved} onpressed={history.now} />
 
 	<!-- One column at every width: side by side the two read as half-empty boxes

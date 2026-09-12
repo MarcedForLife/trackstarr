@@ -8,7 +8,7 @@ import { nextRuns } from '$lib/demo/cron';
 import manifest from '$lib/demo/posters.json';
 import { answer } from '$lib/demo/routes';
 import { stopTicking, tick } from '$lib/demo/runs';
-import { reset, world } from '$lib/demo/world';
+import { heldTitle, reset, world } from '$lib/demo/world';
 import { chips, detail, details, headline, verdicts as counted, type EventPage } from '$lib/events';
 import {
 	asVerdict,
@@ -223,6 +223,8 @@ describe('the runs', () => {
 		const page = await get<EventPage>('/api/events?limit=5');
 		const summary = page.events.find((entry) => entry.event === 'sweep')!;
 		expect(summary.stopped).toBeGreaterThan(0);
+		expect(summary.files! + summary.stopped!).toBe(sweep.total);
+		expect(summary.files).toBeLessThan(sweep.total);
 		expect(page.events.some((entry) => entry.event === 'paused')).toBe(true);
 	});
 
@@ -292,6 +294,26 @@ describe('the sheet', () => {
 			ids: ['arr:radarr:25']
 		});
 		expect(lifted.holds.some((hold) => hold.title === 'arr:radarr:25')).toBe(false);
+	});
+
+	test('holds a single file by path and lifts it without holding its siblings', async () => {
+		const title = world().titles.find((title) => title.files.length > 1)!;
+		const path = title.files[0].path;
+		const held = await post<{ holds: { path: string; title: string; seconds: number }[] }>(
+			'/api/holds',
+			{
+				paths: [path],
+				seconds: 3600
+			}
+		);
+		expect(held.holds.find((hold) => hold.path === path)).toMatchObject({
+			title: '',
+			seconds: 3600
+		});
+		expect(heldTitle(world(), title, path)).toBeDefined();
+		expect(heldTitle(world(), title, title.files[1].path)).toBeUndefined();
+		const lifted = await post<{ holds: { path: string }[] }>('/api/holds/lift', { paths: [path] });
+		expect(lifted.holds.some((hold) => hold.path === path)).toBe(false);
 	});
 
 	test('re-checks a title on its own', async () => {

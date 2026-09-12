@@ -1,4 +1,5 @@
 <script lang="ts">
+	import HoldMenu from '$lib/components/HoldMenu.svelte';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Disclosure from '$lib/components/Disclosure.svelte';
@@ -14,14 +15,7 @@
 	import { button } from '$lib/controls';
 	import { ago } from '$lib/events';
 	import { bytesFor, carriesLanguage, describe, duration, rate } from '$lib/format';
-	import {
-		forTitle,
-		getHolds,
-		lift as liftHold,
-		place as placeHold,
-		SPANS,
-		type Hold
-	} from '$lib/holds';
+	import { forTitle, getHolds, lift as liftHold, place as placeHold, type Hold } from '$lib/holds';
 	import {
 		coverUrl,
 		getLinks,
@@ -107,28 +101,10 @@
 	// from two pages and already fetches for itself.
 	const admin = $derived(page.data.user?.role === 'admin');
 	let holds = $state<Hold[]>([]);
-	// The durations are showing, rather than the one button that raises them.
-	let choosing = $state(false);
 	let holdBusy = $state('');
 	let holdError = $state('');
 	const hold = $derived(opened ? forTitle(holds, opened.id) : undefined);
 	const left = $derived(hold?.seconds ? `${duration(hold.seconds)} left` : 'until lifted');
-
-	// The menu the Hold button raises. Answers Escape before the sheet under it,
-	// and takes no history entry: a back press should leave the sheet, not the
-	// menu over it.
-	const chooser = overlay({ close: () => (choosing = false) });
-	// The button and its menu, for telling a press outside the pair from one in
-	// it.
-	let howLong = $state<HTMLElement>();
-
-	function askHowLong() {
-		if (choosing) chooser.lower();
-		else {
-			choosing = true;
-			chooser.raise();
-		}
-	}
 
 	// The track whose language and flags are open for editing: its file and its
 	// stream index there. One at a time, inline under its row. Admins only,
@@ -205,9 +181,6 @@
 		failure = '';
 		links = null;
 		holds = [];
-		// Through the stack, or a menu left up over the last title would still be
-		// answering Escape.
-		chooser.lower();
 		editor.lower();
 		retagged = null;
 		holdError = '';
@@ -253,9 +226,6 @@
 		holdError = '';
 		try {
 			holds = await placeHold({ ids: [opened.id] }, seconds);
-			chooser.lower();
-		} catch (error) {
-			holdError = refusalText(error);
 		} finally {
 			holdBusy = '';
 		}
@@ -463,10 +433,6 @@
 	}
 </script>
 
-<svelte:window
-	onpointerdown={(event) => choosing && !howLong?.contains(event.target as Node) && chooser.lower()}
-/>
-
 <Sheet open={up} onclose={close} label={opened?.name ?? 'Title'}>
 	{#if opened}
 		<div class="px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
@@ -573,41 +539,15 @@
 									{holdBusy === 'lift' ? 'Lifting…' : 'Lift'}
 								</button>
 							{:else if admin}
-								<!-- How long is the only question a hold asks, and it is asked in a
-								     menu under the button rather than in the row: opened inline it
-								     shoved the file list down the screen every time. -->
-								<div bind:this={howLong} class={`relative ${cell}`}>
-									<button
-										onclick={askHowLong}
-										aria-expanded={choosing}
-										title="Leave this title alone. It is still judged, just not rewritten."
+								{#key opened.id}
+									<HoldMenu
+										label={opened.name}
+										onchoose={keep}
+										disabled={!!holdBusy}
+										hint="A later sweep can process this title after the hold ends."
 										class={`${cell} ${button}`}
-									>
-										<Glyph name="pause" />
-										Hold
-									</button>
-
-									{#if choosing}
-										<!-- Under the button that raised it and as wide, over the rows
-										     below rather than moving them. The minimum is what the
-										     longest choice needs, since a third of a phone is narrower
-										     than that; there it hangs from the button's right edge. -->
-										<div
-											class="menu absolute top-full right-0 z-30 mt-2 w-full min-w-52 rounded-xl border border-line-strong bg-raised p-1 shadow-lg"
-										>
-											<p class="px-2.5 pt-1.5 pb-1 text-[11px] text-faint">Hold for</p>
-											{#each SPANS as span (span.seconds)}
-												<button
-													onclick={() => keep(span.seconds)}
-													disabled={!!holdBusy}
-													class="flex h-10 w-full items-center rounded-lg px-2.5 text-[13px] font-medium transition-colors hover:bg-sunken disabled:opacity-(--disabled)"
-												>
-													{holdBusy === String(span.seconds) ? 'Holding…' : span.label}
-												</button>
-											{/each}
-										</div>
-									{/if}
-								</div>
+									/>
+								{/key}
 							{/if}
 						</div>
 					{/if}
