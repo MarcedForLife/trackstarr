@@ -75,6 +75,10 @@ class Speeds:
 def _worked(entry: dict) -> tuple[tuple[str, ...], float] | None:
     """One rewritten file as its shape and speed, or None. The slot wait is
     taken off ``seconds``: only the work scales with the file."""
+    if entry.get("in_place"):
+        # A header written with mkvpropedit in a second says nothing about how
+        # long copying the file would have taken.
+        return None
     duration = entry.get("duration")
     seconds = entry.get("seconds")
     if not isinstance(duration, int | float) or not isinstance(seconds, int | float):

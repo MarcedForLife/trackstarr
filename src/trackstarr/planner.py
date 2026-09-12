@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import NamedTuple
 
 from . import config
+from .langs import named_in
 from .media import (
     ProbeError,
     container_title,
@@ -75,8 +76,10 @@ class OutStream:
     """One output stream and its input source.
 
     ``title`` is the layout name on encodes and the source's title on copies,
-    re-asserted because MP4 drops track names on a plain copy. ``lang``,
-    ``codec`` and ``bitrate`` are set only on generated tracks.
+    re-asserted because MP4 drops track names on a plain copy. ``codec`` and
+    ``bitrate`` are set only on generated tracks. ``lang`` is asserted where a
+    rule has one to write, which on a copy means tag_original. None leaves the
+    source's.
     """
 
     src: int  # stream index in the input file
@@ -389,12 +392,17 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     # title is cleared on a track about to go.
     kept_audio = _drop_layouts(plan, kept_audio, generated)
 
+    # After every drop, so no tag lands on a track about to go. The probe stays
+    # untouched, or the rules above would decide on a tag they never saw.
+    tagged = _original_to_tag(plan, audio, kept_audio)
+
     reencoded = {src["index"] for _, src in reencodes}
     audio_out = [
         OutStream(
             src=stream["index"],
             kind="audio",
             channels=stream.get("channels"),
+            lang=plan.original_lang if stream is tagged else None,
             title=stream_title(stream),
             clear_title=_flag_release_tags(plan, stream),
             src_bitrate=unpreserved_bitrate(stream),
@@ -408,7 +416,9 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
             kind="audio",
             encode=True,
             channels=layout.channels,
-            lang=stream_lang(src),
+            # The downmix takes the tag too, or next sweep retires it as a
+            # stand-in and makes it again from the track that now names one.
+            lang=stream_lang(src) or (plan.original_lang if src is tagged else None),
             title=layout.name,
             codec=layout.codec,
             bitrate=layout.bitrate,
@@ -528,6 +538,36 @@ def _flag_release_tags(plan: Plan, stream: dict) -> bool:
         f"clear release tags on {stream.get('codec_type')} {stream['index']} ({title!r})",
     )
     return True
+
+
+def _original_to_tag(plan: Plan, audio: list[dict], kept_audio: list[dict]) -> dict | None:
+    """The audio track to stamp with the title's original language, or None.
+
+    Only where nothing in the file contradicts it, since nothing downstream
+    questions a tag again. An untagged dub is the case this misses rather than
+    guesses at.
+    """
+    lang = plan.original_lang
+    if not plan.acts("tag_original") or not lang:
+        return None
+    # A language the languages rule would then drop leaves the file skipped as
+    # would-be-silent from the next sweep on.
+    dropping = "languages" in plan.policy.rules_in(ALWAYS, ALONGSIDE)
+    if dropping and lang not in {row.name for row in plan.langs}:
+        return None
+    untagged = [stream for stream in audio if stream_lang(stream) is None]
+    if len(untagged) != 1 or any(stream_lang(stream) == lang for stream in audio):
+        return None
+    stream = untagged[0]
+    # Identity, not equality, since two tracks can probe to equal dicts.
+    if not any(stream is kept for kept in kept_audio):
+        return None
+    if is_commentary(stream, plan.policy):
+        return None
+    if (named := named_in(stream_title(stream))) and named != lang:
+        return None
+    _record(plan, "tag_original", f"tag audio {_stream_label(stream)} as {lang}")
+    return stream
 
 
 def _drop_redundant_sdh(plan: Plan, kept_subs: list[dict]) -> list[dict]:

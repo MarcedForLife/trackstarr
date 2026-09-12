@@ -62,6 +62,12 @@ RULES = {
         "Drop audio and subtitle tracks in a language LANGUAGES does not name. "
         "Untagged tracks always stay.",
     ),
+    "tag_original": Rule(
+        NEVER,
+        "Tag an untagged audio track with the title's original language. Only "
+        "where the file has one untagged track, nothing in that language "
+        "already, and nothing on the track that contradicts it.",
+    ),
     "commentary": Rule(
         NEVER,
         "Drop commentary, described-audio and isolated-score tracks. They are "
@@ -498,6 +504,15 @@ def warnings() -> list[str]:
         problems.append(
             f"LANGUAGES is empty and {config.rule_variable('languages')}="
             f"{modes['languages']} drops every language, so only untagged tracks survive"
+        )
+    # The rule refuses a code the languages rule would then drop. See
+    # planner._original_to_tag.
+    tagging = modes["tag_original"] != NEVER and modes["languages"] != NEVER
+    if tagging and ORIGINAL not in {lang.name for lang in resolved_langs(settings.LANGUAGES)}:
+        problems.append(
+            f"{config.rule_variable('tag_original')}={modes['tag_original']} but "
+            f"LANGUAGES does not name {ORIGINAL}, so a track is tagged only where the "
+            "title's own language is listed there already"
         )
     # Only where the removed size is bigger than an added one, since a rebuild
     # downmixes from above. Not an error: trimming once and regenerating from

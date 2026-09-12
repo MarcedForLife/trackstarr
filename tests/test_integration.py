@@ -15,6 +15,7 @@ from trackstarr.executor import Outcome, apply_plan
 from trackstarr.media import ProbeError, duration, probe, stream_title
 from trackstarr.planner import build_plan
 from trackstarr.policy import Policy
+from trackstarr.processing import Job, process
 from trackstarr.status import Status
 from trackstarr.sweep import sweep
 from trackstarr.sweep_cache import read
@@ -642,3 +643,25 @@ def test_a_language_mkvpropedit_does_not_know_fails_in_its_words(make_file):
     assert result.detail.startswith("mkvpropedit failed (2):")
     assert "xq" in result.detail
     assert langs_of(path, "audio") == ["eng"]
+
+
+@needs_mkvtoolnix
+def test_the_rule_writes_its_tag_without_rewriting_the_file(make_file):
+    """A language is a header field, so the file keeps its inode and its
+    streams are never copied. A rewrite would publish a new file."""
+    set_langs("original", "eng")
+    set_layouts("5.1")
+    set_rules(tag_original="always")
+    path = make_file("f.mkv", [(6, "und", "")])
+    before = os.stat(path)
+
+    result = process(Job(path, "jpn"), dry_run=False)
+
+    assert result.status is Status.MODIFIED
+    assert langs_of(path, "audio") == ["jpn"]
+    assert os.stat(path).st_ino == before.st_ino
+    # Idempotent, like every other rule: the file now conforms.
+    assert not build_plan(path, "jpn").needed
+    (recorded,) = [line for line in read_events() if line["event"] == "modified"]
+    assert recorded["in_place"] is True
+    assert recorded["reasons"] == ["tag audio 1 as jpn"]

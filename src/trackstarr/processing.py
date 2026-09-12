@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 
-from . import config, events, holds, rewrites, runs
+from . import config, events, holds, mkvtag, rewrites, runs
 from .arr import Arr, LibraryItem
 from .executor import Outcome, apply_plan
 from .media import ProbeError
@@ -247,6 +247,86 @@ def downmixed_names(plan: Plan) -> list[str]:
     return [stream.title for stream in plan.streams if stream.encode]
 
 
+def _event_fields(
+    job: Job, plan: Plan, source: str, seconds: float, waited: float = 0.0
+) -> dict:
+    """What every outcome of one plan records, whichever tool applied it."""
+    return {
+        "run": job.run,
+        "source": source,
+        "config_id": plan.policy.digest(),
+        "reasons": plan.reasons,
+        "rules": sorted(plan.rules),
+        "seconds": round(seconds, 1),
+        # Only the time spent working scales with the file; the estimates are
+        # calibrated from it.
+        "waited": round(waited, 1) or None,
+        "duration": round(plan.src_duration, 1) or None,
+    }
+
+
+def _tag_only(plan: Plan) -> tuple[int, str] | None:
+    """The language tag that is the whole of this plan, as (stream, code).
+
+    mkvpropedit writes one in a second where ffmpeg copies the file to do it,
+    so a plan ordering nothing else is worth doing the cheap way. Anything else
+    orders a rewrite, which carries the tag for free.
+    """
+    if plan.rules != {"tag_original"}:
+        return None
+    # A copy, so src is the index the file itself uses.
+    for out in plan.streams:
+        if out.kind == "audio" and not out.encode and out.lang:
+            return out.src, out.lang
+    return None
+
+
+def _tag_in_place(
+    job: Job, plan: Plan, tag: tuple[int, str], source: str
+) -> ProcessResult | None:
+    """Write the plan's one language tag with mkvpropedit, or None to rewrite.
+
+    None where the file cannot be edited in place at all, an MP4, a hardlink,
+    or an image without mkvtoolnix. The rewrite writes the same tag, at the
+    price of copying the file to do it.
+    """
+    index, lang = tag
+    bytes_before = _file_size(job.path)
+    started = time.monotonic()
+    written = mkvtag.write_lang(job.path, index, lang)
+    if written.status is mkvtag.Outcome.REFUSED:
+        log.info("cannot tag %s in place, rewriting instead: %s", job.path, written.detail)
+        return None
+    if written.status is mkvtag.Outcome.UNCHANGED:
+        # Something else wrote the tag between the plan's probe and here, so
+        # the file is as the plan wanted it and none of it is ours to record.
+        log.info("%s already carries %s", job.path, lang)
+        return ProcessResult(Status.CONFORM, plan)
+    fields = _event_fields(job, plan, source, time.monotonic() - started)
+    if written.status is mkvtag.Outcome.FAILED:
+        log.warning("tagging %s failed: %s", job.path, written.detail)
+        events.record("failed", path=job.path, detail=written.detail, **fields)
+        return ProcessResult(Status.FAILED, plan, written.detail)
+    log.info("tagged %s in place: %s", job.path, "; ".join(plan.reasons))
+    bytes_after = _file_size(job.path)
+    # No incidental, since nothing was rewritten for a ride-along to ride with.
+    # in_place keeps the line out of the rewrite speeds, see estimate._worked.
+    events.record(
+        "modified",
+        path=job.path,
+        in_place=True,
+        bytes_before=bytes_before,
+        bytes_after=bytes_after,
+        **fields,
+    )
+    if job.arr and job.item_id:
+        job.arr.rescan(job.item_id)
+    refresh_servers(job.path)
+    key = cache_key(job.path, job.lang)
+    rewrites.record(job.path, key, _modified(plan, bytes_before, bytes_after))
+    return ProcessResult(Status.MODIFIED, plan, became=_rejudged(job, plan, key))
+
+
 def effective_dry_run(dry_run: bool, path: str = "") -> bool:
     """Whether a run is dry, given the caller, REWRITE_MODE and any hold.
 
@@ -287,6 +367,11 @@ def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
         log.info("would rewrite %s: %s", job.path, describe(plan))
         return ProcessResult(Status.PENDING, plan)
 
+    # Before the slot claim, since a header write is not an encode and queueing
+    # it behind one would be most of an hour to spend on a second of work.
+    if (tag := _tag_only(plan)) and (tagged := _tag_in_place(job, plan, tag, source)):
+        return tagged
+
     log.info("rewriting %s: %s", job.path, describe(plan))
     # The size at plan time, which apply_plan guarantees still holds. The
     # fallback is for hand-built plans.
@@ -316,18 +401,7 @@ def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
     finally:
         # For the paths that never reached on_encoded.
         runs.stage(job.run, job.path, runs.WORKING)
-    event_fields = {
-        "run": job.run,
-        "source": source,
-        "config_id": plan.policy.digest(),
-        "reasons": plan.reasons,
-        "rules": sorted(plan.rules),
-        "seconds": round(time.monotonic() - started, 1),
-        # Only the time spent working scales with the file; the estimates are
-        # calibrated from it.
-        "waited": round(waited, 1) or None,
-        "duration": round(plan.src_duration, 1) or None,
-    }
+    event_fields = _event_fields(job, plan, source, time.monotonic() - started, waited)
     if outcome is Outcome.APPLIED:
         bytes_after = _file_size(plan.out_path)
         events.record(

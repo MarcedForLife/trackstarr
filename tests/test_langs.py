@@ -1,6 +1,6 @@
 import pytest
 
-from trackstarr.langs import LANG_NAMES, from_name, norm_lang
+from trackstarr.langs import LANG_NAMES, from_name, named_in, norm_lang
 
 
 @pytest.mark.parametrize(
@@ -97,3 +97,27 @@ def test_every_arr_language_maps_to_a_three_letter_code():
     for name, code in LANG_NAMES.items():
         assert len(code) == 3, f"{name} -> {code!r}"
         assert code.isalpha() and code.islower(), f"{name} -> {code!r}"
+
+
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        ("English 5.1", "eng"),
+        ("Hebrew", "heb"),
+        ("JPN", "jpn"),
+        ("jpn", "jpn"),
+        # a full name inside a longer title
+        ("AC3 Japanese Dub", "jpn"),
+        # nothing a track title says about a language
+        ("Director's Commentary", None),
+        ("Surround 5.1", None),
+        ("Original Audio", None),
+        ("", None),
+        (None, None),
+        # two-letter codes are words first
+        ("It is what it is", None),
+        ("No commentary", None),
+    ],
+)
+def test_named_in(title, expected):
+    assert named_in(title) == expected

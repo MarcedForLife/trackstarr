@@ -2,6 +2,8 @@
 write; the *arrs report English names, and rips carry 639-1 and 639-2/T too.
 Everything is normalised to 639-2/B before comparison."""
 
+import re
+
 #: Every language Radarr and Sonarr can report, mapped to ISO 639-2/B.
 #: Sourced from their ``/api/v3/language`` endpoint.
 LANG_NAMES: dict[str, str] = {
@@ -210,3 +212,20 @@ def from_name(name: str | None) -> str | None:
     if not key or key in ARR_NON_LANGUAGES:
         return None
     return LANG_NAMES.get(key)
+
+
+def named_in(title: str | None) -> str | None:
+    """The language a track title names ("English 5.1"), or None.
+
+    Full names, plus a title that is only a code. Two-letter codes are left
+    out, since "is", "it" and "no" are words before they are languages.
+    """
+    if not title:
+        return None
+    whole = title.strip().lower()
+    if len(whole) == 3 and whole in _LOOKUP:
+        return _LOOKUP[whole]
+    for word in re.findall(r"[a-z]+", whole):
+        if code := LANG_NAMES.get(word):
+            return code
+    return None

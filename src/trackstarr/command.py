@@ -51,14 +51,15 @@ def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
                 f"-disposition:a:{idx}",
                 "0",
             ]
-            if out.lang:
-                args += [f"-metadata:s:a:{idx}", f"language={out.lang}"]
         elif out.clear_title:
             args += [f"-metadata:s:a:{idx}", "title="]
         elif out.title:
             # MP4 drops track names on a plain copy, blinding the commentary
             # and SDH tests next pass.
             args += [f"-metadata:s:a:{idx}", f"title={out.title}"]
+        # Copies too, where the tag_original rule has one to write.
+        if out.lang:
+            args += [f"-metadata:s:a:{idx}", f"language={out.lang}"]
 
     sub_streams = (out for out in plan.streams if out.kind == "subtitle")
     for idx, out in enumerate(sub_streams):
