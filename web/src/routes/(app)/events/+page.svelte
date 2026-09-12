@@ -6,7 +6,7 @@
 	import Segmented from '$lib/components/Segmented.svelte';
 	import TitleSheet from '$lib/components/TitleSheet.svelte';
 	import { Snapshot } from '$lib/activity.svelte';
-	import { count, CUSTOM, key, said, searchable, SPANS, THREAD, type Event } from '$lib/events';
+	import { count, CUSTOM, key, said, searchable, SPANS, type Event } from '$lib/events';
 	import { button, control, glyph, quiet, radius } from '$lib/controls';
 	import { History } from '$lib/history.svelte';
 	import type { Card } from '$lib/library';
@@ -286,7 +286,7 @@
 	{/if}
 
 	{#if !rows.length}
-		<p class="mt-8 text-sm text-dim">
+		<p class="mt-6 rounded-xl border border-line bg-raised px-4 py-6 text-sm text-dim">
 			{#if history.entries.length}
 				<!-- The kind filter or the search hid everything loaded. Whether there
 				     is more is the cursor's answer. -->
@@ -301,15 +301,17 @@
 			{/if}
 		</p>
 	{:else}
-		<!-- The thread rather than a rail in a column of its own with a dot of its
-		     own; see THREAD. overflow-anchor: none, or scroll anchoring carries a
-		     tapped row out from under the finger as it expands. -->
-		<ol class="relative isolate mt-6 [overflow-anchor:none]">
-			<span aria-hidden="true" class={THREAD}></span>
+		<!-- Scroll anchoring must not move a tapped row as its details expand. -->
+		<ol
+			aria-label="Events"
+			class="mt-6 divide-y divide-line overflow-hidden rounded-xl border border-line bg-raised [overflow-anchor:none]"
+		>
 			{#each shown as { entry, at, id } (id)}
-				<!-- Rows off screen are skipped whole. 5rem is the guess for an unseen
+				<!-- Rows off screen are skipped whole. 6rem is the guess for an unseen
 				     row. -->
-				<li class="pb-5 [contain-intrinsic-size:auto_5rem] [content-visibility:auto]">
+				<li
+					class="px-4 py-3 transition-colors [contain-intrinsic-size:auto_6rem] [content-visibility:auto] hover:bg-sunken/50"
+				>
 					<EventRow
 						{entry}
 						id={`event-${at}`}
@@ -328,7 +330,7 @@
 		{/if}
 	{/if}
 
-	<div class="mt-2 flex items-center gap-3">
+	<div class="mt-4 flex items-center gap-3">
 		{#if history.cursor !== null}
 			<!-- Says what it does. Under a cut it reads past pages that hold nothing. -->
 			<button onclick={reachBack} disabled={history.busy} class={button}>

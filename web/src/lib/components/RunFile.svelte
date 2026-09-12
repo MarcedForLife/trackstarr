@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Bar from '$lib/components/Bar.svelte';
 	import Disclosure from '$lib/components/Disclosure.svelte';
-	import { pip, verdictHint, verdictLabel } from '$lib/library';
+	import { verdictHint, verdictLabel } from '$lib/library';
 	import {
 		duration,
 		fileBar,
@@ -18,7 +18,9 @@
 	let {
 		run,
 		row,
+		origin = '',
 		age = 0,
+		ended = false,
 		open = false,
 		id,
 		skippable = false,
@@ -29,9 +31,11 @@
 		// The run id, which is half of what names a file's log.
 		run: string;
 		row: FileRow;
+		origin?: string;
 		// Seconds since the snapshot arrived, to carry a live row's readouts
 		// forward. A finished row ignores it.
 		age?: number;
+		ended?: boolean;
 		open?: boolean;
 		// Ties the button to the panel it opens; unique within the page.
 		id: string;
@@ -42,15 +46,15 @@
 		onskip?: () => void;
 	} = $props();
 
-	const live = $derived(!!row.live);
-	const waiting = $derived(!!row.waiting);
+	const live = $derived(!ended && !!row.live);
+	const waiting = $derived(!ended && !!row.waiting);
 	const shown = $derived(named(row.path));
-	const status = $derived(row.live ? fileStatus(row.live, age) : '');
-	const bar = $derived(!!row.live && fileBar(row.live));
+	const status = $derived(live && row.live ? fileStatus(row.live, age) : '');
+	const bar = $derived(live && !!row.live && fileBar(row.live));
 
 	// A live row's clock runs; a finished one's is how long the worker had it. A
 	// waiting row has none, and shows what its rewrite is expected to take.
-	const held = $derived(row.live ? row.seconds + age : row.seconds);
+	const held = $derived(live ? row.seconds + age : row.seconds);
 	const expected = $derived(row.waiting?.expected ?? 0);
 
 	// The word on the right: the verdict in the library's words, or where the
@@ -63,16 +67,16 @@
 				: 'Skipped'
 			: row.verdict
 				? verdictLabel(row.verdict)
-				: waiting
-					? 'Queued'
-					: ''
+				: ended
+					? row.waiting
+						? 'Not processed'
+						: 'Ended'
+					: waiting
+						? 'Queued'
+						: ''
 	);
-	// A row with no verdict yet takes the neutral dot, the same one `unchecked`
-	// draws.
-	const dot = $derived(live ? 'bg-accent-fill' : row.verdict ? pip[row.verdict] : 'bg-line-strong');
-
 	// The line under the name: how far through, or the detail.
-	const said = $derived(live ? status : row.detail);
+	const said = $derived(live ? status : ended && row.live ? '' : row.detail);
 
 	let lines = $state<string[] | null>(null);
 	let failure = $state('');
@@ -89,7 +93,7 @@
 			read = readWhileWorking = false;
 			return;
 		}
-		const working = !!row.live;
+		const working = live;
 		if (!working && read && !readWhileWorking) return;
 		read = true;
 		readWhileWorking = working;
@@ -117,62 +121,55 @@
 	});
 </script>
 
-<li class="text-[12px]">
-	<Disclosure {id} {open} {ontoggle} mark={10} panelClass="mt-2 ml-3.5">
+<li class="py-2.5 text-[12px]">
+	<Disclosure
+		{id}
+		{open}
+		{ontoggle}
+		mark={10}
+		class="group block min-h-11 w-full text-left"
+		panelClass="mt-2"
+	>
 		{#snippet summary(chevron)}
-			<span class="flex items-baseline gap-2">
-				<span
-					aria-hidden="true"
-					title={row.verdict ? verdictHint(row.verdict) : ''}
-					class={`h-1.5 w-1.5 flex-none translate-y-[-1px] rounded-full ${dot}`}
-				></span>
-				<!-- Named as the history names it, with the episode outside the
-				     truncation: rows of one series differ only in it. -->
-				<span class="flex min-w-0 flex-1 items-baseline gap-1.5 text-dim">
-					<span class="min-w-0 truncate">{shown.name}</span>
-					{#if shown.episode}
-						<span class="flex-none text-faint tabular-nums">{shown.episode}</span>
-					{/if}
-				</span>
-				{#if verdict}
-					<span
-						class={`flex-none font-medium ${row.verdict === 'failed' ? 'text-danger' : 'text-faint'}`}
-					>
-						{verdict}
+			<span class="flex items-start gap-2">
+				<span class="min-w-0 flex-1">
+					<span class="block text-[13px] leading-snug font-medium wrap-anywhere text-fg">
+						{shown.name}
+						{#if shown.episode}<span class="whitespace-nowrap text-dim">{shown.episode}</span>{/if}
 					</span>
-				{/if}
-				<!-- How long the thread had the file, slot wait included, or for one
-				     still in the queue how long its rewrite is expected to take. -->
-				<span class="flex-none font-mono text-[11px] text-faint">
-					{waiting ? (expected ? `~${duration(expected)}` : '') : duration(held)}
+					<span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-dim">
+						<span
+							title={row.verdict ? verdictHint(row.verdict) : undefined}
+							class={row.verdict === 'failed' ? 'font-medium text-danger' : ''}
+							>{verdict ||
+								(bar
+									? 'Rewriting'
+									: live
+										? row.live?.stage === 'waiting'
+											? 'Waiting for slot'
+											: 'Working'
+										: '')}</span
+						>
+						{#if origin}<span class="text-faint">{origin}</span>{/if}
+						<span class="text-faint tabular-nums"
+							>{waiting
+								? expected
+									? `~${duration(expected)}`
+									: ''
+								: ended && row.waiting
+									? ''
+									: duration(held)}</span
+						>
+					</span>
 				</span>
 				{@render chevron()}
 			</span>
 		{/snippet}
 
-		<!-- Skip on the summary's line, after the time it stands beside, so a
-		     queued row stays one line. -->
-		{#snippet after()}
-			{#if skippable}
-				<!-- The ::after is the tap target around a small pill. -->
-				<button
-					onclick={onskip}
-					disabled={busy}
-					aria-label={`Skip ${titled(row.path)}`}
-					title={live
-						? 'Skip. The rewrite under way is killed, so the file is untouched.'
-						: 'Skip. This run leaves the file alone. The next sweep still reaches it.'}
-					class="relative flex-none rounded border border-line-strong px-1.5 py-0.5 text-[10.5px] leading-none font-medium text-faint transition-colors after:absolute after:-inset-3 after:content-[''] hover:border-danger/45 hover:text-danger disabled:opacity-(--disabled)"
-				>
-					Skip
-				</button>
-			{/if}
-		{/snippet}
-
 		<!-- The bar for a rewrite, or a probe being over inside a second. -->
 		{#snippet aside()}
 			{#if bar || said}
-				<div class="mt-1.5 ml-3.5 flex items-center gap-2.5">
+				<div class="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
 					{#if bar && row.live}
 						<Bar
 							file
@@ -184,7 +181,7 @@
 					{/if}
 					{#if said}
 						<span
-							class={`text-[11px] text-faint ${bar ? 'flex-none tabular-nums' : 'min-w-0 flex-1 truncate'}`}
+							class={`text-[11px] text-faint ${bar ? 'tabular-nums' : 'line-clamp-2 min-w-0 flex-1 wrap-anywhere'}`}
 							title={bar ? '' : said}
 						>
 							{said}
@@ -207,11 +204,29 @@
 				{:else}
 					<div bind:this={tail} class="mt-1.5 max-h-56 overflow-y-auto border-t border-line pt-1.5">
 						{#each lines as line, at (at)}
-							<p class="font-mono text-[11px] whitespace-pre-wrap text-dim">{line}</p>
+							<p class="font-mono text-[11px] wrap-anywhere whitespace-pre-wrap text-dim">{line}</p>
 						{/each}
 					</div>
 				{/if}
 			</div>
+			{#if skippable}
+				<div
+					class="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-2"
+				>
+					<p class="text-[11.5px] text-faint">
+						{live
+							? 'Stops this file; leaves the original untouched.'
+							: 'Leaves this file out of this run.'}
+					</p>
+					<button
+						onclick={onskip}
+						disabled={busy}
+						aria-label={`Skip ${titled(row.path)}`}
+						class="inline-flex min-h-11 items-center justify-center rounded-lg px-3 text-[12px] font-medium text-danger hover:bg-danger/10 disabled:opacity-(--disabled)"
+						>Skip file</button
+					>
+				</div>
+			{/if}
 		{/snippet}
 	</Disclosure>
 </li>
