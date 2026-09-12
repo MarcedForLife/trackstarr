@@ -10,6 +10,16 @@ function entry(over: Partial<Event> = {}): Event {
 	};
 }
 
+describe('a verdict headline', () => {
+	test('uses the library title and keeps the release filename in the details', () => {
+		const path = '/movies/Sintel (2010)/Sintel (2010) Bluray-1080p.mkv';
+		const event = entry({ event: 'modified', path });
+		expect(headline(event, 'Sintel')).toBe('Modified: Sintel');
+		expect(headline(event)).toContain('Bluray-1080p');
+		expect(details(event).find((row) => row.label === 'File')?.values).toEqual([path]);
+	});
+});
+
 describe('the headline of a hold', () => {
 	const path = '/data/media/tv/MINDHUNTER (2017) {tvdb-328708}';
 

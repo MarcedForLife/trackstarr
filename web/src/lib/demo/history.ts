@@ -334,7 +334,7 @@ export function chronicle(world: World, now: number): Event[] {
 	verdict(story, 'deferred', sherlockJr, sweepRun, 'sweep', now - 9 * MINUTE_MS, {
 		seconds: 0.4,
 		duration: sherlockJr.seconds,
-		detail: 'hard-linked 2 times; a download client still has it'
+		detail: 'hard-linked 2 times. A download client still has it'
 	});
 
 	const importStarted = now - IMPORT_STARTED_AGO_MS;

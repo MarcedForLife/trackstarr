@@ -167,8 +167,8 @@ def describe(plan: Plan) -> str:
     parts = list(plan.reasons)
     parts += [f"(also {item})" for item in plan.incidental]
     if plan.skip:
-        return f"{plan.skip}: {'; '.join(parts)}" if parts else plan.skip
-    return "; ".join(parts)
+        return f"{plan.skip}: {' · '.join(parts)}" if parts else plan.skip
+    return " · ".join(parts)
 
 
 def planned_tracks(plan: Plan) -> list[dict]:

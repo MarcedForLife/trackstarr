@@ -438,7 +438,7 @@ export function catalogue(): TitleSpec[] {
 			history: {
 				kind: 'deferred',
 				daysAgo: 0,
-				detail: 'hard-linked 2 times; a download client still has it'
+				detail: 'hard-linked 2 times. A download client still has it'
 			}
 		}),
 		movie({

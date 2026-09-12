@@ -347,7 +347,7 @@
 	     keystroke it never carried. min-w-0, or a fieldset will not shrink. -->
 	<fieldset disabled={settings.busy} class="min-w-0">
 		{#if readOnly}
-			<p class="mt-2 text-[13px] text-faint">Viewing only; an admin can change these.</p>
+			<p class="mt-2 text-[13px] text-faint">Viewing only. An admin can change these.</p>
 		{/if}
 
 		<p class="mt-3 text-[13px] text-dim">

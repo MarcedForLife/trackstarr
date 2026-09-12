@@ -844,7 +844,7 @@ def test_a_skip_describes_itself_before_what_the_rules_wanted():
     never comes; the wanted drops still follow, since they name the tracks."""
     plan = plan_for(video(0), audio(1, 6, lang="ger"), audio(2, 2, lang="fre"))
     assert describe(plan) == (
-        "would remove every audio track: drop audio 1 (ger); drop audio 2 (fre)"
+        "would remove every audio track: drop audio 1 (ger) · drop audio 2 (fre)"
     )
 
 

@@ -205,7 +205,7 @@ export function headline(entry: Event, title = ''): string {
 		case 'pending':
 		case 'failed':
 		case 'deferred':
-			return `${verdictLabel(entry.event)}: ${named(entry.path).name}`;
+			return `${verdictLabel(entry.event)}: ${title || named(entry.path).name}`;
 		case 'sweep':
 			// A stopped sweep's count is part of a library, and must say so.
 			return entry.stopped
@@ -496,26 +496,6 @@ export function searchable(entry: Event, title = ''): string {
 export function dot(entry: Event): string {
 	return isVerdict(entry.event) ? pip[entry.event] : 'bg-faint';
 }
-
-/**
- * The thread a feed's covers and marks are beaded on: one line down the middle
- * of the 40px column they take, behind them, so it never crosses the words and
- * costs no gutter. Goes in a list's own `relative` box.
- *
- * Faded at both ends rather than inset by a measure: a cover sits at the top of
- * its line and a mark in the middle of one, so where the first and the last
- * node begin depends on which kind they are, and a hard stop landed short of
- * one and past the other. The fade also says the history carries on past the
- * last line loaded, which it does. Held here because two feeds draw it and the
- * offset is only right while it matches the column's width.
- *
- * Behind the beads by z-index, not by luck: an absolute span paints over its
- * plain siblings, and the events page only hid it because `content-visibility`
- * makes a stacking context of every row. The list it goes in must `isolate`,
- * so behind means behind the rows rather than behind the page.
- */
-export const THREAD =
-	'absolute inset-y-0 left-[19.5px] -z-10 w-px bg-line [mask-image:linear-gradient(to_bottom,transparent,#000_2.5rem,#000_calc(100%_-_2.5rem),transparent)]';
 
 /**
  * The mark for a line about the service rather than a title, which has its
