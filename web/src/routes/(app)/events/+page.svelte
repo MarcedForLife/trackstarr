@@ -65,6 +65,10 @@
 	}
 
 	let filter = $state('all');
+	$effect(() => {
+		const requested = page.url.searchParams.get('filter');
+		filter = FILTERS.some((option) => option.value === requested) ? requested! : 'all';
+	});
 
 	const FILTERS: { value: string; label: string; kinds: string[] }[] = [
 		{ value: 'all', label: 'All', kinds: [] },

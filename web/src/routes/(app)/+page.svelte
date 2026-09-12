@@ -106,7 +106,7 @@
 </script>
 
 <Page wide>
-	<ServicePanel {snapshot} {admin} {recent} {swept} onmoved={moved} onpressed={history.now} />
+	<ServicePanel {snapshot} {admin} {recent} onmoved={moved} onpressed={history.now} />
 
 	<!-- One column at every width: side by side the two read as half-empty boxes
 	     and the shelf was cut to five posters. -->

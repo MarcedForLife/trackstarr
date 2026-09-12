@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { since, ticking } from '$lib/clock.svelte';
 	import Bar from '$lib/components/Bar.svelte';
@@ -10,7 +10,7 @@
 	import { refusalText } from '$lib/api';
 	import { button, danger, primary } from '$lib/controls';
 	import type { Event } from '$lib/events';
-	import { size, soon, titled } from '$lib/format';
+	import { size, soon, stamp, titled } from '$lib/format';
 	import { lift, place, type Hold } from '$lib/holds';
 	import type { RunMode } from '$lib/library';
 	import { keyboard } from '$lib/modal';
@@ -18,6 +18,7 @@
 		fileRows,
 		source,
 		duration,
+		remaining,
 		pause,
 		resume,
 		skipFile,
@@ -34,7 +35,6 @@
 		snapshot,
 		admin = false,
 		recent,
-		swept,
 		onmoved,
 		onpressed
 	}: {
@@ -43,8 +43,6 @@
 		admin?: boolean;
 		/** The last few history lines, for the numbers an ended run left. */
 		recent: Event[];
-		/** The last sweep to finish. */
-		swept?: Event;
 		/** A run moved on or ended. `ended` means the history is a line behind and
 		 * worth a look now. */
 		onmoved: (ended: boolean) => void;
@@ -138,42 +136,86 @@
 			(file) => file.ended || (!file.row.live && (!file.row.waiting || file.row.skipped))
 		)
 	);
-	const failed = $derived(
-		showing.reduce((count, entry) => count + (entry.run.counts.failed ?? 0), 0)
-	);
-	// Combine the work shown on this page. On a fresh idle page, use the last
-	// saved summary rather than adding several old passes over the same files.
-	const results = $derived.by(() => {
-		if (!showing.length)
+	// Keep each run's scope and mode intact, including summaries loaded after a reload.
+	const resultRuns = $derived.by(() => {
+		const live = showing.map((entry) => {
+			const summary = entry.ended
+				? recent.find(
+						(line) =>
+							line.run === entry.run.id && (line.event === 'sweep' || line.event === 'recheck')
+					)
+				: undefined;
 			return {
-				done: swept?.files ?? 0,
-				counts: swept?.counts ?? {},
-				seconds: swept?.seconds ?? 0,
-				bytes: swept?.library_bytes,
-				saved: !!swept
+				id: entry.run.id,
+				label: source(entry.run),
+				ts: summary?.ts ?? entry.run.started,
+				when: summary ? 'Finished' : 'Started',
+				mode: entry.run.dry_run
+					? 'Plan only'
+					: entry.cut
+						? 'Apply mode'
+						: entry.ended
+							? 'Applied'
+							: 'Applying',
+				state: entry.ended
+					? entry.cut
+						? 'Stopped'
+						: 'Completed'
+					: entry.run.stopping
+						? 'Stopping'
+						: 'In progress',
+				done: entry.run.done,
+				counts: entry.run.counts,
+				seconds: entry.run.seconds + (entry.ended || snapshot.offline ? 0 : since(entry.run.seen)),
+				bytes: summary?.library_bytes
 			};
-		const counts: Record<string, number> = {};
-		for (const entry of showing) {
-			for (const [state, count] of Object.entries(entry.run.counts)) {
-				counts[state] = (counts[state] ?? 0) + count;
-			}
-		}
-		const started = Math.min(...showing.map((entry) => Date.parse(entry.run.started)));
-		const ended = Math.max(
-			...showing.map(
+		});
+		const ids = new Set(live.map((entry) => entry.id));
+		const summaries = recent
+			.filter(
 				(entry) =>
-					Date.parse(entry.run.started) +
-					(entry.run.seconds + (entry.ended ? 0 : since(entry.run.seen))) * 1000
+					(entry.event === 'sweep' || entry.event === 'recheck') && !ids.has(entry.run ?? '')
 			)
-		);
-		return {
-			done: showing.reduce((count, entry) => count + entry.run.done, 0),
-			counts,
-			seconds: Math.max(0, (ended - started) / 1000),
-			bytes: undefined,
-			saved: false
-		};
+			.slice(0, Math.max(0, RECENT_RUNS - finished.length));
+		return [
+			...live,
+			...summaries.map((entry) => ({
+				id: entry.run ?? entry.ts,
+				label: entry.event === 'sweep' ? 'Sweep' : 'Re-check',
+				ts: entry.ts,
+				when: 'Finished',
+				mode: entry.dry_run ? 'Plan only' : entry.stopped ? 'Apply mode' : 'Applied',
+				state: entry.stopped ? 'Stopped' : 'Completed',
+				done: entry.files ?? 0,
+				counts: entry.counts ?? {},
+				seconds: entry.seconds ?? 0,
+				bytes: entry.library_bytes
+			}))
+		];
 	});
+	const failed = $derived(
+		resultRuns.reduce((count, entry) => count + (entry.counts.failed ?? 0), 0)
+	);
+	const failedFiles = $derived(files.filter((file) => file.row.verdict === 'failed'));
+	const failureEvents = $derived(
+		recent.filter(
+			(entry) =>
+				entry.event === 'failed' &&
+				entry.path &&
+				resultRuns.some((run) => run.id === entry.run) &&
+				!failedFiles.some((file) => file.run.id === entry.run && file.row.path === entry.path)
+		)
+	);
+	let failuresOpen = $state(false);
+	let failurePanel = $state<HTMLDivElement>();
+	async function revealFailures() {
+		failuresOpen = !failuresOpen;
+		if (!failuresOpen) return;
+		opened = { ...opened, ...Object.fromEntries(failedFiles.map((file) => [file.key, true])) };
+		await tick();
+		failurePanel?.focus();
+	}
+	let lastUpdated = $state(new Date().toISOString());
 	let expandedResults = $state(false);
 
 	// Progress covers current work; result counts also retain recent outcomes.
@@ -184,17 +226,34 @@
 
 	const waiting = $derived(Math.max(activity.queue, queuedFiles.length));
 	const processingState = $derived(
-		holding
-			? 'Paused'
-			: !activity.runs.length
-				? 'Idle'
-				: activity.runs.every((run) => run.stopping)
-					? 'Stopping'
-					: 'Working'
+		snapshot.offline
+			? 'Connection lost'
+			: holding
+				? 'Paused'
+				: !activity.runs.length
+					? 'Idle'
+					: activity.runs.every((run) => run.stopping)
+						? 'Stopping'
+						: 'Working'
 	);
 	let queueExpanded = $state(false);
 	let opened = $state<Record<string, boolean>>({});
-	$effect(() => (activity.runs.length ? ticking() : undefined));
+	$effect(() => (activity.runs.length && !snapshot.offline ? ticking() : undefined));
+
+	const encodingCount = $derived(
+		activeFiles.filter((file) => file.row.live?.stage === 'encoding').length
+	);
+	const stageSummary = $derived(
+		[
+			encodingCount ? `Rewriting ${encodingCount} ${encodingCount === 1 ? 'file' : 'files'}` : '',
+			activeFiles.length > encodingCount
+				? `Checking ${activeFiles.length - encodingCount} ${activeFiles.length - encodingCount === 1 ? 'file' : 'files'}`
+				: '',
+			waiting ? `${waiting.toLocaleString()} waiting` : ''
+		]
+			.filter(Boolean)
+			.join(' · ')
+	);
 
 	// A walk holding the sweep cache; the service refuses a second. A re-check
 	// counts.
@@ -204,7 +263,12 @@
 
 	// Paused workers finishing, or the next scheduled check while idle.
 	const sub = $derived.by(() => {
-		if (holding) return activeFiles.length ? 'Finishing in-progress files' : '';
+		if (snapshot.offline)
+			return `Showing the last update from ${stamp(lastUpdated)}. Reconnecting…`;
+		if (holding)
+			return activeFiles.length
+				? 'Files already started will finish. Nothing new starts until you resume.'
+				: 'Nothing new starts until you resume.';
 		return !activity.runs.length && activity.next_sweep
 			? `Next scheduled check ${soon(activity.next_sweep)}.`
 			: '';
@@ -230,6 +294,7 @@
 	// News about a run, not a tick of one: the rows draw clocks and bars from the
 	// last snapshot and its age.
 	function saw({ now: fresh, before, missed }: Landed) {
+		lastUpdated = new Date().toISOString();
 		// A new stamp is a restart, which no run survives. Both looks can succeed
 		// either side of one, which is the half `missed` cannot see.
 		const restarted = !!before.up_since && fresh.up_since !== before.up_since;
@@ -377,7 +442,7 @@
 	{/each}
 {/snippet}
 
-{#snippet fileList(items: typeof files, showOrigin = true)}
+{#snippet fileList(items: typeof files, showOrigin = true, scope = 'file')}
 	<ul class="divide-y divide-line [overflow-anchor:none]">
 		{#each items as file (file.key)}
 			<RunFile
@@ -389,9 +454,9 @@
 				]
 					.filter(Boolean)
 					.join(' · ')}
-				age={file.ended ? 0 : since(file.run.seen)}
+				age={file.ended || snapshot.offline ? 0 : since(file.run.seen)}
 				ended={file.ended}
-				id={`file-${file.run.id}-${file.row.path}`}
+				id={`${scope}-${file.run.id}-${file.row.path}`}
 				open={!!opened[file.key]}
 				skippable={admin &&
 					!file.ended &&
@@ -416,11 +481,15 @@
 			>
 				<span
 					aria-hidden="true"
-					class={`h-2 w-2 flex-none rounded-full ${holding || activity.runs.length ? 'bg-accent-fill' : 'bg-line-strong'}`}
+					class={`h-2 w-2 flex-none rounded-full ${snapshot.offline ? 'bg-danger' : holding || activity.runs.length ? 'bg-accent-fill' : 'bg-line-strong'}`}
 				></span>
 				{processingState}
-				{#if failed}<span class="text-[12px] font-medium tracking-normal text-danger"
-						>{failed} failed</span
+				{#if failed}<button
+						onclick={revealFailures}
+						aria-expanded={failuresOpen}
+						aria-controls="processing-failures"
+						class="min-h-11 rounded-lg px-2 text-[12px] font-medium tracking-normal text-danger underline underline-offset-2 hover:bg-danger/10"
+						>{failed} failed</button
 					>{/if}
 			</h2>
 			<button
@@ -433,7 +502,7 @@
 			</button>
 		</div>
 		{#if sub}
-			<p class="mt-2 text-[12.5px] text-dim">{sub}</p>
+			<p role="status" class="mt-2 text-[12.5px] text-dim">{sub}</p>
 		{:else if !activity.runs.length && !holding}
 			<p class="mt-2 text-[12.5px] text-dim">
 				No sweep is scheduled.
@@ -451,6 +520,17 @@
 
 	{#if activity.runs.length}
 		<div class="px-4 pb-4 sm:px-5" aria-label="Overall processing progress">
+			{#if stageSummary}<p class="mb-3 text-[12.5px] text-dim">
+					{snapshot.offline ? 'At last update: ' : ''}{stageSummary}
+				</p>{/if}
+			{#if !snapshot.offline}
+				{#each activity.runs as run (run.id)}
+					{@const estimate = remaining(run, holding, since(run.seen))}
+					{#if estimate}<p class="mb-3 text-[12px] text-dim">
+							{activity.runs.length > 1 ? `${source(run)}: ` : ''}{estimate}
+						</p>{/if}
+				{/each}
+			{/if}
 			{#if totalCount}
 				<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
 					<span class="text-[28px] leading-none font-semibold tracking-tight tabular-nums"
@@ -496,6 +576,7 @@
 					onclick={() => act('pause', pause)}
 					disabled={!!busy}
 					aria-label="Pause"
+					aria-describedby="pause-explanation"
 					title="Pause. Files already started finish and nothing new starts."
 					class="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-2 text-[12px] font-medium text-dim hover:bg-sunken disabled:opacity-(--disabled) sm:px-3"
 				>
@@ -597,6 +678,46 @@
 		)}
 	{/if}
 
+	{#if admin && !holding}
+		<p id="pause-explanation" class="px-4 pb-3 text-[12px] text-dim sm:px-5">
+			Pause lets files already started finish, then waits until you resume.
+		</p>
+	{/if}
+
+	{#if failuresOpen}
+		<div
+			id="processing-failures"
+			bind:this={failurePanel}
+			tabindex="-1"
+			role="region"
+			aria-label="Failed files"
+			class="border-t border-line px-4 py-4 sm:px-5"
+		>
+			<h3 class="text-[13px] font-semibold">Failed files</h3>
+			<p class="mt-1 text-[12px] text-dim">
+				Failures from the runs listed in Results. Only recent file details are available here.
+			</p>
+			{@render fileList(failedFiles, true, 'failure')}
+			<ul class="divide-y divide-line">
+				{#each failureEvents as entry (entry)}
+					<li class="py-3 text-[12px]">
+						<p class="font-medium">{titled(entry.path)}</p>
+						<p class="mt-1 wrap-anywhere text-danger">{entry.detail || 'Processing failed.'}</p>
+						<p class="mt-1 font-mono text-[11px] wrap-anywhere text-faint">{entry.path}</p>
+					</li>
+				{/each}
+			</ul>
+			{#if !failedFiles.length && !failureEvents.length}<p class="mt-3 text-[12px] text-dim">
+					File details are no longer in this preview. Open activity to find older failures.
+				</p>{/if}
+			<a
+				href={resolve('/events?filter=issues')}
+				class="inline-flex min-h-11 items-center text-[12px] text-accent hover:text-fg"
+				>View issues in activity</a
+			>
+		</div>
+	{/if}
+
 	{#if resultsOpen}
 		<div
 			id="processing-results"
@@ -604,29 +725,51 @@
 			aria-label="Results"
 			class="border-t border-line bg-sunken/30 px-4 py-4 sm:px-5"
 		>
-			<h3 class="mb-1 text-[13px] font-semibold">Results</h3>
-			<p class="text-[11.5px] text-faint">
-				{results.saved ? 'Last completed check.' : 'Current and recently completed work.'}
+			<h3 class="text-[13px] font-semibold">Results by run</h3>
+			<p class="mt-1 text-[12px] text-dim">
+				Active runs and recent completed runs. Each run counts its own files.
 			</p>
-			<dl class="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-[12px]">
-				<div>
-					<dt class="text-faint">Files processed</dt>
-					<dd class="mt-1 font-medium tabular-nums">{results.done.toLocaleString()}</dd>
-				</div>
-				<div>
-					<dt class="text-faint">Elapsed</dt>
-					<dd class="mt-1 font-medium tabular-nums">{duration(results.seconds)}</dd>
-				</div>
-				{#if results.bytes}<div>
-						<dt class="text-faint">Library size</dt>
-						<dd class="mt-1 font-medium">{size(results.bytes)}</dd>
-					</div>{/if}
-			</dl>
-			{#if tally(results.counts).length}
-				<ul aria-label="Outcome counts" class={`${tallyList} mt-3 border-t border-line pt-3`}>
-					{@render verdicts(results.counts)}
-				</ul>
-			{/if}
+			{#each resultRuns as result (result.id)}
+				<article
+					aria-label={`${result.label} · ${result.mode}`}
+					class="mt-3 border-t border-line pt-3"
+				>
+					<div class="flex flex-wrap items-baseline justify-between gap-2 text-[13px]">
+						<h4 class="font-semibold">{result.label}</h4>
+						<span class="text-[12px] text-dim">{result.mode} · {result.state}</span>
+					</div>
+					<p class="mt-1 text-[11.5px] text-faint">
+						{result.when} <time datetime={result.ts}>{stamp(result.ts)}</time>
+					</p>
+					<dl class="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-[12px]">
+						<div>
+							<dt class="text-faint">Files processed</dt>
+							<dd class="mt-1 font-medium tabular-nums">{result.done.toLocaleString()}</dd>
+						</div>
+						<div>
+							<dt class="text-faint">Elapsed</dt>
+							<dd class="mt-1 font-medium tabular-nums">{duration(result.seconds)}</dd>
+						</div>
+						{#if result.bytes}<div>
+								<dt class="text-faint">Library size</dt>
+								<dd class="mt-1 font-medium">{size(result.bytes)}</dd>
+							</div>{/if}
+					</dl>
+					{#if tally(result.counts).length}<ul
+							aria-label="Outcome counts"
+							class={`${tallyList} mt-3`}
+						>
+							{@render verdicts(result.counts)}
+						</ul>{/if}
+				</article>
+			{:else}
+				<p class="mt-3 text-[12px] text-dim">No recent run results available.</p>
+			{/each}
+			<a
+				href={resolve('/events?filter=runs')}
+				class="mt-2 inline-flex min-h-11 items-center text-[12px] text-accent hover:text-fg"
+				>View run history</a
+			>
 		</div>
 	{/if}
 
