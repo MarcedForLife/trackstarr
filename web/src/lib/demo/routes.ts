@@ -84,6 +84,10 @@ function named(here: World, body: Body) {
 	);
 }
 
+function holdTargets(here: World, body: Body) {
+	return [...named(here, body), ...strings(body.paths).filter((path) => here.byPath.has(path))];
+}
+
 function eventsPage(here: World, query: URLSearchParams): EventPage {
 	const limit = Math.max(1, Math.min(500, Number(query.get('limit')) || 100));
 	const before = query.get('before');
@@ -289,8 +293,8 @@ const POST: Route[] = [
 		path: '/api/holds',
 		admin: true,
 		handler: (here, _query, body) => {
-			const titles = named(here, body);
-			if (!titles.length) return refuse(404, 'no such title');
+			const titles = holdTargets(here, body);
+			if (!titles.length) return refuse(404, 'no such title or file');
 			placeHolds(
 				here,
 				titles,
@@ -305,7 +309,7 @@ const POST: Route[] = [
 		path: '/api/holds/lift',
 		admin: true,
 		handler: (here, _query, body) => {
-			liftHolds(here, named(here, body), here.account!.name);
+			liftHolds(here, holdTargets(here, body), here.account!.name);
 			return ok({ holds: holdsNow(here, Date.now()) });
 		}
 	},

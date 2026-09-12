@@ -25,11 +25,10 @@ type Held = { holds?: Hold[] };
 
 /**
  * How long a hold can be placed for: a film, an evening, or until somebody
- * says otherwise. Three, so the row still has room for a way out of it.
- * Nothing shorter than a film: a rewrite takes longer than that, so the hold
- * would lapse under the encode it was meant to stop.
+ * says otherwise.
  */
 export const SPANS: { seconds: number; label: string }[] = [
+	{ seconds: 3600, label: '1 hour' },
 	{ seconds: 3 * 3600, label: '3 hours' },
 	{ seconds: 8 * 3600, label: 'Tonight' },
 	{ seconds: 0, label: 'Until I lift it' }

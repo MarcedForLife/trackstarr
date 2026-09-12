@@ -53,6 +53,14 @@ describe('progressLabel', () => {
 });
 
 describe('remaining', () => {
+	test('keeps compact estimates short and preserves discovery uncertainty', () => {
+		const rewriting = run({ rewrite_seconds: 1440 });
+		expect(remaining(rewriting, false, 0, true)).toBe('~24m left');
+		expect(remaining({ ...rewriting, walking: true }, false, 0, true)).toBe('≥24m left');
+		expect(remaining(rewriting, true, 0, true)).toBe('');
+		expect(remaining({ ...rewriting, stopping: true }, false, 0, true)).toBe('');
+	});
+
 	test('says nothing for a run that is not moving', () => {
 		const going = run({ total: 1000, done: 500, seconds: 600 });
 		expect(remaining(going, true)).toBe('');
@@ -61,8 +69,8 @@ describe('remaining', () => {
 
 	test("takes the service's own figure over the rate, and counts it down", () => {
 		const rewriting = run({ rewrite_seconds: 240, queued: 12 });
-		expect(remaining(rewriting)).toBe('12 to rewrite · about 4m left');
-		expect(remaining(rewriting, false, 60)).toBe('12 to rewrite · about 3m left');
+		expect(remaining(rewriting)).toBe('about 4m left');
+		expect(remaining(rewriting, false, 60)).toBe('about 3m left');
 	});
 
 	test('hedges further while the walk is still finding work', () => {

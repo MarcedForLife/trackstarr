@@ -221,7 +221,8 @@ function ahead(seconds: number): string {
 }
 
 /** "about 3h 40m left · done 6:15 am", hedged as the caller wants it. */
-function until(seconds: number, hedge: string): string {
+function until(seconds: number, hedge: string, compact = false): string {
+	if (compact) return `${hedge === 'at least' ? '≥' : '~'}${duration(seconds)} left`;
 	const by = seconds >= WORTH_A_CLOCK ? ` · done ${soon(ahead(seconds))}` : '';
 	return `${hedge} ${duration(seconds)} left${by}`;
 }
@@ -234,21 +235,20 @@ function until(seconds: number, hedge: string): string {
  * so far is all there is. Empty rather than a bad guess: too early, no total,
  * stopping, or paused.
  */
-export function remaining(run: Run, paused = false, age = 0): string {
+export function remaining(run: Run, paused = false, age = 0, compact = false): string {
 	if (paused || run.stopping) return '';
 	if (run.rewrite_seconds) {
 		// Counts down between snapshots. Nothing once it runs out: an encode past
 		// the machine's own rate, which the next snapshot answers.
 		const left = run.rewrite_seconds - age;
 		if (left <= 0) return '';
-		const found = run.queued ? `${run.queued.toLocaleString()} to rewrite · ` : '';
-		return found + until(left, run.walking ? 'at least' : 'about');
+		return until(left, run.walking ? 'at least' : 'about', compact);
 	}
 	const seconds = run.seconds + age;
 	if (!run.total || run.done < ENOUGH_FILES || seconds < ENOUGH_SECONDS) return '';
 	const left = run.total - run.done;
 	if (left <= 0) return '';
-	return until((seconds / run.done) * left, 'about');
+	return until((seconds / run.done) * left, 'about', compact);
 }
 
 // One line under a run: a file being worked on, one waiting its turn, or one

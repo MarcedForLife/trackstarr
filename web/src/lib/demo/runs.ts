@@ -125,7 +125,8 @@ export function seed(world: World): void {
 		.flatMap((title) => title.files)
 		.filter((file) => file.tracks.length || file.status === 'unsupported');
 	const pending = files.filter(
-		(file) => file.status === 'pending' && !file.hardlinked && !heldTitle(world, file.title)
+		(file) =>
+			file.status === 'pending' && !file.hardlinked && !heldTitle(world, file.title, file.path)
 	);
 	const [first, ...rest] = pending;
 	for (const file of files) {
@@ -346,7 +347,7 @@ function judged(world: World, run: SimRun, active: Active, now: number, changed:
 	if (opened || run.kind === 'recheck' || !world.current) probe(file);
 	rejudge(world, file, now);
 	changed.library = true;
-	const hold = heldTitle(world, file.title);
+	const hold = heldTitle(world, file.title, file.path);
 	if (file.status !== 'pending') {
 		settle(
 			world,
@@ -505,7 +506,7 @@ function close(world: World, run: SimRun, now: number): void {
 			event: 'sweep',
 			run: run.id,
 			dry_run: run.dry_run,
-			files: run.total,
+			files: run.done,
 			library_bytes: world.titles
 				.flatMap((title) => title.files)
 				.reduce((sum, file) => sum + file.bytes, 0),
@@ -522,7 +523,7 @@ function close(world: World, run: SimRun, now: number): void {
 			run: run.id,
 			dry_run: run.dry_run,
 			titles: run.titles.length,
-			files: run.total,
+			files: run.done,
 			config_id: configId(world),
 			counts: run.counts,
 			seconds,

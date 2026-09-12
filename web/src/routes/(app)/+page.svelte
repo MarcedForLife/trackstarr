@@ -26,11 +26,6 @@
 	let recent = $derived(data.recent);
 	let titles = $derived(data.titles);
 
-	// The last sweep to finish. Newest first, so the first found is the latest.
-	const swept = $derived(recent.find((entry) => entry.event === 'sweep'));
-	// Not repeated in the feed, or it reads as two sweeps.
-	const feed = $derived(recent.filter((entry) => entry !== swept));
-
 	// How often the feed is re-read under a run.
 	const FEED_MS = 10000;
 
@@ -106,13 +101,13 @@
 </script>
 
 <Page wide title="Overview">
-	<ServicePanel {snapshot} {admin} {recent} {swept} onmoved={moved} onpressed={history.now} />
+	<ServicePanel {snapshot} {admin} onmoved={moved} onpressed={history.now} />
 
 	<!-- One column at every width: side by side the two read as half-empty boxes
 	     and the shelf was cut to five posters. -->
 	<div class="mt-6 flex flex-col gap-6 lg:gap-8">
 		<LibraryStrip bind:this={strip} seed={data.library} onopen={look} />
-		<ActivityFeed entries={feed} {titles} onopen={look} />
+		<ActivityFeed entries={recent} {titles} onopen={look} />
 	</div>
 </Page>
 
