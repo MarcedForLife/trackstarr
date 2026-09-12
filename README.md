@@ -352,4 +352,9 @@ See [web development](web/README.md), [browser probes](web/probes/README.md) and
 
 ## Licence
 
-MIT. Trackstarr is independent of the Radarr, Sonarr, Plex, Jellyfin and Emby teams.
+MIT. Trackstarr is independent of Radarr, Sonarr, Plex, Jellyfin, Emby and IMDb.
+
+Service logos come from
+[Dashboard Icons](https://github.com/homarr-labs/dashboard-icons) (Apache 2.0)
+and [Simple Icons](https://simpleicons.org) (CC0). Each mark stays its owner's
+trademark.
