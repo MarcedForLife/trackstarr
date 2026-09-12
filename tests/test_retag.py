@@ -20,7 +20,7 @@ from conftest import (
     subtitle,
     video,
 )
-from trackstarr import library, retag, rewrites, sweep_cache
+from trackstarr import library, mkvtag, retag, rewrites, sweep_cache
 from trackstarr.media import ProbeError
 from trackstarr.planner import Plan
 from trackstarr.policy import Policy
@@ -92,7 +92,7 @@ def mkv(tmp_path):
 @pytest.fixture
 def installed(monkeypatch):
     """mkvtoolnix on the path, as far as the refusals look."""
-    monkeypatch.setattr(retag.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(mkvtag.shutil, "which", lambda name: f"/usr/bin/{name}")
 
 
 @pytest.fixture
@@ -111,8 +111,8 @@ def tools(installed, monkeypatch):
             listed or listing(track("video", 1), track("audio", UID, "und", 6)),
             propedit,
         )
-        monkeypatch.setattr(retag.subprocess, "run", fake.run)
-        monkeypatch.setattr(retag, "probe", fake.probe)
+        monkeypatch.setattr(mkvtag.subprocess, "run", fake.run)
+        monkeypatch.setattr(mkvtag, "probe", fake.probe)
         return fake
 
     return install
@@ -156,7 +156,7 @@ def test_a_body_that_asks_for_nothing_usable_is_refused(body, said):
 
 
 def test_the_tools_have_to_be_installed(monkeypatch, mkv):
-    monkeypatch.setattr(retag.shutil, "which", lambda name: None)
+    monkeypatch.setattr(mkvtag.shutil, "which", lambda name: None)
     assert retag.refusal(mkv, entry(mkv)) == (
         "mkvtoolnix is not installed, so track tags cannot be edited in place"
     )
@@ -184,7 +184,7 @@ def test_a_hardlink_is_refused_whatever_skip_hardlinks_says(installed, mkv):
 
 
 def test_a_file_under_a_rewrite_is_refused(installed, mkv, monkeypatch):
-    monkeypatch.setattr(retag, "is_rewriting", lambda path: path == mkv)
+    monkeypatch.setattr(mkvtag, "is_rewriting", lambda path: path == mkv)
     assert retag.refusal(mkv, entry(mkv)) == (
         "a rewrite of this file is under way; wait for it to finish"
     )
@@ -213,11 +213,11 @@ def test_the_state_read_is_the_kinds_flags_off_the_disposition():
     """The commentary title regex is the planner's business; here a flag is
     the flag, so setting it on a track titled Commentary still reads as a
     change."""
-    assert retag._state(audio(1, 6, "eng", title="Commentary")) == {
+    assert mkvtag._state(audio(1, 6, "eng", title="Commentary")) == {
         "lang": "eng",
         "commentary": False,
     }
-    assert retag._state(subtitle(2, None, forced=1)) == {
+    assert mkvtag._state(subtitle(2, None, forced=1)) == {
         "lang": "und",
         "forced": True,
         "sdh": False,
@@ -511,7 +511,7 @@ def test_edits_take_turns(tools, mkv, monkeypatch):
         time.sleep(0.05)
         steps.append("out")
 
-    monkeypatch.setattr(retag, "_propedit", slow_propedit)
+    monkeypatch.setattr(mkvtag, "_propedit", slow_propedit)
     threads = [
         threading.Thread(target=retag.apply, args=(mkv, 1, Edit("jpn"), "admin", entry(mkv)))
         for _ in range(2)
@@ -560,7 +560,7 @@ def test_our_own_edit_keeps_the_rewrite_record(tools, mkv, monkeypatch):
             Path(mkv).write_bytes(b"xx")
         return answer
 
-    monkeypatch.setattr(retag.subprocess, "run", touching)
+    monkeypatch.setattr(mkvtag.subprocess, "run", touching)
 
     assert retag.apply(mkv, 1, Edit("jpn"), "admin", entry(mkv)).status is Outcome.RETAGGED
     assert rewrites.against({mkv: entry(mkv)}) == {mkv: REWROTE}
@@ -653,3 +653,26 @@ def test_a_result_drops_what_it_has_nothing_to_say():
         "status": "unchanged",
         "detail": "already tagged that way",
     }
+
+
+def test_the_rules_write_a_tag_without_the_page_s_checks(tools, mkv):
+    """write_lang is the rules' way in. It takes the plan's word for what the
+    file holds, where a page must prove the tracks it showed are still there."""
+    fake = tools([commentary_case(), commentary_case("jpn")])
+    assert mkvtag.write_lang(mkv, 1, "jpn").status is Outcome.RETAGGED
+    assert fake.edits[0][4:] == ["--set", "language=jpn"]
+
+
+def test_a_file_the_tools_cannot_touch_refuses_the_tag(mkv, monkeypatch):
+    """The caller's cue to write the tag the slow way, in a rewrite."""
+    monkeypatch.setattr(mkvtag.shutil, "which", lambda name: None)
+    refused = mkvtag.write_lang(mkv, 1, "jpn")
+    assert refused.status is Outcome.REFUSED
+    assert "mkvtoolnix is not installed" in refused.detail
+
+
+def test_a_track_already_in_that_language_is_unchanged(tools, mkv):
+    """A race with the page's own editor. Nothing is written and nothing is
+    booked."""
+    tools([commentary_case("jpn")])
+    assert mkvtag.write_lang(mkv, 1, "jpn").status is Outcome.UNCHANGED

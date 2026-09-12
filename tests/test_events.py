@@ -110,7 +110,9 @@ def test_the_rules_a_plan_can_name_are_exactly_the_vocabulary():
     """Both directions matter. A key invented at a call site reaches the history
     as a name nothing else knows; one in RULE_NAMES that nothing emits
     promises a breakdown the data will never contain."""
-    set_rules(regenerate="always", commentary="always", remux="always")
+    set_rules(
+        regenerate="always", commentary="always", remux="always", tag_original="alongside"
+    )
     # No mode of their own; the row is the switch.
     set_layouts("2.0", "5.1", "7.1:remove")
     set_langs("original", "eng")
@@ -134,6 +136,9 @@ def test_the_rules_a_plan_can_name_are_exactly_the_vocabulary():
     stale["tags"]["TRACKSTARR"] = "aac 128k"
     named |= _named("/y.mkv", video(0), video(1, "mjpeg", attached_pic=1), audio(2, 8), stale)
     named |= _named("/z.mkv", video(0), audio(1, 2), subtitle(2), audio(3, 6))
+    # One untagged track and nothing in the title's own language, so it is
+    # tagged rather than guessed at again next sweep.
+    named |= _named("/w.mkv", video(0), audio(1, 6, None))
 
     assert named == policy.RULE_NAMES
 

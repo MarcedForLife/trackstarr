@@ -75,6 +75,19 @@
 			: 'This is empty and the rule below drops the rest, so only untagged tracks would survive.'
 	);
 
+	const TAG_ORIGINAL_DESC =
+		"Tag an untagged audio track with the title's original language, as Radarr or Sonarr reports it. Only where the file has one untagged track and nothing in that language already.";
+
+	// Mirrors the rule's own guard, that a code the rule above would then drop
+	// is never written.
+	const tagOriginalNote = $derived(
+		!ruleOn('tag_original') ||
+			!ruleOn('languages') ||
+			langRows.some((row) => row.name === data.snapshot.original_lang)
+			? ''
+			: 'Languages above does not include Original, so a track is tagged only where the title’s own language is listed there.'
+	);
+
 	const REMUX_DESC =
 		'Rewrite MP4 into Matroska so every rule applies. MP4 direct-plays on more devices, so Alongside is the usual choice.';
 	const REGENERATE_DESC =
@@ -223,7 +236,7 @@
 		'REGENERATE_SCOPE',
 		'REGENERATE_BELOW_PERCENT',
 		'REGENERATE_ABOVE_PERCENT',
-		...['languages', 'regenerate', 'commentary', 'sdh'].map(ruleVar)
+		...['languages', 'tag_original', 'regenerate', 'commentary', 'sdh'].map(ruleVar)
 	];
 	const FORMAT_SETTINGS = ['ALLOWED_EXTS', ruleVar('remux')];
 	const PATTERN_SETTINGS = PATTERNS.map((pattern) => pattern.name);
@@ -252,8 +265,18 @@
 </script>
 
 <!-- One row per rule. `text` is the fallback; an env-pinned rule says so. -->
-{#snippet ruleRow({ rule, label, text }: { rule: string; label: string; text: string })}
-	<SettingRow name={ruleVar(rule)} {label} desc={text} stack>
+{#snippet ruleRow({
+	rule,
+	label,
+	text,
+	note = ''
+}: {
+	rule: string;
+	label: string;
+	text: string;
+	note?: string;
+})}
+	<SettingRow name={ruleVar(rule)} {label} desc={text} {note} stack>
 		{#snippet children({ labelledBy, describedBy })}
 			<Segmented
 				fill
@@ -355,6 +378,12 @@
 				rule: 'languages',
 				label: 'Unlisted languages',
 				text: 'Drop audio and subtitles in a language the list above does not name. Untagged tracks always stay.'
+			})}
+			{@render ruleRow({
+				rule: 'tag_original',
+				label: 'Untagged audio',
+				text: TAG_ORIGINAL_DESC,
+				note: tagOriginalNote
 			})}
 			<SettingRow
 				name="AUDIO_LAYOUTS"

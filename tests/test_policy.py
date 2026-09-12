@@ -524,3 +524,12 @@ def test_the_shipped_defaults_warn_about_nothing():
     """Every warning above is a half-configured state, so a fresh install must
     be silent or they are noise nobody reads."""
     assert policy.warnings() == []
+
+
+def test_tagging_without_original_in_the_language_list_is_a_warning():
+    """The rule refuses a code the languages rule would then drop, so a list
+    naming neither leaves it with nothing to do."""
+    set_rules(tag_original="alongside")
+    set_langs("eng")
+    (problem,) = policy.warnings()
+    assert "LANGUAGES does not name original" in problem

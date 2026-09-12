@@ -5,11 +5,12 @@ import fcntl
 import os
 import threading
 import time
+from dataclasses import replace
 
 import pytest
 
-from conftest import configured_arr, needed_plan, set_config
-from trackstarr import config, holds, processing
+from conftest import configured_arr, needed_plan, read_events, set_config
+from trackstarr import config, estimate, holds, mkvtag, processing
 from trackstarr.executor import Outcome
 from trackstarr.media import ProbeError
 from trackstarr.planner import OutStream, Plan
@@ -298,3 +299,159 @@ def test_a_rewrite_waits_for_a_busy_slot_rather_than_failing(monkeypatch):
         assert released == [True]
     finally:
         got.close()
+
+
+def tag_plan(path: str = "/x.mkv") -> Plan:
+    """A plan whose one change is a language tag, which is the fast path's
+    whole condition."""
+    return Plan(
+        path=path,
+        reasons=["tag audio 1 as jpn"],
+        rules={"tag_original"},
+        streams=[OutStream(src=1, kind="audio", lang="jpn")],
+    )
+
+
+@pytest.fixture
+def stub_tag(monkeypatch):
+    """Plan a tag-only rewrite and answer for mkvpropedit. Returns the list the
+    calls land in, so a test can say the tag was aimed where the plan put it."""
+
+    def _stub(
+        status: mkvtag.Outcome | None = None, detail: str = "", plan: Plan | None = None
+    ) -> list:
+        calls: list = []
+        monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan or tag_plan())
+
+        def write_lang(path: str, index: int, lang: str):
+            calls.append((path, index, lang))
+            return mkvtag.Result(path, status or mkvtag.Outcome.RETAGGED, detail)
+
+        monkeypatch.setattr(processing.mkvtag, "write_lang", write_lang)
+        return calls
+
+    return _stub
+
+
+def _never_rewrite(monkeypatch):
+    """Fail the test rather than the file if ffmpeg is reached at all."""
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("the file was rewritten")
+
+    monkeypatch.setattr(processing, "apply_plan", refuse)
+
+
+def test_a_tag_is_written_in_place_rather_than_rewritten(monkeypatch, stub_tag):
+    """mkvpropedit writes the header in a second where ffmpeg copies the file
+    to do it."""
+    _never_rewrite(monkeypatch)
+    calls = stub_tag()
+
+    result = process(Job("/x.mkv"), dry_run=False)
+
+    assert result.status is Status.MODIFIED
+    assert calls == [("/x.mkv", 1, "jpn")]
+
+
+def test_the_in_place_line_is_never_a_rewrite_speed(monkeypatch, stub_tag):
+    """A header written in a second on a two-hour film would tell the estimates
+    the machine rewrites at thousands of times realtime."""
+    _never_rewrite(monkeypatch)
+    stub_tag(plan=replace(tag_plan(), src_duration=7200.0))
+
+    process(Job("/x.mkv"), dry_run=False)
+
+    (entry,) = [line for line in read_events() if line["event"] == "modified"]
+    assert entry["in_place"] is True
+    assert entry["duration"] == 7200.0
+    assert estimate._worked(entry) is None
+
+
+def test_the_in_place_line_claims_no_ride_alongs(monkeypatch, stub_tag):
+    """Nothing rode along, since nothing was rewritten. A line saying otherwise
+    credits the rule with a title it never cleared."""
+    _never_rewrite(monkeypatch)
+    stub_tag(
+        plan=replace(
+            tag_plan(),
+            incidental=["clear release tags on audio 1"],
+            incidental_rules={"release_tags"},
+        )
+    )
+
+    process(Job("/x.mkv"), dry_run=False)
+
+    (entry,) = [line for line in read_events() if line["event"] == "modified"]
+    assert "incidental" not in entry
+    assert entry["rules"] == ["tag_original"]
+
+
+def test_a_file_that_cannot_be_edited_in_place_is_rewritten(monkeypatch, stub_tag):
+    """An MP4, a hardlink or an image without mkvtoolnix. The rewrite writes
+    the same tag, at the price of copying the file."""
+    rewritten = []
+
+    def apply_plan(plan, on_progress=None, on_encoded=None):
+        rewritten.append(plan.path)
+        return Outcome.APPLIED, ""
+
+    monkeypatch.setattr(processing, "apply_plan", apply_plan)
+    stub_tag(mkvtag.Outcome.REFUSED, "hardlinked")
+
+    result = process(Job("/x.mkv"), dry_run=False)
+
+    assert result.status is Status.MODIFIED
+    assert rewritten == ["/x.mkv"]
+
+
+def test_a_tag_that_failed_is_not_retried_as_a_rewrite(monkeypatch, stub_tag):
+    """mkvpropedit reaching the file and leaving it wrong is a failure to
+    report, not a reason to copy 60GB in the hope of better."""
+    _never_rewrite(monkeypatch)
+    stub_tag(mkvtag.Outcome.FAILED, "the edit did not take")
+
+    result = process(Job("/x.mkv"), dry_run=False)
+
+    assert result.status is Status.FAILED
+    assert result.detail == "the edit did not take"
+
+
+def test_a_rewrite_ordered_by_anything_else_writes_the_tag_itself():
+    """The fast path is for the tag alone. A rewrite already happening carries
+    it for free, and the ride-alongs go with it."""
+    plan = tag_plan()
+    plan.rules.add("order")
+    assert processing._tag_only(plan) is None
+
+
+def test_a_plan_with_no_tag_to_write_is_not_a_fast_path():
+    """The rule names itself only where it has a stream to stamp, so this is
+    the door staying shut rather than a case the rules reach."""
+    assert processing._tag_only(replace(tag_plan(), streams=[])) is None
+
+
+def test_a_tagged_title_is_rescanned_like_any_other(monkeypatch, stub_tag):
+    """The *arr reads its media info off the file, which now says something
+    different."""
+    _never_rewrite(monkeypatch)
+    stub_tag()
+    rescanned: list[int] = []
+    arr = configured_arr()
+    arr.rescan = lambda item_id: rescanned.append(item_id)
+
+    process(Job("/x.mkv", "jpn", 12, arr), dry_run=False)
+
+    assert rescanned == [12]
+
+
+def test_a_tag_something_else_wrote_first_is_nobody_s_rewrite(monkeypatch, stub_tag):
+    """A race with the track editor. The file is as the plan wanted it, so
+    there is nothing to book as ours."""
+    _never_rewrite(monkeypatch)
+    stub_tag(mkvtag.Outcome.UNCHANGED, "already tagged that way")
+
+    result = process(Job("/x.mkv"), dry_run=False)
+
+    assert result.status is Status.CONFORM
+    assert [line for line in read_events() if line["event"] == "modified"] == []

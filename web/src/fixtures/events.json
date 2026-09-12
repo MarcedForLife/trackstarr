@@ -103,7 +103,7 @@
 			"dry_run": true,
 			"titles": 1,
 			"files": 2,
-			"config_id": "39455871742b",
+			"config_id": "20999112f550",
 			"counts": {
 				"conform": 1,
 				"failed": 1
@@ -116,7 +116,7 @@
 			"version": "0.0.0",
 			"run": "2026-02-28T19:12:40+13:00#7d6c",
 			"source": "webhook",
-			"config_id": "39455871742b",
+			"config_id": "20999112f550",
 			"path": "/data/media/movies/Dune (2024)/Dune (2024) Bluray-2160p.mkv",
 			"reasons": [
 				"add 2.0 downmix (from track 1)"
@@ -149,7 +149,7 @@
 			"version": "0.0.0",
 			"run": "2026-02-28T03:00:00+13:00#9f8e",
 			"source": "sweep",
-			"config_id": "39455871742b",
+			"config_id": "20999112f550",
 			"reasons": [
 				"add 2.0 downmix (from track 1)"
 			],
@@ -168,7 +168,7 @@
 			"version": "0.0.0",
 			"run": "2026-02-28T03:00:00+13:00#9f8e",
 			"source": "sweep",
-			"config_id": "39455871742b",
+			"config_id": "20999112f550",
 			"reasons": [
 				"add 2.0 downmix (from track 1)"
 			],
@@ -187,7 +187,7 @@
 			"version": "0.0.0",
 			"run": "2026-02-28T03:00:00+13:00#9f8e",
 			"source": "sweep",
-			"config_id": "39455871742b",
+			"config_id": "20999112f550",
 			"reasons": [
 				"remux to mkv (RULE_REMUX)",
 				"add 2.0 downmix (from track 1)"
@@ -269,6 +269,10 @@
 					[
 						"stray_streams",
 						"alongside"
+					],
+					[
+						"tag_original",
+						"never"
 					]
 				],
 				"regenerate_scope": "generated",
@@ -284,7 +288,7 @@
 				"forced_re": "\\bforced\\b",
 				"release_tag_re": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b"
 			},
-			"config_id": "39455871742b",
+			"config_id": "20999112f550",
 			"cached": 1174,
 			"counts": {
 				"conform": 1177,
@@ -345,6 +349,10 @@
 					[
 						"stray_streams",
 						"alongside"
+					],
+					[
+						"tag_original",
+						"never"
 					]
 				],
 				"regenerate_scope": "generated",
@@ -360,7 +368,7 @@
 				"forced_re": "\\bforced\\b",
 				"release_tag_re": "\\d+\\s*k?bps|\\bx?26[45]\\b|\\bhevc\\b|\\bavc\\b|\\b(?:480|576|720|1080|2160)[pi]\\b|\\b(?:blu-?ray|bdrip|brrip|web-?dl|webrip|hdtv|remux)\\b"
 			},
-			"config_id": "39455871742b"
+			"config_id": "20999112f550"
 		}
 	],
 	"titles": {

@@ -72,17 +72,18 @@ Each `RULE_<NAME>` accepts `always`, `alongside` or `never`:
 - `alongside`: apply only when another rule already requires a rewrite.
 - `never`: disable the rule.
 
-| Rule            | Default     | Action                                                                                                         |
-| --------------- | ----------- | -------------------------------------------------------------------------------------------------------------- |
-| `languages`     | `always`    | Remove audio and subtitles in languages absent from `LANGUAGES`. Untagged tracks stay.                         |
-| `commentary`    | `never`     | Remove commentary, described audio and isolated scores. These are never downmix sources.                       |
-| `sdh`           | `alongside` | Remove an SDH subtitle if a full subtitle survives in the same language. This rule preserves forced subtitles. |
-| `regenerate`    | `never`     | Rebuild outdated downmixes or replace tracks under the configured bitrate rules. MKV only.                     |
-| `cover_art`     | `always`    | Remove embedded artwork.                                                                                       |
-| `release_tags`  | `alongside` | Clear release tags from track and container titles.                                                            |
-| `stray_streams` | `alongside` | Remove data and timecode streams.                                                                              |
-| `order`         | `always`    | Order video, audio by `AUDIO_LAYOUTS` (then other sizes by channel count), subtitles and attachments.          |
-| `remux`         | `never`     | Convert MP4/M4V to MKV, converting text subtitles to SRT. Video is copied.                                     |
+| Rule            | Default     | Action                                                                                                                        |
+| --------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `languages`     | `always`    | Remove audio and subtitles in languages absent from `LANGUAGES`. Untagged tracks stay.                                        |
+| `tag_original`  | `never`     | Tag an untagged audio track with the title's original language, where nothing in the file contradicts it. Usually no rewrite. |
+| `commentary`    | `never`     | Remove commentary, described audio and isolated scores. These are never downmix sources.                                      |
+| `sdh`           | `alongside` | Remove an SDH subtitle if a full subtitle survives in the same language. This rule preserves forced subtitles.                |
+| `regenerate`    | `never`     | Rebuild outdated downmixes or replace tracks under the configured bitrate rules. MKV only.                                    |
+| `cover_art`     | `always`    | Remove embedded artwork.                                                                                                      |
+| `release_tags`  | `alongside` | Clear release tags from track and container titles.                                                                           |
+| `stray_streams` | `alongside` | Remove data and timecode streams.                                                                                             |
+| `order`         | `always`    | Order video, audio by `AUDIO_LAYOUTS` (then other sizes by channel count), subtitles and attachments.                         |
+| `remux`         | `never`     | Convert MP4/M4V to MKV, converting text subtitles to SRT. Video is copied.                                                    |
 
 Rules are idempotent: an unchanged file does not need another rewrite.
 `alongside` rules cannot trigger a rewrite indirectly. Trackstarr never upmixes
@@ -135,6 +136,16 @@ LANGUAGES: original,eng,fre:keep
 Explicit language entries take precedence over `original`. If the *arrs cannot
 identify the original language, that entry contributes no language. Names
 normalise: `en`, `eng` and `English` are equivalent.
+
+`RULE_TAG_ORIGINAL` writes the original language onto an untagged audio track,
+but only where the file has one untagged track, nothing in that language already,
+and that track is neither commentary nor titled as another language. A code
+`LANGUAGES` would then drop is never written.
+
+Where the tag is a file's only change it goes into the MKV header with
+mkvpropedit, so nothing is re-encoded and no `alongside` rule rides along. MP4, a
+hardlink the download client still holds, and an image without mkvtoolnix fall
+back to a rewrite, which writes the same tag.
 
 Unlisted languages follow `RULE_LANGUAGES`; untagged tracks always stay. If none
 of the requested downmix languages can fill a layout, Trackstarr can use another
@@ -354,6 +365,8 @@ See [web development](web/README.md), [browser probes](web/probes/README.md) and
 
 MIT. Trackstarr is independent of Radarr, Sonarr, Plex, Jellyfin, Emby and IMDb.
 
+The container image ships ffmpeg (GPL) and
+[MKVToolNix](https://mkvtoolnix.download) (GPL), run as separate programs.
 Service logos come from
 [Dashboard Icons](https://github.com/homarr-labs/dashboard-icons) (Apache 2.0)
 and [Simple Icons](https://simpleicons.org) (CC0). Each mark stays its owner's

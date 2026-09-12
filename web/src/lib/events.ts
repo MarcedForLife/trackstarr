@@ -27,6 +27,8 @@ export type Event = {
 	incidental?: string[];
 	incidental_rules?: string[];
 	downmixed?: string[];
+	// Set where mkvpropedit wrote a tag and no rewrite ran at all.
+	in_place?: boolean;
 	bytes_before?: number;
 	bytes_after?: number;
 	seconds?: number;
@@ -368,6 +370,7 @@ export function chips(entry: Event): string[] {
 		out.push(`${delta < 0 ? '−' : '+'}${size(delta)}`);
 	}
 	for (const layout of entry.downmixed ?? []) out.push(`+${layout}`);
+	if (entry.in_place) out.push('in place');
 	if (entry.event === 'sweep' && entry.library_bytes) out.push(size(entry.library_bytes));
 	if (entry.seconds !== undefined) out.push(duration(entry.seconds));
 	if (entry.dry_run) out.push('dry run');

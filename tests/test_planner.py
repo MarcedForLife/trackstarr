@@ -1,6 +1,7 @@
 """The rules, tested against synthetic ffprobe output. No media required."""
 
 import os
+from itertools import pairwise
 
 import pytest
 
@@ -1520,3 +1521,118 @@ def test_why_leads_with_the_skip_when_there_is_one():
 
 def test_a_conforming_file_has_nothing_to_say():
     assert why(plan_for(video(), audio(1, 2), audio(2, 6))) == {}
+
+
+def untagged_original(*streams, original="jpn", **kwargs):
+    """A plan with the tag rule on and the original language known."""
+    set_rules(tag_original="alongside")
+    return plan_for(*streams, original=original, **kwargs)
+
+
+def test_the_one_untagged_track_takes_the_titles_original_language():
+    set_langs("original", "eng")
+    set_layouts("2.0", "5.1")
+    plan = untagged_original(video(0), audio(1, 6, None))
+    assert plan.incidental == ["tag audio 1 as jpn"]
+    assert plan.incidental_rules == {"tag_original"}
+    assert [out.lang for out in audio_out(plan) if not out.encode] == ["jpn"]
+
+
+def test_the_tag_reaches_the_copied_track_in_the_command():
+    set_langs("original", "eng")
+    set_layouts("2.0", "5.1")
+    plan = untagged_original(video(0), audio(1, 6, None))
+    args = ffmpeg_args(plan, "OUT.mkv")
+    # The copy, which is the audio the rule is otherwise leaving alone.
+    assert ("-metadata:s:a:1", "language=jpn") in list(pairwise(args))
+
+
+def test_a_downmix_of_the_tagged_track_carries_the_tag():
+    """Otherwise the stand-in is retired next sweep, against a source that only
+    now names the language it was standing in for."""
+    set_langs("original")
+    set_layouts("2.0", "5.1")
+    plan = untagged_original(video(0), audio(1, 6, None))
+    assert [out.lang for out in audio_out(plan) if out.encode] == ["jpn"]
+
+
+def test_nothing_is_tagged_where_the_language_is_already_in_the_file():
+    set_langs("original", "eng")
+    plan = untagged_original(video(0), audio(1, 6, "jpn"), audio(2, 2, None))
+    assert plan.incidental_rules == set()
+
+
+def test_nothing_is_tagged_where_two_tracks_are_untagged():
+    """Which of them is the original is exactly what cannot be told apart."""
+    set_langs("original", "eng")
+    plan = untagged_original(video(0), audio(1, 6, None), audio(2, 2, None))
+    assert plan.incidental_rules == set()
+
+
+def test_a_track_on_its_way_out_is_never_tagged():
+    """A layout set to remove takes the untagged track with it, so the tag
+    would be written onto a stream the same rewrite drops."""
+    set_langs("original", "eng")
+    set_layouts("2.0", "7.1:remove")
+    plan = untagged_original(video(0), audio(1, 8, None), audio(2, 2, "eng"))
+    assert plan.rules == {"drop_layouts"}
+    assert plan.incidental_rules == set()
+
+
+def test_a_track_titled_as_another_language_is_left_alone():
+    """The untagged dub, which nothing downstream would question again."""
+    set_langs("original", "eng")
+    plan = untagged_original(video(0), audio(1, 6, None, title="English 5.1"))
+    assert plan.incidental_rules == set()
+
+
+def test_a_title_naming_the_same_language_is_no_obstacle():
+    set_langs("original", "eng")
+    plan = untagged_original(video(0), audio(1, 6, None, title="Japanese"))
+    assert plan.incidental == ["tag audio 1 (Japanese) as jpn"]
+
+
+def test_commentary_is_never_the_original_track():
+    set_langs("original", "eng")
+    plan = untagged_original(video(0), audio(1, 6, None, title="Director's Commentary"))
+    assert plan.incidental_rules == set()
+
+
+def test_a_language_the_rules_would_then_drop_is_never_written():
+    """Tagging it would leave the file skipped as would-be-silent from the next
+    sweep on, which is the owner's call to make."""
+    set_langs("eng")
+    plan = untagged_original(video(0), audio(1, 6, None))
+    assert plan.incidental_rules == set()
+
+
+def test_the_original_language_is_written_where_nothing_drops_it():
+    set_langs("eng")
+    set_rules(languages="never")
+    plan = untagged_original(video(0), audio(1, 6, None))
+    assert plan.incidental == ["tag audio 1 as jpn"]
+
+
+def test_a_tag_alone_never_orders_a_rewrite_alongside():
+    set_langs("original")
+    set_layouts("2.0")
+    plan = untagged_original(video(0), audio(1, 2, None))
+    assert not plan.needed
+    assert plan.reasons == []
+    assert plan.incidental == ["tag audio 1 as jpn"]
+
+
+def test_a_tag_alone_orders_a_rewrite_always():
+    set_langs("original")
+    set_layouts("2.0")
+    set_rules(tag_original="always")
+    plan = plan_for(video(0), audio(1, 2, None), original="jpn")
+    assert plan.needed
+    assert plan.reasons == ["tag audio 1 as jpn"]
+
+
+def test_an_unknown_original_language_tags_nothing():
+    """An *arr that cannot answer leaves the track untagged rather than guessed."""
+    set_langs("original", "eng")
+    plan = untagged_original(video(0), audio(1, 6, None), original=None)
+    assert plan.incidental_rules == set()
