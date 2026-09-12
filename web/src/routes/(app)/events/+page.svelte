@@ -167,7 +167,7 @@
 </script>
 
 <!-- wide: release names and paths wrapped onto a third line at 42rem. -->
-<Page wide title="Events" lead="Every sweep, import and rewrite, newest first.">
+<Page wide lead="Every sweep, import and rewrite, newest first.">
 	<!-- Two questions, a row each: what happened, and how far back. Each row is a
 	     track and one button, so both rows start and end on one edge on a phone.
 	     Refresh rides with the kinds rather than at the page's right edge, where

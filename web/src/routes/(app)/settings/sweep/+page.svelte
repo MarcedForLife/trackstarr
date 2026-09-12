@@ -177,7 +177,6 @@
 
 <Page
 	eyebrow="Settings"
-	title="Sweep"
 	lead="The walk over the whole library, catching files that arrived without a webhook."
 >
 	<!-- Inert while a save is in flight, so the response cannot land on a

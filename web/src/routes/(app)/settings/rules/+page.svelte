@@ -342,7 +342,7 @@
 	</SettingRow>
 {/snippet}
 
-<Page eyebrow="Settings" title="Rules" lead="What a rewrite keeps, drops and generates.">
+<Page eyebrow="Settings" lead="What a rewrite keeps, drops and generates.">
 	<!-- Inert while a save is in flight, so the response cannot land on a
 	     keystroke it never carried. min-w-0, or a fieldset will not shrink. -->
 	<fieldset disabled={settings.busy} class="min-w-0">

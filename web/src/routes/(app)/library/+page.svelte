@@ -308,7 +308,6 @@
 
 <Page
 	wide
-	title="Library"
 	lead="Every title Radarr and Sonarr know about, with the last sweep's verdict on its files."
 >
 	{#if !shelf.current}
