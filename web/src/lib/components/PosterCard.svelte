@@ -2,8 +2,17 @@
 	import { arrival, COVER_FADE, type Arrival } from '$lib/covers';
 	import { display } from '$lib/display.svelte';
 	import { pressing } from '$lib/field';
-	import { coverUrl, dot, initials, VERDICTS, verdictLabel, type Card } from '$lib/library';
+	import {
+		changed,
+		coverUrl,
+		dot,
+		initials,
+		VERDICTS,
+		verdictLabel,
+		type Card
+	} from '$lib/library';
 	import Mark from '$lib/components/Mark.svelte';
+	import Tick from '$lib/components/Tick.svelte';
 	import { pressGesture } from '$lib/press';
 
 	let {
@@ -89,16 +98,7 @@
 	const TILE =
 		'flex h-full w-full items-center justify-center bg-raised text-lg font-semibold text-faint';
 
-	// The layouts a rewrite would add and rebuild, told apart by fill: green for
-	// a gain, accent for a rebuild. A rebuild is one change, not a gain plus a
-	// drop.
-	const written = $derived([
-		...(card.adds ?? []).map((layout) => ({ chip: `+${layout}`, tone: 'bg-ok/90 text-on-ok' })),
-		...(card.rebuilds ?? []).map((layout) => ({
-			chip: layout,
-			tone: 'bg-accent-fill/90 text-on-accent'
-		}))
-	]);
+	const written = $derived(changed(card));
 
 	// A title trackstarr has rewritten reads Passed like any other, so the mark
 	// beside the word is the only thing saying its files are the ones we made.
@@ -264,27 +264,11 @@
 			     so a white ring shows on a pale poster. Armed wears it filled too,
 			     so the release reads as finishing the gesture. -->
 			{#if picking || armed}
-				<span
-					aria-hidden="true"
-					class={`pointer-events-none absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
-						selected || armed
-							? 'border-accent-fill bg-accent-fill text-on-accent'
-							: 'border-white/75 bg-black/45 text-transparent'
-					}`}
-				>
-					<svg
-						viewBox="0 0 12 12"
-						width="9"
-						height="9"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					>
-						<path d="M2.5 6.3 4.9 8.7 9.5 3.6" />
-					</svg>
-				</span>
+				<Tick
+					on={selected || armed}
+					off="border-white/75 bg-black/45"
+					class="pointer-events-none absolute top-2 right-2"
+				/>
 			{/if}
 		</span>
 	</span>

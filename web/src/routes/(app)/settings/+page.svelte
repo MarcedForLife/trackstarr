@@ -107,12 +107,12 @@
 	{/each}
 </datalist>
 
-<Page eyebrow="Settings" title="General" lead="Settings that apply to the whole service.">
+<Page eyebrow="Settings" lead="Settings that apply to the whole service.">
 	<!-- Inert while a save is in flight, so the response cannot land on a
 	     keystroke it never carried. min-w-0, or a fieldset will not shrink. -->
 	<fieldset disabled={settings.busy} class="min-w-0">
 		{#if readOnly}
-			<p class="mt-2 text-[13px] text-faint">Viewing only; an admin can change these.</p>
+			<p class="mt-2 text-[13px] text-faint">Viewing only. An admin can change these.</p>
 		{/if}
 
 		<section class="mt-7">
@@ -196,7 +196,7 @@
 				name="PROBE_WORKERS"
 				label="Probes at once"
 				align="start"
-				desc="Files a sweep probes at once. Separate from Rewrites at once: a probe is short and cheap, so a disk that wants one rewrite at a time still takes several probes."
+				desc="Files imports and sweeps probe at once. Separate from Rewrites at once: a probe is short and cheap, so a disk that wants one rewrite at a time still takes several probes."
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					{@render numberField('PROBE_WORKERS', labelledBy, describedBy, 1, '')}

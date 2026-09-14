@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { onDestroy } from 'svelte';
+	import TitleFile, { type Editing } from './TitleFile.svelte';
+	import { poll } from '$lib/poll';
+	import { getTitleWork, queueAction, type TitleWork } from '$lib/queue';
+	import PauseMenu from '$lib/components/PauseMenu.svelte';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Disclosure from '$lib/components/Disclosure.svelte';
@@ -7,51 +12,49 @@
 	import RunProgress from '$lib/components/RunProgress.svelte';
 	import ServiceIcon from '$lib/components/ServiceIcon.svelte';
 	import Sheet, { SLIDE } from '$lib/components/Sheet.svelte';
-	import TrackEditor from '$lib/components/TrackEditor.svelte';
 	import { refusalText } from '$lib/api';
 	import { MARKS, type MarkName } from '$lib/connections';
 	import { arrival, coverShow, type Arrival } from '$lib/covers';
 	import { button } from '$lib/controls';
-	import { ago } from '$lib/events';
-	import { bytesFor, carriesLanguage, describe, duration, rate } from '$lib/format';
+	import { duration } from '$lib/format';
 	import {
 		forTitle,
-		getHolds,
-		lift as liftHold,
-		place as placeHold,
-		SPANS,
-		type Hold
-	} from '$lib/holds';
+		getPauses,
+		resume as resumePause,
+		place as placePause,
+		type Pause
+	} from '$lib/pauses';
 	import {
 		coverUrl,
 		getLinks,
 		getTitle,
 		kindName,
-		listing,
-		size,
 		verdictLabel,
 		verdictText,
+		worstOf,
 		type Card,
 		type LibraryFile,
 		type Listed,
-		type Modified,
-		type Row,
 		type RunMode,
 		type TitleDetail,
 		type TitleLink,
-		type Track,
-		type Why
+		type TitleServer
 	} from '$lib/library';
 	import { overlay } from '$lib/overlay';
-	import { editable, matching, summarise, type Outcome, type Summary } from '$lib/retag';
+	import { summarise, type Outcome, type Summary } from '$lib/retag';
 	import { whenNear } from '$lib/reveal';
 	import { seasons, type Season } from '$lib/seasons';
-	import type { Run } from '$lib/runs';
+	import { skipFile, type Run } from '$lib/runs';
 	import { getSettings } from '$lib/settings';
 
 	// One title, with what each file is and what a rewrite would leave. Owns
 	// being open: the fetch, the two-phase close, and a second poster tapped
 	// while the first slides out. A caller keeps a `bind:this` and calls open().
+
+	// What the caller had when it opened the sheet. The library pages hand over
+	// the grid's card; a run or queue row knows only which title its file belongs
+	// to, and the rest arrives with the detail.
+	type Opening = Pick<Card, 'id' | 'name'> & Partial<Card>;
 
 	// Running this one title from inside the sheet. The library page still owns
 	// the poll and the bar that shows the run once the sheet is gone; a page with
@@ -73,15 +76,15 @@
 		stopping: boolean;
 		// What the run came to.
 		done: string;
-		onrun: (card: Card, mode: RunMode) => void;
+		onrun: (id: string, mode: RunMode) => void;
 		onstop: () => void;
 	};
 
 	// `onshut` lets a caller polling for the sheet stop.
 	let { runner, onshut }: { runner?: Runner; onshut?: () => void } = $props();
 
-	// The open title: the grid's card at once for the header, then the detail.
-	let opened = $state<Card | null>(null);
+	// The open title, as much of it as the caller had.
+	let opened = $state<Opening | null>(null);
 	let detail = $state<TitleDetail | null>(null);
 	// Whether the sheet is up, apart from what it shows: the panel slides down at
 	// once and the title goes when it has finished.
@@ -106,29 +109,21 @@
 	// putting it that way. Owned here rather than passed in: the sheet opens
 	// from two pages and already fetches for itself.
 	const admin = $derived(page.data.user?.role === 'admin');
-	let holds = $state<Hold[]>([]);
-	// The durations are showing, rather than the one button that raises them.
-	let choosing = $state(false);
-	let holdBusy = $state('');
-	let holdError = $state('');
-	const hold = $derived(opened ? forTitle(holds, opened.id) : undefined);
-	const left = $derived(hold?.seconds ? `${duration(hold.seconds)} left` : 'until lifted');
-
-	// The menu the Hold button raises. Answers Escape before the sheet under it,
-	// and takes no history entry: a back press should leave the sheet, not the
-	// menu over it.
-	const chooser = overlay({ close: () => (choosing = false) });
-	// The button and its menu, for telling a press outside the pair from one in
-	// it.
-	let howLong = $state<HTMLElement>();
-
-	function askHowLong() {
-		if (choosing) chooser.lower();
-		else {
-			choosing = true;
-			chooser.raise();
-		}
-	}
+	let pauses = $state<Pause[]>([]);
+	let pauseBusy = $state('');
+	let pauseError = $state('');
+	// The detail names the kind and the worst verdict too, for a title opened
+	// without a card behind it.
+	const kind = $derived(opened?.kind ?? detail?.kind ?? '');
+	const verdict = $derived(opened?.state ?? (detail ? worstOf(detail.files) : undefined));
+	const manyFiles = $derived(kind === 'series' || (detail?.total ?? opened?.files ?? 0) > 1);
+	const pause = $derived(
+		opened
+			? (forTitle(pauses, opened.id) ??
+					(!manyFiles ? pauses.find((item) => item.path === detail?.files[0]?.path) : undefined))
+			: undefined
+	);
+	const left = $derived(pause?.seconds ? `${duration(pause.seconds)} left` : 'until resumed');
 
 	// The track whose language and flags are open for editing: its file and its
 	// stream index there. One at a time, inline under its row. Admins only,
@@ -183,12 +178,110 @@
 	// The history entry the sheet stands on. One entry however many posters are
 	// tapped in a row.
 	const held = overlay({ name: 'sheet', close: shut });
+	let work = $state<TitleWork>();
+	let workError = $state('');
+	let workBusy = $state(false);
+	let workTicket = 0;
+	let queueNotice = $state('');
+	let queueUndo = $state<string | null>(null);
+	const queued = $derived(work?.queued ?? []);
+	const activeWork = $derived(work?.active ?? []);
+	const involved = $derived(queued.length > 0 || activeWork.length > 0);
+	const stoppingWork = $derived(activeWork.some((item) => item.stopping || item.skipped));
+
+	const processing = $derived(
+		new Set(activeWork.filter((item) => item.stage !== 'waiting').map((item) => item.path)).size
+	);
+	const workerWaiting = $derived(
+		new Set(activeWork.filter((item) => item.stage === 'waiting').map((item) => item.path)).size
+	);
+	const queueCount = $derived(new Set(queued.map((item) => item.path)).size);
+	const queuePosition = $derived(
+		queued.length ? Math.min(...queued.map((item) => item.position)) : 0
+	);
+	const workStatus = $derived(
+		stoppingWork
+			? 'Stopping…'
+			: manyFiles
+				? [
+						processing ? `${processing} processing` : '',
+						workerWaiting ? `${workerWaiting} waiting for a worker` : '',
+						queueCount ? `${queueCount} queued · next at position ${queuePosition}` : ''
+					]
+						.filter(Boolean)
+						.join(' · ')
+				: processing
+					? 'Processing now'
+					: workerWaiting
+						? 'Waiting for a worker'
+						: queueCount
+							? `Queue position ${queuePosition}`
+							: ''
+	);
+
+	async function queueAct(action: 'top' | 'skip' | 'undo') {
+		workBusy = true;
+		pauseError = '';
+		queueNotice = '';
+		try {
+			if (action === 'skip') {
+				await cancelWork();
+				queueUndo = null;
+				queueNotice = activeWork.length ? 'Cancellation requested.' : 'Skipped.';
+			} else {
+				const answer = await queueAction(action, queued, { token: queueUndo ?? undefined });
+				queueUndo = answer.undo ?? null;
+				queueNotice =
+					action === 'undo'
+						? 'Queue order restored.'
+						: answer.moved
+							? 'Moved to top.'
+							: 'This title is no longer waiting.';
+			}
+		} catch (error) {
+			pauseError = refusalText(error);
+		} finally {
+			workBusy = false;
+			await readWork();
+		}
+	}
+
+	async function cancelWork() {
+		const running = [...activeWork];
+		if (queued.length) await queueAction('skip', queued);
+		for (const item of running) await skipFile(item.run, item.path);
+	}
+
+	async function readWork() {
+		const id = opened?.id;
+		if (!up || !id || workBusy) return;
+		const ticket = ++workTicket;
+		try {
+			const answer = await getTitleWork(id);
+			if (up && !workBusy && opened?.id === id && ticket === workTicket) {
+				work = answer;
+				pauses = answer.pauses;
+				workError = '';
+			}
+		} catch {
+			if (up && opened?.id === id && ticket === workTicket)
+				workError = 'Could not refresh queue status.';
+		}
+	}
+	const workPoll = poll({
+		ask: readWork,
+		ready: () => up && !workBusy,
+		pace: () => 5000,
+		gap: 1000,
+		kinds: ['runs', 'progress']
+	});
+	onDestroy(workPoll.stop);
 
 	// Placeholder rows while the verdicts load, so the sheet opens at the height
 	// it is about to need.
 	const waiting = $derived(Math.min(opened?.files || 1, FILE_PAGE));
 
-	export async function open(card: Card) {
+	export async function open(card: Opening) {
 		// Another poster tapped while the last slides out: the sheet stays up.
 		if (emptying !== null) {
 			clearTimeout(emptying);
@@ -197,6 +290,12 @@
 		held.raise();
 		up = true;
 		opened = card;
+		work = undefined;
+		queueNotice = '';
+		queueUndo = null;
+		workError = '';
+		workTicket++;
+		workPoll.now();
 		detail = null;
 		// A second title tapped brings a second cover, which has yet to arrive.
 		cover = 'coming';
@@ -204,17 +303,14 @@
 		unfolded = null;
 		failure = '';
 		links = null;
-		holds = [];
-		// Through the stack, or a menu left up over the last title would still be
-		// answering Escape.
-		chooser.lower();
+		pauses = [];
 		editor.lower();
 		retagged = null;
-		holdError = '';
+		pauseError = '';
 		loading = true;
 		// Alongside the verdicts: neither should wait on the other.
-		find(card);
-		lookUpHolds();
+		find(card.id);
+		lookUpPauses();
 		try {
 			const found = await getTitle(card.id);
 			// A second tap while the first was under way.
@@ -227,50 +323,57 @@
 	}
 
 	// A media server that will not answer is a button not drawn.
-	async function find(card: Card) {
+	async function find(id: string) {
 		let found: TitleLink[];
 		try {
-			found = await getLinks(card.id);
+			found = await getLinks(id);
 		} catch {
 			found = [];
 		}
-		if (opened?.id === card.id) links = found;
+		if (opened?.id === id) links = found;
 	}
 
-	// Quietly: a title that cannot be read for holds still shows its files, and
+	// Quietly: a title that cannot be read for pauses still shows its files, and
 	// the row is simply not offered.
-	async function lookUpHolds() {
+	async function lookUpPauses() {
 		try {
-			holds = await getHolds();
+			pauses = await getPauses();
 		} catch {
-			holds = [];
+			pauses = [];
 		}
 	}
 
 	async function keep(seconds: number) {
 		if (!opened) return;
-		holdBusy = String(seconds);
-		holdError = '';
+		pauseBusy = String(seconds);
+		workBusy = true;
+		pauseError = '';
 		try {
-			holds = await placeHold({ ids: [opened.id] }, seconds);
-			chooser.lower();
-		} catch (error) {
-			holdError = refusalText(error);
+			pauses = await placePause({ ids: [opened.id] }, seconds);
+			await cancelWork();
+			queueUndo = null;
 		} finally {
-			holdBusy = '';
+			pauseBusy = '';
+			workBusy = false;
+			await readWork();
 		}
 	}
 
 	async function release() {
 		if (!opened) return;
-		holdBusy = 'lift';
-		holdError = '';
+		pauseBusy = 'resume';
+		workBusy = true;
+		pauseError = '';
 		try {
-			holds = await liftHold({ ids: [opened.id] });
+			pauses = await resumePause(
+				pause && !pause.title ? { paths: [pause.path] } : { ids: [opened.id] }
+			);
 		} catch (error) {
-			holdError = refusalText(error);
+			pauseError = refusalText(error);
 		} finally {
-			holdBusy = '';
+			pauseBusy = '';
+			workBusy = false;
+			await readWork();
 		}
 	}
 
@@ -297,9 +400,13 @@
 	// title. Written out, since Tailwind reads its classes from the source.
 	const poster = $derived(offered.length > 3 ? 'sm:h-46' : 'sm:h-34');
 
-	// What the hold control takes of the row: a column of the grid where Plan and
-	// Process are beside it, its own width where it stands alone.
-	const cell = $derived(runner ? 'w-full' : 'flex-none');
+	// Equal shares on mobile, including queue actions and a lone Pause. Longer
+	// series labels can wrap within their share; desktop uses natural widths.
+	const cell = $derived(
+		runner && !involved
+			? 'w-full'
+			: 'min-w-0 w-full !px-2 leading-tight !whitespace-normal sm:w-auto sm:!px-3.5 sm:!whitespace-nowrap'
+	);
 
 	// Every close goes through the entry, or the next back would raise the sheet
 	// again. The entry going is what shuts it; see $lib/overlay.
@@ -320,6 +427,11 @@
 		}, SLIDE);
 	}
 
+	/** The card behind a title opened without one, once the caller has it. */
+	export function fill(card: Card) {
+		if (opened?.id === card.id) opened = card;
+	}
+
 	/** Re-read the title after a run rewrote its verdicts. Silent, unlike open():
 	 * skeletons would lose the reader's place. */
 	export async function reload(card?: Card) {
@@ -335,41 +447,12 @@
 	}
 
 	// Whether the box has buttons, not just a line saying what stands: a reader
-	// who cannot act still sees a hold.
+	// who cannot act still sees a pause.
 	const acting = $derived(!!runner || admin);
 
-	// The same kinds the row's own line says a language on.
-	function tagged(row: Listed): boolean {
-		return carriesLanguage(row.track.kind);
-	}
-
-	// Whether this row's tags can be edited: a track the file holds now, of a
-	// kind the rules read tags on, in a container the service edits in place.
-	function edits(file: LibraryFile, row: Listed): boolean {
-		return admin && row.stream !== null && tagged(row) && editable(file);
-	}
-
-	// Why an admin's audio and subtitle rows of this file do not open: the one
-	// reason a row can carry, said once under the heading for a phone and on
-	// each row for a pointer.
-	const MKV_ONLY = 'Tags are edited in place on .mkv files only. The remux rule converts this one.';
-
-	function locked(file: LibraryFile, rows: Listed[]): string {
-		return admin && !editable(file) && rows.some(tagged) ? MKV_ONLY : '';
-	}
-
-	function openedFor(file: LibraryFile, row: Listed): boolean {
-		return editing?.path === file.path && editing.stream === row.stream;
-	}
-
-	// The track as the file has it, rather than as a plan would leave it: a plan
-	// clears titles and converts subtitles, and neither is on disk yet.
-	function onDisk(file: LibraryFile, row: Listed): Track {
-		return file.tracks.find((track) => track.index === row.stream) ?? row.track;
-	}
-
 	function edit(file: LibraryFile, row: Listed, pressed: HTMLElement) {
-		if (openedFor(file, row) || row.stream === null) {
+		const at = editing;
+		if ((at?.path === file.path && at.stream === row.stream) || row.stream === null) {
 			editor.lower();
 			return;
 		}
@@ -395,77 +478,22 @@
 
 	// What went wrong, whichever button caused it. One line, since only one
 	// press is ever in flight.
-	const alarm = $derived(holdError || runner?.error || '');
+	const alarm = $derived(pauseError || runner?.error || '');
 
-	const KIND_LETTER: Record<string, string> = {
-		video: 'V',
-		audio: 'A',
-		subtitle: 'S',
-		attachment: 'F'
-	};
-
-	// What a track takes of the file: its rate over the running time. Video and
-	// audio only, since a subtitle is tens of kilobytes whatever the film.
-	function weighs(track: Track, file: LibraryFile): number {
-		if (track.kind !== 'video' && track.kind !== 'audio') return 0;
-		return bytesFor(track.bitrate, file.seconds);
-	}
-
-	function badges(track: Track): string[] {
-		// "generated" is said by the row's colour.
-		return (track.flags ?? []).filter((flag) => flag !== 'generated' && flag !== 'default');
-	}
-
-	// The number the row leads with, padded to the width of the longest a file is
-	// likely to reach so the kind letters line up beneath each other. Blank for a
-	// track the rewrite drops, which is what having no place looks like.
-	function place(row: Row): string {
-		return (row.position === null ? '' : `[${row.position}]`).padStart(4);
-	}
-
-	// One change per line; run together they were a paragraph nobody finished.
-	// `mark` says what the change does to the file and `rides` whether the rules
-	// chose it, so neither has to carry the other's meaning.
-	type Change = { text: string; mark: string; rides: boolean };
-
-	// The verb a change opens with and the mark that stands for it. The planner
-	// writes these strings to a form, so the first word is the verb; see
-	// _record in planner.py. A clear takes a title away, which is a drop of the
-	// only thing it had. The plus and minus are the pair shrank() already uses.
-	const CHANGE_MARKS: [string, string][] = [
-		['add', '+'],
-		['drop', '−'],
-		['clear', '−'],
-		['regenerate', '~'],
-		['replace', '~']
-	];
-
-	// A remux or a reorder is none of the three, and keeps the plain mark.
-	function changeMark(text: string): string {
-		const verb = text.slice(0, text.indexOf(' '));
-		return CHANGE_MARKS.find(([opener]) => opener === verb)?.[1] ?? '›';
-	}
-
-	function changes(told: Why): Change[] {
-		return [
-			...(told.reasons ?? []).map((text) => ({ text, mark: changeMark(text), rides: false })),
-			// Marked apart by the colour: these never cause a rewrite on their own.
-			...(told.incidental ?? []).map((text) => ({ text, mark: changeMark(text), rides: true }))
-		];
-	}
-
-	// What the rewrite did to the file's size, as the history's chips spell it.
-	function shrank(rewrote: Modified): string {
-		const { bytes_before: before, bytes_after: after } = rewrote;
-		if (before === undefined || after === undefined) return '';
-		const delta = after - before;
-		return `${delta < 0 ? '−' : '+'}${size(delta)}`;
-	}
+	// Null for a reader who cannot edit tags, which is what keeps every row shut.
+	const tagEditing = $derived<Editing | null>(
+		admin
+			? {
+					at: editing,
+					told: retagged,
+					languages,
+					open: edit,
+					done: retaggedTo,
+					cancel: () => editor.lower()
+				}
+			: null
+	);
 </script>
-
-<svelte:window
-	onpointerdown={(event) => choosing && !howLong?.contains(event.target as Node) && chooser.lower()}
-/>
 
 <Sheet open={up} onclose={close} label={opened?.name ?? 'Title'}>
 	{#if opened}
@@ -488,23 +516,29 @@
 				<div class="min-w-0 flex-1">
 					<h2 class="text-[17px] font-semibold tracking-tight">{opened.name}</h2>
 					<p class="mt-0.5 text-[12.5px] text-dim">
-						{[
-							opened.year,
-							kindName(opened.kind),
-							detail?.lang ?? opened.lang,
-							// Last, and named: the one thing here about the film rather than our
-							// copy of it.
-							opened.rating ? `IMDb ${opened.rating.toFixed(1)}` : ''
-						]
-							.filter(Boolean)
-							.join(' · ')}
+						{#if kind}
+							{[
+								opened.year,
+								kindName(kind),
+								detail?.lang ?? opened.lang,
+								// Last, and named: the one thing here about the film rather than our
+								// copy of it.
+								opened.rating ? `IMDb ${opened.rating.toFixed(1)}` : ''
+							]
+								.filter(Boolean)
+								.join(' · ')}
+						{:else}{@render holding('w-40')}{/if}
 					</p>
-					<p class={`mt-2 text-[13px] font-medium ${verdictText[opened.state] ?? 'text-dim'}`}>
-						{verdictLabel(opened.state)}
+					<p
+						class={`mt-2 text-[13px] font-medium ${involved ? 'text-accent' : ((verdict && verdictText[verdict]) ?? 'text-dim')}`}
+					>
+						{#if workStatus || pause || verdict}
+							{workStatus || (pause ? 'Paused' : verdictLabel(verdict!))}
+						{:else}{@render holding('w-24')}{/if}
 					</p>
-					{#if detail}
-						<p class="mt-0.5 font-mono text-[11px] break-all text-faint">{detail.folder}</p>
-					{/if}
+					<p class="mt-0.5 font-mono text-[11px] break-all text-faint">
+						{#if detail}{detail.folder}{:else}{@render holding('w-52')}{/if}
+					</p>
 				</div>
 
 				<!-- Where to watch it and where it is managed. A row under the cover on
@@ -517,22 +551,15 @@
 					<div class="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-col sm:flex-nowrap">
 						{#each offered as server (server.server)}
 							{@const found = server.url ?? ''}
-							{@const logo = mark(server.server)}
 							{#if found}
 								<!-- Another application on another host, so no resolve(). -->
 								<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 								<a href={found} target="_blank" rel="noreferrer" class={link}>
-									{#if logo}<ServiceIcon name={logo} box={20} size={14} />{/if}
-									<span class="sr-only">Open in </span>{server.label}
-									<!-- Last on the line rather than trailing the name, so the
-									     column ends on one edge as it starts on one. -->
-									<span class="flex-none sm:ml-auto"><Glyph name="open" /></span>
+									{@render serverFace(server)}
 								</a>
 							{:else}
 								<span class={`${link} opacity-40`} aria-hidden="true">
-									{#if logo}<ServiceIcon name={logo} box={20} size={14} />{/if}
-									<span class="sr-only">Open in </span>{server.label}
-									<span class="flex-none sm:ml-auto"><Glyph name="open" /></span>
+									{@render serverFace(server)}
 								</span>
 							{/if}
 						{/each}
@@ -541,11 +568,15 @@
 			</div>
 
 			<!-- One sunken block, near the thumb, for everything here that does
-			     something. Hold sits with the runs: it answers the same question, and
-			     Process on a held title rewrites nothing. A run takes the row over. -->
-			{#if acting || hold}
-				<div class="mt-4 rounded-xl border border-line bg-sunken p-3">
-					{#if runner?.run}
+			     something. Pause sits with the runs: it answers the same question, and
+			     Process on a paused title rewrites nothing. A run takes the row over. -->
+			{#if acting || pause}
+				<div
+					role="group"
+					aria-label="Title controls"
+					class="mt-4 rounded-xl border border-line bg-sunken p-3"
+				>
+					{#if runner?.run && !involved}
 						<RunProgress
 							run={runner.run}
 							stopping={runner.stopping}
@@ -555,76 +586,94 @@
 					{:else if acting}
 						<!-- One row at every width; stacked, the panel pushed the rows below
 						     the fold. Three equal columns, since the three are one decision
-						     and a narrower Hold read as the lesser of them. Nothing to run:
-						     Hold alone, at its own width rather than a third of the row. -->
-						<div class={runner ? 'grid grid-cols-3 items-center gap-3' : 'flex items-center gap-3'}>
-							{#if runner}
+						     and a narrower Pause read as the lesser of them. Nothing to run:
+						     Pause alone, at its own width rather than a third of the row. -->
+						<div
+							class={runner && !involved
+								? 'grid grid-cols-3 items-center gap-3'
+								: 'grid auto-cols-fr grid-flow-col items-center gap-2 sm:flex sm:flex-wrap'}
+						>
+							{#if runner && !involved}
 								<RunButtons
 									columns
 									mayRewrite={runner.mayRewrite}
 									refuses={runner.refuses}
-									disabled={runner.starting}
+									disabled={runner.starting || workBusy || !work || !!workError}
 									busy={runner.busy}
-									onrun={(mode) => opened && runner.onrun(opened, mode)}
+									onrun={(mode) => opened && runner.onrun(opened.id, mode)}
 								/>
 							{/if}
-							{#if admin && hold}
-								<button onclick={release} disabled={!!holdBusy} class={`${cell} ${button}`}>
-									{holdBusy === 'lift' ? 'Lifting…' : 'Lift'}
+							{#if admin && involved}
+								{#if queued.length}<button
+										class={`${cell} ${button}`}
+										disabled={workBusy || !!workError || stoppingWork}
+										onclick={() => queueAct('top')}
+										>{manyFiles ? 'Move queued to top' : 'Move to top'}</button
+									>{/if}
+								<button
+									class={`${cell} ${button} text-danger`}
+									disabled={workBusy || !!workError || stoppingWork}
+									onclick={() => queueAct('skip')}
+									>{activeWork.length
+										? manyFiles
+											? 'Cancel all'
+											: 'Cancel'
+										: manyFiles
+											? 'Skip queued'
+											: 'Skip'}</button
+								>
+							{/if}
+							{#if admin && pause}
+								<button
+									onclick={release}
+									disabled={!!pauseBusy || workBusy || !!workError}
+									class={`${cell} ${button}`}
+								>
+									{pauseBusy === 'resume' ? 'Resuming…' : 'Resume'}
 								</button>
 							{:else if admin}
-								<!-- How long is the only question a hold asks, and it is asked in a
-								     menu under the button rather than in the row: opened inline it
-								     shoved the file list down the screen every time. -->
-								<div bind:this={howLong} class={`relative ${cell}`}>
-									<button
-										onclick={askHowLong}
-										aria-expanded={choosing}
-										title="Leave this title alone. It is still judged, just not rewritten."
+								{#key opened.id}
+									<PauseMenu
+										label={opened.name}
+										onchoose={keep}
+										disabled={!!pauseBusy || workBusy || !!workError}
+										hint={involved
+											? 'Stops this title’s current work. A later sweep can process it after the pause ends.'
+											: 'A later sweep can process this title after the pause ends.'}
 										class={`${cell} ${button}`}
-									>
-										<Glyph name="pause" />
-										Hold
-									</button>
-
-									{#if choosing}
-										<!-- Under the button that raised it and as wide, over the rows
-										     below rather than moving them. The minimum is what the
-										     longest choice needs, since a third of a phone is narrower
-										     than that; there it hangs from the button's right edge. -->
-										<div
-											class="menu absolute top-full right-0 z-30 mt-2 w-full min-w-52 rounded-xl border border-line-strong bg-raised p-1 shadow-lg"
-										>
-											<p class="px-2.5 pt-1.5 pb-1 text-[11px] text-faint">Hold for</p>
-											{#each SPANS as span (span.seconds)}
-												<button
-													onclick={() => keep(span.seconds)}
-													disabled={!!holdBusy}
-													class="flex h-10 w-full items-center rounded-lg px-2.5 text-[13px] font-medium transition-colors hover:bg-sunken disabled:opacity-(--disabled)"
-												>
-													{holdBusy === String(span.seconds) ? 'Holding…' : span.label}
-												</button>
-											{/each}
-										</div>
-									{/if}
-								</div>
+									/>
+								{/key}
 							{/if}
 						</div>
 					{/if}
 
-					<!-- What stands, and what came of the last press. A hold is a state,
+					{#if involved && manyFiles}<p class="mt-2 text-[12px] text-dim">
+							Queue actions apply to all this title’s files. Individual controls are below.
+						</p>{/if}
+					{#if queueNotice}<p role="status" class="mt-2 text-[12px] text-dim">
+							{queueNotice}
+							{#if queueUndo}<button
+									class="min-h-8 underline"
+									disabled={workBusy || !!workError}
+									onclick={() => queueAct('undo')}>Undo</button
+								>{/if}
+						</p>{/if}
+
+					<!-- What stands, and what came of the last press. A pause is a state,
 					     so it shows alongside; the rest is one line, the loudest first. -->
-					{#if hold || alarm || runner?.refuses || runner?.done}
+					{#if pause || alarm || runner?.starting || (runner?.run?.dry_run && involved) || runner?.done}
 						<div class={`flex flex-col gap-1 text-[12px] ${acting ? 'mt-2.5' : ''}`}>
-							{#if hold}
+							{#if pause}
 								<!-- Not who placed it: on a library one household runs, the name is
 								     always the reader's own. -->
-								<p class="text-dim">{['On hold', left, hold.reason].filter(Boolean).join(' · ')}</p>
+								<p class="text-dim">{['Paused', left, pause.reason].filter(Boolean).join(' · ')}</p>
 							{/if}
 							{#if alarm}
 								<p role="alert" class="text-danger">{alarm}</p>
-							{:else if runner?.refuses}
-								<p class="text-dim">{runner.refuses}</p>
+							{:else if (runner?.starting && !runner.run) || (runner?.run?.dry_run && involved)}
+								<p role="status" class="text-dim">
+									{runner?.busy === 'apply' ? 'Processing…' : 'Planning…'}
+								</p>
 							{:else if runner?.done}
 								<!-- What the last run came to, kept until the next starts. -->
 								<p role="status" class="text-dim">{runner.done}</p>
@@ -673,70 +722,45 @@
 			{/if}
 		</div>
 	{/if}
+	{#if workError}<p role="alert" class="px-4 pb-3 text-[12px] text-danger">
+			{workError} <button class="min-h-8 underline" onclick={() => workPoll.now()}>Retry</button>
+		</p>{/if}
 </Sheet>
 
-<!-- One file: what it is, what a rewrite would leave, and why. -->
+<!-- One service's face, worn by the link and by the greyed stand-in a server
+     still being asked holds its place with. -->
+{#snippet serverFace(server: TitleServer)}
+	{@const logo = mark(server.server)}
+	{#if logo}<ServiceIcon name={logo} box={20} size={14} />{/if}
+	<span class="sr-only">Open in </span>{server.label}
+	<!-- Last on the line rather than trailing the name, so the column ends on one
+	     edge as it starts on one. -->
+	<span class="flex-none sm:ml-auto"><Glyph name="open" /></span>
+{/snippet}
+
+<!-- A line the title's own read has still to fill in, held at its height so the
+     header does not grow into it. A read that failed says so below instead. -->
+{#snippet holding(width: string)}
+	{#if !failure}
+		<span class={`inline-block h-[0.85em] ${width} max-w-full rounded bg-line align-middle`}></span>
+	{/if}
+{/snippet}
+
+<!-- One file of the title. The sheet keeps which row has its tags open, since
+     Escape and focus are its to handle. -->
 {#snippet card(file: LibraryFile)}
-	{@const shown = listing(file)}
-	<li class="rounded-xl border border-line bg-sunken p-3">
-		<div class="flex items-baseline gap-2">
-			<p class="min-w-0 flex-1 truncate text-[13px] font-medium" title={file.name}>
-				{file.name}
-			</p>
-			<span class={`flex-none text-[11px] font-semibold ${verdictText[file.status] ?? 'text-dim'}`}>
-				{verdictLabel(file.status)}
-			</span>
-		</div>
-		<!-- The whole of what a rewrite of ours left behind: when, and what it
-		     cost. What it changed is the two columns below, where any track moved,
-		     and the history page where none did. A flex row rather than a run of
-		     text: whitespace between two blocks is the one thing a template cannot
-		     be held to. -->
-		<p class="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[11.5px] text-faint">
-			<span>{size(file.bytes)}</span>
-			{#if file.modified}
-				<span aria-hidden="true">·</span>
-				<span class="text-ok">Modified {ago(file.modified.at)}</span>
-				{#if shrank(file.modified)}
-					<span class="font-mono">{shrank(file.modified)}</span>
-				{/if}
-			{/if}
-		</p>
-
-		{#if shown.rows.length}
-			<!-- One list, the whole width, in the order the file ends up in. A
-			     rewrite copies far more than it touches, so two columns were mostly
-			     the same list twice. -->
-			<div class="mt-3">
-				{@render heading(shown.label)}
-				{#if locked(file, shown.rows)}
-					<p class="mb-1.5 text-[11px] text-faint">{MKV_ONLY}</p>
-				{/if}
-				{@render list(shown.rows, file)}
-			</div>
-		{/if}
-
-		{#if file.why.skip}
-			<!-- The skip first, or the reasons read as a rewrite that never comes.
-			     Labelled with the file's own verdict, since an unsupported container
-			     is a skip in the plan. -->
-			<p class="mt-3 text-[12px] text-dim">
-				<span class="font-medium text-fg">{verdictLabel(file.status)}:</span>
-				{file.why.skip}
-			</p>
-		{/if}
-		{#if file.why.failed}
-			<!-- Above the changes for the same reason as the skip. -->
-			<p class="mt-3 text-[12px] text-dim">
-				<span class="font-medium text-danger">Failed:</span>
-				{file.why.failed}
-			</p>
-		{/if}
-		{@render account(file.why)}
-		{#if !changes(file.why).length && !file.why.skip && !file.why.failed}
-			<p class="mt-3 text-[12px] text-faint">Nothing to change.</p>
-		{/if}
-	</li>
+	<TitleFile
+		{file}
+		{manyFiles}
+		{admin}
+		{work}
+		unavailable={!!workError}
+		bind:busy={workBusy}
+		onchanged={readWork}
+		editing={tagEditing}
+		siblings={detail?.files ?? []}
+		series={kind === 'series'}
+	/>
 {/snippet}
 
 <!-- One season, shut but for the latest. -->
@@ -775,162 +799,3 @@
 		</Disclosure>
 	</section>
 {/snippet}
-
-<!-- What the list's numbering is of, over it. -->
-{#snippet heading(text: string)}
-	<p class="pb-1 text-[10.5px] font-semibold tracking-wider text-faint uppercase">{text}</p>
-{/snippet}
-
-<!-- The file's tracks, one row each. The number is the place the track takes in
-     the file the rewrite leaves; a dropped row has none and is struck through,
-     a generated one is accented. Title and flags go on a second line under the
-     track they belong to, indented by the grid rather than by a guessed width.
-     For an admin a row the file holds is a button that opens its tags for
-     editing, marked by the pencil at its end; the editor comes up inline under
-     it. -->
-{#snippet list(shown: Listed[], file: LibraryFile)}
-	<ul class="flex flex-col gap-1">
-		{#each shown as row, at (at)}
-			{@const gone = row.state === 'dropped'}
-			{@const fresh = row.state === 'added'}
-			{@const open = openedFor(file, row)}
-			{@const told =
-				retagged?.path === file.path && retagged.stream === row.stream ? retagged : null}
-			<li
-				class={`font-mono text-[11px] ${gone ? 'text-faint' : fresh ? 'text-accent' : 'text-dim'}`}
-			>
-				<!-- Padded to a tappable height either way, so the two variants line
-				     up: the text alone is a 17px line. -->
-				{#if edits(file, row)}
-					<button
-						type="button"
-						onclick={(event) => edit(file, row, event.currentTarget)}
-						aria-expanded={open}
-						class={`grid w-full grid-cols-[auto_1fr] gap-x-1.5 rounded px-1 py-1.5 text-left transition-colors hover:bg-raised ${
-							open ? 'bg-raised' : ''
-						}`}
-					>
-						{@render cells(row, file, gone, fresh, true)}
-					</button>
-				{:else}
-					<div
-						class="grid grid-cols-[auto_1fr] gap-x-1.5 px-1 py-1.5"
-						title={admin && tagged(row) && !editable(file) ? MKV_ONLY : undefined}
-					>
-						{@render cells(row, file, gone, fresh, false)}
-					</div>
-				{/if}
-				{#if open}
-					{@const track = onDisk(file, row)}
-					<div class="mt-1 font-sans">
-						<TrackEditor
-							{track}
-							twins={matching(detail?.files ?? [], file, track)}
-							{languages}
-							many={opened?.kind === 'series'}
-							ondone={(outcomes) => retaggedTo(file, row, outcomes)}
-							oncancel={() => editor.lower()}
-						/>
-					</div>
-				{:else if told}
-					<!-- What the edit came to, where the form was: the row above already
-					     reads as the file now does, and this says how many others
-					     followed. -->
-					<div class="px-1 pb-1 font-sans text-[12px]">
-						<p role="status" class={told.problems.length ? 'text-dim' : 'text-ok'}>
-							{told.line}
-						</p>
-						{#each told.problems as problem, at (at)}
-							<p class="text-danger">{problem}</p>
-						{/each}
-					</div>
-				{/if}
-			</li>
-		{/each}
-	</ul>
-{/snippet}
-
-<!-- One row's cells: its place and kind, what it is, and under that its title
-     and flags. `pencil` marks a row that opens. -->
-{#snippet cells(row: Listed, file: LibraryFile, gone: boolean, fresh: boolean, pencil: boolean)}
-	{@const track = row.track}
-	{@const takes = weighs(track, file)}
-	<span class="whitespace-pre text-faint">{place(row)} {KIND_LETTER[track.kind] ?? '·'}</span>
-	<span class="flex min-w-0 items-baseline gap-1.5">
-		<span class={`min-w-0 truncate ${gone ? 'line-through' : ''} ${fresh ? 'font-semibold' : ''}`}>
-			{describe(track)}
-		</span>
-		{#if fresh}
-			<span class="flex-none text-[10px] tracking-wide">NEW</span>
-		{/if}
-		<span class="ml-auto flex flex-none items-baseline gap-1.5 pl-2 text-faint">
-			{#if track.bitrate}
-				<span>{rate(track.bitrate)}</span>
-			{/if}
-			{#if takes}
-				<span>{size(takes)}</span>
-			{/if}
-			{#if pencil}
-				<Glyph name="pencil" size={11} />
-			{/if}
-		</span>
-	</span>
-	{#if track.title || badges(track).length}
-		<span class="col-start-2 flex min-w-0 items-baseline gap-1.5 text-faint">
-			<span class="min-w-0 truncate">{track.title}</span>
-			{#each badges(track) as flag (flag)}
-				<span class="flex-none rounded border border-line px-1 text-[10px]">{flag}</span>
-			{/each}
-		</span>
-	{/if}
-{/snippet}
-
-<!-- What a rewrite of this file would do: the changes a line each, then the
-     rules behind them. -->
-{#snippet account(told: Why)}
-	{#if changes(told).length}
-		<ul class="mt-3 flex flex-col gap-1">
-			{#each changes(told) as change, at (at)}
-				<li class={`flex gap-1.5 text-[12px] ${change.rides ? 'text-faint' : 'text-dim'}`}>
-					<!-- Marks our fonts carry; see Glyph.svelte. Fixed width so every
-					     line starts on one column whichever mark it takes. -->
-					<span class="w-2 flex-none text-center">{change.mark}</span>
-					<span class="min-w-0">{change.text}</span>
-				</li>
-			{/each}
-		</ul>
-	{/if}
-	{#if told.rules?.length || told.incidental_rules?.length}
-		<div class="mt-1.5 flex flex-wrap gap-1.5">
-			{#each told.rules ?? [] as rule (rule)}
-				<span
-					class="rounded border border-line bg-accent-soft px-1.5 py-0.5 font-mono text-[10.5px] text-accent"
-				>
-					{rule}
-				</span>
-			{/each}
-			{#each told.incidental_rules ?? [] as rule (rule)}
-				<span class="rounded border border-line px-1.5 py-0.5 font-mono text-[10.5px] text-faint">
-					{rule}
-				</span>
-			{/each}
-		</div>
-	{/if}
-{/snippet}
-
-<style>
-	/* The menu arriving from under the button that raised it. Out-cubic over a
-	   short distance, as the sheet and the bar use; the global reduced-motion
-	   rule in layout.css takes it away. */
-	.menu {
-		animation: menu-in 150ms cubic-bezier(0.33, 1, 0.68, 1);
-		transform-origin: top right;
-	}
-
-	@keyframes menu-in {
-		from {
-			opacity: 0;
-			transform: translateY(-6px) scale(0.97);
-		}
-	}
-</style>
