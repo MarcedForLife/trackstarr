@@ -7,9 +7,10 @@
 	import Mark from '$lib/components/Mark.svelte';
 	import NavIcon from '$lib/components/NavIcon.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
-	import { PRIMARY, routeOf } from '$lib/nav';
+	import { LOCAL_SETTINGS, PAGE_TITLES, PRIMARY, routeOf, SERVICE_SETTINGS } from '$lib/nav';
 	import { pause, running, watchPause } from '$lib/paused.svelte';
 	import { keepFlag, storedFlag } from '$lib/prefs';
+	import type { Pathname } from '$app/types';
 
 	// Below lg the aside is an off-canvas drawer the layout opens; from lg up it
 	// is the permanent rail and `open` means nothing.
@@ -76,6 +77,60 @@
      do. A rule, not a second heading. -->
 {#snippet divider()}
 	<div class="mx-2 my-2.5 border-t border-line"></div>
+{/snippet}
+
+<!-- Inline rather than in NavIcon: nothing else draws these, so there is nothing
+     for them to drift from. -->
+{#snippet settingsIcon(href: Pathname, active: boolean)}
+	<svg
+		width="16"
+		height="16"
+		viewBox="0 0 24 24"
+		fill="none"
+		stroke="currentColor"
+		stroke-width="1.8"
+		stroke-linecap="round"
+		stroke-linejoin="round"
+		class={iconClass(active)}
+	>
+		{#if href === '/settings'}
+			<line x1="4" y1="7" x2="20" y2="7"></line>
+			<circle cx="15" cy="7" r="2.4"></circle>
+			<line x1="4" y1="17" x2="20" y2="17"></line>
+			<circle cx="8" cy="17" r="2.4"></circle>
+		{:else if href === '/settings/rules'}
+			<!-- A funnel: some tracks are kept, the rest let through. -->
+			<path d="M3 5h18l-7 8v6l-4 2v-8z"></path>
+		{:else if href === '/settings/sweep'}
+			<circle cx="12" cy="12" r="9"></circle>
+			<path d="M12 7v5.2l3.4 2"></path>
+		{:else if href === '/settings/connections'}
+			<path d="M9.5 14.5 5.8 18.2a3.1 3.1 0 0 1-4.4-4.4L5.1 10a3.1 3.1 0 0 1 4.4 0"></path>
+			<path d="M14.5 9.5l3.7-3.7a3.1 3.1 0 0 1 4.4 4.4L18.9 14a3.1 3.1 0 0 1-4.4 0"></path>
+		{:else if href === '/settings/appearance'}
+			<circle cx="12" cy="12" r="9"></circle>
+			<path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"></path>
+		{:else}
+			<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+			<circle cx="12" cy="7" r="4"></circle>
+		{/if}
+	</svg>
+{/snippet}
+
+<!-- The label comes from $lib/nav, which the page heading and browser title
+     already read, so the three cannot disagree. -->
+{#snippet settingsLink(href: Pathname)}
+	{@const here = path === href}
+	{@const label = PAGE_TITLES[href] ?? ''}
+	<a
+		href={resolve(href)}
+		class={navClass(here)}
+		title={collapsed ? label : undefined}
+		aria-current={here ? 'page' : undefined}
+	>
+		{@render settingsIcon(href, here)}
+		<span class={labelClass}>{label}</span>
+	</a>
 {/snippet}
 
 <!-- `invisible` when closed keeps the drawer's links out of the tab order
@@ -162,139 +217,14 @@
 		</div>
 
 		{@render heading('Settings')}
-		<a
-			href={resolve('/settings')}
-			class={navClass(path === '/settings')}
-			title={collapsed ? 'General' : undefined}
-			aria-current={path === '/settings' ? 'page' : undefined}
-		>
-			<svg
-				width="16"
-				height="16"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.8"
-				stroke-linecap="round"
-				class={iconClass(path === '/settings')}
-			>
-				<line x1="4" y1="7" x2="20" y2="7"></line>
-				<circle cx="15" cy="7" r="2.4"></circle>
-				<line x1="4" y1="17" x2="20" y2="17"></line>
-				<circle cx="8" cy="17" r="2.4"></circle>
-			</svg>
-			<span class={labelClass}>General</span>
-		</a>
-		<a
-			href={resolve('/settings/rules')}
-			class={navClass(path === '/settings/rules')}
-			title={collapsed ? 'Rules' : undefined}
-			aria-current={path === '/settings/rules' ? 'page' : undefined}
-		>
-			<svg
-				width="16"
-				height="16"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.8"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				class={iconClass(path === '/settings/rules')}
-			>
-				<!-- A funnel: some tracks are kept, the rest let through. -->
-				<path d="M3 5h18l-7 8v6l-4 2v-8z"></path>
-			</svg>
-			<span class={labelClass}>Rules</span>
-		</a>
-		<a
-			href={resolve('/settings/sweep')}
-			class={navClass(path === '/settings/sweep')}
-			title={collapsed ? 'Sweep' : undefined}
-			aria-current={path === '/settings/sweep' ? 'page' : undefined}
-		>
-			<svg
-				width="16"
-				height="16"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.8"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				class={iconClass(path === '/settings/sweep')}
-			>
-				<circle cx="12" cy="12" r="9"></circle>
-				<path d="M12 7v5.2l3.4 2"></path>
-			</svg>
-			<span class={labelClass}>Sweep</span>
-		</a>
-		<a
-			href={resolve('/settings/connections')}
-			class={navClass(path === '/settings/connections')}
-			title={collapsed ? 'Connections' : undefined}
-			aria-current={path === '/settings/connections' ? 'page' : undefined}
-		>
-			<svg
-				width="16"
-				height="16"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.8"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				class={iconClass(path === '/settings/connections')}
-			>
-				<path d="M9.5 14.5 5.8 18.2a3.1 3.1 0 0 1-4.4-4.4L5.1 10a3.1 3.1 0 0 1 4.4 0"></path>
-				<path d="M14.5 9.5l3.7-3.7a3.1 3.1 0 0 1 4.4 4.4L18.9 14a3.1 3.1 0 0 1-4.4 0"></path>
-			</svg>
-			<span class={labelClass}>Connections</span>
-		</a>
+		{#each SERVICE_SETTINGS as href (href)}
+			{@render settingsLink(href)}
+		{/each}
 
 		{@render divider()}
-		<a
-			href={resolve('/settings/appearance')}
-			class={navClass(path === '/settings/appearance')}
-			title={collapsed ? 'Appearance' : undefined}
-			aria-current={path === '/settings/appearance' ? 'page' : undefined}
-		>
-			<svg
-				width="16"
-				height="16"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.8"
-				class={iconClass(path === '/settings/appearance')}
-			>
-				<circle cx="12" cy="12" r="9"></circle>
-				<path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"></path>
-			</svg>
-			<span class={labelClass}>Appearance</span>
-		</a>
-		<a
-			href={resolve('/settings/account')}
-			class={navClass(path === '/settings/account')}
-			title={collapsed ? 'Account' : undefined}
-			aria-current={path === '/settings/account' ? 'page' : undefined}
-		>
-			<svg
-				width="16"
-				height="16"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="1.8"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-				class={iconClass(path === '/settings/account')}
-			>
-				<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-				<circle cx="12" cy="7" r="4"></circle>
-			</svg>
-			<span class={labelClass}>Account</span>
-		</a>
+		{#each LOCAL_SETTINGS as href (href)}
+			{@render settingsLink(href)}
+		{/each}
 	</nav>
 
 	{#if version}

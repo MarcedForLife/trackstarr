@@ -342,12 +342,12 @@
 	</SettingRow>
 {/snippet}
 
-<Page eyebrow="Settings" title="Rules" lead="What a rewrite keeps, drops and generates.">
+<Page eyebrow="Settings" lead="What a rewrite keeps, drops and generates.">
 	<!-- Inert while a save is in flight, so the response cannot land on a
 	     keystroke it never carried. min-w-0, or a fieldset will not shrink. -->
 	<fieldset disabled={settings.busy} class="min-w-0">
 		{#if readOnly}
-			<p class="mt-2 text-[13px] text-faint">Viewing only; an admin can change these.</p>
+			<p class="mt-2 text-[13px] text-faint">Viewing only. An admin can change these.</p>
 		{/if}
 
 		<p class="mt-3 text-[13px] text-dim">
