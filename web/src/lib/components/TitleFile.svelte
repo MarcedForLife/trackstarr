@@ -20,7 +20,7 @@
 	import Glyph from './Glyph.svelte';
 	import TrackEditor from './TrackEditor.svelte';
 	import { ago } from '$lib/events';
-	import { bytesFor, carriesLanguage, describe, rate } from '$lib/format';
+	import { badges, bytesFor, carriesLanguage, describe, rate } from '$lib/format';
 	import { listing, size, verdictLabel, verdictText, type Track } from '$lib/library';
 	import type { TitleWork } from '$lib/queue';
 	import { editable, matching } from '$lib/retag';
@@ -102,11 +102,6 @@
 	function weighs(track: Track): number {
 		if (track.kind !== 'video' && track.kind !== 'audio') return 0;
 		return bytesFor(track.bitrate, file.seconds);
-	}
-
-	function badges(track: Track): string[] {
-		// "generated" is said by the row's colour.
-		return (track.flags ?? []).filter((flag) => flag !== 'generated' && flag !== 'default');
 	}
 
 	// The number the row leads with, padded to the width of the longest a file is
