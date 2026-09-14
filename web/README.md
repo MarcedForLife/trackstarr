@@ -44,6 +44,9 @@ Any username and password sign in. Demo mode substitutes browser implementations
 of the API, event stream and poster loading through `$demo` in `vite.config.ts`.
 The normal build selects `none.ts` and does not import the demo backend.
 
+For a deployed copy rather than a dev server, `tsd --demo` builds the working
+tree and runs it on port 5121. See [tools/demo](../tools/demo/README.md).
+
 The sample library uses open films and public-domain titles with invented media
 files. It supports simulated sweeps, rule changes, retagging and rechecks, plus
 three weeks of generated event history. Library and processing changes reset on

@@ -22,7 +22,16 @@ RUN npm ci
 COPY web ./
 # The build reads the version out of it. See web/vite.config.ts.
 COPY src/trackstarr/__init__.py ../src/trackstarr/__init__.py
-RUN npm run build
+ARG WEB_MODE=production
+RUN npm run build -- --mode "$WEB_MODE"
+
+# Optional static demo, built with --target demo --build-arg WEB_MODE=demo.
+FROM nginx:alpine AS demo
+COPY --from=web /build/web/build /usr/share/nginx/html
+COPY tools/demo/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
+  CMD wget -q --spider http://127.0.0.1:8080/ || exit 1
 
 # Alpine's ffmpeg carries the native AAC encoder, which is all the downmixes
 # need. No hardware acceleration: the work is stream copies and is disk-bound.

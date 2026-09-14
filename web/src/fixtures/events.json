@@ -2,7 +2,7 @@
 	"events": [
 		{
 			"ts": "2026-03-01T11:19:00+13:00",
-			"event": "held",
+			"event": "item_paused",
 			"version": "0.0.0",
 			"path": "/data/media/tv/The Bear",
 			"title": "arr:sonarr:31",
@@ -79,7 +79,7 @@
 		},
 		{
 			"ts": "2026-03-01T11:10:00+13:00",
-			"event": "lifted",
+			"event": "item_resumed",
 			"version": "0.0.0",
 			"path": "/data/media/tv/Severance",
 			"title": "arr:sonarr:12",
@@ -87,7 +87,7 @@
 		},
 		{
 			"ts": "2026-03-01T11:09:00+13:00",
-			"event": "held",
+			"event": "item_paused",
 			"version": "0.0.0",
 			"path": "/data/media/tv/Severance",
 			"title": "arr:sonarr:12",
@@ -126,7 +126,7 @@
 			],
 			"incidental": [],
 			"incidental_rules": [],
-			"downmixed": [
+			"adds": [
 				"2.0"
 			],
 			"title": "arr:radarr:7"
@@ -178,7 +178,7 @@
 			"seconds": 0.4,
 			"duration": 3305.0,
 			"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
-			"detail": "hard-linked 2 times; a download client still has it",
+			"detail": "a download client still has this hard-linked",
 			"title": "arr:sonarr:12"
 		},
 		{
@@ -207,9 +207,10 @@
 			"incidental_rules": [
 				"release_tags"
 			],
-			"downmixed": [
+			"adds": [
 				"2.0"
 			],
+			"drops": 1,
 			"bytes_before": 2147483648,
 			"bytes_after": 2251799813,
 			"title": "arr:sonarr:12"

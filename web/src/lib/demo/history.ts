@@ -4,9 +4,9 @@
 // that is going as the page loads. Every line is one the service records.
 
 import type { Event } from '$lib/events';
-import { downmixes, judge } from './judge';
+import { changesOf, judge } from './judge';
 import { configOf } from './settings';
-import type { File, World } from './world';
+import type { File, State } from './state';
 import {
 	DAY_MS,
 	dayAt,
@@ -38,7 +38,6 @@ const COFFEE = 'arr:radarr:9';
 const METROPOLIS = 'arr:radarr:21';
 const CALIGARI = 'arr:radarr:22';
 const CHARADE = 'arr:radarr:25';
-const SHERLOCK_JR = 'arr:radarr:27';
 const SAFETY_LAST = 'arr:radarr:35';
 const HOLMES = 'arr:sonarr:40';
 const TALES = 'arr:sonarr:43';
@@ -48,7 +47,7 @@ const PENDING_FROM_THE_START = [TEARS, METROPOLIS, ELEPHANTS];
 const PENDING_SINCE_NARROWED = [SINTEL, CHARADE, CALIGARI];
 
 type Story = {
-	world: World;
+	state: State;
 	now: number;
 	lines: Event[];
 	config: Record<string, unknown>;
@@ -66,20 +65,22 @@ type Story = {
 function plan(
 	story: Story,
 	file: File
-): Pick<Event, 'reasons' | 'rules' | 'incidental' | 'incidental_rules' | 'downmixed'> {
+): Pick<
+	Event,
+	'reasons' | 'rules' | 'incidental' | 'incidental_rules' | 'adds' | 'rebuilds' | 'drops'
+> {
+	// The tracks the plan was made against, which for a rewritten file are the
+	// ones it had.
+	const was = file.planned.length ? file.tracks : (file.modified?.was ?? []);
 	const had = file.planned.length
 		? { why: file.why, planned: file.planned }
-		: judge(
-				{ tracks: file.modified?.was ?? [], ext: file.ext },
-				file.title.spec.lang,
-				story.world.settings
-			);
+		: judge({ tracks: was, ext: file.ext }, file.title.spec.lang, story.state.settings);
 	return {
 		reasons: had.why.reasons ?? [],
 		rules: had.why.rules ?? [],
 		incidental: had.why.incidental ?? [],
 		incidental_rules: had.why.incidental_rules ?? [],
-		downmixed: downmixes(had.planned)
+		...changesOf(had.planned, was)
 	};
 }
 
@@ -151,7 +152,7 @@ function statusOn(story: Story, file: File, night: number): string | null {
 /** One night's sweep summary, and the pending verdicts it reached for the first
  * time. */
 function nightly(story: Story, night: number, previous: number | null): void {
-	const files = story.world.titles
+	const files = story.state.titles
 		.flatMap((title) => title.files)
 		.filter((file) => file.title.added * 1000 < night);
 	const counts: Record<string, number> = {};
@@ -195,24 +196,24 @@ function nightly(story: Story, night: number, previous: number | null): void {
 			? PENDING_SINCE_NARROWED
 			: [];
 	newlyPending.forEach((id, at) => {
-		const title = story.world.byId.get(id)!;
+		const title = story.state.byId.get(id)!;
 		const file =
 			title.files.find((each) => each.status === 'pending' || each.modified) ?? title.files[0];
 		verdict(story, 'pending', file, run, 'sweep', night + (30 + at * 25) * 1000);
 	});
 	if (firstNight) {
-		const holmes = story.world.byId.get(HOLMES)!.files.find((file) => file.status === 'pending')!;
+		const holmes = story.state.byId.get(HOLMES)!.files.find((file) => file.status === 'pending')!;
 		verdict(story, 'pending', holmes, run, 'sweep', night + 140 * 1000);
 	}
 }
 
-export function chronicle(world: World, now: number): Event[] {
+export function chronicle(state: State, now: number): Event[] {
 	const version = VERSION;
-	const wideSettings = { ...world.settings, LANGUAGES: WIDE_LANGUAGES };
-	const config = configOf(world.settings, version);
+	const wideSettings = { ...state.settings, LANGUAGES: WIDE_LANGUAGES };
+	const config = configOf(state.settings, version);
 	const wideConfig = configOf(wideSettings, version);
 	const story: Story = {
-		world,
+		state,
 		now,
 		lines: [],
 		config,
@@ -221,9 +222,9 @@ export function chronicle(world: World, now: number): Event[] {
 		wideConfigId: digest(JSON.stringify(wideConfig)),
 		narrowedAt: dayAt(now, LANGUAGES_NARROWED, 18, 20),
 		sweeps: Array.from({ length: STARTED }, (_, at) => lastAt(now, 3, 0) - at * DAY_MS),
-		by: world.account?.name ?? 'demo'
+		by: state.account?.name ?? 'demo'
 	};
-	const file = (id: string, at = 0) => world.byId.get(id)!.files[at];
+	const file = (id: string, at = 0) => state.byId.get(id)!.files[at];
 
 	// The service came up, and swept for the first time that night.
 	story.lines.push({
@@ -241,7 +242,7 @@ export function chronicle(world: World, now: number): Event[] {
 	});
 
 	// Two imports the service rewrote as they landed.
-	const tales = world.byId.get(TALES)!.files.filter((episode) => episode.modified);
+	const tales = state.byId.get(TALES)!.files.filter((episode) => episode.modified);
 	const talesAt = Date.parse(tales[0].modified!.at) - 6 * MINUTE_MS;
 	const talesRun = runId(talesAt);
 	webhook(story, 'sonarr', tales, talesRun, talesAt);
@@ -253,20 +254,20 @@ export function chronicle(world: World, now: number): Event[] {
 
 	// A hold for an evening, a tag put right, and the change that made three
 	// films pending.
-	const charade = world.byId.get(CHARADE)!;
+	const charade = state.byId.get(CHARADE)!;
 	story.lines.push({
 		ts: stamp(dayAt(now, 7, 19, 30)),
-		event: 'held',
+		event: 'item_paused',
 		version,
 		path: charade.spec.folder,
 		title: CHARADE,
 		seconds: 8 * 3600,
-		reason: 'watching it',
+		reason: '',
 		by: story.by
 	});
 	story.lines.push({
 		ts: stamp(dayAt(now, 6, 21, 0)),
-		event: 'lifted',
+		event: 'item_resumed',
 		version,
 		path: charade.spec.folder,
 		title: CHARADE,
@@ -284,7 +285,7 @@ export function chronicle(world: World, now: number): Event[] {
 		title: METROPOLIS
 	});
 	settingsChange(story, story.narrowedAt, {
-		LANGUAGES: { from: WIDE_LANGUAGES, to: world.settings.LANGUAGES }
+		LANGUAGES: { from: WIDE_LANGUAGES, to: state.settings.LANGUAGES }
 	});
 
 	story.lines.push({ ts: stamp(dayAt(now, 2, 8, 0)), event: 'paused', version, by: story.by });
@@ -307,15 +308,17 @@ export function chronicle(world: World, now: number): Event[] {
 		seconds: 3.2
 	});
 
-	// Today: a hold, the mode that lets the sweep rewrite, and the sweep itself.
-	const metropolis = world.byId.get(METROPOLIS)!;
+	// Today: an hour's hold, long since lapsed, the mode that lets the sweep
+	// rewrite, and the sweep itself.
+	const metropolis = state.byId.get(METROPOLIS)!;
 	story.lines.push({
-		ts: world.holds[0]?.at ?? stamp(now - 2 * HOUR_MS),
-		event: 'held',
+		ts: stamp(now - 2 * HOUR_MS),
+		event: 'item_paused',
 		version,
 		path: metropolis.spec.folder,
 		title: METROPOLIS,
-		reason: world.holds[0]?.reason ?? '',
+		seconds: 3600,
+		reason: '',
 		by: story.by
 	});
 	settingsChange(story, now - 110 * MINUTE_MS, { REWRITE_MODE: { from: 'imports', to: 'all' } });
@@ -330,13 +333,9 @@ export function chronicle(world: World, now: number): Event[] {
 		bytes_before: elephants.modified!.bytes_before,
 		bytes_after: elephants.modified!.bytes_after
 	});
-	const sherlockJr = file(SHERLOCK_JR);
-	verdict(story, 'deferred', sherlockJr, sweepRun, 'sweep', now - 9 * MINUTE_MS, {
-		seconds: 0.4,
-		duration: sherlockJr.seconds,
-		detail: 'hard-linked 2 times; a download client still has it'
-	});
-
+	// Nothing is recorded for the hard-linked file: parking is a state it passes
+	// through, said by the run row and the parked count, and the service writes
+	// no line for it either.
 	const importStarted = now - IMPORT_STARTED_AGO_MS;
 	webhook(story, 'radarr', [file(COFFEE)], runId(importStarted), importStarted);
 

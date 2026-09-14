@@ -1,0 +1,8 @@
+name: trackstarr-demo
+services:
+  demo:
+    image: trackstarr:demo
+    container_name: trackstarr-demo
+    restart: unless-stopped
+    ports:
+      - "5121:8080"

@@ -1,15 +1,24 @@
-// The demo's service held to the same shape the fixtures are, and to itself:
+// The demo's service checked against the same shape the fixtures are, and to itself:
 // its shelf tallies to its summary, its history has words for every line, and
 // its runs move the library the way the service's would.
 
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { catalogue } from '$lib/demo/catalogue';
-import { nextRuns } from '$lib/demo/cron';
+import { nextRun, nextRuns } from '$lib/demo/cron';
 import manifest from '$lib/demo/posters.json';
 import { answer } from '$lib/demo/routes';
-import { stopTicking, tick } from '$lib/demo/runs';
-import { reset, world } from '$lib/demo/world';
-import { chips, detail, details, headline, verdicts as counted, type EventPage } from '$lib/events';
+import { queued, reorder, simulateImport, stopTicking, tick, undoQueue } from '$lib/demo/runs';
+import { currentState, pausedTitle, reset } from '$lib/demo/state';
+import {
+	detail,
+	details,
+	headline,
+	layouts,
+	measures,
+	notes,
+	verdicts as counted,
+	type EventPage
+} from '$lib/events';
 import {
 	asVerdict,
 	FILTERS,
@@ -19,9 +28,13 @@ import {
 	type TitleDetail,
 	type TitleLink
 } from '$lib/library';
+import type { ConnectionResult } from '$lib/connections';
 import { FLOW } from '$lib/order.svelte';
+import type { QueuePage } from '$lib/queue';
+import type { Outcome } from '$lib/retag';
 import type { Activity, Run } from '$lib/runs';
 import type { SettingsSnapshot } from '$lib/settings';
+import type { ScheduleCheck } from '$lib/sweep';
 import { sift, tally } from '$lib/shelfview';
 
 type Wire<T> = T extends Activity ? Omit<T, 'runs'> & { runs: Omit<Run, 'seen'>[] } : T;
@@ -52,7 +65,7 @@ afterEach(stopTicking);
 
 /** Move the simulation on by `seconds`, a tick at a time. */
 function advance(seconds: number) {
-	const here = world();
+	const here = currentState();
 	let now = Date.now();
 	tick(here, now);
 	for (let passed = 0; passed < seconds; passed += 5) {
@@ -79,7 +92,7 @@ describe('the library', () => {
 		expect(ordered.slice(0, summary.head.length)).toEqual(summary.head.map((card) => card.id));
 	});
 
-	test('leads every card with a word the grid draws, and shows every one', async () => {
+	test('leads every card with a word the grid draws', async () => {
 		const shelf = await get<Shelf>('/api/library');
 		const states = new Set(shelf.titles.map((card) => card.state));
 		for (const card of shelf.titles) {
@@ -87,20 +100,12 @@ describe('the library', () => {
 			expect(pip).toHaveProperty(card.state);
 			for (const word of Object.keys(card.counts ?? {})) expect(asVerdict(word)).toBe(word);
 		}
-		for (const state of [
-			'pending',
-			'skip',
-			'unsupported',
-			'conform',
-			'mixed',
-			'unchecked',
-			'missing'
-		]) {
+		for (const state of ['pending', 'skip', 'unsupported', 'conform', 'mixed', 'missing']) {
 			expect([...states], state).toContain(state);
 		}
 		// Nothing in the sample library has failed: a demo that opens on a broken
-		// rewrite looks unhealthy, so that chip alone stays empty.
-		for (const state of FILTERS.filter((state) => state !== 'failed'))
+		// rewrite looks unhealthy. The delivered film has already been checked too.
+		for (const state of FILTERS.filter((state) => state !== 'failed' && state !== 'unchecked'))
 			expect(tally(shelf.titles)[state], state).toBeGreaterThan(0);
 	});
 
@@ -132,7 +137,9 @@ describe('the history', () => {
 		for (const entry of page.events) {
 			expect(headline(entry), entry.event).not.toBe(entry.event);
 			detail(entry);
-			chips(entry);
+			notes(entry);
+			layouts(entry);
+			measures(entry);
 			expect(details(entry).length).toBeGreaterThan(0);
 			if ('counts' in entry) expect(counted(entry)).toHaveLength(Object.keys(entry.counts!).length);
 			if (entry.title) expect(page.titles).toHaveProperty(entry.title);
@@ -171,7 +178,22 @@ describe('the runs', () => {
 		expect(activity.rewrites).toBe(1);
 		expect(activity.may_rewrite).toBe(true);
 		expect(activity.next_sweep).not.toBeNull();
-		expect(activity.holds).toHaveLength(1);
+		// Nothing held, since a pause is a rare thing to meet on the opening board.
+		expect(activity.pauses).toEqual([]);
+	});
+
+	test('the queue carries the last check behind a row, and says when rules passed it', async () => {
+		const page = await get<QueuePage>('/api/queue');
+		expect(page.plans_current).toBe(true);
+		const judged = page.items.filter((item) => page.plans?.[item.path]);
+		expect(judged.length).toBeGreaterThan(0);
+		// The seeded import was checked even while the sweep occupied the slot.
+		expect(judged.length).toBe(page.items.length);
+		expect(page.items[0].path).toContain('Coffee Run');
+		await post('/api/settings', { LANGUAGES: ['original', 'eng', 'ger:keep'] });
+		const stale = await get<QueuePage>('/api/queue');
+		expect(stale.plans_current).toBe(false);
+		expect(stale.plans?.[judged[0].path]).toBeDefined();
 	});
 
 	test('finishes the encode, rewrites the file and records it', async () => {
@@ -186,7 +208,9 @@ describe('the runs', () => {
 		const modified = page.events.find(
 			(entry) => entry.event === 'modified' && entry.path === sintel.files[0].path
 		);
-		expect(modified?.downmixed).toEqual(['2.0']);
+		// The same word the plan chips use: history and plans name a layout alike.
+		expect(modified?.adds).toEqual(['Stereo']);
+		expect(modified?.drops).toBe(3);
 		expect(page.events.indexOf(modified!)).toBeLessThan(page.events.indexOf(before));
 		const activity = await get<Activity>('/api/runs');
 		const sweep = activity.runs.find((run) => run.kind === 'sweep')!;
@@ -198,11 +222,9 @@ describe('the runs', () => {
 		advance(6000);
 		const activity = await get<Activity>('/api/runs');
 		expect(activity.runs).toEqual([]);
-		// Only the held film and the one a download client still holds are left
-		// owing a rewrite.
+		// Only the one a download client still holds is left owing a rewrite.
 		const shelf = await get<Shelf>('/api/library');
 		expect(shelf.titles.filter((card) => card.state === 'pending').map((card) => card.id)).toEqual([
-			'arr:radarr:21',
 			'arr:radarr:27'
 		]);
 		const page = await get<EventPage>('/api/events?limit=30');
@@ -223,6 +245,8 @@ describe('the runs', () => {
 		const page = await get<EventPage>('/api/events?limit=5');
 		const summary = page.events.find((entry) => entry.event === 'sweep')!;
 		expect(summary.stopped).toBeGreaterThan(0);
+		expect(summary.files! + summary.stopped!).toBe(sweep.total);
+		expect(summary.files).toBeLessThan(sweep.total);
 		expect(page.events.some((entry) => entry.event === 'paused')).toBe(true);
 	});
 
@@ -281,18 +305,78 @@ describe('the sheet', () => {
 		expect(outcome.results[0].status).toBe('refused');
 	});
 
-	test('holds a title and lifts it', async () => {
-		const held = await post<{ holds: { title: string; seconds: number | null }[] }>('/api/holds', {
-			ids: ['arr:radarr:25'],
-			seconds: 3 * 3600,
-			reason: 'watching it'
-		});
-		expect(held.holds.find((hold) => hold.title === 'arr:radarr:25')?.seconds).toBe(3 * 3600);
-		const lifted = await post<{ holds: { title: string }[] }>('/api/holds/lift', {
+	test('pauses a title and resumes it', async () => {
+		const paused = await post<{ pauses: { title: string; seconds: number | null }[] }>(
+			'/api/pauses',
+			{
+				ids: ['arr:radarr:25'],
+				seconds: 3 * 3600,
+				reason: 'watching it'
+			}
+		);
+		expect(paused.pauses.find((pause) => pause.title === 'arr:radarr:25')?.seconds).toBe(3 * 3600);
+		const resumed = await post<{ pauses: { title: string }[] }>('/api/pauses/resume', {
 			ids: ['arr:radarr:25']
 		});
-		expect(lifted.holds.some((hold) => hold.title === 'arr:radarr:25')).toBe(false);
+		expect(resumed.pauses.some((pause) => pause.title === 'arr:radarr:25')).toBe(false);
 	});
+
+	test('pauses a single file by path and resumes it without pausing its siblings', async () => {
+		const title = currentState().titles.find((title) => title.files.length > 1)!;
+		const path = title.files[0].path;
+		const paused = await post<{ pauses: { path: string; title: string; seconds: number }[] }>(
+			'/api/pauses',
+			{
+				paths: [path],
+				seconds: 3600
+			}
+		);
+		expect(paused.pauses.find((pause) => pause.path === path)).toMatchObject({
+			title: '',
+			seconds: 3600
+		});
+		expect(pausedTitle(currentState(), title, path)).toBeDefined();
+		expect(pausedTitle(currentState(), title, title.files[1].path)).toBeUndefined();
+		const resumed = await post<{ pauses: { path: string }[] }>('/api/pauses/resume', {
+			paths: [path]
+		});
+		expect(resumed.pauses.some((pause) => pause.path === path)).toBe(false);
+	});
+
+	test.each(['report', 'apply'])('starts a title %s while a sweep is running', async (mode) => {
+		const before = await get<Activity>('/api/runs');
+		const sweep = before.runs.find((run) => run.kind === 'sweep')!;
+		expect(sweep).toBeDefined();
+		const started = await post<{ run: string }>('/api/library/run', {
+			ids: ['arr:radarr:3'],
+			mode
+		});
+		const after = await get<Activity>('/api/runs');
+		expect(after.runs.some((run) => run.id === sweep.id)).toBe(true);
+		expect(after.runs.find((run) => run.id === started.run)?.dry_run).toBe(mode === 'report');
+	});
+
+	test.each(['report', 'apply'])(
+		'a passed title %s finishes while rewrite slots are busy',
+		async (mode) => {
+			const here = currentState();
+			const title = here.titles.find(
+				(title) => title.files.length === 1 && title.files[0].status === 'conform'
+			)!;
+			const started = await post<{ run: string }>('/api/library/run', {
+				ids: [title.spec.id],
+				mode
+			});
+			advance(5);
+			expect(here.runs.some((run) => run.kind === 'sweep')).toBe(true);
+			expect(here.runs.some((run) => run.id === started.run)).toBe(false);
+			const page = await get<EventPage>('/api/events?limit=20');
+			expect(
+				page.events.find((entry) => entry.run === started.run && entry.event === 'recheck')?.counts
+			).toEqual({ conform: 1 });
+			expect(title.files[0].status).toBe('conform');
+		}
+	);
 
 	test('re-checks a title on its own', async () => {
 		await post('/api/runs/abort');
@@ -356,8 +440,92 @@ describe('the schedule', () => {
 		expect(nightly[1].getTime() - nightly[0].getTime()).toBe(86_400_000);
 		expect(nextRuns('*/15 * * * *', from, 2)!.map((at) => at.getMinutes())).toEqual([15, 30]);
 		expect(nextRuns('0 4 * * 0', from, 1)![0].getDay()).toBe(0);
-		expect(nextRuns('nonsense', from, 1)).toBeNull();
-		expect(nextRuns('0 4 * *', from, 1)).toBeNull();
+	});
+
+	// The sweep page shows these, so they are the service's own wording.
+	test('refuses a schedule the way the service refuses it', () => {
+		const from = new Date(2026, 8, 10, 12, 0, 0);
+		expect(() => nextRuns('0 4 * *', from, 1)).toThrow(
+			'a schedule is 5 fields: minute hour day-of-month month day-of-week'
+		);
+		expect(() => nextRuns('nonsense * * * *', from, 1)).toThrow(
+			"minute has a non-number 'nonsense'"
+		);
+		expect(() => nextRuns('0 99 * * *', from, 1)).toThrow("hour '99' is outside 0-23");
+		expect(() => nextRuns('0 3 30 2 *', from, 1)).toThrow('the schedule never matches a real date');
+		expect(nextRun('', from)).toBeNull();
+		expect(nextRun('nonsense', from)).toBeNull();
+	});
+});
+
+// The settings pages show these, and a demo that words them its own way is a
+// demo of an app that does not exist.
+describe('the refusals', () => {
+	test('answers a connection test as the service does', async () => {
+		// Jellyfin is the one the demo leaves unconfigured, address first.
+		expect(
+			await post<ConnectionResult>('/api/connections/test', { service: 'jellyfin' })
+		).toMatchObject({
+			ok: false,
+			detail: 'No address set, so Jellyfin is switched off.',
+			hint: ''
+		});
+		expect(
+			await post<ConnectionResult>('/api/connections/test', {
+				service: 'jellyfin',
+				url: 'http://jellyfin:8096'
+			})
+		).toMatchObject({ ok: false, detail: 'No API key set, so Jellyfin is switched off.' });
+		expect(
+			await post<ConnectionResult>('/api/connections/test', {
+				service: 'radarr',
+				url: 'radarr:7878',
+				key: 'k'
+			})
+		).toMatchObject({ ok: false, detail: 'The address has to start with http:// or https://.' });
+		expect(await refusal('POST', '/api/connections/test', { service: 'emby' })).toBe(404);
+	});
+
+	test('names an *arr and counts a media server the way each answers', async () => {
+		const radarr = await post<ConnectionResult>('/api/connections/test', { service: 'radarr' });
+		expect(radarr).toMatchObject({ ok: true, detail: 'Radarr 5.14.0.9383', webhook: 'connected' });
+		const plex = await post<ConnectionResult>('/api/connections/test', { service: 'plex' });
+		expect(plex).toMatchObject({ ok: true, detail: 'Plex, 2 libraries on tower', webhook: '' });
+	});
+
+	test('checks a sweep path the way the service checks it', async () => {
+		const checked = await post<ScheduleCheck>('/api/sweep/check', {
+			at: '0 4 * * *',
+			dirs: ['/data:/x', '/nowhere', '/data/media/movies']
+		});
+		expect(checked.dirs.map((dir) => [dir.state, dir.detail])).toEqual([
+			['invalid', 'A colon separates the entries, so a path cannot contain one.'],
+			['missing', 'Nothing is mounted there yet, so nothing would be swept.'],
+			['ok', '']
+		]);
+		expect(checked.error).toBe('');
+		const wrong = await post<ScheduleCheck>('/api/sweep/check', { at: '0 99 * * *', dirs: [] });
+		expect(wrong).toMatchObject({ ok: false, error: "hour '99' is outside 0-23" });
+		// An unset schedule is not a refusal: the sweep is started by hand.
+		expect(await post<ScheduleCheck>('/api/sweep/check', { at: '', dirs: [] })).toMatchObject({
+			ok: true,
+			runs: [],
+			error: ''
+		});
+	});
+
+	test('refuses an edit in place the way mkvtag refuses it', async () => {
+		const sherlock = await get<TitleDetail>('/api/library/title?id=arr:radarr:27');
+		const answer = await post<{ results: Outcome[] }>('/api/library/retag', {
+			tracks: [{ path: sherlock.files[0].path, index: 1 }],
+			lang: 'eng'
+		});
+		expect(answer.results[0]).toMatchObject({
+			status: 'refused',
+			detail:
+				"hardlinked: an edit in place would change the download client's copy too; " +
+				'a rewrite makes a new file instead'
+		});
 	});
 });
 
@@ -372,5 +540,174 @@ describe('the posters', () => {
 				poster.licence
 			);
 		}
+	});
+});
+
+describe('demo webhook tools', () => {
+	test('poses imports-only work from both arrs and permits a sweep alongside it', async () => {
+		await post('/api/demo/scenario', { name: 'imports-only' });
+		let activity = await get<Activity>('/api/runs');
+		expect(activity.runs.map((run) => run.kind)).toEqual(['import', 'import']);
+		expect(activity.paused).toBe(false);
+		advance(5);
+		activity = await get<Activity>('/api/runs');
+		expect(activity.runs.some((run) => run.active.length > 0)).toBe(true);
+		await post('/api/runs/start', { mode: 'report' });
+		activity = await get<Activity>('/api/runs');
+		expect(activity.runs.map((run) => run.kind).sort()).toEqual(['import', 'import', 'sweep']);
+		// By run, since the seeded history has webhooks of its own.
+		const posed = new Set(
+			activity.runs.filter((run) => run.kind === 'import').map((run) => run.id)
+		);
+		const history = await get<EventPage>('/api/events');
+		const delivered = history.events
+			.filter((event) => event.event === 'webhook' && posed.has(event.run as string))
+			.map((event) => event.arr)
+			.sort();
+		expect(delivered).toEqual(['radarr', 'sonarr']);
+	});
+
+	test('puts the opening board back, signed in as before', async () => {
+		const opening = await get<Activity>('/api/runs');
+		await post('/api/runs/abort');
+		await post('/api/demo/import', { arr: 'sonarr' });
+		// Still an admin, or the route refuses; the name is what proves it carried.
+		currentState().account = { name: 'someone', role: 'admin', must_change: false };
+		await post('/api/demo/scenario', { name: 'full' });
+		const again = await get<Activity>('/api/runs');
+		expect(again.runs.map((run) => run.kind).sort()).toEqual(
+			opening.runs.map((run) => run.kind).sort()
+		);
+		expect(again.rewrites).toBe(opening.rewrites);
+		expect(currentState().account?.name).toBe('someone');
+	});
+
+	test('breaks a rewrite, which is the one verdict the sample library never reaches', async () => {
+		const before = await get<Shelf>('/api/library');
+		expect(tally(before.titles).failed ?? 0).toBe(0);
+		await post('/api/demo/scenario', { name: 'failed' });
+		const shelf = await get<Shelf>('/api/library');
+		expect(tally(shelf.titles).failed).toBeGreaterThan(0);
+		const history = await get<EventPage>('/api/events');
+		const broke = history.events.find((event) => event.event === 'failed')!;
+		expect(broke.detail).toContain('ffmpeg exited 1');
+		expect(headline(broke)).not.toBe('failed');
+		// A later sweep leaves it failed: the work it broke on is still there.
+		advance(600);
+		expect(tally((await get<Shelf>('/api/library')).titles).failed).toBeGreaterThan(0);
+	});
+
+	test('holds everything, with the files in flight back in the queue', async () => {
+		const going = await get<Activity>('/api/runs');
+		const waiting = going.runs.reduce((sum, run) => sum + (run.queued ?? 0), 0);
+		await post('/api/demo/scenario', { name: 'held' });
+		const held = await get<Activity>('/api/runs');
+		expect(held.paused).toBe(true);
+		expect(held.runs.flatMap((run) => run.active)).toEqual([]);
+		expect(held.runs.reduce((sum, run) => sum + (run.queued ?? 0), 0)).toBeGreaterThan(waiting);
+		// Held means held: nothing picks the queue up again while it is paused.
+		advance(600);
+		const later = await get<Activity>('/api/runs');
+		expect(later.runs.flatMap((run) => run.active)).toEqual([]);
+	});
+
+	test('refuses a scenario it has no board for', async () => {
+		expect(await refusal('POST', '/api/demo/scenario', { name: 'nothing' })).toBe(400);
+	});
+
+	test('adds distinct episode deliveries without replacing existing work', async () => {
+		const before = await get<Activity>('/api/runs');
+		await post('/api/demo/import', { arr: 'sonarr' });
+		await post('/api/demo/import', { arr: 'sonarr' });
+		const after = await get<Activity>('/api/runs');
+		expect(after.runs.length).toBe(before.runs.length + 2);
+		expect(new Set(after.runs.map((run) => run.id)).size).toBe(after.runs.length);
+		expect(after.runs.slice(-2).every((run) => run.total > 1)).toBe(true);
+	});
+
+	test('replaces a conforming release with a 4K file and generates its missing stereo', async () => {
+		await get('/api/runs');
+		const title = currentState().titles.find((title) => title.spec.arr === 'radarr')!;
+		const original = title.files[0].path;
+		// A clear board, so the delivery lands on the first sample rather than
+		// whichever one the seeded runs left free.
+		await post('/api/runs/abort');
+		await post('/api/demo/import', { arr: 'radarr' });
+		const file = title.files[0];
+		expect(file.name).toContain('2160p');
+		expect(currentState().byPath.has(original)).toBe(false);
+		expect(currentState().byPath.get(file.path)).toBe(file);
+		expect(file.source.find((track) => track.kind === 'video')?.codec).toBe('hevc');
+		expect(
+			file.source.filter((track) => track.kind === 'audio').map((track) => track.channels)
+		).toEqual([6]);
+		advance(3600);
+		expect(file.modified).toBeDefined();
+		expect(file.status).toBe('conform');
+		expect(file.source.some((track) => track.kind === 'audio' && track.channels === 2)).toBe(true);
+		await post('/api/runs/abort');
+		await post('/api/demo/import', { arr: 'radarr' });
+		expect(file.source.some((track) => track.channels === 2)).toBe(false);
+	});
+
+	test('honours report-only mode for deliveries', async () => {
+		await get('/api/runs');
+		currentState().settings.REWRITE_MODE = 'report';
+		await post('/api/runs/abort');
+		await post('/api/demo/import', { arr: 'radarr' });
+		const activity = await get<Activity>('/api/runs');
+		expect(activity.runs[0].dry_run).toBe(true);
+	});
+});
+
+describe('import priority', () => {
+	test.each(['none', 'reordered', 'undone'])(
+		'checks imports beside a sweep and respects %s order',
+		async (curation) => {
+			await get<Activity>('/api/runs');
+			stopTicking();
+			const state = currentState();
+			const sweep = state.runs.find((run) => run.kind === 'sweep')!;
+			const active = sweep.active[0];
+			const chosen = queued(state).find((item) => item.run === sweep.id)!;
+			if (curation !== 'none') {
+				const moved = reorder(state, [chosen]);
+				if (curation === 'undone') expect(undoQueue(state, moved.undo)).toBe(true);
+			}
+			const now = Date.now();
+			const delivery = simulateImport(state, 'radarr', now);
+			if (!('run' in delivery)) throw new Error('delivery refused');
+			const run = state.runs.find((run) => run.id === delivery.run)!;
+			const path = run.queue[0].path;
+			tick(state, now);
+			expect(run.active[0].path).toBe(path);
+			tick(state, now + 2500);
+			expect(state.byPath.get(path)?.status).toBe('pending');
+			expect(run.done).toBe(0);
+			expect(run.active).toHaveLength(0);
+			expect(sweep.active[0]).toBe(active);
+			expect(queued(state)[0].path).toBe(curation === 'reordered' ? chosen.path : path);
+		}
+	);
+
+	test('settles a conforming import while the sweep holds the rewrite slot', async () => {
+		await get<Activity>('/api/runs');
+		stopTicking();
+		const state = currentState();
+		const now = Date.now();
+		const delivery = simulateImport(state, 'radarr', now);
+		if (!('run' in delivery)) throw new Error('delivery refused');
+		const run = state.runs.find((run) => run.id === delivery.run)!;
+		const file = state.byPath.get(run.queue[0].path)!;
+		file.source = state.titles
+			.flatMap((title) => title.files)
+			.find((file) => file.status === 'conform' && file.lang === 'eng')!.tracks;
+		tick(state, now);
+		tick(state, now + 2500);
+		expect(file.status).toBe('conform');
+		expect(run.done).toBe(1);
+		expect(run.counts.conform).toBe(1);
+		expect(queued(state).some((item) => item.run === run.id)).toBe(false);
+		expect(state.runs.find((run) => run.kind === 'sweep')?.active[0].stage).toBe('encoding');
 	});
 });

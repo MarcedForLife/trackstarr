@@ -1,5 +1,5 @@
 // Small shared pieces of the demo: stamps, ids and the clock arithmetic the
-// world and its history both do.
+// state and its history both do.
 
 /** The version the demo answers with, where the service says its own. The
  * build reads it from src/trackstarr/__init__.py. */

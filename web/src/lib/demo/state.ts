@@ -1,11 +1,11 @@
-// The demo's service, held in memory for the life of the tab: the library, the
-// settings, the holds, the history and who is signed in. Built the first time
-// anything asks, around the moment it was asked, so the history always reads
-// as recent. The runs and their simulation are in ./runs.
+// Everything the demo's service knows, held in memory for the life of the tab:
+// the library, the settings, the pauses, the history and who is signed in.
+// Built the first time anything asks, around the moment it was asked, so the
+// history always reads as recent. The runs and their simulation are in ./runs.
 
 import type { Account } from '$lib/api';
 import type { Event } from '$lib/events';
-import type { Hold } from '$lib/holds';
+import type { Pause } from '$lib/pauses';
 import type {
 	Card,
 	LibraryFile,
@@ -27,9 +27,9 @@ import { chronicle } from './history';
 import { added, judge, type Settings } from './judge';
 import { DEFAULTS, ENV_PINNED, problems, RULE_SETTINGS, SECRETS, snapshot } from './settings';
 import { publish } from './stream';
-import { DAY_MS, digest, HOUR_MS, lastAt, MINUTE_MS, slug, stamp, VERSION } from './util';
+import { DAY_MS, digest, lastAt, MINUTE_MS, slug, stamp, VERSION } from './util';
 
-/** One file as the world knows it: the wire shape, plus what a probe would find
+/** One file as the state knows it: the wire shape, plus what a probe would find
  * and which title holds it. */
 export type File = LibraryFile & {
 	ext: string;
@@ -42,6 +42,9 @@ export type File = LibraryFile & {
 	judged: number;
 	/** Still held by a download client, so every rewrite is deferred. */
 	hardlinked?: boolean;
+	/** Why the last rewrite of this file broke. Held here because a verdict is
+	 * derived from the tracks and an outcome is not. */
+	failure?: string;
 	title: Title;
 };
 
@@ -57,7 +60,7 @@ export type Title = {
 export type SimRun = Omit<Run, 'seen' | 'recent'> & {
 	recent: DoneFile[];
 	/** Files the run has found work for and not reached, in order. */
-	queue: { path: string; skipped: boolean }[];
+	queue: { path: string; skipped: boolean; discovery?: boolean }[];
 	/** When the walk finishes, or null once it has. */
 	walkUntil: number | null;
 	/** What a verdict line names as where it came from. */
@@ -74,7 +77,7 @@ export type SimRun = Omit<Run, 'seen' | 'recent'> & {
  * names. Newer lines have higher sequence numbers. */
 export type Line = { seq: number; entry: Event };
 
-export type World = {
+export type State = {
 	titles: Title[];
 	byId: Map<string, Title>;
 	byPath: Map<string, File>;
@@ -83,7 +86,7 @@ export type World = {
 	secretsSet: Set<string>;
 	lines: Line[];
 	nextSeq: number;
-	holds: Hold[];
+	pauses: Pause[];
 	runs: SimRun[];
 	/** Whether ./runs has put the opening runs in place. */
 	seeded: boolean;
@@ -99,7 +102,7 @@ export type World = {
 	upSince: string;
 	/** What each file's worker logged, by `run|path`. */
 	logs: Map<string, string[]>;
-	/** When the world was built. */
+	/** When the state was built. */
 	born: number;
 };
 
@@ -138,11 +141,14 @@ function fileOf(title: Title, spec: FileSpec): File {
 }
 
 /** Judge a file against the settings and keep the answer on it. */
-export function rejudge(world: World, file: File, at: number): void {
-	const verdict = judge(file, file.title.spec.lang, world.settings);
-	file.status = verdict.status;
+export function rejudge(state: State, file: File, at: number): void {
+	const verdict = judge(file, file.title.spec.lang, state.settings);
 	file.planned = verdict.planned;
 	file.why = verdict.why;
+	// A break only stands while there is still the work it broke on: once the
+	// rules leave nothing to do, the file is whatever it is now.
+	if (file.failure && verdict.status !== 'pending') delete file.failure;
+	file.status = file.failure ? 'failed' : verdict.status;
 	file.judged = file.status === 'unchecked' ? 0 : Math.floor(at / 1000);
 }
 
@@ -154,7 +160,7 @@ export function probe(file: File): void {
 
 /** What a rewrite leaves behind, applied to the file: the plan becomes the
  * tracks, and the record of the change stays on it. */
-export function rewrite(world: World, file: File, at: number): Modified {
+export function rewrite(state: State, file: File, at: number): Modified {
 	const before = file.tracks;
 	const dropped = before
 		.map((track) => track.index)
@@ -175,7 +181,8 @@ export function rewrite(world: World, file: File, at: number): Modified {
 	file.tracks = after;
 	file.bytes = made.bytes_after!;
 	file.modified = made;
-	rejudge(world, file, at);
+	delete file.failure;
+	rejudge(state, file, at);
 	return made;
 }
 
@@ -195,7 +202,7 @@ function rewrittenBefore(file: File, at: number): void {
 	file.judged = Math.floor(at / 1000);
 }
 
-function titleOf(world: World, spec: TitleSpec, now: number, sweptAt: number): Title {
+function titleOf(state: State, spec: TitleSpec, now: number, sweptAt: number): Title {
 	const title: Title = {
 		spec,
 		files: [],
@@ -204,7 +211,7 @@ function titleOf(world: World, spec: TitleSpec, now: number, sweptAt: number): T
 	title.files = spec.files.map((fileSpec) => fileOf(title, fileSpec));
 	spec.files.forEach((fileSpec, at) => {
 		const file = title.files[at];
-		rejudge(world, file, sweptAt + at * 41_000);
+		rejudge(state, file, sweptAt + at * 41_000);
 		const history = fileSpec.history;
 		if (history?.kind === 'rewritten') {
 			const when = history.daysAgo
@@ -212,13 +219,13 @@ function titleOf(world: World, spec: TitleSpec, now: number, sweptAt: number): T
 				: now - REWRITTEN_IN_RUN_AGO_MS;
 			rewrittenBefore(file, when);
 		}
-		world.byPath.set(file.path, file);
+		state.byPath.set(file.path, file);
 	});
 	return title;
 }
 
-function build(now: number): World {
-	const world: World = {
+function build(now: number): State {
+	const state: State = {
 		titles: [],
 		byId: new Map(),
 		byPath: new Map(),
@@ -229,7 +236,7 @@ function build(now: number): World {
 		secretsSet: new Set(['RADARR_API_KEY', 'SONARR_API_KEY', 'PLEX_TOKEN']),
 		lines: [],
 		nextSeq: 1,
-		holds: [],
+		pauses: [],
 		runs: [],
 		seeded: false,
 		paused: false,
@@ -246,46 +253,37 @@ function build(now: number): World {
 	// Last night's sweep is when most verdicts were reached.
 	const sweptAt = lastAt(now, 3, 0);
 	for (const spec of catalogue()) {
-		const title = titleOf(world, spec, now, sweptAt);
-		world.titles.push(title);
-		world.byId.set(spec.id, title);
+		const title = titleOf(state, spec, now, sweptAt);
+		state.titles.push(title);
+		state.byId.set(spec.id, title);
 	}
-	const metropolis = world.byId.get('arr:radarr:21')!;
-	world.holds.push({
-		path: metropolis.spec.folder,
-		seconds: null,
-		until: null,
-		by: 'demo',
-		reason: 'rewatching it with the kids',
-		at: stamp(now - 2 * HOUR_MS),
-		title: metropolis.spec.id,
-		name: metropolis.spec.name
-	});
+	// Nothing held to open on, since a paused title is a rare thing to meet
+	// first. The history still carries one, long since lapsed.
 	// Oldest first off the chronicle, so the newest line gets the highest seq.
-	for (const entry of [...chronicle(world, now)].reverse()) {
-		world.lines.unshift({ seq: world.nextSeq++, entry });
+	for (const entry of [...chronicle(state, now)].reverse()) {
+		state.lines.unshift({ seq: state.nextSeq++, entry });
 	}
-	return world;
+	return state;
 }
 
-let built: World | null = null;
+let built: State | null = null;
 
-export function world(): World {
+export function currentState(): State {
 	built ??= build(Date.now());
 	return built;
 }
 
-/** Start over, for a test. */
+/** Drop the state, so the next call builds a new one. */
 export function reset(): void {
 	built = null;
 }
 
 export function record(
-	world: World,
+	state: State,
 	entry: Omit<Event, 'ts' | 'version'> & { ts?: string }
 ): Event {
 	const line = { ts: stamp(Date.now()), version: VERSION, ...entry } as Event;
-	world.lines.unshift({ seq: world.nextSeq++, entry: line });
+	state.lines.unshift({ seq: state.nextSeq++, entry: line });
 	return line;
 }
 
@@ -305,7 +303,7 @@ const STATES: Verdict[] = [
 
 const ACTIONABLE: Verdict[] = ['failed', 'pending'];
 
-export function card(world: World, title: Title): Card {
+export function card(state: State, title: Title): Card {
 	const { spec } = title;
 	const counts: Record<string, number> = {};
 	const adds = new Set<string>();
@@ -327,13 +325,19 @@ export function card(world: World, title: Title): Card {
 			).length;
 		}
 	}
-	const held = STATES.filter((state) => counts[state]);
+	const held = STATES.filter((verdict) => counts[verdict]);
 	const worst = held[0] ?? (title.files.length ? 'unchecked' : 'missing');
-	const state = ACTIONABLE.includes(worst) ? worst : held.length > 1 ? 'mixed' : worst;
-	const made: Card = { id: spec.id, name: spec.name, kind: spec.kind, state, added: title.added };
+	const verdict = ACTIONABLE.includes(worst) ? worst : held.length > 1 ? 'mixed' : worst;
+	const made: Card = {
+		id: spec.id,
+		name: spec.name,
+		kind: spec.kind,
+		state: verdict,
+		added: title.added
+	};
 	if (spec.year) made.year = spec.year;
 	if (spec.lang) made.lang = spec.lang;
-	if (spec.rating && world.settings.IMDB_RATINGS) made.rating = spec.rating;
+	if (spec.rating && state.settings.IMDB_RATINGS) made.rating = spec.rating;
 	if (title.files.length) {
 		made.files = title.files.length;
 		made.bytes = bytes;
@@ -351,21 +355,21 @@ export function card(world: World, title: Title): Card {
 }
 
 /** Every card, worst first: the order the shelf arrives in. */
-export function cards(world: World): Card[] {
+export function cards(state: State): Card[] {
 	const rank = (made: Card) => {
 		const worst = STATES.find((state) => made.counts?.[state]) ?? made.state;
 		return STATES.indexOf(worst);
 	};
-	return world.titles
-		.map((title) => card(world, title))
+	return state.titles
+		.map((title) => card(state, title))
 		.sort(
 			(a, b) =>
 				rank(a) - rank(b) || (b.weight ?? 0) - (a.weight ?? 0) || a.name.localeCompare(b.name)
 		);
 }
 
-export function shelf(world: World): Shelf {
-	return { titles: cards(world), complete: true, current: world.current, swept: world.swept };
+export function shelf(state: State): Shelf {
+	return { titles: cards(state), complete: true, current: state.current, swept: state.swept };
 }
 
 /** How many titles hold a file in each state, counted by membership as the
@@ -386,8 +390,8 @@ function tally(made: Card[]): Record<string, number> {
 // How much of the grid the overview's strip shows.
 const STRIP = 12;
 
-export function summary(world: World, sort: Sort): Summary {
-	const all = cards(world);
+export function summary(state: State, sort: Sort): Summary {
+	const all = cards(state);
 	const order = ORDER[sort];
 	// Ties go to the name, as the grid breaks them.
 	const head = order ? [...all].sort((a, b) => order(a, b) || a.name.localeCompare(b.name)) : all;
@@ -396,16 +400,16 @@ export function summary(world: World, sort: Sort): Summary {
 		counts: tally(all),
 		head: head.slice(0, STRIP),
 		complete: true,
-		current: world.current,
-		swept: world.swept
+		current: state.current,
+		swept: state.swept
 	};
 }
 
 /** The links built from what the title already carries, its *arr page and
  * its IMDb page, so no server need be asked. As in the service, they ride
  * along with the title and are in the links answer too. */
-function known(world: World, title: Title): TitleLink[] {
-	const { settings } = world;
+function known(state: State, title: Title): TitleLink[] {
+	const { settings } = state;
 	const { arr, imdb, name } = title.spec;
 	const found: TitleLink[] = [];
 	if (arr) {
@@ -429,14 +433,14 @@ function known(world: World, title: Title): TitleLink[] {
 
 /** Every service the sheet can offer for the title: the media servers the
  * settings name, still to be asked, and the known links filled in. */
-function servers(world: World, title: Title): TitleServer[] {
+function servers(state: State, title: Title): TitleServer[] {
 	const listed: TitleServer[] = [];
-	if (world.settings.PLEX_URL) listed.push({ server: 'plex', label: 'Plex' });
-	if (world.settings.JELLYFIN_URL) listed.push({ server: 'jellyfin', label: 'Jellyfin' });
-	return [...listed, ...known(world, title)];
+	if (state.settings.PLEX_URL) listed.push({ server: 'plex', label: 'Plex' });
+	if (state.settings.JELLYFIN_URL) listed.push({ server: 'jellyfin', label: 'Jellyfin' });
+	return [...listed, ...known(state, title)];
 }
 
-function wireFile(file: File): LibraryFile {
+export function wireFile(file: File): LibraryFile {
 	const { path, name, status, bytes, seconds, lang, tracks, planned, why, modified } = file;
 	return {
 		path,
@@ -452,17 +456,17 @@ function wireFile(file: File): LibraryFile {
 	};
 }
 
-export function detail(world: World, title: Title): TitleDetail {
+export function detail(state: State, title: Title): TitleDetail {
 	const { spec } = title;
 	const made: TitleDetail = {
 		id: spec.id,
 		name: spec.name,
 		kind: spec.kind,
 		folder: spec.folder,
-		current: world.current,
+		current: state.current,
 		files: title.files.map(wireFile),
 		total: title.files.length,
-		servers: servers(world, title)
+		servers: servers(state, title)
 	};
 	if (spec.year) made.year = spec.year;
 	if (spec.lang) made.lang = spec.lang;
@@ -472,8 +476,8 @@ export function detail(world: World, title: Title): TitleDetail {
 /** Where a title opens in the media servers the settings name, then the
  * known links. The media servers do not exist, so the demo's settings put them
  * on localhost, where a click goes nowhere rather than to somebody's host. */
-export function links(world: World, title: Title): TitleLink[] {
-	const { settings } = world;
+export function links(state: State, title: Title): TitleLink[] {
+	const { settings } = state;
 	const found: TitleLink[] = [];
 	const item = 10_000 + parseInt(digest(title.spec.id, 4), 16);
 	const plex = settings.PLEX_PUBLIC_URL || settings.PLEX_URL;
@@ -492,48 +496,51 @@ export function links(world: World, title: Title): TitleLink[] {
 			url: `${jellyfin}/web/index.html#!/details?id=${digest(title.spec.id, 32)}`
 		});
 	}
-	return [...found, ...known(world, title)];
+	return [...found, ...known(state, title)];
 }
 
-// Holds.
+// Item pauses.
 
-/** The holds still standing, each with its clock read against now. */
-export function holdsNow(world: World, now: number): Hold[] {
-	world.holds = world.holds.filter((hold) => !hold.until || Date.parse(hold.until) > now);
-	return world.holds.map((hold) => ({
-		...hold,
-		seconds: hold.until ? Math.max(0, Math.round((Date.parse(hold.until) - now) / 1000)) : null
+/** The pauses still standing, each with its clock read against now. */
+export function pausesNow(state: State, now: number): Pause[] {
+	state.pauses = state.pauses.filter((pause) => !pause.until || Date.parse(pause.until) > now);
+	return state.pauses.map((pause) => ({
+		...pause,
+		seconds: pause.until ? Math.max(0, Math.round((Date.parse(pause.until) - now) / 1000)) : null
 	}));
 }
 
-export function heldTitle(world: World, title: Title): Hold | undefined {
-	return holdsNow(world, Date.now()).find((hold) => hold.title === title.spec.id);
+export function pausedTitle(state: State, title: Title, path?: string): Pause | undefined {
+	return pausesNow(state, Date.now()).find(
+		(pause) => pause.title === title.spec.id || pause.path === path
+	);
 }
 
-export function placeHolds(
-	world: World,
-	titles: Title[],
+export function placePauses(
+	state: State,
+	titles: (Title | string)[],
 	seconds: number,
 	reason: string,
 	by: string,
 	now = Date.now()
 ): void {
-	for (const title of titles) {
-		world.holds = world.holds.filter((hold) => hold.title !== title.spec.id);
-		world.holds.push({
-			path: title.spec.folder,
+	for (const target of titles) {
+		const spec = typeof target === 'string' ? { folder: target, id: '', name: '' } : target.spec;
+		state.pauses = state.pauses.filter((pause) => pause.path !== spec.folder);
+		state.pauses.push({
+			path: spec.folder,
 			seconds: seconds || null,
 			until: seconds ? stamp(now + seconds * 1000) : null,
 			by,
 			reason,
 			at: stamp(now),
-			title: title.spec.id,
-			name: title.spec.name
+			title: spec.id,
+			name: spec.name
 		});
-		record(world, {
-			event: 'held',
-			path: title.spec.folder,
-			title: title.spec.id,
+		record(state, {
+			event: 'item_paused',
+			path: spec.folder,
+			title: spec.id,
 			...(seconds ? { seconds } : {}),
 			reason,
 			by
@@ -543,11 +550,12 @@ export function placeHolds(
 	publish('events');
 }
 
-export function liftHolds(world: World, titles: Title[], by: string): void {
-	for (const title of titles) {
-		if (!world.holds.some((hold) => hold.title === title.spec.id)) continue;
-		world.holds = world.holds.filter((hold) => hold.title !== title.spec.id);
-		record(world, { event: 'lifted', path: title.spec.folder, title: title.spec.id, by });
+export function resumePauses(state: State, titles: (Title | string)[], by: string): void {
+	for (const target of titles) {
+		const spec = typeof target === 'string' ? { folder: target, id: '', name: '' } : target.spec;
+		if (!state.pauses.some((pause) => pause.path === spec.folder)) continue;
+		state.pauses = state.pauses.filter((pause) => pause.path !== spec.folder);
+		record(state, { event: 'item_resumed', path: spec.folder, title: spec.id, by });
 	}
 	publish('runs');
 	publish('events');
@@ -564,7 +572,7 @@ const UNTAGGED = 'und';
 /** Set a track's language and flags in each file named, as mkvpropedit would,
  * and judge the file again. */
 export function retag(
-	world: World,
+	state: State,
 	targets: { path: string; index: number }[],
 	edit: Edit,
 	by: string,
@@ -572,22 +580,41 @@ export function retag(
 ): Outcome[] {
 	const outcomes: Outcome[] = [];
 	for (const target of targets) {
-		const file = world.byPath.get(String(target.path));
+		const file = state.byPath.get(String(target.path));
 		if (!file) {
-			outcomes.push({ path: target.path, status: 'refused', detail: 'no such file' });
+			outcomes.push({
+				path: target.path,
+				status: 'refused',
+				detail: 'could not read the file: No such file or directory'
+			});
 			continue;
 		}
+		// The same order mkvtag.unwritable refuses in, and its words.
 		if (file.ext !== MATROSKA) {
 			outcomes.push({
 				path: file.path,
 				status: 'refused',
-				detail: 'only Matroska tracks can be edited in place'
+				detail: 'only Matroska (.mkv) files are edited in place; the remux rule converts others'
+			});
+			continue;
+		}
+		if (file.hardlinked) {
+			outcomes.push({
+				path: file.path,
+				status: 'refused',
+				detail:
+					"hardlinked: an edit in place would change the download client's copy too; " +
+					'a rewrite makes a new file instead'
 			});
 			continue;
 		}
 		const track = file.source.find((each) => each.index === Number(target.index));
 		if (!track) {
-			outcomes.push({ path: file.path, status: 'refused', detail: `no stream ${target.index}` });
+			outcomes.push({
+				path: file.path,
+				status: 'refused',
+				detail: `stream ${target.index} is not an audio or subtitle track`
+			});
 			continue;
 		}
 		const changed: Record<string, { from: unknown; to: unknown }> = {};
@@ -604,12 +631,17 @@ export function retag(
 				: (track.flags ?? []).filter((each) => each !== flag);
 		}
 		if (!Object.keys(changed).length) {
-			outcomes.push({ path: file.path, status: 'unchanged', verdict: file.status });
+			outcomes.push({
+				path: file.path,
+				status: 'unchanged',
+				detail: 'already tagged that way',
+				verdict: file.status
+			});
 			continue;
 		}
 		if (file.tracks.length) probe(file);
-		rejudge(world, file, now);
-		record(world, {
+		rejudge(state, file, now);
+		record(state, {
 			event: 'retagged',
 			path: file.path,
 			index: track.index,
@@ -627,19 +659,19 @@ export function retag(
 
 // Settings.
 
-export function settingsSnapshot(world: World): SettingsSnapshot {
-	return snapshot(world.settings, world.secretsSet);
+export function settingsSnapshot(state: State): SettingsSnapshot {
+	return snapshot(state.settings, state.secretsSet);
 }
 
 /** Apply a save: the snapshot back, or the validator's problems. */
 export function saveSettings(
-	world: World,
+	state: State,
 	changes: Record<string, SettingValue | null>,
 	now = Date.now()
 ): SettingsSnapshot | { problems: string[] } {
-	const next: Settings = { ...world.settings };
+	const next: Settings = { ...state.settings };
 	const moved: Record<string, { from: unknown; to: unknown }> = {};
-	const secretsSet = new Set(world.secretsSet);
+	const secretsSet = new Set(state.secretsSet);
 	for (const [name, value] of Object.entries(changes)) {
 		if (ENV_PINNED.has(name)) continue;
 		if (SECRETS.includes(name)) {
@@ -659,28 +691,28 @@ export function saveSettings(
 	}
 	const found = problems(next);
 	if (found.length) return { problems: found };
-	world.settings = next;
-	world.secretsSet = secretsSet;
+	state.settings = next;
+	state.secretsSet = secretsSet;
 	if (Object.keys(moved).length) {
-		record(world, {
+		record(state, {
 			ts: stamp(now),
 			event: 'settings',
 			changed: moved,
-			by: world.account?.name ?? 'demo'
+			by: state.account?.name ?? 'demo'
 		});
 		// A rule change drops every stored verdict; the next sweep judges afresh.
-		if (Object.keys(moved).some((name) => RULE_SETTINGS.has(name))) world.current = false;
+		if (Object.keys(moved).some((name) => RULE_SETTINGS.has(name))) state.current = false;
 		publish('library');
 		publish('runs');
 		publish('events');
 	}
-	return settingsSnapshot(world);
+	return settingsSnapshot(state);
 }
 
 /** Drop every stored verdict; how many went. */
-export function clearVerdicts(world: World): number {
+export function clearVerdicts(state: State): number {
 	let dropped = 0;
-	for (const file of world.byPath.values()) {
+	for (const file of state.byPath.values()) {
 		if (file.status === 'unchecked' && !file.tracks.length) continue;
 		dropped += 1;
 		file.tracks = [];
@@ -690,7 +722,7 @@ export function clearVerdicts(world: World): number {
 		file.status = 'unchecked';
 		file.judged = 0;
 	}
-	world.current = true;
+	state.current = true;
 	publish('library');
 	return dropped;
 }

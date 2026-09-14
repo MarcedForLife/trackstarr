@@ -14,7 +14,7 @@ Video is always copied without re-encoding.
   add stereo or surround mixes, choose codecs and bitrates, and remove unwanted layouts.
 - **Track cleanup:** remove commentary, redundant SDH subtitles, embedded artwork
   and release tags; optionally convert MP4/M4V to MKV.
-- **Controlled processing:** preview plans, schedule library sweeps, hold individual
+- **Controlled processing:** preview plans, schedule library sweeps, pause individual
   titles, pause processing and defer hard-linked files.
 - **Live web UI:** browse and search your library, inspect planned changes, edit MKV
   track tags, follow progress and review event history.
@@ -170,7 +170,11 @@ Enable `RULE_REGENERATE` to update existing mixes in MKV files:
 **Imports and sweeps.** Webhooks queue imported files. `SWEEP_AT` schedules a walk
 of `MEDIA_DIRS` using a five-field cron expression in the configured timezone.
 Unchanged files use cached verdicts; policy or version changes invalidate them.
-Sweeps write actionable results to `/config/pending.tsv`.
+Sweeps write actionable results to `/config/pending.tsv`. Imports get priority
+for their initial check on the separate probe pool, so a sweep rewrite cannot
+hold that check up. Imports needing a rewrite move to the front of the waiting
+rewrite queue unless a manual reorder is active. Running rewrites finish first;
+undoing the manual reorder restores automatic import promotion.
 
 **Hard links.** With `SKIP_HARDLINKS=true`, files with multiple hard links are
 deferred. They are rechecked every `HARDLINK_RECHECK` seconds (900 by default).
@@ -202,7 +206,7 @@ rewritten files. If the server uses different paths, set a mapping such as
 - **Library:** search movies and series, filter verdicts, sort titles and inspect
   per-file plans. Missing downloads and unsupported containers have distinct
   verdicts, and an Untagged filter finds the titles whose audio carries no
-  language tag. Admins can hold titles or select them for immediate planning or
+  language tag. Admins can pause titles or select them for immediate planning or
   rewriting.
 - **Track editing:** admins can edit MKV track languages and commentary, forced
   and SDH flags, including matching tracks across episodes. `mkvpropedit` updates
@@ -291,7 +295,7 @@ through the environment and require a restart.
 | `HARDLINK_RECHECK`                 | `900`                               | Retry interval in seconds; 0 leaves retries to sweeps.                                    |
 | `IMDB_RATINGS`                     | `true`                              | Fetch IMDb ratings daily for title scores; dataset is for personal, non-commercial use.   |
 | `MAX_CONCURRENT_REWRITES`          | `1`                                 | Shared rewrite limit across imports, sweeps and processes using the same state directory. |
-| `PROBE_WORKERS`                    | `4`                                 | Concurrent sweep probes.                                                                  |
+| `PROBE_WORKERS`                    | `4`                                 | Concurrent import and sweep probes.                                                                  |
 | `FFMPEG_TIMEOUT` / `PROBE_TIMEOUT` | `7200` / `180`                      | Timeouts in seconds.                                                                      |
 
 ### Service environment
@@ -299,7 +303,7 @@ through the environment and require a restart.
 | Variable                      | Default                 | Purpose                                                                                 |
 | ----------------------------- | ----------------------- | --------------------------------------------------------------------------------------- |
 | `WORK_DIR`                    | `/data/trackstarr-work` | Rewrite staging directory.                                                              |
-| `STATE_DIR`                   | `/config`               | Settings, cache, events, accounts, holds, secrets and locks.                            |
+| `STATE_DIR`                   | `/config`               | Settings, cache, events, accounts, pauses, secrets and locks.                            |
 | `TRACKSTARR_KEY_FILE`         | `$STATE_DIR/key`        | Encryption key for saved credentials.                                                   |
 | `LISTEN_ADDR` / `LISTEN_PORT` | `0.0.0.0` / `5120`      | Listener address and port.                                                              |
 | `WEB_DIR`                     | `/web` in the image     | Static UI directory; empty disables pages.                                              |

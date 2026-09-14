@@ -263,13 +263,18 @@ export function added(planned: Track[]): string[] {
 		.map((track) => track.title!);
 }
 
-/** The layouts a plan generates, as the history names them: `2.0`, `5.1`. */
-export function downmixes(planned: Track[]): string[] {
-	const names = Object.entries(CHANNELS);
-	return planned
-		.filter((track) => track.flags?.includes('generated'))
-		.map(
-			(track) =>
-				names.find(([, channels]) => channels === track.channels)?.[0] ?? `${track.channels}ch`
-		);
+/** What a plan comes to, in the three fields the service records. Nothing here
+ * is a rebuild: the demo never claims a drop for a generated track the way the
+ * planner does. */
+export function changesOf(
+	planned: Track[],
+	tracks: Track[]
+): { adds: string[]; rebuilds: string[]; drops: number } {
+	return {
+		adds: added(planned),
+		rebuilds: [],
+		drops: planned.length
+			? tracks.filter((track) => !planned.some((kept) => kept.src === track.index)).length
+			: 0
+	};
 }
