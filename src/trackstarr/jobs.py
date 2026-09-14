@@ -1,26 +1,26 @@
-"""The import queue: the worker pool that drains it, and the parking of files
-a download client still hard-links.
+"""Import jobs in the shared work queue, and parking files a client hard-links.
 
 :mod:`trackstarr.webhook` parses a delivery and queues it, so a slow *arr
-never stalls the response; the workers here do the probing and rewriting. The
-pool follows MAX_CONCURRENT_REWRITES, which a settings save can change without
-a restart.
+never stalls the response. Imports are checked on the priority probe lane,
+then join the rewrite lane only when needed. Automatic rewrite promotion
+yields to a queue the operator has reordered.
 """
 
 import json
 import logging
 import os
-import queue
 import threading
 import time
 from dataclasses import replace
 
-from . import config, events, runs, sweep
+from . import config, events, lifecycle, runs, sweep, work
 from .arr import all_arrs, original_of
-from .processing import Job, downmixed_names, process
+from .executor import Cancel
+from .policy import Policy
+from .processing import Job, changed_tracks, effective_dry_run, process
 from .state import write_json
 from .status import Status
-from .sweep_cache import cache_key
+from .sweep_cache import ObservationStoppedError, cache_key, observing
 
 log = logging.getLogger(__name__)
 
@@ -36,8 +36,6 @@ def hardlinked(path: str) -> bool:
     except OSError:
         return False
 
-
-_work_q: queue.Queue[Job] = queue.Queue()
 
 #: Imports arrive in bursts, so one path can be queued twice before the first
 #: job runs. The planner would no-op; this saves the probe.
@@ -132,18 +130,18 @@ def parked_jobs() -> list[Job]:
 
 def queued_count() -> int:
     """How many jobs are waiting for a worker."""
-    return _work_q.qsize()
+    with work.scheduler.condition:
+        return sum(work.scheduler.queued.values())
 
 
-def reset() -> None:
-    """Drop the queue, what is in flight and what is parked. For tests: a job
-    left behind would be picked up by the next one."""
+def forget() -> None:
+    """Drop what is in flight and what is parked. For tests: a job left behind
+    would be picked up by the next one. The queue itself is
+    :func:`trackstarr.lifecycle.reset`."""
     with _inflight_lock:
         _inflight.clear()
     with _parked_lock:
         _parked.clear()
-    while not _work_q.empty():
-        _work_q.get_nowait()
 
 
 def _resolve_lang(job: Job) -> Job:
@@ -169,57 +167,73 @@ def park(job: Job) -> None:
     log.info("parked %s until the download client releases it", job.path)
 
 
-def handle(job: Job) -> None:
+def handle(job: Job, cancel: Cancel | None = None) -> None:
     """Process a webhook job, parking it while the file is still seeded."""
-    if runs.stopping(job.run):
+    with lifecycle.import_result(job.run, job.path) as result:
+        _handle(job, result, cancel)
+
+
+def _handle(
+    job: Job,
+    accounting: lifecycle.ImportResult,
+    cancel: Cancel | None = None,
+    *,
+    discovery: bool = False,
+) -> Job | None:
+    """Return the resolved job only when discovery needs a rewrite phase."""
+    if work.scheduler.stopping(job.run):
         # Dropped rather than processed: "stop" must not mean "stop after the
         # twenty files already queued".
-        runs.drop(job.run)
+        accounting.dropped = True
         log.info("run %s is stopping, dropping %s", job.run, job.path)
-        return
-    if runs.skipped(job.run, job.path):
+        return None
+    if work.scheduler.skipped(job.run, job.path):
         # Booked rather than dropped: somebody asked for this one by name and
         # the delivery's row should say what became of it.
         log.info("%s was skipped, leaving it", job.path)
-        runs.tally(
-            job.run,
-            str(Status.DEFERRED),
-            path=job.path,
-            detail="skipped, so this delivery left it alone",
-        )
-        return
+        accounting.status = Status.DEFERRED
+        accounting.detail = "skipped, so this delivery left it alone"
+        return None
     job = _resolve_lang(job)
     if parking_enabled() and hardlinked(job.path):
         park(job)
         # Booked as deferred so the run can close; an uncounted file would keep
         # the delivery on the overview for ever.
-        runs.tally(
-            job.run,
-            str(Status.DEFERRED),
-            path=job.path,
-            detail="a download client still has this hard-linked",
-        )
-        return
+        accounting.status = Status.DEFERRED
+        accounting.detail = "a download client still has this hard-linked"
+        return None
     runs.begin(job.run, job.path)
-    # Taken before the probe, as the sweep does: a still-settling import must
-    # not have its verdict filed under a later size and mtime.
-    key = cache_key(job.path, job.lang)
-    result = None
+    continuing = False
     try:
-        result = process(job, dry_run=False)
+        # Keep telemetry cleanup around observation entry as well as processing:
+        # policy selection and cache-key acquisition can fail before the probe.
+        with observing(
+            job.path, policy=Policy.from_config(), stopped=cancel.stopped if cancel else None
+        ) as observation:
+            key = cache_key(job.path, job.lang)
+            result = process(
+                job,
+                dry_run=discovery,
+                policy=observation.policy,
+                cancel=cancel,
+                observation=observation,
+            )
+            accounting.status, accounting.detail = result.status, result.detail
+            # The library reads verdicts from the cache, not the history.
+            sweep.remember(job.path, key, result, observation)
+            continuing = (
+                discovery
+                and result.status is Status.PENDING
+                and not effective_dry_run(False, job.path)
+            )
+    except ObservationStoppedError:
+        accounting.status = Status.DEFERRED
+        accounting.detail = "skipped while waiting for another edit"
+        return None
     finally:
-        runs.finish(job.run, job.path)
-        # Booked whatever happened, or a run that never reaches its total
-        # never closes.
-        runs.tally(
-            job.run,
-            str(result.status if result else Status.FAILED),
-            path=job.path,
-            # Only a deferral or a failure carries a detail.
-            detail=result.detail if result else "",
-        )
-    # The library reads verdicts from the cache, not the history.
-    sweep.remember(job.path, key, result)
+        runs.finish(job.run, job.path, continuing=continuing)
+    if continuing:
+        return job
     if result.status is Status.PENDING and result.plan:
         # No pending.tsv row for a webhook, so the history is the only record.
         events.record(
@@ -232,76 +246,54 @@ def handle(job: Job) -> None:
             rules=sorted(result.plan.rules),
             incidental=result.plan.incidental,
             incidental_rules=sorted(result.plan.incidental_rules),
-            downmixed=downmixed_names(result.plan) or None,
+            **changed_tracks(result.plan),
         )
 
-
-#: Live worker threads, and how many have ever been named. The pool follows
-#: MAX_CONCURRENT_REWRITES, which the settings page can change, so the count
-#: is shared between the thread that tops it up and the workers that retire
-#: themselves. Names are never reused.
-_workers = 0
-_worker_names = 0
-_workers_lock = threading.Lock()
-
-#: How long a worker waits on the queue before re-reading the budget.
-_WORKER_POLL_SECONDS = 30.0
+    return None
 
 
-def start_workers() -> None:
-    """Bring the worker pool up to MAX_CONCURRENT_REWRITES.
-
-    Called at startup and after every settings save. Idempotent; a lowered
-    budget is left to the workers, which retire themselves.
-    """
-    global _workers, _worker_names
-    with _workers_lock:
-        while _workers < config.current().MAX_CONCURRENT_REWRITES:
-            _workers += 1
-            _worker_names += 1
-            threading.Thread(target=worker, daemon=True, name=f"worker-{_worker_names}").start()
-
-
-def worker_count() -> int:
-    """How many workers the pool holds."""
-    with _workers_lock:
-        return _workers
+def _handle_queued(
+    job: Job, accounting: lifecycle.ImportResult, cancel: Cancel, *, discovery: bool = False
+) -> Job | None:
+    # Reset the intermediate pending result so a rewrite failing before it can
+    # judge is booked as failed, just like a one-phase import.
+    accounting.status, accounting.detail = Status.FAILED, ""
+    try:
+        return _handle(job, accounting, cancel, discovery=discovery)
+    except Exception:
+        log.exception("unhandled error processing %s", job.path)
+        return None
 
 
-def retire() -> bool:
-    """Whether the calling worker should stop because the budget was cut.
+def _discovered(phase: work.Phase, accounting: lifecycle.ImportResult) -> None:
+    # The scheduler already terminates exceptional and cancelled phases.
+    if phase.cancelled() or phase.exception() is not None:
+        return
+    if job := phase.result():
+        cancel = Cancel(job.path)
+        work.scheduler.continue_file(
+            phase.handle,
+            lambda: _handle_queued(job, accounting, cancel),
+            cancel=cancel,
+            hurry=True,
+        )
+    else:
+        work.scheduler.complete_file(phase.handle)
 
-    Decremented here rather than by the thread that lowered the budget, so
-    exactly as many workers leave as the budget dropped.
-    """
-    global _workers
-    with _workers_lock:
-        if _workers <= config.current().MAX_CONCURRENT_REWRITES:
-            return False
-        _workers -= 1
-        return True
+
+def _finish_import(job: Job, accounting: lifecycle.ImportResult) -> None:
+    """Book once across both phases, then release the delivery's dedup claim."""
+    try:
+        with lifecycle.import_result(job.run, job.path) as result:
+            result.status, result.detail = accounting.status, accounting.detail
+            result.dropped = accounting.dropped
+    finally:
+        _release_import(job.path)
 
 
-# No cover: a thread body. handle and retire hold the decisions and are covered.
-def worker() -> None:  # pragma: no cover
-    while not retire():
-        # Checked before the queue, so a paused service leaves its imports
-        # queued rather than holding one the overview shows as in progress.
-        # Waited in slices so a retirement still happens.
-        if not runs.wait_for_resume(_WORKER_POLL_SECONDS):
-            continue
-        try:
-            job = _work_q.get(timeout=_WORKER_POLL_SECONDS)
-        except queue.Empty:
-            continue
-        try:
-            handle(job)
-        except Exception:
-            log.exception("unhandled error processing %s", job.path)
-        finally:
-            with _inflight_lock:
-                _inflight.discard(job.path)
-            _work_q.task_done()
+def _release_import(path: str) -> None:
+    with _inflight_lock:
+        _inflight.discard(path)
 
 
 def enqueue(job: Job) -> bool:
@@ -309,11 +301,21 @@ def enqueue(job: Job) -> bool:
         if job.path in _inflight:
             return False
         _inflight.add(job.path)
-    # Counted before the queue, or a worker could finish the file and book it
-    # against a run that has not been told to expect it.
-    if job.run:
-        runs.add_file(job.run)
-    _work_q.put(job)
+    cancel = Cancel(job.path)
+    accounting = lifecycle.ImportResult()
+    try:
+        phase = lifecycle.submit_import(
+            job.run,
+            job.path,
+            lambda: _handle_queued(job, accounting, cancel, discovery=True),
+            on_terminal=lambda: _finish_import(job, accounting),
+            cancel=cancel,
+            discovery=True,
+        )
+        phase.add_done_callback(lambda finished: _discovered(phase, accounting))
+    except BaseException:
+        _release_import(job.path)
+        raise
     return True
 
 
@@ -327,26 +329,47 @@ def recheck_parked() -> None:
     with _parked_lock:
         parked = list(_parked.values())
     released = False
-    for job in parked:
-        if parking and hardlinked(job.path):
-            continue
-        with _parked_lock:
-            _parked.pop(job.path, None)
-        released = True
-        if not os.path.exists(job.path):
-            # Upgraded or deleted; the successor has its own webhook.
-            log.info("parked file disappeared, dropping %s", job.path)
-            continue
+    with lifecycle.producer() as allowed:
+        if not allowed:
+            return
+        for job in parked:
+            if parking and hardlinked(job.path):
+                continue
+            with _parked_lock:
+                _parked.pop(job.path, None)
+            released = True
+            if not os.path.exists(job.path):
+                # Upgraded or deleted; the successor has its own webhook.
+                log.info("parked file disappeared, dropping %s", job.path)
+                continue
+            if not _release(job):
+                break
+        # Persistence belongs to the producer too.
+        if released:
+            _save_parked()
+
+
+def _release(job: Job) -> bool:
+    """Hand one parked file back to the queue. False where it stays parked.
+
+    The record is dropped before the handoff, so a shutdown refusing it has to
+    put the file back: this is the only copy of a delivery nobody will send
+    again.
+    """
+    try:
         # Reopen the delivery's run for this one file, then seal it again.
         if job.run:
-            runs.open_run(job.run, runs.IMPORT, label=job.arr.name if job.arr else "")
+            lifecycle.open_run(job.run, runs.IMPORT, label=job.arr.name if job.arr else "")
         if enqueue(job):
             log.info("hard link released, queued %s", job.path)
         if job.run:
-            runs.seal(job.run)
-    # One write per pass, however many were released.
-    if released:
-        _save_parked()
+            lifecycle.seal(job.run)
+    except ValueError as err:
+        with _parked_lock:
+            _parked.setdefault(job.path, job)
+        log.info("%s stays parked: %s", job.path, err)
+        return False
+    return True
 
 
 #: The recheck thread sleeps in slices this long so a HARDLINK_RECHECK change
@@ -360,10 +383,11 @@ def parked_recheck_loop() -> None:  # pragma: no cover
 
     Started whether or not parking is on, so switching SKIP_HARDLINKS on later
     does not park files nothing revisits. Switching it off runs the next pass
-    at once.
+    at once. Ends with the process, since a released file must not be queued
+    into a scheduler that is draining.
     """
     waited = 0.0
-    while True:
+    while lifecycle.producing():
         time.sleep(_PARKED_TICK)
         waited += _PARKED_TICK
         if parking_enabled() and waited < config.current().HARDLINK_RECHECK:

@@ -3,7 +3,7 @@ that says so comes from."""
 
 import pytest
 
-from conftest import set_config
+from conftest import queued_control, set_config
 from trackstarr import estimate, events, runs
 from trackstarr.estimate import Speeds, measured, shape
 
@@ -22,7 +22,7 @@ def _modified(duration: float, seconds: float, *layouts: str, waited: float = 0.
         duration=duration,
         seconds=seconds,
         waited=waited or None,
-        downmixed=list(layouts) or None,
+        adds=list(layouts) or None,
     )
 
 
@@ -120,7 +120,7 @@ def test_a_rewrite_the_history_could_not_time_is_left_out():
     this machine encodes, and a zero would say it is infinitely fast."""
     for _ in range(estimate.ENOUGH):
         _modified(3600, 180, "2.0")
-        events.record("modified", path="/library/film.mkv", seconds=180, downmixed=["2.0"])
+        events.record("modified", path="/library/film.mkv", seconds=180, adds=["2.0"])
         _modified(3600, 3600, "2.0", waited=3600)
 
     assert measured().of(("2.0",)) == 20.0
@@ -156,10 +156,10 @@ def registry():
     runs.reset()
 
 
-def _sweep_run(registry, budget: int) -> dict:
+def _sweep_run(registry, budget: int, waiting: tuple[runs.Queued, ...] = ()) -> dict:
     set_config(MAX_CONCURRENT_REWRITES=budget)
     registry.open_run("r#1", runs.SWEEP)
-    (snapshot,) = registry.snapshot()["runs"]
+    (snapshot,) = registry.snapshot({"r#1": queued_control(*waiting)})["runs"]
     return snapshot
 
 
@@ -172,19 +172,16 @@ def test_a_run_with_no_rewriting_in_it_has_nothing_to_say(registry, monkeypatch)
 
 
 def test_a_queued_backlog_is_what_is_left(registry, monkeypatch):
-    registry.open_run("r#1", runs.SWEEP)
-    for i in range(4):
-        registry.queue("r#1", f"/library/{i}.mkv", 300.0)
+    queued = tuple(runs.Queued(f"/library/{i}.mkv", 300.0) for i in range(4))
 
-    assert _sweep_run(registry, 2)["rewrite_seconds"] == 600.0
+    assert _sweep_run(registry, 2, queued)["rewrite_seconds"] == 600.0
 
 
 def test_a_file_in_hand_counts_for_what_it_has_left(registry, monkeypatch):
     """It came off the queue when a worker picked it up, and a file being
     rewritten is not a file with no work left in it."""
     registry.open_run("r#1", runs.SWEEP)
-    registry.queue("r#1", "/library/film.mkv", 300.0)
-    registry.begin("r#1", "/library/film.mkv")
+    registry.begin("r#1", "/library/film.mkv", 300.0)
 
     left = _sweep_run(registry, 1)["rewrite_seconds"]
     assert 290.0 < left <= 300.0
@@ -194,8 +191,7 @@ def test_ffmpegs_own_readout_beats_the_estimate_that_queued_the_file(registry, m
     """The estimate is a median of other files. Once this one is running, it
     is reporting on itself."""
     registry.open_run("r#1", runs.SWEEP)
-    registry.queue("r#1", "/library/film.mkv", 3000.0)
-    registry.begin("r#1", "/library/film.mkv")
+    registry.begin("r#1", "/library/film.mkv", 3000.0)
     registry.stage("r#1", "/library/film.mkv", runs.ENCODING, 7200.0)
     # Half written, at twenty times realtime: three minutes left, not fifty.
     registry.progress("r#1", "/library/film.mkv", 3600.0, 20.0)
@@ -207,8 +203,7 @@ def test_one_long_file_is_not_shared_out_across_the_budget(registry, monkeypatch
     """A backlog divides between the slots. One file does not: three spare
     workers do not make a two-hour encode take forty minutes."""
     registry.open_run("r#1", runs.SWEEP)
-    registry.queue("r#1", "/library/film.mkv", 7200.0)
-    registry.begin("r#1", "/library/film.mkv")
+    registry.begin("r#1", "/library/film.mkv", 7200.0)
     registry.stage("r#1", "/library/film.mkv", runs.ENCODING, 7200.0)
     registry.progress("r#1", "/library/film.mkv", 0.0, 1.0)
 

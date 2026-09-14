@@ -23,7 +23,7 @@ import os
 import urllib.parse
 from http.server import BaseHTTPRequestHandler
 
-from . import api, assets, auth, events, jobs, runs, sessions, users
+from . import api, assets, auth, events, jobs, lifecycle, runs, sessions, users
 from .arr import AUTH_HEADER, WEBHOOK_PATH, all_arrs, original_of
 from .processing import Job
 
@@ -240,13 +240,21 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, "test ok")
             return
 
+        with lifecycle.producer() as allowed:
+            if not allowed:
+                self.reply(503, "the service is stopping")
+                return
+            self._admit(body)
+
+    def _admit(self, body: dict) -> None:
+        """Queue a delivery's files under one run, and answer with the count."""
         queued: list[str] = []
         run = events.run_id()
         delivered = jobs_from_hook(body, run)
         if delivered:
             # Opened before the first file and sealed after the last, so a
             # season import is one run rather than one per file.
-            runs.open_run(
+            lifecycle.open_run(
                 run,
                 runs.IMPORT,
                 label=delivered[0].arr.name if delivered[0].arr else "",
@@ -262,7 +270,7 @@ class Handler(BaseHTTPRequestHandler):
                 queued.append(job.path)
                 log.info("queued %s (original=%s)", job.path, job.lang or "unknown")
         if delivered:
-            runs.seal(run)
+            lifecycle.seal(run)
         if queued:
             # Recorded first, so the run exists in the history before its
             # rewrites do.

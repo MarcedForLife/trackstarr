@@ -10,7 +10,7 @@ import socket
 import pytest
 
 from conftest import keep_alive, read_events, request
-from trackstarr import auth, jobs, webhook
+from trackstarr import auth, jobs, lifecycle, webhook
 from trackstarr.arr import AUTH_HEADER
 from trackstarr.webhook import jobs_from_hook
 
@@ -206,6 +206,20 @@ def test_a_delivery_names_the_files_it_queued(listener, media_root):
     # Only what was really queued, so the names and the count cannot disagree.
     assert entry["paths"] == [str(media_root / "S01E01.mkv")]
     assert entry["files"] == len(entry["paths"])
+
+
+def test_a_delivery_arriving_during_shutdown_is_refused_not_dropped(
+    listener, media_root, queued
+):
+    """503, so the *arr retries into the process that comes back, rather than
+    a 200 for files this one is no longer going to look at."""
+    lifecycle.shutdown(0)
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+
+    body = movie_body(str(media_root / "f.mkv"), str(media_root))
+    assert post(listener, body, headers) == (503, "the service is stopping")
+    assert queued == []
+    assert read_events() == []
 
 
 def test_a_post_that_queues_nothing_records_nothing(listener, media_root):

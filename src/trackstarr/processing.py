@@ -6,17 +6,18 @@ import functools
 import logging
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 
-from . import config, events, holds, mkvtag, rewrites, runs
+from . import config, events, mkvtag, pauses, rewrites, runs
 from .arr import Arr, LibraryItem
-from .executor import Outcome, apply_plan
+from .executor import Cancel, Outcome, apply_plan
 from .media import ProbeError
 from .media_server import refresh_servers
-from .planner import Plan, build_plan, describe, planned_tracks, track_changes, why
+from .planner import Plan, build_plan, changes, describe, planned_tracks, track_changes, why
+from .policy import Policy
 from .status import Status
-from .sweep_cache import FileKey, Verdict, cache_key
+from .sweep_cache import FileKey, Observation, Verdict, cache_key
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +29,10 @@ _SLOT_PREFIX = "rewrite.lock."
 
 #: Slot locks live in their own directory, so they do not read as state.
 _LOCK_DIRNAME = "locks"
+
+#: What a file skipped before its rewrite started reports. Deferred, not
+#: failed: nothing is wrong with it and the next pass will pick it up.
+STOPPED_BEFORE_START = "the rewrite was stopped before it started, nothing rewritten"
 
 
 def _lock_dir() -> str:
@@ -46,19 +51,47 @@ def _try_lock(name: str):
     return lock_file
 
 
-def _claim_slot():
-    """Block until a slot file is locked, and return the handle.
+def _pause_for_slot(cancel: Cancel) -> None:
+    """Wait out the poll interval, returning at once on a skip."""
+    cancel.wait(_SLOT_POLL_SECONDS)
+
+
+def _claim_slot(cancel: Cancel | None = None):
+    """Block until a slot file is locked, and return the handle, or None if the
+    phase was skipped while it waited.
 
     Flock files rather than a semaphore because MAX_CONCURRENT_REWRITES is
     machine-wide: a ``docker exec trackstarr sweep --apply`` competes with
     the running serve.
     """
+    cancel = cancel or Cancel()
     os.makedirs(_lock_dir(), exist_ok=True)
-    while True:
+    while not cancel.stopped():
         for slot in range(config.current().MAX_CONCURRENT_REWRITES):
             if lock_file := _try_lock(f"{_SLOT_PREFIX}{slot}"):
+                # A skip that won the race gives the slot straight back rather
+                # than spending an encode on a file nobody is waiting for.
+                if cancel.stopped():
+                    lock_file.close()
+                    return None
                 return lock_file
-        time.sleep(_SLOT_POLL_SECONDS)
+        _pause_for_slot(cancel)
+    return None
+
+
+@contextlib.contextmanager
+def rewrite_slot(cancel: Cancel | None = None) -> Iterator[bool]:
+    """Hold one of the machine's rewrite slots; yields whether it was claimed.
+
+    False only where a skip arrived first, so a file taken off its run settles
+    now instead of waiting out an hour of somebody else's encode.
+    """
+    lock_file = _claim_slot(cancel)
+    try:
+        yield lock_file is not None
+    finally:
+        if lock_file is not None:
+            lock_file.close()
 
 
 def state_dir_errors() -> list[str]:
@@ -226,7 +259,7 @@ def _rejudged(job: Job, plan: Plan, key: FileKey | None) -> Rewritten | None:
     """
     if key is None:
         return None
-    judged = process(replace(job, path=plan.out_path), dry_run=True)
+    judged = process(replace(job, path=plan.out_path), dry_run=True, policy=plan.policy)
     if judged.status is Status.FAILED:
         # The probe failed, not the rewrite, which verified its output. Storing
         # "Failed" against a checked file would be wrong.
@@ -242,9 +275,13 @@ def _file_size(path: str) -> int | None:
         return None
 
 
-def downmixed_names(plan: Plan) -> list[str]:
-    """Layout names of the tracks this plan encodes, downmix or re-encode."""
-    return [stream.title for stream in plan.streams if stream.encode]
+def changed_tracks(plan: Plan) -> dict:
+    """What the rewrite comes to, in the three fields a card and a queue row
+    carry. Empty tallies are dropped, so a plan that only writes a tag records
+    none of them."""
+    tally = changes(planned_tracks(plan), plan.tracks)
+    told = {"adds": tally.adds, "rebuilds": tally.rebuilds, "drops": tally.drops}
+    return {name: value for name, value in told.items() if value}
 
 
 def _event_fields(
@@ -282,7 +319,12 @@ def _tag_only(plan: Plan) -> tuple[int, str] | None:
 
 
 def _tag_in_place(
-    job: Job, plan: Plan, tag: tuple[int, str], source: str
+    job: Job,
+    plan: Plan,
+    tag: tuple[int, str],
+    source: str,
+    cancel: Cancel | None = None,
+    observation: Observation | None = None,
 ) -> ProcessResult | None:
     """Write the plan's one language tag with mkvpropedit, or None to rewrite.
 
@@ -291,17 +333,35 @@ def _tag_in_place(
     price of copying the file to do it.
     """
     index, lang = tag
+    # Taken before the editor's own lock, and before the file is touched, so
+    # the probe that read it cannot publish over what this writes.
+    if observation is not None and not observation.changing(
+        job.path, stopped=cancel.stopped if cancel else None
+    ):
+        return ProcessResult(Status.DEFERRED, plan, STOPPED_BEFORE_START)
     bytes_before = _file_size(job.path)
     started = time.monotonic()
-    written = mkvtag.write_lang(job.path, index, lang)
+    written = mkvtag.write_lang(job.path, index, lang, cancel.commit if cancel else None)
     if written.status is mkvtag.Outcome.REFUSED:
         log.info("cannot tag %s in place, rewriting instead: %s", job.path, written.detail)
+        if observation is not None:
+            # The rewrite can wait hours for a slot; holding the file all that
+            # time would stall every read of it behind an edit that never was.
+            observation.released()
         return None
+    if written.status is mkvtag.Outcome.STOPPED:
+        # Not a refusal: rewriting instead would write the tag the skip just
+        # stopped, the slow way.
+        log.info("tagging %s was stopped before it began", job.path)
+        return ProcessResult(Status.DEFERRED, plan, written.detail)
     if written.status is mkvtag.Outcome.UNCHANGED:
         # Something else wrote the tag between the plan's probe and here, so
         # the file is as the plan wanted it and none of it is ours to record.
         log.info("%s already carries %s", job.path, lang)
         return ProcessResult(Status.CONFORM, plan)
+    if observation is not None:
+        # Written or half-written: a failure can still have reached the header.
+        observation.changed()
     fields = _event_fields(job, plan, source, time.monotonic() - started)
     if written.status is mkvtag.Outcome.FAILED:
         log.warning("tagging %s failed: %s", job.path, written.detail)
@@ -328,24 +388,60 @@ def _tag_in_place(
 
 
 def effective_dry_run(dry_run: bool, path: str = "") -> bool:
-    """Whether a run is dry, given the caller, REWRITE_MODE and any hold.
+    """Whether a run is dry, given the caller, REWRITE_MODE and any pause.
 
     ``report`` latches over every caller, ``sweep --apply`` included, and a
-    hold does the same for the one title; see :mod:`trackstarr.holds`.
+    pause does the same for the one title; see :mod:`trackstarr.pauses`.
     """
-    return dry_run or config.current().REWRITE_MODE == "report" or holds.held(path) is not None
+    return (
+        dry_run or config.current().REWRITE_MODE == "report" or pauses.paused(path) is not None
+    )
 
 
-def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
+def _claim(
+    observation: Observation | None, plan: Plan, cancel: Cancel | None
+) -> Callable[[], bool] | None:
+    """What the executor asks before it publishes: ownership of both files the
+    rename touches, so no older probe can book a verdict over the result."""
+    if observation is None:
+        return None
+
+    def claimed() -> bool:
+        if not observation.changing(
+            plan.path, plan.out_path, cancel.stopped if cancel else None
+        ):
+            return False
+        # Asked at the rename, so from here what is stored for either path
+        # describes a file that is on its way out.
+        observation.changed()
+        return True
+
+    return claimed
+
+
+def process(
+    job: Job,
+    dry_run: bool,
+    source: str = "webhook",
+    *,
+    policy: Policy | None = None,
+    cancel: Cancel | None = None,
+    observation: Observation | None = None,
+) -> ProcessResult:
     """Plan one file and, unless dry_run, rewrite it.
 
     ``source`` labels the history entry a rewrite attempt leaves. Probe
-    failures leave none: they would recur every sweep.
+    failures leave none: they would recur every sweep. The supplied policy
+    lasts through the output recheck; direct calls snapshot current settings.
+    ``cancel`` is the queued phase's kill switch, where the work came from a
+    queue at all, and ``observation`` the caller's read of the file, which
+    every mutation here takes ownership through.
     """
-    hold = holds.held(job.path)
+    policy = policy or Policy.from_config()
+    pause = pauses.paused(job.path)
     dry_run = effective_dry_run(dry_run, job.path)
     try:
-        plan = build_plan(job.path, job.lang)
+        plan = build_plan(job.path, job.lang, policy)
     except ProbeError as err:
         log.warning("probe failed for %s: %s", job.path, err)
         return ProcessResult(Status.FAILED, detail=str(err))
@@ -358,18 +454,32 @@ def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
     if not plan.needed:
         return ProcessResult(Status.CONFORM, plan)
     if dry_run:
-        # A held file is a pending file nothing picked up, which is what a
+        # A paused file is a pending file nothing picked up, which is what a
         # reporting run already produces. The detail is the only difference,
         # and it is what the run row and pending.tsv say instead of the plan.
-        if hold:
-            log.info("not rewriting %s: %s", job.path, hold.describe())
-            return ProcessResult(Status.PENDING, plan, hold.describe())
+        if pause:
+            log.info("not rewriting %s: %s", job.path, pause.describe())
+            return ProcessResult(Status.PENDING, plan, pause.describe())
         log.info("would rewrite %s: %s", job.path, describe(plan))
         return ProcessResult(Status.PENDING, plan)
 
+    # The plan was a read; this is where the file starts changing. A skip that
+    # arrived during the probe stops here, and one arriving after this is the
+    # gate's to decide.
+    if cancel is not None and cancel.stopped():
+        log.info("not rewriting %s: the file was skipped while it was planned", job.path)
+        return ProcessResult(Status.DEFERRED, plan, STOPPED_BEFORE_START)
+
+    if observation is not None and not observation.watch(
+        plan.out_path, cancel.stopped if cancel else None
+    ):
+        return ProcessResult(Status.DEFERRED, plan, STOPPED_BEFORE_START)
+
     # Before the slot claim, since a header write is not an encode and queueing
     # it behind one would be most of an hour to spend on a second of work.
-    if (tag := _tag_only(plan)) and (tagged := _tag_in_place(job, plan, tag, source)):
+    if (tag := _tag_only(plan)) and (
+        tagged := _tag_in_place(job, plan, tag, source, cancel, observation)
+    ):
         return tagged
 
     log.info("rewriting %s: %s", job.path, describe(plan))
@@ -383,17 +493,22 @@ def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
     try:
         # So the overview does not draw a bar that has not started moving.
         runs.stage(job.run, job.path, runs.WAITING)
-        # Closing the slot handle releases the flock, even if this raises.
-        with contextlib.closing(_claim_slot()):
+        # The slot's flock is released on the way out, even if this raises.
+        with rewrite_slot(cancel) as claimed:
             waited = time.monotonic() - started
-            runs.stage(job.run, job.path, runs.ENCODING, plan.src_duration)
-            outcome, detail = apply_plan(
-                plan,
-                functools.partial(runs.progress, job.run, job.path),
-                # Verify and publish are not the encode; a bar left at full
-                # would say the file is still being written.
-                functools.partial(runs.stage, job.run, job.path, runs.WORKING),
-            )
+            if not claimed:
+                outcome, detail = Outcome.DEFERRED, STOPPED_BEFORE_START
+            else:
+                runs.stage(job.run, job.path, runs.ENCODING, plan.src_duration)
+                outcome, detail = apply_plan(
+                    plan,
+                    functools.partial(runs.progress, job.run, job.path),
+                    # Verify and publish are not the encode; a bar left at full
+                    # would say the file is still being written.
+                    functools.partial(runs.stage, job.run, job.path, runs.WORKING),
+                    cancel,
+                    _claim(observation, plan, cancel),
+                )
     # A corrupt result, a source deleted mid-job, WORK_DIR gone. One file must
     # not take the rest of a sweep with it.
     except (ProbeError, OSError) as err:
@@ -411,7 +526,7 @@ def process(job: Job, dry_run: bool, source: str = "webhook") -> ProcessResult:
             from_path=plan.path if plan.out_path != plan.path else None,
             incidental=plan.incidental,
             incidental_rules=sorted(plan.incidental_rules),
-            downmixed=downmixed_names(plan) or None,
+            **changed_tracks(plan),
             bytes_before=bytes_before,
             bytes_after=bytes_after,
             **event_fields,

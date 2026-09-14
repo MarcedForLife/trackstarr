@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from conftest import read_events, set_config, set_langs, set_layouts, set_rules
-from trackstarr import config, executor, library, planner, retag, rewrites, sweep_cache
+from trackstarr import config, executor, library, mkvtag, planner, retag, rewrites, sweep_cache
 from trackstarr.cli import main as cli_main
 from trackstarr.executor import Outcome, apply_plan
 from trackstarr.media import ProbeError, duration, probe, stream_title
@@ -643,6 +643,47 @@ def test_a_language_mkvpropedit_does_not_know_fails_in_its_words(make_file):
     assert result.detail.startswith("mkvpropedit failed (2):")
     assert "xq" in result.detail
     assert langs_of(path, "audio") == ["eng"]
+
+
+@needs_mkvtoolnix
+def test_a_stopped_phase_leaves_the_real_header_alone(make_file):
+    """The gate against the tool itself: a header edit is over in a second, so
+    nothing could signal it once it starts. Either it never starts or it
+    finishes."""
+    path = make_file("f.mkv", [(6, "und", "")])
+
+    stopped = mkvtag.write_lang(path, 1, "jpn", lambda: False)
+
+    assert stopped.status is mkvtag.Outcome.STOPPED
+    assert langs_of(path, "audio") == [None], "still untagged"
+    # And the same edit writes the header once its phase commits.
+    assert mkvtag.write_lang(path, 1, "jpn", lambda: True).status is mkvtag.Outcome.RETAGGED
+    assert langs_of(path, "audio") == ["jpn"]
+
+
+@needs_mkvtoolnix
+def test_a_skip_arriving_mid_edit_lets_the_file_finish(make_file, monkeypatch):
+    """mkvpropedit is inside the header. Killing it there is the one way this
+    could damage a file, so a late skip is answered by reporting the tag that
+    was written."""
+    set_langs("original", "eng")
+    set_layouts("5.1")
+    set_rules(tag_original="always")
+    path = make_file("f.mkv", [(6, "und", "")])
+    cancel = executor.Cancel(path)
+    editing = mkvtag._propedit
+
+    def edit_then_skip(*args):
+        editing(*args)
+        assert not cancel.ask(), "too late to prevent the edit"
+
+    monkeypatch.setattr(mkvtag, "_propedit", edit_then_skip)
+
+    result = process(Job(path, "jpn"), dry_run=False, cancel=cancel)
+
+    assert result.status is Status.MODIFIED
+    assert langs_of(path, "audio") == ["jpn"]
+    assert len([line for line in read_events() if line["event"] == "modified"]) == 1
 
 
 @needs_mkvtoolnix

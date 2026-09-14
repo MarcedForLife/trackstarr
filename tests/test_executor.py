@@ -41,7 +41,7 @@ def _fresh_encoder_list():
 #: subprocess.run, which apply_plan no longer uses; the encoder list does.
 def _ffmpeg_says(monkeypatch, code: int = 0, stderr: str = "") -> None:
     monkeypatch.setattr(
-        executor, "_run_ffmpeg", lambda args, on_progress=None, rewriting="": (code, stderr)
+        executor, "_run_ffmpeg", lambda args, on_progress=None, cancel=None: (code, stderr)
     )
 
 
@@ -49,7 +49,7 @@ def _no_ffmpeg(monkeypatch):
     monkeypatch.setattr(
         executor,
         "_run_ffmpeg",
-        lambda args, on_progress=None, rewriting="": pytest.fail("ffmpeg must not run"),
+        lambda args, on_progress=None, cancel=None: pytest.fail("ffmpeg must not run"),
     )
 
 
@@ -57,7 +57,7 @@ def _capture_staged(monkeypatch) -> list[str]:
     """Collect the temp path each rewrite hands ffmpeg, stopping it there."""
     staged: list[str] = []
 
-    def capture(args, on_progress=None, rewriting=""):
+    def capture(args, on_progress=None, cancel=None):
         # The last argument is the temp path ffmpeg was told to write.
         staged.append(args[-1])
         raise _StopError
@@ -205,6 +205,51 @@ def test_failed_preflight_leaves_no_staged_file(tmp_path, monkeypatch):
     assert not os.path.isdir(work_dir) or not os.listdir(work_dir)
 
 
+def test_a_remux_target_that_appeared_during_the_encode_is_not_overwritten(
+    tmp_path, monkeypatch
+):
+    """The pre-flight check is an encode old by the time the rename happens, so
+    the file beside the source is looked at again once it is owned."""
+    source = tmp_path / "f.mp4"
+    source.write_bytes(b"content")
+    target = tmp_path / "f.mkv"
+
+    def encode(args, on_progress=None, cancel=None):
+        target.write_text("precious")
+        return 0, ""
+
+    monkeypatch.setattr(executor, "_run_ffmpeg", encode)
+    monkeypatch.setattr(executor, "_verify", lambda plan, info: None)
+    monkeypatch.setattr(executor, "probe", lambda path: {"format": {}, "streams": []})
+
+    outcome, detail = apply_plan(Plan(path=str(source), remuxing=True))
+    assert outcome is Outcome.FAILED
+    assert "already exists" in detail
+    assert target.read_text() == "precious"
+    assert source.read_bytes() == b"content"
+
+
+def test_the_files_are_claimed_before_the_rename_and_a_skip_there_defers(tmp_path, monkeypatch):
+    """The claim is where the caller fences the probes that read the file, so it
+    comes before the rename rather than after it."""
+    source = tmp_path / "f.mkv"
+    source.write_bytes(b"original")
+    _ffmpeg_says(monkeypatch)
+    monkeypatch.setattr(executor, "_verify", lambda plan, info: None)
+    monkeypatch.setattr(executor, "probe", lambda path: {"format": {}, "streams": []})
+    asked = []
+
+    def claim() -> bool:
+        asked.append(source.read_bytes())
+        return False
+
+    outcome, detail = apply_plan(Plan(path=str(source)), claim=claim)
+    assert outcome is Outcome.DEFERRED
+    assert "before it was published" in detail
+    assert asked == [b"original"]
+    assert source.read_bytes() == b"original"
+
+
 def test_clean_work_dir_age_gates_unless_no_rewrite_can_be_running():
     """serve can restart while a ``sweep --apply`` is mid-rewrite in the same
     WORK_DIR, so a fresh staged file may be its live ffmpeg output. Only proof
@@ -284,7 +329,7 @@ def test_matching_source_passes_the_staleness_check(tmp_path, monkeypatch):
     monkeypatch.setattr(
         executor,
         "_run_ffmpeg",
-        lambda args, on_progress=None, rewriting="": ran.append(args) or (1, "boom"),
+        lambda args, on_progress=None, cancel=None: ran.append(args) or (1, "boom"),
     )
     outcome, detail = apply_plan(plan)
     assert ran, "the rewrite should have been attempted"
@@ -436,7 +481,7 @@ def test_an_ffmpeg_timeout_is_a_failure_naming_the_limit(tmp_path, monkeypatch):
     """A wedged encode on one file must not stall a whole sweep silently."""
     set_config(FFMPEG_TIMEOUT=900)
 
-    def hang(args, on_progress=None, rewriting=""):
+    def hang(args, on_progress=None, cancel=None):
         raise executor.subprocess.TimeoutExpired(cmd="ffmpeg", timeout=900)
 
     monkeypatch.setattr(executor, "_run_ffmpeg", hang)
@@ -557,22 +602,28 @@ def test_an_exclusive_clean_warns_rather_than_stopping_startup(tmp_path, monkeyp
     assert "could not remove" in caplog.text
 
 
-def test_a_rewrite_in_flight_can_be_stopped(tmp_path):
-    """The activity page's "stop rewrites now". A real child process, since
-    what is being tested is that the registry can reach one and signal it."""
-    set_config(FFMPEG_TIMEOUT=60)
+def _sleeping(cancel: executor.Cancel) -> tuple[threading.Thread, list[tuple[int, str]]]:
+    """A real child process registered under ``cancel``, and where its result
+    will land. Registered by the time this returns, or a stop button would be
+    a no-op on exactly the rewrite somebody is trying to reach."""
     result: list[tuple[int, str]] = []
     running = threading.Thread(
-        target=lambda: result.append(executor._run_ffmpeg(["sleep", "30"], None, "/m/f.mkv")),
+        target=lambda: result.append(executor._run_ffmpeg(["sleep", "30"], None, cancel)),
         daemon=True,
     )
     running.start()
-    # Registered by the time it is running, or the button would be a no-op on
-    # exactly the rewrite somebody is trying to stop.
     for _ in range(200):
         if executor._running_ffmpeg:
             break
         time.sleep(0.01)
+    return running, result
+
+
+def test_a_rewrite_in_flight_can_be_stopped(tmp_path):
+    """The activity page's "stop rewrites now". A real child process, since
+    what is being tested is that the registry can reach one and signal it."""
+    set_config(FFMPEG_TIMEOUT=60)
+    running, result = _sleeping(executor.Cancel("/m/f.mkv"))
 
     # And answers for the file, so an edit of its tags waits; a run with no
     # file on record answers for none.
@@ -588,6 +639,35 @@ def test_a_rewrite_in_flight_can_be_stopped(tmp_path):
     assert not executor.is_rewriting("/m/f.mkv")
 
 
+def test_a_skip_that_lands_before_ffmpeg_starts_is_answered_when_it_does():
+    """The window between a phase being claimed and its first process: the
+    skip's own signal reached nothing, and without the mark the file would be
+    rewritten anyway, minutes after somebody was told it had been left alone."""
+    set_config(FFMPEG_TIMEOUT=60)
+    cancel = executor.Cancel("/m/f.mkv")
+
+    assert executor.terminate_phase(cancel) == 0, "nothing to signal yet"
+
+    code, _ = executor._run_ffmpeg(["sleep", "30"], None, cancel)
+    assert code < 0, "signalled as soon as it existed"
+    assert executor._running_ffmpeg == {}
+
+
+def test_a_skip_reaches_its_own_phase_and_not_the_next_claim_on_the_file():
+    """The phase it named finished while the skip was in flight and another run
+    claimed the same file. By name, this would kill the wrong rewrite."""
+    set_config(FFMPEG_TIMEOUT=60)
+    successor = executor.Cancel("/m/f.mkv")
+    running, result = _sleeping(successor)
+
+    assert executor.terminate_phase(executor.Cancel("/m/f.mkv")) == 0
+    assert executor.running_count() == 1, "the newly claimed rewrite is still going"
+    # An explicit abort is still by name: that is what its button says.
+    assert executor.terminate_running("/m/f.mkv") == 1
+    running.join(timeout=10)
+    assert result[0][0] < 0
+
+
 def test_a_stopped_rewrite_is_deferred_rather_than_failed(tmp_path, monkeypatch):
     """Nothing is wrong with the file and the next pass will rewrite it, so a
     stop must not alert like a corruption or fail a sweep's exit code."""
@@ -601,6 +681,59 @@ def test_a_stopped_rewrite_is_deferred_rather_than_failed(tmp_path, monkeypatch)
     assert source.read_bytes() == b"content"
     # The partial goes with it, rather than waiting on the age gate.
     assert not os.listdir(config.current().WORK_DIR)
+
+
+def _encode_then_skip(monkeypatch) -> None:
+    """A clean encode whose phase is skipped the moment ffmpeg exits, which is
+    the window between a verified result and the rename that publishes it."""
+
+    def encode_and_stop(args, on_progress=None, cancel=None):
+        executor.terminate_phase(cancel)
+        return 0, ""
+
+    monkeypatch.setattr(executor, "_run_ffmpeg", encode_and_stop)
+    monkeypatch.setattr(executor, "_verify", lambda plan, info: None)
+    monkeypatch.setattr(executor, "probe", lambda path: {"format": {}, "streams": []})
+
+
+def test_a_skip_before_publication_leaves_the_source_as_it_was(tmp_path, monkeypatch):
+    """The encode is finished and verified, and the skip still has something to
+    prevent: nothing has been renamed over the library file yet."""
+    source = tmp_path / "f.mkv"
+    source.write_bytes(b"original")
+    cancel = executor.Cancel(str(source))
+    _encode_then_skip(monkeypatch)
+
+    outcome, detail = apply_plan(needed_plan(str(source)), cancel=cancel)
+
+    assert outcome is Outcome.DEFERRED
+    assert "stopped before it was published" in detail
+    assert source.read_bytes() == b"original"
+    # And the encode nobody wants goes with it.
+    assert not os.listdir(config.current().WORK_DIR)
+
+
+def test_a_skip_after_publication_cannot_take_the_rewrite_back(tmp_path, monkeypatch):
+    """Past the gate the rename is the file. A skip landing here is answered by
+    reporting what really happened, not by pretending it was prevented."""
+    source = tmp_path / "f.mkv"
+    source.write_bytes(b"original")
+    cancel = executor.Cancel(str(source))
+    _ffmpeg_says(monkeypatch)
+    monkeypatch.setattr(executor, "_verify", lambda plan, info: None)
+    monkeypatch.setattr(executor, "probe", lambda path: {"format": {}, "streams": []})
+    real_publish = executor._publish
+
+    def publish_then_skip(tmp, out_path, source_stat):
+        real_publish(tmp, out_path, source_stat)
+        assert not cancel.ask(), "too late to prevent the rewrite"
+
+    monkeypatch.setattr(executor, "_publish", publish_then_skip)
+
+    outcome, _ = apply_plan(needed_plan(str(source)), cancel=cancel)
+
+    assert outcome is Outcome.APPLIED
+    assert source.read_bytes() != b"original", "the rewrite stands"
 
 
 def _open_fds() -> set[int]:
@@ -722,3 +855,35 @@ def test_the_encode_is_declared_over_before_the_file_is_published(tmp_path, monk
     )
     assert outcome is Outcome.APPLIED
     assert order == ["encoded", "published"]
+
+
+@pytest.mark.parametrize("by_name", [False, True])
+def test_a_late_abort_respects_the_publication_commit_gate(monkeypatch, by_name):
+    signalled = []
+
+    class Process:
+        def terminate(self):
+            signalled.append(True)
+
+    proc = Process()
+    cancel = executor.Cancel("/file")
+    assert cancel.commit()
+    monkeypatch.setattr(executor, "_running_ffmpeg", {proc: cancel})
+    assert (
+        executor.terminate_running("/file") if by_name else executor.terminate_phase(cancel)
+    ) == 0
+    assert not signalled
+
+
+def test_abort_by_name_marks_the_gate_even_if_ffmpeg_exits_before_the_signal(monkeypatch):
+    cancel = executor.Cancel("/file")
+
+    class Process:
+        def terminate(self):
+            raise ProcessLookupError("already exited")
+
+    monkeypatch.setattr(executor, "_running_ffmpeg", {Process(): cancel})
+    assert executor.terminate_running("/other") == 0
+    assert not cancel.stopped()
+    assert executor.terminate_running("/file") == 1
+    assert not cancel.commit()

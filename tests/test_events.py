@@ -77,8 +77,8 @@ def test_a_rewritten_file_leaves_an_event(tmp_path, stub_rewrite):
     assert entry["incidental"] == ["clear release tags"]
     assert entry["bytes_before"] == 10
     assert entry["seconds"] >= 0
-    # A plan with no encode streams downmixes nothing; the field is absent.
-    assert "downmixed" not in entry
+    # A plan with no encode streams downmixes nothing; the fields are absent.
+    assert "adds" not in entry and "rebuilds" not in entry and "drops" not in entry
     # Likewise from_path: the rewrite landed on the file it started from.
     assert "from_path" not in entry
 
@@ -161,7 +161,37 @@ def test_a_modified_event_names_the_downmixes_created(tmp_path, stub_rewrite):
     processing.process(Job(str(path)), dry_run=False)
 
     (entry,) = read_events()
-    assert entry["downmixed"] == ["2.0"]
+    assert entry["adds"] == ["2.0"]
+    assert "rebuilds" not in entry and "drops" not in entry
+
+
+def test_a_track_written_over_the_one_it_replaces_is_a_rebuild(tmp_path, stub_rewrite):
+    """One change, not a layout gained and a track lost, the same as the card
+    and the queue row count it."""
+    path = tmp_path / "f.mkv"
+    path.write_bytes(b"x")
+    stub_rewrite(
+        Plan(
+            path=str(path),
+            reasons=["rebuild 2.0 downmix from stream 1 (6ch eng)"],
+            tracks=[
+                {"index": 1, "kind": "audio", "channels": 6, "lang": "eng"},
+                {"index": 2, "kind": "audio", "channels": 2, "lang": "eng"},
+            ],
+            streams=[
+                OutStream(src=1, kind="audio"),
+                OutStream(
+                    src=1, kind="audio", encode=True, channels=2, lang="eng", title="2.0"
+                ),
+            ],
+        )
+    )
+
+    processing.process(Job(str(path)), dry_run=False)
+
+    (entry,) = read_events()
+    assert entry["rebuilds"] == ["2.0"]
+    assert "adds" not in entry and "drops" not in entry
 
 
 def test_failed_rewrite_leaves_an_event(stub_rewrite):
@@ -220,7 +250,9 @@ def test_reported_webhook_import_records_a_pending_event(monkeypatch):
     """In report mode an import leaves no other trace, so the handler records
     what would have happened."""
     set_config(REWRITE_MODE="report")
-    monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan("/x.mkv"))
+    monkeypatch.setattr(
+        processing, "build_plan", lambda p, lang, policy=None: make_plan("/x.mkv")
+    )
     jobs.handle(Job("/x.mkv"))
 
     (entry,) = read_events()
@@ -270,7 +302,9 @@ def test_a_webhook_only_install_can_still_resolve_its_config_ids(monkeypatch):
     """An install that never sweeps writes no other line carrying the full
     fingerprint, so without serve's its digests point at nothing."""
     set_config(REWRITE_MODE="report")
-    monkeypatch.setattr(processing, "build_plan", lambda p, lang: make_plan("/x.mkv"))
+    monkeypatch.setattr(
+        processing, "build_plan", lambda p, lang, policy=None: make_plan("/x.mkv")
+    )
     started = Policy.from_config()
     events.record("config", config=started.fingerprint(), config_id=started.digest())
 
