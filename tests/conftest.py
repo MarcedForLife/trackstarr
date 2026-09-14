@@ -21,15 +21,18 @@ import pytest
 from trackstarr import (
     config,
     covers,
-    holds,
     jobs,
     library,
+    lifecycle,
+    pauses,
     processing,
     rewrites,
     runlog,
     runs,
+    sweep_cache,
     users,
     webhook,
+    work,
 )
 from trackstarr.arr import Arr, radarr, sonarr
 from trackstarr.executor import Outcome
@@ -135,9 +138,13 @@ def _isolated_state(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "STATE_DIR", str(tmp_path / "state"))
     set_config(file={}, WEB_DIR="", **dict.fromkeys(_SERVICES, ""))
     # Memoised on the file's mark, which two tmp dirs can share.
-    holds.forget()
+    pauses.forget()
     rewrites.forget()
+    # An unwritten publication would otherwise land in the next test's store.
+    sweep_cache.forget()
+    library.reset_refresh()
     yield
+    library.stop_refresh()
     config.reset()
 
 
@@ -178,16 +185,18 @@ def _reset_accounts():
 def _drain_queue():
     """Here rather than in one file: a POST to the listener queues too."""
     yield
-    jobs.reset()
+    # Queue unit tests deliberately leave synthetic claims without workers.
+    # Real workers are joined by their owning tests before this boundary.
+    work.reset()
+    lifecycle.reset()
+    jobs.forget()
 
 
 @pytest.fixture(autouse=True)
 def _no_worker_threads(monkeypatch):
     """A real worker waits on the queue for ever, and a settings save brings the
     pool up. Left running, one drains the queue of every test that follows."""
-    monkeypatch.setattr(jobs, "worker", lambda: None)
-    monkeypatch.setattr(jobs, "_workers", 0)
-    monkeypatch.setattr(jobs, "_worker_names", 0)
+    monkeypatch.setattr(lifecycle, "wake", lambda: None)
 
 
 @pytest.fixture
@@ -239,6 +248,50 @@ def read_events() -> list[dict]:
         return []
 
 
+def registered(run_id: str) -> bool:
+    """Whether the run registry still reports this run, as a page would read it."""
+    return any(run["id"] == run_id for run in runs.snapshot()["runs"])
+
+
+def live_run(kind: str) -> dict | None:
+    """The first run of a kind the registry reports, or None."""
+    return next((run for run in runs.snapshot()["runs"] if run["kind"] == kind), None)
+
+
+def claim(queue):
+    """The task the dispatcher would take next, or None.
+
+    Takes the lock the real loop holds. The condition is reentrant, so a test
+    already holding it across several claims keeps that atomicity.
+    """
+    with queue.condition:
+        return queue._claim()
+
+
+def run_task(queue, task) -> None:
+    """Put one claimed task through to settlement, as its worker thread does."""
+    queue._execute(task)
+
+
+def step(queue) -> None:
+    """One turn of the dispatcher: take the next task and run it."""
+    run_task(queue, claim(queue))
+
+
+def queued_control(*rows: runs.Queued, **state) -> runs.Control:
+    """A scheduler view of one run's queue, as a read is handed one.
+
+    The scheduler counts and sums its rows before handing them over, so a test
+    that supplies them stands in for that.
+    """
+    return runs.Control(
+        queued=len(rows),
+        expected=sum(row.expected for row in rows),
+        upcoming=rows,
+        **state,
+    )
+
+
 #: Where each *arr really listens, so a test url reads like a real one.
 _ARR_URLS = {"radarr": "http://radarr:7878", "sonarr": "http://sonarr:8989"}
 
@@ -281,6 +334,17 @@ def stub_arrs(monkeypatch, items: list[dict], name: str = "radarr") -> None:
     monkeypatch.setattr(type(arr), "all_items", lambda self: items)
 
 
+def seed_verdict(store: SweepCache, path: str, key: FileKey, verdict: Verdict) -> None:
+    """Seed historical/synthetic cache data without claiming to observe a real file.
+
+    Library and API fixtures describe virtual multi-gigabyte media. Production
+    record/publication now verifies real file keys; fixtures install their
+    deliberately synthetic history under the same cache lock.
+    """
+    with sweep_cache._update_lock:
+        store._install(path, sweep_cache._entry(key, verdict))
+
+
 def cache(*entries: tuple[str, Verdict], size: int = 100) -> None:
     """Write a sweep cache holding these verdicts, as a sweep would."""
     os.makedirs(config.STATE_DIR, exist_ok=True)
@@ -288,7 +352,7 @@ def cache(*entries: tuple[str, Verdict], size: int = 100) -> None:
         os.path.join(config.STATE_DIR, "sweep-cache.json"), Policy.from_config().fingerprint()
     )
     for path, verdict in entries:
-        store.record(path, FileKey(size, 1, 1, "eng"), verdict)
+        seed_verdict(store, path, FileKey(size, 1, 1, "eng"), verdict)
     store.save()
 
 
@@ -347,12 +411,15 @@ def stub_rewrite(monkeypatch):
     ``detail``."""
 
     def _stub(plan: Plan, outcome: Outcome = Outcome.APPLIED, detail: str = "") -> None:
-        monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
-        monkeypatch.setattr(
-            processing,
-            "apply_plan",
-            lambda plan, on_progress=None, on_encoded=None: (outcome, detail),
-        )
+        def applied(plan, on_progress=None, on_encoded=None, cancel=None, claim=None):
+            # Claimed as the executor claims it, so the caller's ownership of
+            # the files is taken on the way through here too.
+            if claim is not None and not claim():
+                return Outcome.DEFERRED, "the rewrite was stopped before it was published"
+            return outcome, detail
+
+        monkeypatch.setattr(processing, "build_plan", lambda path, lang, policy=None: plan)
+        monkeypatch.setattr(processing, "apply_plan", applied)
 
     return _stub
 
@@ -511,7 +578,12 @@ def make_file(tmp_path):
 def listener():
     """A live Handler on a loopback socket."""
     server = ThreadingHTTPServer(("127.0.0.1", 0), webhook.Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    # shutdown() waits out one poll interval, and the 0.5s default is most of
+    # the suite's runtime across the tests that take a listener.
+    thread = threading.Thread(
+        target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True
+    )
+    thread.start()
     yield server
     server.shutdown()
     server.server_close()
@@ -624,7 +696,8 @@ def one_title(monkeypatch, tmp_path):
     swept = SweepCache(
         os.path.join(config.STATE_DIR, "sweep-cache.json"), Policy.from_config().fingerprint()
     )
-    swept.record(
+    seed_verdict(
+        swept,
         str(folder / "Dune.mkv"),
         FileKey(10, 1, 1, "eng"),
         Verdict(Status.PENDING, "add 2.0 downmix", tracks=[{"index": 0, "kind": "video"}]),
@@ -633,3 +706,21 @@ def one_title(monkeypatch, tmp_path):
     yield str(folder)
     library.forget()
     covers.forget()
+
+
+def cache_verdict(cache, path, key, verdict):
+    """Seed a walk through an explicit, fresh observation."""
+    with sweep_cache.observing(path, cache.path) as observation:
+        return sweep_cache.publish(
+            observation, path, path, key, verdict, cache.fingerprint, cache
+        )
+
+
+def publish_verdict(path, key, verdict, fingerprint):
+    """Seed a verdict through an explicit, fresh observation.
+
+    The store is rewritten once the coalescing window closes, so a test whose
+    assertion is the file itself calls sweep_cache.flush() first.
+    """
+    with sweep_cache.observing(path) as observation:
+        return sweep_cache.publish(observation, path, path, key, verdict, fingerprint)

@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-from trackstarr import config, events, notify, runs, sweep_cache
+from trackstarr import config, events, lifecycle, notify, runs, sweep_cache
 
 
 @pytest.fixture(autouse=True)
@@ -100,51 +100,51 @@ def clean_registry():
 
 
 def test_a_run_appearing_and_leaving_are_both_published(subscription, clean_registry):
-    runs.open_run("r#1", runs.IMPORT, filling=True)
+    lifecycle.open_run("r#1", runs.IMPORT, filling=True)
     assert subscription.take(0) == {notify.RUNS}
 
     # Reopening the same run is not a second appearance.
-    runs.open_run("r#1", runs.IMPORT)
+    lifecycle.open_run("r#1", runs.IMPORT)
     assert subscription.take(0) == set()
 
     # The delivery finishing closes it, which is the other moment an idle
     # page is waiting to hear about.
     runs.add_file("r#1")
-    runs.tally("r#1", "conform", path="/a.mkv")
+    lifecycle.tally("r#1", "conform", path="/a.mkv")
     # Movement within a run, which is a different kind of news.
     assert subscription.take(0) == {notify.PROGRESS}
-    runs.seal("r#1")
+    lifecycle.seal("r#1")
     assert subscription.take(0) == {notify.RUNS}
 
 
 def test_a_closed_walk_is_published_once(subscription, clean_registry):
-    runs.open_run("s#1", runs.SWEEP)
+    lifecycle.open_run("s#1", runs.SWEEP)
     subscription.take(0)
-    runs.close_run("s#1")
+    lifecycle.close_run("s#1")
     assert subscription.take(0) == {notify.RUNS}
     # Closing what is already gone says nothing.
-    runs.close_run("s#1")
+    lifecycle.close_run("s#1")
     assert subscription.take(0) == set()
 
 
 def test_a_walk_says_it_moved_at_most_so_often(subscription, clean_registry):
-    runs.open_run("s#1", runs.SWEEP)
+    lifecycle.open_run("s#1", runs.SWEEP)
     subscription.take(0)
-    runs.tally("s#1", "conform", path="/a.mkv")
+    lifecycle.tally("s#1", "conform", path="/a.mkv")
     assert subscription.take(0) == {notify.PROGRESS}
 
     # The next file, booked immediately after: a warm library answers from the
     # cache as fast as it can stat, and no page reads at that rate.
-    runs.tally("s#1", "conform", path="/b.mkv", cached=True)
+    lifecycle.tally("s#1", "conform", path="/b.mkv", cached=True)
     assert subscription.take(0) == set()
 
     runs._runs["s#1"].told -= runs._MOVED_SECONDS
-    runs.tally("s#1", "conform", path="/c.mkv", cached=True)
+    lifecycle.tally("s#1", "conform", path="/c.mkv", cached=True)
     assert subscription.take(0) == {notify.PROGRESS}
 
 
 def test_a_rewrite_readout_says_it_less_often_still(subscription, clean_registry):
-    runs.open_run("s#1", runs.SWEEP)
+    lifecycle.open_run("s#1", runs.SWEEP)
     runs.begin("s#1", "/a.mkv")
     subscription.take(0)
 
@@ -168,9 +168,9 @@ def test_a_rewrite_readout_says_it_less_often_still(subscription, clean_registry
 
 
 def test_a_stop_is_published_at_once(subscription, clean_registry):
-    runs.open_run("s#1", runs.SWEEP)
+    lifecycle.open_run("s#1", runs.SWEEP)
     subscription.take(0)
-    assert runs.stop("s#1")
+    assert lifecycle.stop("s#1")
     # Not held to the pace progress is: every other tab is showing a Stop
     # button that is no longer worth pressing.
     assert subscription.take(0) == {notify.RUNS}
@@ -178,9 +178,9 @@ def test_a_stop_is_published_at_once(subscription, clean_registry):
 
 def test_a_pause_and_a_resume_are_published(subscription, clean_registry):
     try:
-        assert runs.pause("marc")
+        assert lifecycle.pause("marc")
         assert subscription.take(0) == {notify.RUNS}
-        assert runs.resume("marc")
+        assert lifecycle.resume("marc")
         assert subscription.take(0) == {notify.RUNS}
     finally:
         runs.reset()
