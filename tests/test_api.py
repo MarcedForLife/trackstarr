@@ -11,17 +11,18 @@ import urllib.error
 
 import pytest
 
-from conftest import api, keep_alive, read_events, request, set_config, sign_in
+from conftest import api, claim, keep_alive, read_events, request, run_task, set_config, sign_in
 from trackstarr import (
     auth,
     config,
     connections,
     covers,
     events,
-    holds,
     library,
+    lifecycle,
     links,
     notify,
+    pauses,
     ratings,
     retag,
     runlog,
@@ -32,6 +33,7 @@ from trackstarr import (
     sweep,
     users,
     webhook,
+    work,
 )
 from trackstarr.api import _POST_ROUTES, Access
 from trackstarr.arr import AUTH_HEADER
@@ -672,11 +674,11 @@ def test_pausing_from_the_page_stops_the_service_and_says_who(
     # button's state comes from the service rather than an optimistic guess.
     assert answer["paused"] is True
     assert answer["paused_by"] == "admin"
-    assert clean_registry.paused()
+    assert lifecycle.paused()
 
     _, answer, _ = api(listener, "POST", "/api/runs/resume", {}, cookie=cookie)
     assert answer["paused"] is False
-    assert not clean_registry.paused()
+    assert not lifecycle.paused()
 
 
 def test_only_admins_may_work_the_controls(listener, fast_scrypt, clean_registry):
@@ -686,7 +688,7 @@ def test_only_admins_may_work_the_controls(listener, fast_scrypt, clean_registry
     for path in ("start", "stop", "pause", "resume", "abort"):
         assert api(listener, "POST", f"/api/runs/{path}", {}, cookie="")[0] == 401
         assert api(listener, "POST", f"/api/runs/{path}", {}, cookie=viewer_cookie)[0] == 403
-    assert not clean_registry.paused()
+    assert not lifecycle.paused()
 
 
 def test_a_sweep_started_from_the_page_answers_with_its_run(
@@ -896,7 +898,7 @@ def test_a_paused_service_will_not_be_talked_into_a_sweep(
 ):
     """It would only walk the library and park every thread on the gate."""
     users.add("admin", "right password", "admin")
-    clean_registry.pause("marc")
+    lifecycle.pause("marc")
     status, answer, _ = api(
         listener, "POST", "/api/runs/start", {}, cookie=sign_in(listener, "admin")
     )
@@ -909,14 +911,14 @@ def test_stopping_names_the_run_and_404s_on_one_that_has_finished(
 ):
     users.add("admin", "right password", "admin")
     cookie = sign_in(listener, "admin")
-    clean_registry.open_run("r#1", runs.SWEEP)
+    lifecycle.open_run("r#1", runs.SWEEP)
 
     assert api(listener, "POST", "/api/runs/stop", {}, cookie=cookie)[0] == 400
     assert api(listener, "POST", "/api/runs/stop", {"run": "r#9"}, cookie=cookie)[0] == 404
     assert api(listener, "POST", "/api/runs/stop", {"run": "r#1"}, cookie=cookie)[0] == 200
     # It stops between files rather than mid-file, so it is still registered
     # and the page can say why it is emptying out.
-    assert clean_registry.snapshot()["runs"][0]["stopping"] is True
+    assert lifecycle.snapshot()["runs"][0]["stopping"] is True
 
 
 def test_stopping_everything_ends_every_run_and_kills_the_rewrites(
@@ -927,8 +929,8 @@ def test_stopping_everything_ends_every_run_and_kills_the_rewrites(
     doing. Each still stops between files, so each writes its own summary."""
     users.add("admin", "right password", "admin")
     monkeypatch.setattr(runs, "terminate_running", lambda path="": 2)
-    clean_registry.open_run("s#1", runs.SWEEP)
-    clean_registry.open_run("i#1", runs.IMPORT)
+    lifecycle.open_run("s#1", runs.SWEEP)
+    lifecycle.open_run("i#1", runs.IMPORT)
 
     status, answer, _ = api(
         listener, "POST", "/api/runs/abort", {}, cookie=sign_in(listener, "admin")
@@ -937,7 +939,7 @@ def test_stopping_everything_ends_every_run_and_kills_the_rewrites(
     # Not "runs": pause and resume answer with the snapshot, and the page tells
     # the two apart by whether the answer carries one.
     assert "runs" not in answer
-    assert [run["stopping"] for run in clean_registry.snapshot()["runs"]] == [True, True]
+    assert [run["stopping"] for run in lifecycle.snapshot()["runs"]] == [True, True]
 
     # Pressed again with everything already winding down: nothing left to ask,
     # and the rewrites are asked again because a SIGTERM can be ignored.
@@ -953,9 +955,11 @@ def test_skipping_an_active_file_kills_that_rewrite_and_no_other(
     """Stop all is the blunt instrument. This one is for the film somebody has
     just sat down to watch while the sweep is halfway through it."""
     users.add("admin", "right password", "admin")
-    signalled: list[str] = []
-    monkeypatch.setattr(runs, "terminate_running", lambda path="": signalled.append(path))
-    clean_registry.open_run("r#1", runs.SWEEP)
+    signalled = []
+    monkeypatch.setattr(runs, "terminate_phase", lambda cancel: signalled.append(cancel) or 1)
+    lifecycle.open_run("r#1", runs.SWEEP)
+    work.scheduler.submit("r#1", "/data/f.mkv", "work", lambda: None)
+    task = claim(work.scheduler)
     clean_registry.begin("r#1", "/data/f.mkv")
 
     body = {"run": "r#1", "path": "/data/f.mkv"}
@@ -963,8 +967,10 @@ def test_skipping_an_active_file_kills_that_rewrite_and_no_other(
         listener, "POST", "/api/runs/skip", body, cookie=sign_in(listener, "admin")
     )
     assert (status, answer["where"]) == (200, "active")
-    assert signalled == ["/data/f.mkv"], "by name, not every encode on the machine"
-    assert clean_registry.skipped("r#1", "/data/f.mkv")
+    # The phase this skipped, not every encode of a file by that name.
+    assert signalled == [task.cancel]
+    assert work.scheduler.skipped("r#1", "/data/f.mkv")
+    run_task(work.scheduler, task)
 
 
 def test_skipping_a_file_the_run_will_not_reach_is_refused(
@@ -972,14 +978,19 @@ def test_skipping_a_file_the_run_will_not_reach_is_refused(
 ):
     users.add("admin", "right password", "admin")
     cookie = sign_in(listener, "admin")
-    clean_registry.open_run("r#1", runs.SWEEP)
+    lifecycle.open_run("r#1", runs.SWEEP)
 
     assert api(listener, "POST", "/api/runs/skip", {"run": "r#1"}, cookie=cookie)[0] == 400
     body = {"run": "r#9", "path": "/data/f.mkv"}
     assert api(listener, "POST", "/api/runs/skip", body, cookie=cookie)[0] == 404
+    # A live run, but no claim on that file: the queue is the one answer, so a
+    # page acting on a row the run has finished with is told so rather than
+    # holding a skip nothing will ever read.
+    body = {"run": "r#1", "path": "/data/never.mkv"}
+    assert api(listener, "POST", "/api/runs/skip", body, cookie=cookie)[0] == 404
 
 
-def test_a_hold_is_placed_by_path_and_listed_back(listener, fast_scrypt):
+def test_a_pause_is_placed_by_path_and_listed_back(listener, fast_scrypt):
     users.add("admin", "right password", "admin")
     set_config(MEDIA_DIRS=["/data/media/movies"])
     cookie = sign_in(listener, "admin")
@@ -989,49 +1000,69 @@ def test_a_hold_is_placed_by_path_and_listed_back(listener, fast_scrypt):
         "reason": "watching it",
     }
 
-    status, answer, _ = api(listener, "POST", "/api/holds", body, cookie=cookie)
+    status, answer, _ = api(listener, "POST", "/api/pauses", body, cookie=cookie)
     assert status == 200
-    (placed,) = answer["holds"]
+    (placed,) = answer["pauses"]
     assert (placed["by"], placed["reason"], placed["seconds"]) == ("admin", "watching it", 7200)
     # The countdown, not a stamp: a browser in another zone reads it the same
     # way this one does.
     assert placed["until"] is not None
 
-    _, listed, _ = api(listener, "GET", "/api/holds", cookie=cookie)
-    assert listed["holds"] == answer["holds"]
+    _, listed, _ = api(listener, "GET", "/api/pauses", cookie=cookie)
+    assert listed["pauses"] == answer["pauses"]
 
 
-def test_a_hold_outside_the_library_is_refused(listener, fast_scrypt):
+def test_a_pause_is_stored_under_the_path_the_pipeline_matches(listener, fast_scrypt):
+    """A page can send a file back in any spelling; the pause has to be keyed
+    as the sweep walked it, and the name beside it has to be the file's."""
+    users.add("admin", "right password", "admin")
+    set_config(MEDIA_DIRS=["/data/media/movies"])
+    cookie = sign_in(listener, "admin")
+    body = {"paths": ["/data/media/movies/Arrival (2016)/../Dune (2024)/Dune (2024).mkv"]}
+
+    _, answer, _ = api(listener, "POST", "/api/pauses", body, cookie=cookie)
+    (placed,) = answer["pauses"]
+    assert placed["path"] == "/data/media/movies/Dune (2024)/Dune (2024).mkv"
+    assert placed["name"] == "Dune (2024).mkv"
+    assert pauses.paused(placed["path"]) is not None
+
+
+def test_a_pause_outside_the_library_is_refused(listener, fast_scrypt):
     """A hold is matched by prefix, so one on / would quietly stop everything
     being rewritten."""
     users.add("admin", "right password", "admin")
     set_config(MEDIA_DIRS=["/data/media/movies"])
     cookie = sign_in(listener, "admin")
 
-    assert api(listener, "POST", "/api/holds", {"paths": ["/"]}, cookie=cookie)[0] == 400
-    assert api(listener, "POST", "/api/holds", {}, cookie=cookie)[0] == 400
+    assert api(listener, "POST", "/api/pauses", {"paths": ["/"]}, cookie=cookie)[0] == 400
+    assert api(listener, "POST", "/api/pauses", {}, cookie=cookie)[0] == 400
+    # Neither a climb out of the root nor a path read against a working
+    # directory nobody set.
+    escaping = {"paths": ["/data/media/movies/../secrets.mkv"]}
+    assert api(listener, "POST", "/api/pauses", escaping, cookie=cookie)[0] == 400
+    assert api(listener, "POST", "/api/pauses", {"paths": ["movies"]}, cookie=cookie)[0] == 400
     assert (
-        api(listener, "POST", "/api/holds", {"ids": ["arr:radarr:9"]}, cookie=cookie)[0] == 404
+        api(listener, "POST", "/api/pauses", {"ids": ["arr:radarr:9"]}, cookie=cookie)[0] == 404
     )
     body = {"paths": ["/data/media/movies/f.mkv"], "seconds": -1}
-    assert api(listener, "POST", "/api/holds", body, cookie=cookie)[0] == 400
+    assert api(listener, "POST", "/api/pauses", body, cookie=cookie)[0] == 400
 
 
-def test_lifting_a_hold_says_how_many_went(listener, fast_scrypt):
+def test_resuming_a_pause_says_how_many_went(listener, fast_scrypt):
     users.add("admin", "right password", "admin")
     set_config(MEDIA_DIRS=["/data/media/movies"])
     cookie = sign_in(listener, "admin")
     body = {"paths": ["/data/media/movies/Dune (2024)"]}
-    api(listener, "POST", "/api/holds", body, cookie=cookie)
+    api(listener, "POST", "/api/pauses", body, cookie=cookie)
 
-    status, answer, _ = api(listener, "POST", "/api/holds/lift", body, cookie=cookie)
-    assert (status, answer["lifted"], answer["holds"]) == (200, 1, [])
+    status, answer, _ = api(listener, "POST", "/api/pauses/resume", body, cookie=cookie)
+    assert (status, answer["resumed"], answer["pauses"]) == (200, 1, [])
     # Pressed twice, or lifted from another tab first.
-    _, again, _ = api(listener, "POST", "/api/holds/lift", body, cookie=cookie)
-    assert again["lifted"] == 0
+    _, again, _ = api(listener, "POST", "/api/pauses/resume", body, cookie=cookie)
+    assert again["resumed"] == 0
 
 
-@pytest.mark.parametrize("path", ["/api/runs/skip", "/api/holds", "/api/holds/lift"])
+@pytest.mark.parametrize("path", ["/api/runs/skip", "/api/pauses", "/api/pauses/resume"])
 def test_an_unreadable_body_is_a_400(listener, fast_scrypt, path):
     """The body still has to leave the socket: the connection is reused and the
     next request reads from where this one stopped."""
@@ -1042,7 +1073,7 @@ def test_an_unreadable_body_is_a_400(listener, fast_scrypt, path):
     assert status == 400
 
 
-def test_a_hold_that_cannot_be_stored_is_refused_rather_than_believed(
+def test_a_pause_that_cannot_be_stored_is_refused_rather_than_believed(
     listener, fast_scrypt, monkeypatch
 ):
     """A hold the page shows and nothing enforces is worse than a refusal: the
@@ -1054,48 +1085,50 @@ def test_a_hold_that_cannot_be_stored_is_refused_rather_than_believed(
     def refuse(*args, **kwargs):
         raise OSError("read-only file system")
 
-    monkeypatch.setattr(holds, "_save", refuse)
+    monkeypatch.setattr(pauses, "_save", refuse)
     body = {"paths": ["/data/media/movies/Dune (2024)"]}
-    assert api(listener, "POST", "/api/holds", body, cookie=cookie)[0] == 500
+    assert api(listener, "POST", "/api/pauses", body, cookie=cookie)[0] == 500
 
     # And the same on the way back out, where a lift nothing wrote would read
     # as the title being free again.
-    monkeypatch.setattr(holds, "lift", refuse)
-    assert api(listener, "POST", "/api/holds/lift", body, cookie=cookie)[0] == 500
+    monkeypatch.setattr(pauses, "resume_many", refuse)
+    assert api(listener, "POST", "/api/pauses/resume", body, cookie=cookie)[0] == 500
 
 
 def test_a_lift_still_has_to_name_something(listener, fast_scrypt):
     users.add("admin", "right password", "admin")
     cookie = sign_in(listener, "admin")
-    assert api(listener, "POST", "/api/holds/lift", {}, cookie=cookie)[0] == 400
+    assert api(listener, "POST", "/api/pauses/resume", {}, cookie=cookie)[0] == 400
 
 
-def test_a_full_store_refuses_another_hold(listener, fast_scrypt, monkeypatch):
-    """A hold is placed by hand, so the ceiling bounds a mistake: a script
+def test_a_full_store_refuses_another_pause(listener, fast_scrypt, monkeypatch):
+    """A pause is placed by hand, so the ceiling bounds a mistake: a script
     holding the whole library would stop every rewrite silently."""
     users.add("admin", "right password", "admin")
     set_config(MEDIA_DIRS=["/data/media/movies"])
-    monkeypatch.setattr(holds, "full", lambda: True)
+    monkeypatch.setattr(pauses, "MAX_PAUSES", 0)
     body = {"paths": ["/data/media/movies/Dune (2024)"]}
 
     status, answer, _ = api(
-        listener, "POST", "/api/holds", body, cookie=sign_in(listener, "admin")
+        listener, "POST", "/api/pauses", body, cookie=sign_in(listener, "admin")
     )
-    assert (status, "already held" in answer["status"]) == (409, True)
+    assert (status, "already paused" in answer["status"]) == (409, True)
 
 
-def test_holding_and_skipping_are_an_admins(listener, fast_scrypt, clean_registry):
+def test_pausing_and_skipping_are_an_admins(listener, fast_scrypt, clean_registry):
     """A viewer watches; both of these change what the machine does."""
     users.add("admin", "right password", "admin")
     users.add("watcher", "right password", "viewer")
     cookie = sign_in(listener, "watcher")
 
-    assert api(listener, "POST", "/api/holds", {"paths": ["/x"]}, cookie=cookie)[0] == 403
-    assert api(listener, "POST", "/api/holds/lift", {"paths": ["/x"]}, cookie=cookie)[0] == 403
+    assert api(listener, "POST", "/api/pauses", {"paths": ["/x"]}, cookie=cookie)[0] == 403
+    assert (
+        api(listener, "POST", "/api/pauses/resume", {"paths": ["/x"]}, cookie=cookie)[0] == 403
+    )
     skip = {"run": "r#1", "path": "/x"}
     assert api(listener, "POST", "/api/runs/skip", skip, cookie=cookie)[0] == 403
     # Reading what is held is not.
-    assert api(listener, "GET", "/api/holds", cookie=cookie)[0] == 200
+    assert api(listener, "GET", "/api/pauses", cookie=cookie)[0] == 200
 
 
 @pytest.mark.parametrize("path", ["start", "stop", "pause", "resume", "abort"])
@@ -1107,7 +1140,7 @@ def test_every_control_refuses_a_body_it_cannot_read(
     users.add("admin", "right password", "admin")
     cookie = sign_in(listener, "admin")
     assert api(listener, "POST", f"/api/runs/{path}", [1, 2], cookie=cookie)[0] == 400
-    assert not clean_registry.paused()
+    assert not lifecycle.paused()
 
 
 def test_the_collection_is_a_read_any_session_may_make(listener, fast_scrypt, one_title):
@@ -1247,7 +1280,7 @@ def test_a_cover_is_proxied_with_the_arr_key_left_behind(
     assert sent == [{"X-Api-Key": "key"}]
 
 
-def test_a_cover_the_browser_already_holds_is_not_sent_again(
+def test_a_cover_the_browser_already_pauses_is_not_sent_again(
     listener, fast_scrypt, one_title, monkeypatch
 ):
     """The week runs out eventually and a cache in between revalidates before
@@ -1409,22 +1442,23 @@ def test_a_recheck_of_titles_nothing_goes_by_is_a_404(
     assert status == 404
 
 
-def test_a_recheck_is_refused_while_a_sweep_is_going(
-    listener, fast_scrypt, clean_registry, one_title
+@pytest.mark.parametrize("mode", ["report", "apply"])
+def test_a_recheck_starts_while_a_sweep_is_going(
+    listener, fast_scrypt, clean_registry, one_title, monkeypatch, mode
 ):
-    """Both write the sweep cache whole, so the second would publish a copy
-    that never saw the first one's verdicts."""
+    monkeypatch.setattr(sweep, "recheck", lambda *args, **kwargs: {})
     users.add("admin", "right password", "admin")
     clean_registry.open_run("r#1", runs.SWEEP)
     status, answer, _ = api(
         listener,
         "POST",
         "/api/library/run",
-        {"ids": ["arr:radarr:7"]},
+        {"ids": ["arr:radarr:7"], "mode": mode},
         cookie=sign_in(listener, "admin"),
     )
-    assert status == 409
-    assert answer["run"] == "r#1", "named, so the page can offer to stop it"
+    assert status == 200
+    assert answer["run"] != "r#1"
+    assert answer["status"] == "started"
 
 
 def test_a_sweep_is_refused_while_a_recheck_is_going(listener, fast_scrypt, clean_registry):
@@ -1443,7 +1477,7 @@ def test_a_paused_service_will_not_be_talked_into_a_recheck(
     listener, fast_scrypt, clean_registry, one_title
 ):
     users.add("admin", "right password", "admin")
-    clean_registry.pause("marc")
+    lifecycle.pause("marc")
     status, answer, _ = api(
         listener,
         "POST",
@@ -1563,11 +1597,11 @@ def test_a_retag_waits_for_a_running_walk(
     users.add("admin", "right password", "admin")
     cookie = sign_in(listener, "admin")
     body = {"tracks": [{"path": f"{one_title}/Dune.mkv", "index": 1}], "lang": "jpn"}
-    runs.open_run("walk-1", kind)
+    lifecycle.open_run("walk-1", kind)
     try:
         status, answer, _ = api(listener, "POST", "/api/library/retag", body, cookie=cookie)
     finally:
-        runs.close_run("walk-1")
+        lifecycle.close_run("walk-1")
     assert (status, answer["status"], answer["run"]) == (409, said, "walk-1")
 
 
@@ -1612,3 +1646,36 @@ def test_a_retag_answers_for_each_track(listener, fast_scrypt, one_title, monkey
     assert seen == [
         ([(first, 1), (second, 2)], retag.Edit("jpn", {"commentary": True}), "admin")
     ]
+
+
+def test_pause_batches_are_atomic_and_extend_at_capacity(listener, fast_scrypt, monkeypatch):
+    users.add("admin", "right password", "admin")
+    set_config(MEDIA_DIRS=["/data/media/movies"])
+    cookie = sign_in(listener, "admin")
+    dune = "/data/media/movies/Dune"
+    arrival = "/data/media/movies/Arrival"
+    monkeypatch.setattr(pauses, "MAX_PAUSES", 1)
+    body = {"paths": [dune, arrival]}
+    assert api(listener, "POST", "/api/pauses", body, cookie=cookie)[0] == 409
+    assert pauses.current() == []
+    body = {"paths": [dune, dune]}
+    assert api(listener, "POST", "/api/pauses", body, cookie=cookie)[0] == 200
+    body["seconds"] = 3600
+    assert api(listener, "POST", "/api/pauses", body, cookie=cookie)[0] == 200
+    body["seconds"] = float("inf")
+    assert api(listener, "POST", "/api/pauses", body, cookie=cookie)[0] == 400
+    status, answer, _ = api(listener, "POST", "/api/pauses/resume", body, cookie=cookie)
+    assert (status, answer["resumed"]) == (200, 1)
+
+
+@pytest.mark.parametrize("endpoint", ["/api/runs/start", "/api/library/run"])
+def test_a_walk_cannot_report_started_after_shutdown(
+    listener, fast_scrypt, one_title, endpoint
+):
+    users.add("admin", "right password", "admin")
+    cookie = sign_in(listener, "admin")
+    assert lifecycle.shutdown(0)
+    status, answer, _ = api(
+        listener, "POST", endpoint, {"ids": ["arr:radarr:7"], "mode": "report"}, cookie=cookie
+    )
+    assert (status, answer["status"]) == (503, "the service is stopping")

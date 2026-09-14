@@ -4,10 +4,10 @@ import logging
 import threading
 from http.server import ThreadingHTTPServer
 
-from . import config, events, library, notify, ratings, runlog, runs, users
+from . import config, events, library, lifecycle, notify, ratings, runlog, users
 from .arr import all_arrs, register_webhooks
 from .executor import clean_work_dir, work_dir_is_remote
-from .jobs import load_parked, parked_recheck_loop, start_workers
+from .jobs import load_parked, parked_recheck_loop
 from .media_server import server_status
 from .policy import Policy
 from .processing import all_slots_held
@@ -37,10 +37,8 @@ def serve() -> None:  # pragma: no cover
     # Before anything picks up a file, so every worker log line is kept with
     # its file for the overview.
     runlog.capture()
-    # Before the workers exist, so a restart does not undo a pause.
-    runs.load_paused()
-    # Topped up again after a settings save.
-    start_workers()
+    # Restores the pause before dispatch, so a restart does not undo one.
+    lifecycle.startup()
     # Before the loop that drains it.
     load_parked()
     # Each loop runs whether or not its setting is on and re-reads it as it
@@ -70,4 +68,12 @@ def serve() -> None:  # pragma: no cover
         settings.SWEEP_AT or "disabled",
         settings.REWRITE_MODE,
     )
-    srv.serve_forever()
+    library.start_refresh()
+    try:
+        srv.serve_forever()
+    finally:
+        # SIGTERM lands here. The producers stop first, then the queue drains,
+        # so `docker stop` does not cut a rewrite that had seconds left.
+        if not lifecycle.shutdown():
+            log.warning("stopping with work still in flight")
+        library.stop_refresh()

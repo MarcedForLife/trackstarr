@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from conftest import api, get_raw, keep_alive, request, set_config, sign_in
+from conftest import api, get_raw, keep_alive, request, seed_verdict, set_config, sign_in
 from trackstarr import assets, config, covers, events, library, users
 from trackstarr.policy import Policy
 from trackstarr.status import Status
@@ -334,7 +334,8 @@ def test_a_swept_library_is_a_new_tag(listener, fast_scrypt, one_title):
     cache = SweepCache.load(
         os.path.join(config.STATE_DIR, "sweep-cache.json"), Policy.from_config().fingerprint()
     )
-    cache.record(
+    seed_verdict(
+        cache,
         os.path.join(config.current().MEDIA_DIRS[0], "Dune (2024)", "Extra.mkv"),
         FileKey(11, 2, 2, "eng"),
         Verdict(Status.CONFORM, "nothing to do"),

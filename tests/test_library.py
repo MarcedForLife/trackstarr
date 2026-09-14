@@ -4,6 +4,9 @@ import contextlib
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
+from threading import enumerate as threads
 
 import pytest
 
@@ -14,10 +17,11 @@ from conftest import (
     movie,
     pending,
     rewrote,
+    seed_verdict,
     set_config,
     stub_arrs,
 )
-from trackstarr import config, library, ratings, settings, state, sweep, sweep_cache
+from trackstarr import config, library, notify, ratings, settings, state, sweep, sweep_cache
 from trackstarr.policy import Policy
 from trackstarr.status import Status
 from trackstarr.sweep_cache import FileKey, SweepCache, Verdict
@@ -49,7 +53,7 @@ def walking(*entries: tuple[str, Verdict], size: int = 100):
         os.path.join(config.STATE_DIR, "sweep-cache.json"), Policy.from_config().fingerprint()
     )
     for path, verdict in entries:
-        store.record(path, FileKey(size, 1, 1, "eng"), verdict)
+        seed_verdict(store, path, FileKey(size, 1, 1, "eng"), verdict)
     store.publish_view()
     with sweep_cache.live(store):
         yield store
@@ -1138,7 +1142,9 @@ def test_the_grid_is_rebuilt_when_a_walk_offers_more(media, monkeypatch):
     stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
     with walking((f"{folder}/one.mkv", pending())) as store:
         first = library.shelf()
-        store.record(f"{folder}/two.mkv", FileKey(100, 1, 1, "eng"), Verdict(Status.CONFORM))
+        seed_verdict(
+            store, f"{folder}/two.mkv", FileKey(100, 1, 1, "eng"), Verdict(Status.CONFORM)
+        )
         store.publish_view()
         second = library.shelf()
     assert second is not first
@@ -1169,3 +1175,355 @@ def test_forgetting_drops_the_built_grid(media, monkeypatch):
     first = library.shelf()
     library.forget()
     assert library.shelf() is not first
+
+
+def test_live_covers_match_titles_without_verdict_rollups(media, monkeypatch):
+    folder = f"{media}/Dune (2024)"
+    stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
+    cache((f"{folder}/Dune.mkv", pending()))
+
+    library.known()  # Warm the shared catalogue before reading local labels.
+
+    # Live requests need only identity, including files not probed yet.
+    def no_rollups(*args):
+        pytest.fail("live covers should not calculate verdicts")
+
+    monkeypatch.setattr(library, "_tally", no_rollups)
+    paths = [f"{folder}/Dune.mkv", f"{folder}/extras/new.mkv", "/elsewhere/unknown.mkv"]
+    assert library.covers_for_paths(paths) == {
+        path: {"id": "arr:radarr:1", "name": "Dune"} for path in paths[:2]
+    }
+    assert library.covers_for_paths([]) == {}
+
+
+def test_queue_rows_carry_the_plan_a_card_would_badge(media, monkeypatch):
+    """The tallies a waiting file shows before anything opens it. A file no
+    sweep has judged is absent, which is how the row says so."""
+    folder = f"{media}/Dune (2024)"
+    stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
+    cache((f"{folder}/Dune.mkv", pending()))
+    assert library.plans_for_paths([f"{folder}/Dune.mkv", f"{folder}/new.mkv"]) == (
+        {
+            f"{folder}/Dune.mkv": {
+                "status": "pending",
+                "changes": 1,
+                "adds": ["2.0"],
+                "rebuilds": [],
+                "drops": 0,
+            }
+        },
+        True,
+    )
+    assert library.plans_for_paths([]) == ({}, True)
+
+
+def test_queue_plans_say_when_the_rules_have_moved_past_them(media, monkeypatch):
+    """A row badging changes the rules have since invalidated would promise
+    work the rewrite is about to replan. Freshness rides the same read the
+    tallies do, so nothing can change between the two."""
+    folder = f"{media}/Dune (2024)"
+    stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
+    cache((f"{folder}/Dune.mkv", pending()))
+    set_config(AUDIO_LAYOUTS=("2.0",))
+    library.forget()
+
+    reads = 0
+    parse = library._read_cache
+
+    def counted():
+        nonlocal reads
+        reads += 1
+        return parse()
+
+    monkeypatch.setattr(library, "_read_cache", counted)
+    plans, current = library.plans_for_paths([f"{folder}/Dune.mkv"])
+    assert (reads, current) == (1, False)
+    assert plans[f"{folder}/Dune.mkv"]["status"] == "pending"
+
+
+def test_file_detail_reads_exact_saved_plan_and_title(media, monkeypatch):
+    folder = f"{media}/Dune (2024)"
+    path = f"{folder}/Dune.mkv"
+    stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
+    cache((path, pending()))
+    answer = library.file_detail(path, card=True)
+    assert answer["file"]["path"] == path
+    assert answer["file"]["status"] == "pending"
+    assert answer["card"]["id"] == "arr:radarr:1"
+    assert "planned" in answer["file"] and "why" in answer["file"]
+    # The plan alone by default: the card is the expensive half.
+    assert library.file_detail(path)["card"] is None
+    assert library.file_detail("/unknown/file.mkv")["file"] is None
+    assert library.file_detail("/unknown/file.mkv", card=True)["card"] is None
+
+
+def test_activity_refresh_is_single_flight_local_and_notifies(monkeypatch):
+
+    entered, release = Event(), Event()
+    calls = []
+    now = [1000.0]
+    monkeypatch.setattr(library.time, "monotonic", lambda: now[0])
+    arr = configured_arr()
+    monkeypatch.setattr(library, "all_arrs", lambda: [arr])
+
+    def fetch(self):
+        calls.append(1)
+        entered.set()
+        assert release.wait(5)
+        return [movie(1, "Dune", "/media/Dune")]
+
+    monkeypatch.setattr(type(arr), "all_items", fetch)
+    monkeypatch.setattr(library, "_read_cache", lambda: pytest.fail("activity read verdicts"))
+    subscription = notify.subscribe()
+    paths = ["/media/Dune/file.mkv"]
+    try:
+        assert library.covers_for_paths(paths) == {}
+        assert entered.wait(5)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            assert all(
+                result == {} for result in pool.map(library.covers_for_paths, [paths] * 32)
+            )
+        assert calls == [1]
+        release.set()
+        library._catalogue.future.result(timeout=5)
+        assert subscription.take(0) == {notify.RUNS}
+        expected = {paths[0]: {"id": "arr:radarr:1", "name": "Dune"}}
+        assert library.covers_for_paths(paths) == expected
+        # Returned dictionaries cannot mutate the immutable projection.
+        library.covers_for_paths(paths)[paths[0]]["name"] = "changed"
+        assert library.covers_for_paths(paths) == expected
+        now[0] += library._INDEX_TTL
+        release.clear()
+        entered.clear()
+        assert library.covers_for_paths(paths) == expected
+        assert entered.wait(5)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            assert all(
+                result == expected
+                for result in pool.map(library.covers_for_paths, [paths] * 32)
+            )
+        release.set()
+        library._catalogue.future.result(timeout=5)
+        assert calls == [1, 1]
+        assert subscription.take(0) == set()  # Unchanged identities aren't news.
+    finally:
+        release.set()
+        notify.unsubscribe(subscription)
+
+
+def test_activity_failure_keeps_labels_and_backs_off(monkeypatch):
+
+    now = [1000.0]
+    monkeypatch.setattr(library.time, "monotonic", lambda: now[0])
+    arr = configured_arr()
+    monkeypatch.setattr(library, "all_arrs", lambda: [arr])
+    monkeypatch.setattr(type(arr), "all_items", lambda self: [movie(1, "Dune", "/media/Dune")])
+    library._catalogue.read()
+    paths = ["/media/Dune/file.mkv"]
+    expected = library.covers_for_paths(paths)
+    calls = []
+
+    def fail(self):
+        calls.append(1)
+        raise OSError("offline")
+
+    monkeypatch.setattr(type(arr), "all_items", fail)
+    now[0] += library._INDEX_TTL
+    for attempt in range(7):
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            assert all(
+                result == expected
+                for result in pool.map(library.covers_for_paths, [paths] * 32)
+            )
+        library._catalogue.future.result(timeout=5)
+        assert len(calls) == attempt + 1
+        assert library._catalogue.read() == ({}, False)
+        assert library.covers_for_paths(paths) == expected
+        assert library._catalogue.expires - now[0] == min(15 * 2**attempt, 300)
+        now[0] = library._catalogue.expires
+
+
+@pytest.mark.parametrize("changed_field", ["url", "key"])
+def test_activity_connection_generation_and_policy_invalidation(monkeypatch, changed_field):
+
+    entered, release = Event(), Event()
+    arr = configured_arr()
+    monkeypatch.setattr(library, "all_arrs", lambda: [arr])
+    monkeypatch.setattr(type(arr), "all_items", lambda self: [movie(1, "Dune", "/media/Dune")])
+    library._catalogue.read()
+    paths = ["/media/Dune/file.mkv"]
+    expected = library.covers_for_paths(paths)
+    library.forget()  # Ratings and policy invalidation retains title identities.
+
+    def blocked(self):
+        entered.set()
+        assert release.wait(5)
+        return [movie(2, "Old response", "/media/Dune")]
+
+    monkeypatch.setattr(type(arr), "all_items", blocked)
+    try:
+        assert library.covers_for_paths(paths) == expected
+        assert entered.wait(5)
+        old = library._catalogue.future
+        setattr(arr, changed_field, "new-connection")
+        assert library.covers_for_paths(paths) == {}
+        assert library._catalogue.future is old
+        release.set()
+        old.result(timeout=5)
+        assert not library._catalogue.labels
+        monkeypatch.setattr(
+            type(arr), "all_items", lambda self: [movie(3, "New", "/media/Dune")]
+        )
+        library._catalogue.read()
+        assert library.covers_for_paths(paths)[paths[0]]["name"] == "New"
+    finally:
+        release.set()
+
+
+def test_activity_reset_fences_refresh_and_joins_worker(monkeypatch):
+
+    entered, release, stopping = Event(), Event(), Event()
+    arr = configured_arr()
+    monkeypatch.setattr(library, "all_arrs", lambda: [arr])
+
+    def blocked(self):
+        entered.set()
+        assert release.wait(5)
+        return [movie(1, "Old", "/media/Dune")]
+
+    monkeypatch.setattr(type(arr), "all_items", blocked)
+    library.start_refresh()
+    assert entered.wait(5)
+    old = library._catalogue
+    shutdown = old.executor.shutdown
+
+    def joining(**kwargs):
+        stopping.set()
+        shutdown(**kwargs)
+
+    monkeypatch.setattr(old.executor, "shutdown", joining)
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            reset = pool.submit(library.reset_refresh)
+            assert stopping.wait(5)
+            assert not reset.done()
+            assert old.request()[0] == {}
+            release.set()
+            reset.result(timeout=5)
+        assert old.read() == ({}, False)
+        assert old.labels == {}
+        assert not any(thread.name.startswith("title-labels") for thread in threads())
+        assert library._catalogue is not old
+    finally:
+        release.set()
+
+
+def test_library_fetch_shared_with_activity_and_retried_after_invalidation(monkeypatch):
+    entered, release = Event(), Event()
+    arr = configured_arr()
+    monkeypatch.setattr(library, "all_arrs", lambda: [arr])
+    calls = []
+
+    def fetch(self):
+        calls.append(1)
+        if len(calls) == 1:
+            entered.set()
+            assert release.wait(5)
+        return [movie(len(calls), "Dune", "/media/Dune")]
+
+    monkeypatch.setattr(type(arr), "all_items", fetch)
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            full = pool.submit(library.known)
+            assert entered.wait(5)
+            assert library.covers_for_paths(["/media/Dune/file.mkv"]) == {}
+            library.forget()
+            release.set()
+            assert full.result(timeout=5).titles[0].id == "arr:radarr:2"
+        assert len(calls) == 2
+    finally:
+        release.set()
+
+
+def test_local_unclaimed_identities_survive_refresh_and_reject_stale_shelves(
+    media, monkeypatch
+):
+    stub_arrs(monkeypatch, [])
+    folder = f"{media}/Home movies"
+    cache((f"{folder}/file.mkv", pending()))
+    library.known()
+    expected = [(folder, f"dir:{folder}", "Home movies")]
+    assert library.pause_targets([f"dir:{folder}", "absent"]) == expected
+    claimed = library._catalogue.result[0]
+    library.forget()
+    library._catalogue.include_folders(claimed, [])  # Invalidated full view.
+    library._catalogue.read()
+    library._catalogue.include_folders(claimed, [])  # Replaced full view.
+    assert library.pause_targets([f"dir:{folder}"]) == expected
+    library._catalogue.include_folders(library._catalogue.result[0], [])
+    assert library.pause_targets([f"dir:{folder}"]) == []
+    # A stopped, never-started worker has no future to wait for.
+    library.reset_refresh()
+    library.stop_refresh()
+    assert library._catalogue.read() == ({}, False)
+
+
+def test_partial_refresh_replaces_only_healthy_service_identities(media, monkeypatch):
+    arrs = [configured_arr(), configured_arr("sonarr")]
+    monkeypatch.setattr(library, "all_arrs", lambda: arrs)
+    shared, removed, added = (f"{media}/{name}" for name in ("Shared", "Removed", "Added"))
+    local = f"{media}/Local"
+    cache((f"{local}/file.mkv", pending()))
+    responses = {
+        "radarr": [movie(1, "Movie", shared), movie(2, "Removed", removed)],
+        "sonarr": [movie(1, "Series", shared)],
+    }
+
+    def fetch(self):
+        if responses[self.name] is None:
+            raise OSError("offline")
+        return responses[self.name]
+
+    monkeypatch.setattr(type(arrs[0]), "all_items", fetch)
+    library.known()
+    assert library.pause_targets(["arr:radarr:1"]) == [(shared, "arr:radarr:1", "Movie")]
+    subscription = notify.subscribe()
+    try:
+        responses["radarr"] = None
+        responses["sonarr"] = [movie(1, "Series", shared), movie(3, "Added", added)]
+        library.forget()
+        assert not library.known().complete
+        assert library.pause_targets(["arr:radarr:1", "arr:sonarr:1", "arr:sonarr:3"]) == [
+            (shared, "arr:radarr:1", "Movie"),
+            (added, "arr:sonarr:3", "Added"),
+        ]
+        assert subscription.take(0) == {notify.RUNS}
+        # Recovery with an empty response removes both old movie identities,
+        # revealing the second service's duplicate folder.
+        responses["radarr"] = []
+        library.forget()
+        assert library.known().complete
+        assert library.pause_targets(["arr:radarr:1", "arr:radarr:2"]) == []
+        assert library.pause_targets(["arr:sonarr:1"]) == [(shared, "arr:sonarr:1", "Series")]
+        assert subscription.take(0) == {notify.RUNS}
+        responses["radarr"] = [movie(4, "Replacement", removed)]
+        responses["sonarr"] = None
+        library.forget()
+        assert not library.known().complete
+        assert library.pause_targets(["arr:radarr:4", "arr:sonarr:3"]) == [
+            (removed, "arr:radarr:4", "Replacement"),
+            (added, "arr:sonarr:3", "Added"),
+        ]
+        assert library.pause_targets([f"dir:{local}"]) == [(local, f"dir:{local}", "Local")]
+        # Replacing only one connection retains the unaffected service.
+        arrs[0].key = "replacement-key"
+        responses["radarr"] = None
+        library._catalogue.read()
+        assert library.pause_targets(["arr:radarr:4"]) == []
+        assert library.pause_targets(["arr:sonarr:3"]) == [(added, "arr:sonarr:3", "Added")]
+        responses["sonarr"] = []
+        library.forget()
+        assert not library.known().complete
+        assert library.pause_targets(["arr:sonarr:1", "arr:sonarr:3"]) == []
+    finally:
+        notify.unsubscribe(subscription)
