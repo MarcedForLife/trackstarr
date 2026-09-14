@@ -1,0 +1,83 @@
+"""The verdict file itself: its envelope, one read and one write.
+
+A leaf module. Ownership, revision fencing, live views and pruning are
+:mod:`trackstarr.sweep_cache`'s, and none of them touch the disk.
+"""
+
+import contextlib
+import json
+import logging
+import os
+from dataclasses import dataclass, field
+
+from .state import write_json
+
+log = logging.getLogger(__name__)
+
+#: The entry format. Bump it whenever a field is added, removed or changes
+#: meaning: :meth:`trackstarr.sweep_cache.SweepCache.carry` moves unchanged
+#: entries forward byte for byte, so an added field would otherwise never
+#: arrive. A mismatch drops the store whole; the rebuild is a sweep.
+FORMAT = 6
+
+
+@dataclass(frozen=True)
+class Document:
+    """The store as one read found it.
+
+    ``entries`` holds only what this build wrote, so no caller has to guess
+    which fields another build's entry carries.
+    """
+
+    entries: dict[str, dict] = field(default_factory=dict)
+    #: Whether a store was there to read. Absence is not damage; the first
+    #: verdict can still be written.
+    present: bool = False
+    #: Whether the entries are this build's format.
+    known: bool = True
+    #: The rule fingerprint they were judged under.
+    fingerprint: object = None
+
+
+def load(path: str) -> Document | None:
+    """The store, or None where something is there that is not one.
+
+    A missing file reads as an empty document: nothing has swept yet. Damaged
+    JSON and a library that is not an object are the same refusal, since
+    neither says where a verdict would go.
+    """
+    try:
+        with open(path) as store_file:
+            data = json.load(store_file)
+    except FileNotFoundError:
+        return Document()
+    except (OSError, json.JSONDecodeError) as err:
+        log.warning("ignoring unreadable verdict store %s: %s", path, err)
+        return None
+    if not isinstance(data, dict):
+        return None
+    if data.get("format") != FORMAT:
+        return Document(present=True, known=False, fingerprint=data.get("config"))
+    entries = data.get("files")
+    if not isinstance(entries, dict):
+        return None
+    return Document(
+        {name: entry for name, entry in entries.items() if isinstance(entry, dict)},
+        present=True,
+        fingerprint=data.get("config"),
+    )
+
+
+def write(path: str, fingerprint: dict, entries: dict[str, dict]) -> None:
+    """Replace the store with these entries, judged under these rules.
+
+    Raises OSError. The directory is the caller's to make, since a write that
+    cannot land is worth reporting rather than working around.
+    """
+    write_json(path, {"format": FORMAT, "config": fingerprint, "files": entries})
+
+
+def remove(path: str) -> None:
+    """Delete the store. Raises OSError for anything but its absence."""
+    with contextlib.suppress(FileNotFoundError):
+        os.remove(path)

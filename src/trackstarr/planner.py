@@ -167,8 +167,8 @@ def describe(plan: Plan) -> str:
     parts = list(plan.reasons)
     parts += [f"(also {item})" for item in plan.incidental]
     if plan.skip:
-        return f"{plan.skip}: {'; '.join(parts)}" if parts else plan.skip
-    return "; ".join(parts)
+        return f"{plan.skip}: {' · '.join(parts)}" if parts else plan.skip
+    return " · ".join(parts)
 
 
 def planned_tracks(plan: Plan) -> list[dict]:
@@ -228,6 +228,62 @@ def track_changes(plan: Plan) -> dict:
     return {name: value for name, value in told.items() if value}
 
 
+class Changes(NamedTuple):
+    """What one file's plan would add, rebuild and drop."""
+
+    adds: list[str]
+    rebuilds: list[str]
+    drops: int
+
+
+def _dropped(planned: list[dict], tracks: list[dict]) -> list[dict]:
+    """The file's streams the rewrite would not carry over."""
+    kept = {track.get("src") for track in planned}
+    return [track for track in tracks if track.get("index") not in kept]
+
+
+def _claim(dropped: list[dict], generated: dict) -> bool:
+    """Remove from ``dropped`` the track this generated one replaces.
+
+    The same rule as :func:`_claim_replacement`, over the track lists rather
+    than the planner's own bookkeeping, so a regenerated downmix is one change
+    rather than a layout gained and a track lost. Matched by language first: a
+    German 2.0 dropped for a French one is two changes. An untagged drop is
+    claimed by any match in its layout.
+    """
+    for lang in (generated.get("lang"), None):
+        for at, track in enumerate(dropped):
+            if (
+                track.get("kind") == "audio"
+                and track.get("channels") == generated.get("channels")
+                and track.get("lang") == lang
+            ):
+                del dropped[at]
+                return True
+    return False
+
+
+def changes(planned: list[dict], tracks: list[dict]) -> Changes:
+    """A rewrite as the three tallies a card, a queue row and a history line
+    all draw.
+
+    Over the two track lists rather than a plan, so the same answer is reached
+    from a plan being recorded and from a cache entry read back. A generated
+    track claims its drop before its name is checked, so an unnamed rebuild
+    still keeps its predecessor out of the drop count.
+    """
+    dropped = _dropped(planned, tracks)
+    adds: list[str] = []
+    rebuilds: list[str] = []
+    for track in planned:
+        if "generated" not in (track.get("flags") or []):
+            continue
+        named = rebuilds if _claim(dropped, track) else adds
+        if name := track.get("title"):
+            named.append(name)
+    return Changes(adds, rebuilds, len(dropped))
+
+
 def why(plan: Plan) -> dict:
     """The plan's conclusion in the history's vocabulary: the four lists a
     "modified" event records, plus the skip. :func:`describe` is the prose
@@ -253,9 +309,9 @@ def _record(plan: Plan, rule: str, reason: str) -> None:
         plan.rules.add(rule)
 
 
-def new_plan(path: str, original_lang: str | None) -> Plan:
-    """A Plan carrying the policy resolved from config at build time."""
-    policy = Policy.from_config()
+def new_plan(path: str, original_lang: str | None, policy: Policy | None = None) -> Plan:
+    """A plan under the supplied policy, or current settings for a direct call."""
+    policy = policy or Policy.from_config()
     return Plan(
         path=path,
         policy=policy,
@@ -264,8 +320,8 @@ def new_plan(path: str, original_lang: str | None) -> Plan:
     )
 
 
-def build_plan(path: str, original_lang: str | None) -> Plan:
-    plan = new_plan(path, original_lang)
+def build_plan(path: str, original_lang: str | None, policy: Policy | None = None) -> Plan:
+    plan = new_plan(path, original_lang, policy)
     if not plan.policy.allowed_container(path):
         ext = os.path.splitext(path)[1].lower()
         plan.skip = f"container {ext or '(none)'} not in ALLOWED_EXTS"
