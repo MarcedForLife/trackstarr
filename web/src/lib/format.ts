@@ -96,6 +96,13 @@ export function describe(track: {
 	return parts.filter(Boolean).join(' · ');
 }
 
+/** The flags worth drawing beside a track: what the rules read it as, minus the
+ * two a row says by other means. "generated" is the mark on a new track and
+ * "default" is what most first tracks are. */
+export function badges(track: { flags?: string[] }): string[] {
+	return (track.flags ?? []).filter((flag) => flag !== 'generated' && flag !== 'default');
+}
+
 /** The last part of a path. */
 export function basename(path: string | undefined): string {
 	return (path ?? '').slice((path ?? '').lastIndexOf('/') + 1);
