@@ -2,7 +2,7 @@
 // hundred episodes in no useful order.
 
 import { named } from '$lib/format';
-import { VERDICTS, type LibraryFile, type Verdict } from '$lib/library';
+import { worstOf, type LibraryFile, type Verdict } from '$lib/library';
 
 export type Season = {
 	// The number, 0 for specials and null for a file that names none.
@@ -34,11 +34,6 @@ function episodeOf(file: LibraryFile): number {
 	return found ? Number(found[2]) : Number.MAX_SAFE_INTEGER;
 }
 
-function worst(files: LibraryFile[]): Verdict {
-	const held = new Set(files.map((file) => file.status));
-	return VERDICTS.find((verdict) => held.has(verdict)) ?? 'unchecked';
-}
-
 function label(number: number | null): string {
 	if (number === null) return 'Other';
 	return number === 0 ? 'Specials' : `Season ${number}`;
@@ -66,7 +61,7 @@ export function seasons(files: LibraryFile[]): Season[] | null {
 		files: episodes.sort(
 			(one, two) => episodeOf(one) - episodeOf(two) || one.name.localeCompare(two.name)
 		),
-		state: worst(episodes)
+		state: worstOf(episodes)
 	}));
 	// Latest first, so a season with no number sorts behind every one that has.
 	grouped.sort((one, two) => (two.number ?? -1) - (one.number ?? -1));

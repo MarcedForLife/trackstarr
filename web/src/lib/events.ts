@@ -26,7 +26,10 @@ export type Event = {
 	rules?: string[];
 	incidental?: string[];
 	incidental_rules?: string[];
-	downmixed?: string[];
+	// What the rewrite came to, in the fields a card and a queue row carry.
+	adds?: string[];
+	rebuilds?: string[];
+	drops?: number;
 	// Set where mkvpropedit wrote a tag and no rewrite ran at all.
 	in_place?: boolean;
 	bytes_before?: number;
@@ -62,7 +65,7 @@ export type Event = {
 	index?: number;
 	kind?: string;
 	by?: string;
-	// Why a title was held. `seconds` is how long the hold was placed for, and
+	// Why a title was paused. `seconds` is how long the pause was placed for, and
 	// is absent on one with no end.
 	reason?: string;
 };
@@ -193,10 +196,16 @@ export function moved(entry: Event): string[] {
  * What happened, in the few words a single line has room for.
  *
  * `title` is the library's own name for the title the line is about, where the
- * page has the card for it. A hold is placed on a whole title, whose folder is
+ * page has the card for it. A pause is placed on a whole title, whose folder is
  * named for the *arr rather than for a reader.
  */
 export function headline(entry: Event, title = ''): string {
+	// What to call the file where the page has no card for its title: a film is
+	// told from another rewrite of itself by its year and release words.
+	const release = () => {
+		const { name, detail } = named(entry.path);
+		return detail ? `${name} ${detail}` : name;
+	};
 	switch (entry.event) {
 		// One file reaching one verdict, in the library's word for it. The
 		// series name, not the file: this line truncates and a release name is
@@ -205,7 +214,7 @@ export function headline(entry: Event, title = ''): string {
 		case 'pending':
 		case 'failed':
 		case 'deferred':
-			return `${verdictLabel(entry.event)}: ${named(entry.path).name}`;
+			return `${verdictLabel(entry.event)}: ${title || release()}`;
 		case 'sweep':
 			// A stopped sweep's count is part of a library, and must say so.
 			return entry.stopped
@@ -221,14 +230,16 @@ export function headline(entry: Event, title = ''): string {
 			return 'Processing paused';
 		case 'resumed':
 			return 'Processing resumed';
-		case 'held':
-			return `Held ${title || named(entry.path).name}`;
+		case 'held': // Events written before pause terminology.
+		case 'item_paused':
+			return `Paused ${title || release()}`;
 		case 'lifted':
-			return `Hold lifted on ${title || named(entry.path).name}`;
+		case 'item_resumed':
+			return `Resumed ${title || release()}`;
 		case 'skipped':
-			return `Skipped ${named(entry.path).name}`;
+			return `Skipped ${release()}`;
 		case 'retagged':
-			return `Retagged ${title || named(entry.path).name}`;
+			return `Retagged ${title || release()}`;
 		case 'webhook': {
 			// Counted even for one, since a release file name truncates at any
 			// width. The name goes on the second line.
@@ -266,6 +277,12 @@ export function retagged(entry: Event): string[] {
  * rewrites of one series differ only in this. */
 export function marker(entry: Event): string {
 	return entry.path ? named(entry.path).episode : '';
+}
+
+/** The year and release words off the file's name, which is what a queue row
+ * puts under a title. */
+export function release(entry: Event): string {
+	return entry.path ? named(entry.path).detail : '';
 }
 
 /** How long ago, as a person says it rather than as a clock does. */
@@ -318,10 +335,12 @@ export function detail(entry: Event): string {
 		case 'paused':
 		case 'resumed':
 		case 'lifted':
+		case 'item_resumed':
 			return entry.by ? `By ${entry.by}.` : '';
-		case 'held':
+		case 'held': // Events written before pause terminology.
+		case 'item_paused':
 			return [
-				`Not rewritten ${entry.seconds ? `for ${duration(entry.seconds)}` : 'until it is lifted'}`,
+				`Paused ${entry.seconds ? `for ${duration(entry.seconds)}` : 'until resumed'}`,
 				entry.reason,
 				entry.by && `by ${entry.by}`
 			]
@@ -361,18 +380,39 @@ function extension(path: string | undefined): string {
 	return base.slice(base.lastIndexOf('.'));
 }
 
-/** The mono chips under a line: the numbers, kept out of the prose. */
-export function chips(entry: Event): string[] {
+/** What the rewrite wrote, as the library's own chips read it. */
+export function layouts(entry: Event): { adds?: string[]; rebuilds?: string[] } {
+	return { adds: entry.adds, rebuilds: entry.rebuilds };
+}
+
+// Events whose line already spells out how long the pause was placed for.
+const PAUSES = new Set(['held', 'item_paused']);
+
+/** What the rewrite moved, as chips beside the layouts: the tracks it took
+ * away, the container it published under, and what it cost in bytes. */
+export function measures(entry: Event): string[] {
 	const out: string[] = [];
+	if (entry.drops) out.push(`−${entry.drops}`);
 	if (entry.from_path) out.push(`${extension(entry.from_path)} to ${extension(entry.path)}`);
 	if (entry.bytes_before !== undefined && entry.bytes_after !== undefined) {
 		const delta = entry.bytes_after - entry.bytes_before;
 		out.push(`${delta < 0 ? '−' : '+'}${size(delta)}`);
 	}
-	for (const layout of entry.downmixed ?? []) out.push(`+${layout}`);
+	return out;
+}
+
+/** How long it took and under what terms, for the dim end of the line. */
+export function notes(entry: Event): string[] {
+	const out: string[] = [];
+	// A pause says its length in words, and the same span twice reads as a
+	// stutter. Under a second there is nothing worth saying: a probe that
+	// deferred the file took no time and reads as "0s".
+	if (entry.seconds !== undefined && entry.seconds >= 1 && !PAUSES.has(entry.event))
+		out.push(duration(entry.seconds));
+	// Named, since the line it joins is a list of counts.
+	if (entry.event === 'sweep' && entry.library_bytes)
+		out.push(`${size(entry.library_bytes)} library`);
 	if (entry.in_place) out.push('in place');
-	if (entry.event === 'sweep' && entry.library_bytes) out.push(size(entry.library_bytes));
-	if (entry.seconds !== undefined) out.push(duration(entry.seconds));
 	if (entry.dry_run) out.push('dry run');
 	return out;
 }
@@ -408,7 +448,9 @@ export function details(entry: Event, before?: Event): Detail[] {
 			add('Reasons', entry.reasons ?? []);
 			add('Alongside', entry.incidental ?? []);
 			add('Rules', [[...(entry.rules ?? []), ...(entry.incidental_rules ?? [])].join(', ')]);
-			add('Generated', entry.downmixed ?? []);
+			add('Added', entry.adds ?? []);
+			add('Rebuilt', entry.rebuilds ?? []);
+			add('Dropped', entry.drops ? [count(entry.drops, 'track')] : []);
 			if (entry.bytes_before !== undefined && entry.bytes_after !== undefined) {
 				add('Size', [`${size(entry.bytes_before)} to ${size(entry.bytes_after)}`], true);
 			}
@@ -449,10 +491,12 @@ export function details(entry: Event, before?: Event): Detail[] {
 			add('Changed', moved(entry));
 			add('By', [entry.by]);
 			break;
-		case 'held':
+		case 'held': // Events written before pause terminology.
+		case 'item_paused':
 		case 'lifted':
+		case 'item_resumed':
 		case 'skipped':
-			// A hold on a whole title is on its folder, and a skip is on one file.
+			// A pause on a whole title is on its folder, and a skip is on one file.
 			add(entry.event === 'skipped' ? 'File' : 'Path', [entry.path], true);
 			add('Reason', [entry.reason]);
 			add('By', [entry.by]);
@@ -496,26 +540,6 @@ export function searchable(entry: Event, title = ''): string {
 export function dot(entry: Event): string {
 	return isVerdict(entry.event) ? pip[entry.event] : 'bg-faint';
 }
-
-/**
- * The thread a feed's covers and marks are beaded on: one line down the middle
- * of the 40px column they take, behind them, so it never crosses the words and
- * costs no gutter. Goes in a list's own `relative` box.
- *
- * Faded at both ends rather than inset by a measure: a cover sits at the top of
- * its line and a mark in the middle of one, so where the first and the last
- * node begin depends on which kind they are, and a hard stop landed short of
- * one and past the other. The fade also says the history carries on past the
- * last line loaded, which it does. Held here because two feeds draw it and the
- * offset is only right while it matches the column's width.
- *
- * Behind the beads by z-index, not by luck: an absolute span paints over its
- * plain siblings, and the events page only hid it because `content-visibility`
- * makes a stacking context of every row. The list it goes in must `isolate`,
- * so behind means behind the rows rather than behind the page.
- */
-export const THREAD =
-	'absolute inset-y-0 left-[19.5px] -z-10 w-px bg-line [mask-image:linear-gradient(to_bottom,transparent,#000_2.5rem,#000_calc(100%_-_2.5rem),transparent)]';
 
 /**
  * The mark for a line about the service rather than a title, which has its

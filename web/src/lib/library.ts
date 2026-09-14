@@ -577,6 +577,13 @@ export const VERDICTS: Verdict[] = [
 	'missing'
 ];
 
+/** The worst verdict a set of files reached, which is the state of whatever
+ * holds them. `unchecked` for an empty set, as for a file no sweep has read. */
+export function worstOf(files: LibraryFile[]): Verdict {
+	const held = new Set(files.map((file) => file.status));
+	return VERDICTS.find((verdict) => held.has(verdict)) ?? 'unchecked';
+}
+
 // What a chip row cuts the grid by. The two below read a card's own count, so
 // "what have I rewritten" and "what needs a tag" are filters rather than badges
 // to go hunting for. Hiding reads VERDICTS above, since it goes on the word a
@@ -653,4 +660,27 @@ export function verdictLabel(state: Verdict): string {
 /** The sentence behind the word, for a `title` attribute. */
 export function verdictHint(state: Verdict): string {
 	return VOCABULARY[state].hint;
+}
+
+/** The layouts a rewrite would add and rebuild, badged as a poster badges them:
+ * green for a gain, accent for a rebuild, since a rebuild is one change and not
+ * a gain plus a drop. A card's rollup and one file's plan carry the same three
+ * fields, so the grid and the queue read alike. */
+// One chip, wherever a change is drawn. The plain tone is for what a rewrite
+// takes away or costs, which has no colour of its own.
+export const CHIP = 'rounded px-1 py-px font-mono text-[10px] leading-tight';
+export const PLAIN_TONE = 'border border-line-strong text-dim';
+export const PLAIN_CHIP = `${CHIP} ${PLAIN_TONE}`;
+
+export function changed(plan: {
+	adds?: string[];
+	rebuilds?: string[];
+}): { chip: string; tone: string }[] {
+	return [
+		...(plan.adds ?? []).map((layout) => ({ chip: `+${layout}`, tone: 'bg-ok/90 text-on-ok' })),
+		...(plan.rebuilds ?? []).map((layout) => ({
+			chip: layout,
+			tone: 'bg-accent-fill/90 text-on-accent'
+		}))
+	];
 }

@@ -8,7 +8,7 @@ import { onDestroy } from 'svelte';
 import type { Landed, Snapshot } from '$lib/activity.svelte';
 import { refusalText } from '$lib/api';
 import { count, getEvents, LOOKBACK, type Event } from '$lib/events';
-import { runTitles, type Card, type RunMode } from '$lib/library';
+import { runTitles, type RunMode } from '$lib/library';
 import { stopRun, type Run } from '$lib/runs';
 import { told } from '$lib/stream';
 
@@ -39,8 +39,7 @@ export class Recheck {
 	 * not offer one. */
 	mayRewrite = $state(false);
 	paused = $state(false);
-	/** A sweep or somebody else's re-check. The service allows one walk at a
-	 * time, so the controls say so up front. */
+	/** A sweep or somebody else's re-check, watched for fresh verdicts. */
 	otherRun = $state<Run | null>(null);
 	/** The run being watched, as the last snapshot had it. */
 	running = $state<Run | null>(null);
@@ -60,6 +59,7 @@ export class Recheck {
 	// When it was picked up, for the warming window.
 	#watchedAt = Date.now();
 	#starting = $state(false);
+	#requestedMode = $state<RunMode>('report');
 	// Whether the watched run was started from a title's sheet, which decides
 	// where its progress and result show.
 	#fromSheet = $state(false);
@@ -111,19 +111,8 @@ export class Recheck {
 		return this.#fromSheet;
 	}
 
-	// Anything a new re-check would have to wait for, the page's own run
-	// included.
-	#inTheWay = $derived(this.otherRun ?? this.running);
-
-	/** Why a run cannot start now, or nothing. One place, so every control
-	 * refuses in the same words. */
-	refuses = $derived(
-		this.paused
-			? 'Processing is paused. Resume it first.'
-			: this.#inTheWay
-				? `A ${this.#inTheWay.kind === 'sweep' ? 'sweep' : 're-check'} is running. Stop it first.`
-				: ''
-	);
+	/** A service pause still prevents new title runs. Other walks can coexist. */
+	refuses = $derived(this.paused ? 'Processing is paused. Resume it first.' : '');
 
 	/** Which press the bar shows as going. Only where the run was started from
 	 * says so. */
@@ -134,13 +123,14 @@ export class Recheck {
 	runner = $derived({
 		mayRewrite: this.mayRewrite,
 		refuses: this.refuses,
-		busy: this.#fromSheet ? this.started : '',
+		busy: (this.#fromSheet ? this.started || (this.warming ? this.#requestedMode : '') : '') as
+			'' | RunMode,
 		starting: this.#fromSheet && (this.#starting || this.warming),
 		error: this.#fromSheet ? this.refusal : '',
 		run: this.#fromSheet ? this.running : null,
 		stopping: this.stopping,
 		done: this.#fromSheet ? this.line('this title') : '',
-		onrun: (card: Card, mode: RunMode) => this.runOne(card, mode),
+		onrun: (id: string, mode: RunMode) => this.runOne(id, mode),
 		onstop: () => this.stop()
 	});
 
@@ -177,8 +167,8 @@ export class Recheck {
 
 	/** One title from inside its own sheet. The sheet stays open and its panel
 	 * becomes the progress bar; the selection is untouched. */
-	runOne(card: Card, mode: RunMode) {
-		return this.#launch([card.id], true, mode);
+	runOne(id: string, mode: RunMode) {
+		return this.#launch([id], true, mode);
 	}
 
 	async stop() {
@@ -211,6 +201,7 @@ export class Recheck {
 		if (!ids.length) return;
 		this.#starting = true;
 		this.started = mode;
+		this.#requestedMode = mode;
 		this.refusal = '';
 		this.summary = null;
 		this.#fromSheet = fromSheet;

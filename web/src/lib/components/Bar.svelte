@@ -9,9 +9,11 @@
 		now,
 		max,
 		text,
-		// A file's bar is thinner and moves once a second, eased linearly so a
-		// steady encode reads as one line. A run's steps, so it eases out.
+		// A file's bar is thinner, and moves once a second.
 		file = false,
+		// Eased linearly, so a bar stepping once a second reads as one line. A bar
+		// that only moves on a snapshot eases out instead.
+		glide = file,
 		// A finished run, the one time the fill is not the accent.
 		done = false,
 		class: extra = ''
@@ -21,6 +23,7 @@
 		max: number;
 		text: string;
 		file?: boolean;
+		glide?: boolean;
 		done?: boolean;
 		class?: string;
 	} = $props();
@@ -37,11 +40,9 @@
 	} ${extra}`}
 >
 	<div
-		class={`h-full origin-left rounded-full ${
-			file
-				? 'bg-accent-fill/70 transition-transform duration-1000 ease-linear'
-				: `transition-transform duration-500 ease-out ${done ? 'bg-ok' : 'bg-accent-fill'}`
-		}`}
+		class={`h-full origin-left rounded-full transition-transform ${
+			glide ? 'duration-1000 ease-linear' : 'duration-500 ease-out'
+		} ${file ? 'bg-accent-fill/70' : done ? 'bg-ok' : 'bg-accent-fill'}`}
 		style={`transform: scaleX(${fill})`}
 	></div>
 </div>

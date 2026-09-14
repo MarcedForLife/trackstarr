@@ -39,6 +39,22 @@ const initial = new Map<string, string>(
 		])
 );
 
+/** The registered colours a `[data-theme]` block sets, keyed "dark". Anchored
+    at a line start, or the palette blocks match too. */
+const themed = new Map<string, Record<string, string>>(
+	[...css.matchAll(/(?:^|\n)\[data-theme='(dark|light)'\]\s*\{([^}]*)\}/g)].map(
+		([, theme, block]) => [
+			theme,
+			Object.fromEntries(Object.entries(tokens(block)).filter(([name]) => initial.has(name)))
+		]
+	)
+);
+
+/** The registered colours the palettes are answerable for. */
+const paletteInitial = new Map(
+	[...initial].filter(([name]) => !(name in (themed.get('dark') ?? {})))
+);
+
 const DEFAULT = 'brass dark';
 
 describe('the palettes layout.css writes', () => {
@@ -71,7 +87,7 @@ describe('the palettes layout.css writes', () => {
 	// from wherever it starts — gets the initial value, so a stale one is a
 	// wrong colour for one frame of the swap.
 	test('start at the default palette', () => {
-		expect(Object.fromEntries(initial)).toEqual(palettes.get(DEFAULT));
+		expect(Object.fromEntries(paletteInitial)).toEqual(palettes.get(DEFAULT));
 	});
 
 	// The Custom palette writes the same set inline, so a token added here
@@ -83,7 +99,27 @@ describe('the palettes layout.css writes', () => {
 	// Registering them is also what lets the swap animate: an unregistered
 	// custom property is a string and flips on the spot.
 	test('are all registered as colours', () => {
-		expect([...initial.keys()].sort()).toEqual(Object.keys(palettes.get(DEFAULT) ?? {}).sort());
+		expect([...paletteInitial.keys()].sort()).toEqual(
+			Object.keys(palettes.get(DEFAULT) ?? {}).sort()
+		);
+	});
+});
+
+// The demo notice's violet is the one colour a palette must not move, so the
+// bar says "not the real thing" whichever accent is on.
+describe('the colours a theme owns rather than a palette', () => {
+	test('are set in light and dark, and by no palette', () => {
+		const names = Object.keys(themed.get('dark') ?? {});
+		expect(names.length).toBeGreaterThan(0);
+		expect(Object.keys(themed.get('light') ?? {})).toEqual(names);
+		for (const [palette, block] of palettes)
+			expect([palette, names.filter((name) => name in block)]).toEqual([palette, []]);
+	});
+
+	// Dark is what every initial value is, as above.
+	test('start at their dark value', () => {
+		for (const [name, value] of Object.entries(themed.get('dark') ?? {}))
+			expect([name, initial.get(name)]).toEqual([name, value]);
 	});
 });
 

@@ -4,30 +4,40 @@ import { detail, details, headline, searchable, type Event } from '$lib/events';
 function entry(over: Partial<Event> = {}): Event {
 	return {
 		ts: '2026-09-08T16:00:00+12:00',
-		event: 'held',
+		event: 'item_paused',
 		version: '1',
 		...over
 	};
 }
 
+describe('a verdict headline', () => {
+	test('uses the library title and keeps the release filename in the details', () => {
+		const path = '/movies/Sintel (2010)/Sintel (2010) Bluray-1080p.mkv';
+		const event = entry({ event: 'modified', path });
+		expect(headline(event, 'Sintel')).toBe('Modified: Sintel');
+		expect(headline(event)).toContain('Bluray-1080p');
+		expect(details(event).find((row) => row.label === 'File')?.values).toEqual([path]);
+	});
+});
+
 describe('the headline of a hold', () => {
 	const path = '/data/media/tv/MINDHUNTER (2017) {tvdb-328708}';
 
 	test("says the library's name for the title where the page has the card", () => {
-		expect(headline(entry({ path }), 'Mindhunter')).toBe('Held Mindhunter');
-		expect(headline(entry({ event: 'lifted', path }), 'Mindhunter')).toBe(
-			'Hold lifted on Mindhunter'
+		expect(headline(entry({ path }), 'Mindhunter')).toBe('Paused Mindhunter');
+		expect(headline(entry({ event: 'item_resumed', path }), 'Mindhunter')).toBe(
+			'Resumed Mindhunter'
 		);
 	});
 
 	test('falls back to the folder without what the *arr hung off it', () => {
-		expect(headline(entry({ path }))).toBe('Held MINDHUNTER (2017)');
+		expect(headline(entry({ path }))).toBe('Paused MINDHUNTER (2017)');
 	});
 
 	test('opens on a path, since a title is held by its folder', () => {
 		const labels = (line: Event) => details(line).map((row) => row.label);
 		expect(labels(entry({ path }))).toContain('Path');
-		expect(labels(entry({ event: 'lifted', path }))).toContain('Path');
+		expect(labels(entry({ event: 'item_resumed', path }))).toContain('Path');
 		// A skip is on one file, and says so.
 		expect(labels(entry({ event: 'skipped', path: '/data/media/tv/S01E01.mkv' }))).toContain(
 			'File'
@@ -94,8 +104,13 @@ describe('a line as a search runs over it', () => {
 	});
 
 	test('is rebuilt when the card for its title lands after the first look', () => {
-		const late = entry({ event: 'held', path: '/data/media/tv/MINDHUNTER (2017)' });
+		const late = entry({ event: 'item_paused', path: '/data/media/tv/MINDHUNTER (2017)' });
 		expect(searchable(late)).toContain('mindhunter 2017');
-		expect(searchable(late, 'Mindhunter')).toContain('held mindhunter');
+		expect(searchable(late, 'Mindhunter')).toContain('paused mindhunter');
 	});
+});
+
+test('older item pause events keep their title wording', () => {
+	expect(headline(entry({ event: 'held' }), 'Dune')).toBe('Paused Dune');
+	expect(headline(entry({ event: 'lifted' }), 'Dune')).toBe('Resumed Dune');
 });

@@ -2,7 +2,6 @@ import { beforeEach, expect, test, vi } from 'vitest';
 import { Snapshot } from '$lib/activity.svelte';
 import { Recheck } from '$lib/recheck.svelte';
 import type { Event, EventPage } from '$lib/events';
-import type { Card } from '$lib/library';
 import type { Activity, Run } from '$lib/runs';
 
 //: The module's own window: how long a run answered for but not yet in any
@@ -237,7 +236,7 @@ test('a receipt does not land on a run adopted while the history was read', asyn
 test('a sweep next door ending is verdicts rewritten, and nothing of this page', async () => {
 	const recheck = watching([run({ id: 'sweep-1', kind: 'sweep', label: '' })]);
 	expect(recheck.otherRun?.id).toBe('sweep-1');
-	expect(recheck.refuses).toBe('A sweep is running. Stop it first.');
+	expect(recheck.refuses).toBe('');
 
 	snapshot([]);
 	await look();
@@ -251,7 +250,7 @@ test('a sweep next door ending is verdicts rewritten, and nothing of this page',
 test('a sheet that is dismissed takes its own receipt with it, but not a live run', async () => {
 	vi.mocked(runTitles).mockResolvedValue({ run: 'r1', titles: 1 });
 	const recheck = watching();
-	await recheck.runOne({ id: 'title-1' } as Card, 'report');
+	await recheck.runOne('title-1', 'report');
 	snapshot([run()]);
 	await look();
 
@@ -278,3 +277,19 @@ test('a service that cannot be reached is a condition, not a refusal', async () 
 	expect(recheck.walking).toBe(true);
 	expect(recheck.refusal).toBe('');
 });
+
+test.each(['report', 'apply'] as const)(
+	'keeps the title %s status until its run snapshot arrives',
+	async (mode) => {
+		vi.mocked(runTitles).mockResolvedValue({ run: 'r1', titles: 1 });
+		const recheck = watching();
+		await recheck.runOne('title-1', mode);
+		expect(recheck.runner.starting).toBe(true);
+		expect(recheck.runner.busy).toBe(mode);
+		snapshot([run({ dry_run: mode === 'report' })]);
+		await look();
+		expect(recheck.runner.starting).toBe(false);
+		expect(recheck.runner.run?.id).toBe('r1');
+		expect(recheck.runner.busy).toBe('');
+	}
+);
