@@ -1,4 +1,4 @@
-// The service's answers, as tests/test_contract.py wrote them down, held
+// The service's answers, as tests/test_contract.py wrote them down, paused
 // against the types the pages read them through. A key the service has renamed
 // or added fails `npm run check` here; a count or an event the pages have no
 // words for fails `npm test`.
@@ -8,9 +8,17 @@ import { fileRows, fileStatus, progressLabel, remaining, verdicts } from '$lib/r
 import type { Activity, Run, Stage } from '$lib/runs';
 import { asVerdict, FILTERS, pip, tint, VERDICTS, verdictLabel } from '$lib/library';
 import type { Shelf, Summary, TitleDetail } from '$lib/library';
-import { chips, detail, details, headline, verdicts as counted } from '$lib/events';
+import {
+	detail,
+	details,
+	headline,
+	layouts,
+	measures,
+	notes,
+	verdicts as counted
+} from '$lib/events';
 import type { EventPage } from '$lib/events';
-import type { Hold } from '$lib/holds';
+import type { Pause } from '$lib/pauses';
 import type { SettingsSnapshot } from '$lib/settings';
 import { SERVICES } from '$lib/connections';
 import type { ConnectionResult } from '$lib/connections';
@@ -23,7 +31,7 @@ import libraryJson from './fixtures/library.json';
 import summaryJson from './fixtures/summary.json';
 import titleJson from './fixtures/title.json';
 import eventsJson from './fixtures/events.json';
-import holdsJson from './fixtures/holds.json';
+import pausesJson from './fixtures/pauses.json';
 import settingsJson from './fixtures/settings.json';
 import connectionJson from './fixtures/connection.json';
 import vocabulary from './fixtures/vocabulary.json';
@@ -49,7 +57,7 @@ const shelf = spelled(libraryJson);
 const summary = spelled(summaryJson);
 const title = spelled(titleJson);
 const page = spelled(eventsJson);
-const held = spelled(holdsJson);
+const paused = spelled(pausesJson);
 const settings = spelled(settingsJson);
 const connection = spelled(connectionJson);
 
@@ -78,11 +86,17 @@ function pins<Shape>() {
 	return <Value extends Shape>(value: Value & Exactly<Shape, Value>): Value => value;
 }
 
-// A JSON import widens every string, and two fields here are narrower than
-// that; what they may hold is asserted below. `seen` is stamped on arrival by
+// A JSON import widens every string, and three fields here are narrower than
+// that; what they may pause is asserted below. `seen` is stamped on arrival by
 // getActivity, so the wire never carries it.
 const activity = pins<Activity>()({
 	...wire,
+	plans: Object.fromEntries(
+		Object.entries(wire.plans).map(([path, plan]) => [
+			path,
+			{ ...plan, status: asVerdict(plan.status) }
+		])
+	),
 	runs: wire.runs.map((run) => ({
 		...run,
 		kind: run.kind as Run['kind'],
@@ -109,7 +123,7 @@ pins<EventPage>()({
 	...page,
 	titles: Object.fromEntries(Object.entries(page.titles).map(([id, card]) => [id, verdicted(card)]))
 });
-pins<{ holds: Hold[] }>()(held);
+pins<{ pauses: Pause[] }>()(paused);
 pins<SettingsSnapshot>()(settings);
 pins<ConnectionResult>()(connection);
 
@@ -196,7 +210,9 @@ describe('the history', () => {
 		for (const entry of page.events) {
 			expect(headline(entry), entry.event).not.toBe(entry.event);
 			detail(entry);
-			chips(entry);
+			notes(entry);
+			layouts(entry);
+			measures(entry);
 			expect(details(entry).length).toBeGreaterThan(0);
 		}
 	});

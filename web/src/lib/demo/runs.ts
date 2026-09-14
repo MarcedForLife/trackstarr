@@ -4,8 +4,16 @@
 // serves; what changes between snapshots is published to the stream, so the
 // pages refetch exactly as they would against a service.
 
+import {
+	queueKey,
+	type FileCovers,
+	type FilePlans,
+	type QueueItem,
+	type QueuePage
+} from '$lib/queue';
 import type { Activity, ActiveFile, DoneFile, Run } from '$lib/runs';
-import { nextRuns } from './cron';
+import { nextRun } from './cron';
+import { added, changesOf } from './judge';
 import { configOf } from './settings';
 import { publish } from './stream';
 import {
@@ -18,20 +26,23 @@ import {
 	VERSION
 } from './util';
 import {
-	heldTitle,
-	holdsNow,
+	bytesOf,
+	pausedTitle,
+	pausesNow,
 	probe,
 	record,
 	rejudge,
+	reset,
 	rewrite,
+	currentState,
 	type File,
 	type SimRun,
 	type Title,
-	type World
-} from './world';
+	type State
+} from './state';
 
 // One file a run has picked up, with what the simulation needs to carry it on.
-type Active = ActiveFile & { since: number; readyAt: number };
+type Active = ActiveFile & { since: number; readyAt: number; discovery?: boolean };
 
 const TICK_MS = 1000;
 // The probe and staging before an encode starts, and how long a walk takes.
@@ -51,27 +62,29 @@ function speedOf(file: File): number {
 	return Math.round((SPEED_LOW + jitter(file.path) * SPEED_SPREAD) * 10) / 10;
 }
 
-function configId(world: World): string {
-	return digest(JSON.stringify(configOf(world.settings, VERSION)));
+function configId(state: State): string {
+	return digest(JSON.stringify(configOf(state.settings, VERSION)));
 }
 
 function isActive(file: ActiveFile): file is Active {
 	return 'since' in file;
 }
 
-function log(world: World, run: string, path: string, line: string): void {
+// The console's format, which is what the service keeps per file. A clock, the
+// level in a seven-wide column, then the message.
+function log(state: State, run: string, path: string, line: string, level = 'INFO'): void {
 	const key = `${run}|${path}`;
-	const lines = world.logs.get(key) ?? [];
-	lines.push(`${new Date().toISOString().slice(11, 19)} ${line}`);
-	world.logs.set(key, lines);
+	const lines = state.logs.get(key) ?? [];
+	lines.push(`${new Date().toISOString().slice(11, 19)} ${level.padEnd(7)} ${line}`);
+	state.logs.set(key, lines);
 }
 
-export function runLog(world: World, run: string, path: string): string[] {
-	return world.logs.get(`${run}|${path}`) ?? [];
+export function runLog(state: State, run: string, path: string): string[] {
+	return state.logs.get(`${run}|${path}`) ?? [];
 }
 
 function newRun(
-	world: World,
+	state: State,
 	kind: SimRun['kind'],
 	started: number,
 	dryRun: boolean,
@@ -99,11 +112,12 @@ function newRun(
 	};
 }
 
-function pickUp(world: World, run: SimRun, file: File, now: number): Active {
+function pickUp(state: State, run: SimRun, file: File, now: number, discovery = false): Active {
 	const active: Active = {
 		path: file.path,
 		seconds: 0,
 		stage: 'working',
+		discovery,
 		duration: 0,
 		done: 0,
 		speed: 0,
@@ -112,25 +126,26 @@ function pickUp(world: World, run: SimRun, file: File, now: number): Active {
 		readyAt: now + WORKING_MS
 	};
 	run.active.push(active);
-	log(world, run.id, file.path, `probing ${file.name}`);
+	log(state, run.id, file.path, `probing ${file.path}`);
 	return active;
 }
 
 /** The runs going as the demo opens: a sweep somebody started by hand, part
  * way through the pending files, and an import waiting on its rewrite slot. */
-export function seed(world: World): void {
-	const now = world.born;
-	const sweep = newRun(world, 'sweep', now - SWEEP_STARTED_AGO_MS, false);
-	const files = world.titles
+export function seed(state: State): void {
+	const now = state.born;
+	const sweep = newRun(state, 'sweep', now - SWEEP_STARTED_AGO_MS, false);
+	const files = state.titles
 		.flatMap((title) => title.files)
 		.filter((file) => file.tracks.length || file.status === 'unsupported');
 	const pending = files.filter(
-		(file) => file.status === 'pending' && !file.hardlinked && !heldTitle(world, file.title)
+		(file) =>
+			file.status === 'pending' && !file.hardlinked && !pausedTitle(state, file.title, file.path)
 	);
 	const [first, ...rest] = pending;
 	for (const file of files) {
 		if (pending.includes(file)) continue;
-		const status = doneRow(world, file, now)?.status ?? file.status;
+		const status = doneRow(state, file, now)?.status ?? file.status;
 		sweep.counts[status] = (sweep.counts[status] ?? 0) + 1;
 	}
 	sweep.total = files.length;
@@ -149,52 +164,50 @@ export function seed(world: World): void {
 		readyAt: now - 56_000
 	};
 	sweep.active.push(encoding);
-	log(world, sweep.id, first.path, `probing ${first.name}`);
-	log(world, sweep.id, first.path, `plan: ${(first.why.reasons ?? []).join('; ')}`);
-	log(world, sweep.id, first.path, ffmpegLine(first));
+	log(state, sweep.id, first.path, `probing ${first.path}`);
+	log(state, sweep.id, first.path, `plan: ${(first.why.reasons ?? []).join(' · ')}`);
+	log(state, sweep.id, first.path, ffmpegLine(first));
 	for (const file of files) {
-		const done = doneRow(world, file, now);
+		const done = doneRow(state, file, now);
 		if (done) {
 			sweep.recent.unshift(done);
-			log(world, sweep.id, file.path, `probing ${file.name}`);
+			log(state, sweep.id, file.path, `probing ${file.path}`);
 			log(
-				world,
+				state,
 				sweep.id,
 				file.path,
-				done.status === 'modified'
-					? `published over the original after ${done.seconds}s`
-					: `${done.status}: ${done.detail}`
+				done.status === 'modified' ? `rewrote ${file.path}` : `${done.status}: ${done.detail}`
 			);
 		}
 	}
-	world.runs.push(sweep);
+	state.runs.push(sweep);
 
-	const importRun = newRun(world, 'import', now - IMPORT_STARTED_AGO_MS, false, 'radarr');
-	const delivered = world.byId.get('arr:radarr:9')!.files[0];
+	const importRun = newRun(state, 'import', now - IMPORT_STARTED_AGO_MS, false, 'radarr');
+	const delivered = state.byId.get('arr:radarr:9')!.files[0];
 	importRun.total = 1;
-	importRun.active.push({
-		path: delivered.path,
-		seconds: 0,
-		stage: 'waiting',
-		duration: 0,
-		done: 0,
-		speed: 0,
-		skipped: false,
-		since: now - IMPORT_STARTED_AGO_MS,
-		readyAt: 0
-	} as Active);
-	world.runs.push(importRun);
+	state.runs.push(importRun);
+	// This delivery arrived minutes ago: its independent check has already
+	// finished even though the sweep still occupies the rewrite slot.
+	queued(state);
+	judged(
+		state,
+		importRun,
+		pickUp(state, importRun, delivered, now),
+		now,
+		{ runs: false, progress: false, library: false, events: false },
+		true
+	);
 }
 
 /** The row the running sweep already has for a file it finished with, from
  * what the catalogue says happened to it. */
-function doneRow(world: World, file: File, now: number): DoneFile | null {
+function doneRow(state: State, file: File, now: number): DoneFile | null {
 	if (file.modified && Date.parse(file.modified.at) > now - SWEEP_STARTED_AGO_MS) {
 		return {
 			path: file.path,
 			status: 'modified',
 			seconds: Math.round((file.seconds / speedOf(file)) * 10) / 10,
-			detail: rewriteDetail(world, file)
+			detail: rewriteDetail(state, file)
 		};
 	}
 	if (file.hardlinked)
@@ -202,13 +215,13 @@ function doneRow(world: World, file: File, now: number): DoneFile | null {
 	return null;
 }
 
-const HARDLINKED = 'hard-linked 2 times; a download client still has it';
+const HARDLINKED = 'a download client still has this hard-linked';
 
 /** What a rewrite did, for a row: the generated track it added, as the plan
  * said. */
-function rewriteDetail(world: World, file: File): string {
+function rewriteDetail(state: State, file: File): string {
 	const made = file.modified?.added?.length ?? 0;
-	void world;
+	void state;
 	return made ? `add ${made === 1 ? '2.0 downmix' : `${made} downmixes`}` : 'rewritten';
 }
 
@@ -223,16 +236,174 @@ function ffmpegLine(file: File): string {
 	return `ffmpeg -hide_banner -nostdin -y -i "${file.path}" ${maps.join(' ')} -c copy${encode} "/work/${file.name}"`;
 }
 
+// Queue order belongs to this simulated service instance, just like its runs.
+// `drawn` is what the last page held, since the simulation has to notice its
+// own changes where the service counts them as it makes them.
+type Ordering = {
+	ranks: Map<string, number>;
+	next: number;
+	front: number;
+	epoch: string;
+	revision: number;
+	drawn: string;
+	token: number;
+	undo: { token: string; ranks: Map<string, number> } | null;
+};
+const orderings = new WeakMap<State, Ordering>();
+function ordering(state: State): Ordering {
+	let order = orderings.get(state);
+	if (!order) {
+		order = {
+			ranks: new Map(),
+			next: 0,
+			front: 0,
+			epoch: digest(String(Date.now())),
+			revision: 0,
+			drawn: '',
+			token: 0,
+			undo: null
+		};
+		orderings.set(state, order);
+	}
+	return order;
+}
+export function queued(state: State): QueueItem[] {
+	const order = ordering(state);
+	const items = state.runs
+		.filter((run) => !run.stopping)
+		.flatMap((run) =>
+			[
+				...run.active.filter((file) => file.stage === 'waiting'),
+				...run.queue.filter((file) => !file.skipped)
+			].map((item) => {
+				const file = state.byPath.get(item.path);
+				return {
+					run: run.id,
+					path: item.path,
+					expected:
+						file?.status === 'pending' && !run.dry_run
+							? Math.round(file.seconds / speedOf(file))
+							: 0
+				};
+			})
+		);
+	for (const item of items) {
+		const key = queueKey(item);
+		if (!order.ranks.has(key)) order.ranks.set(key, ++order.next);
+	}
+	const checking = new Set(
+		state.runs.flatMap((run) =>
+			run.queue
+				.filter((file) => file.discovery)
+				.map((file) => queueKey({ run: run.id, path: file.path }))
+		)
+	);
+	return items
+		.sort(
+			(a, b) =>
+				Number(checking.has(queueKey(b))) - Number(checking.has(queueKey(a))) ||
+				order.ranks.get(queueKey(a))! - order.ranks.get(queueKey(b))!
+		)
+		.map((item, at) => ({ ...item, position: at + 1 }));
+}
+function coversFor(state: State, paths: string[]): FileCovers {
+	return Object.fromEntries(
+		paths.flatMap((path) => {
+			const title = (
+				state.byPath.get(path)?.title ?? state.titles.find((title) => title.spec.folder === path)
+			)?.spec;
+			return title ? [[path, { id: title.id, name: title.name }]] : [];
+		})
+	);
+}
+/** What a rewrite would do to each file, for the rows that show it before
+ * anything opens them. A file no sweep has judged is absent. */
+function plansFor(state: State, paths: string[]): FilePlans {
+	return Object.fromEntries(
+		paths.flatMap((path) => {
+			const file = state.byPath.get(path);
+			if (!file || !file.judged) return [];
+			const drops = file.planned.length
+				? file.tracks.filter((track) => !file.planned.some((kept) => kept.src === track.index))
+						.length
+				: 0;
+			return [
+				[
+					path,
+					{
+						status: file.status,
+						changes: (file.why.reasons?.length ?? 0) + (file.why.incidental?.length ?? 0),
+						adds: added(file.planned),
+						// The demo has no rebuilds: it never claims a drop for a
+						// generated track the way the planner does.
+						rebuilds: [],
+						drops
+					}
+				]
+			];
+		})
+	);
+}
+export function queuePage(state: State, query = '', offset = 0, limit = 50): QueuePage {
+	const items = queued(state),
+		matches = items.filter((item) => item.path.toLowerCase().includes(query.toLowerCase())),
+		page = matches.slice(offset, offset + limit),
+		paths = page.map((item) => item.path);
+	return {
+		total: items.length,
+		matched: matches.length,
+		offset,
+		epoch: ordering(state).epoch,
+		revision: revised(state, items),
+		items: page,
+		covers: coversFor(state, paths),
+		plans: plansFor(state, paths),
+		plans_current: state.current
+	};
+}
+
+/** The version of what a page would draw. The service counts its own changes as
+ * it makes them, and the simulation has only the rows, so it compares them. */
+function revised(state: State, items: QueueItem[]): number {
+	const order = ordering(state),
+		drawn = items.map(queueKey).join('\n');
+	if (drawn !== order.drawn) {
+		order.drawn = drawn;
+		order.revision++;
+	}
+	return order.revision;
+}
+export function reorder(state: State, items: QueueItem[]) {
+	const order = ordering(state),
+		keys = new Set(items.map(queueKey)),
+		selected = queued(state).filter((item) => keys.has(queueKey(item)));
+	if (!selected.length) return { moved: 0, undo: null };
+	const token = String(++order.token);
+	order.undo = { token, ranks: new Map(order.ranks) };
+	order.front -= selected.length;
+	selected.forEach((item, index) => order.ranks.set(queueKey(item), order.front + index));
+	publish('runs');
+	return { moved: selected.length, undo: token };
+}
+export function undoQueue(state: State, token: unknown): boolean {
+	const order = ordering(state);
+	if (!order.undo || order.undo.token !== token) return false;
+	for (const [key, rank] of order.undo.ranks) if (order.ranks.has(key)) order.ranks.set(key, rank);
+	order.undo = null;
+	publish('runs');
+	return true;
+}
+
 // The simulation.
 
 let ticking: ReturnType<typeof setInterval> | null = null;
 let lastTick = 0;
 
 /** Keep the runs moving for as long as the tab lives. Idempotent. */
-export function start(world: World): void {
+export function start(state: State): void {
 	if (ticking) return;
 	lastTick = Date.now();
-	ticking = setInterval(() => tick(world), TICK_MS);
+	ticking = setInterval(() => tick(state), TICK_MS);
 }
 
 export function stopTicking(): void {
@@ -244,68 +415,88 @@ export function stopTicking(): void {
 type Changed = { runs: boolean; progress: boolean; library: boolean; events: boolean };
 
 /** How many rewrites may run at once, less the ones running. */
-function freeSlots(world: World): number {
-	const most = Math.max(1, Number(world.settings.MAX_CONCURRENT_REWRITES) || 1);
-	const busy = world.runs.reduce(
-		(count, run) => count + run.active.filter((file) => file.stage !== 'waiting').length,
+function freeSlots(state: State): number {
+	const most = Math.max(1, Number(state.settings.MAX_CONCURRENT_REWRITES) || 1);
+	const busy = state.runs.reduce(
+		(count, run) =>
+			count +
+			run.active.filter((file) => file.stage !== 'waiting' && !(isActive(file) && file.discovery))
+				.length,
 		0
 	);
 	return most - busy;
 }
 
-export function tick(world: World, now = Date.now()): void {
+export function tick(state: State, now = Date.now()): void {
 	// The first tick moves nothing: there is no last one to measure from.
 	const dt = lastTick ? Math.min(600, (now - lastTick) / 1000) : 0;
 	lastTick = now;
 	const changed: Changed = { runs: false, progress: false, library: false, events: false };
-	// Imports first: a delivery waiting on a slot is owed it before the sweep's
-	// next file.
-	const runs = [...world.runs].sort(
-		(a, b) => Number(b.kind === 'import') - Number(a.kind === 'import')
-	);
+	const runs = [...state.runs];
 	for (const run of runs) {
 		if (run.walkUntil !== null && now >= run.walkUntil) {
-			finishWalk(world, run);
+			finishWalk(state, run, now, changed);
 			changed.runs = true;
 		}
 		for (const active of [...run.active]) {
 			if (!isActive(active)) continue;
 			if (active.stage === 'working' && now >= active.readyAt) {
-				judged(world, run, active, now, changed);
+				judged(state, run, active, now, changed, active.discovery);
 			} else if (active.stage === 'encoding') {
 				active.done = Math.min(active.duration, active.done + active.speed * dt);
 				changed.progress = true;
-				if (active.done >= active.duration) complete(world, run, active, now, changed);
+				if (active.done >= active.duration) complete(state, run, active, now, changed);
 			}
 		}
-		while (!world.paused && !run.stopping && freeSlots(world) > 0) {
-			const waiting = run.active.find((file) => file.stage === 'waiting');
-			if (waiting && isActive(waiting)) {
-				waiting.stage = 'working';
-				waiting.since = now;
-				waiting.readyAt = now + WORKING_MS;
-				changed.runs = true;
-				continue;
-			}
-			if (run.active.length || run.walkUntil !== null) break;
-			const next = run.queue.shift();
-			if (!next) break;
-			const file = world.byPath.get(next.path);
+	}
+	for (const item of queued(state)) {
+		if (state.paused) break;
+		const run = state.runs.find((run) => run.id === item.run)!;
+		const discovery = run.queue.some((file) => file.path === item.path && file.discovery);
+		if (discovery) {
+			const probing = state.runs.reduce(
+				(count, other) =>
+					count + other.active.filter((file) => isActive(file) && file.discovery).length,
+				0
+			);
+			if (probing >= Math.max(1, Number(state.settings.PROBE_WORKERS) || 1)) continue;
+		} else if (freeSlots(state) <= 0) continue;
+		if (run.walkUntil !== null) continue;
+		if (
+			state.runs.some((other) =>
+				other.active.some((file) => file.path === item.path && file.stage !== 'waiting')
+			)
+		)
+			continue;
+		const waiting = run.active.find((file) => file.path === item.path && file.stage === 'waiting');
+		if (waiting && isActive(waiting)) {
+			waiting.stage = 'working';
+			waiting.since = now;
+			waiting.readyAt = now + WORKING_MS;
+		} else {
+			run.queue = run.queue.filter((file) => file.path !== item.path);
+			const file = state.byPath.get(item.path);
 			if (!file) continue;
-			if (next.skipped) {
-				run.done += 1;
-				run.recent.unshift({ path: file.path, status: '', seconds: 0, detail: 'skipped' });
-				continue;
-			}
-			pickUp(world, run, file, now);
-			changed.runs = true;
+			pickUp(state, run, file, now, discovery);
 		}
+		changed.runs = true;
+	}
+	for (const run of runs) {
+		const skipped = run.queue.filter((item) => item.skipped);
+		run.done += skipped.length;
+		run.queue = run.queue.filter((item) => !item.skipped);
 		if (run.walkUntil === null && !run.active.length && (!run.queue.length || run.stopping)) {
-			close(world, run, now);
+			close(state, run, now);
 			changed.runs = true;
 			changed.events = true;
 		}
 	}
+	announce(changed);
+}
+
+/** Tell the pages what moved. Progress is the lighter word for runs, so a tick
+ * that only advanced an encode does not make every page refetch. */
+function announce(changed: Changed): void {
 	if (changed.runs) publish('runs');
 	else if (changed.progress) publish('progress');
 	if (changed.library) publish('library');
@@ -314,17 +505,17 @@ export function tick(world: World, now = Date.now()): void {
 
 /** The walk is over: what it found, what it can take from the cache, and what
  * it has to open or rewrite. */
-function finishWalk(world: World, run: SimRun): void {
+function finishWalk(state: State, run: SimRun, now: number, changed: Changed): void {
 	const files =
 		run.kind === 'recheck'
 			? run.titles.flatMap((title) => title.files)
-			: world.titles.flatMap((title) => title.files);
-	const opening = (file: File) => run.kind === 'recheck' || !world.current || !file.tracks.length;
+			: state.titles.flatMap((title) => title.files);
+	const opening = (file: File) => run.kind === 'recheck' || !state.current || !file.tracks.length;
 	let probes = 0;
 	for (const file of files) {
 		if (opening(file)) {
 			probes += 1;
-			run.queue.push({ path: file.path, skipped: false });
+			judged(state, run, pickUp(state, run, file, now), now, changed, true);
 		} else if (file.status === 'pending' && !run.dry_run) {
 			run.queue.push({ path: file.path, skipped: false });
 		} else {
@@ -335,40 +526,56 @@ function finishWalk(world: World, run: SimRun): void {
 	run.total = files.length;
 	run.cached = files.length - probes;
 	run.walkUntil = null;
-	if (run.kind === 'sweep') world.current = true;
+	if (run.kind === 'sweep') state.current = true;
 }
 
 /** A probe has finished: the file is judged, and either rewritten, reported or
  * left for the reason it cannot be rewritten. */
-function judged(world: World, run: SimRun, active: Active, now: number, changed: Changed): void {
-	const file = world.byPath.get(active.path)!;
+function judged(
+	state: State,
+	run: SimRun,
+	active: Active,
+	now: number,
+	changed: Changed,
+	discovery = false
+): void {
+	const file = state.byPath.get(active.path)!;
 	const opened = !file.tracks.length;
-	if (opened || run.kind === 'recheck' || !world.current) probe(file);
-	rejudge(world, file, now);
+	if (opened || run.kind === 'recheck' || !state.current) probe(file);
+	rejudge(state, file, now);
 	changed.library = true;
-	const hold = heldTitle(world, file.title);
+	const pause = pausedTitle(state, file.title, file.path);
 	if (file.status !== 'pending') {
 		settle(
-			world,
+			state,
 			run,
 			active,
 			file,
 			file.status,
-			(file.why.skip ?? file.why.reasons?.join('; ')) || 'nothing to do',
+			(file.why.skip ?? file.why.reasons?.join(' · ')) || 'nothing to do',
 			now,
 			changed
 		);
 		return;
 	}
 	if (file.hardlinked) {
-		defer(world, run, active, file, HARDLINKED, now, changed);
+		defer(state, run, active, file, HARDLINKED, now, changed);
 		return;
 	}
-	if (run.dry_run || hold) {
-		const detail = hold
-			? `held: ${hold.reason || 'until lifted'}`
-			: (file.why.reasons ?? []).join('; ');
-		settle(world, run, active, file, 'pending', detail, now, changed);
+	if (run.dry_run || pause) {
+		const detail = pause
+			? `paused: ${pause.reason || 'until resumed'}`
+			: (file.why.reasons ?? []).join(' · ');
+		settle(state, run, active, file, 'pending', detail, now, changed);
+		return;
+	}
+	if (discovery) {
+		remove(run, active);
+		run.queue.push({ path: file.path, skipped: false });
+		const order = ordering(state);
+		if (run.kind === 'import' && !order.undo)
+			order.ranks.set(queueKey({ run: run.id, path: file.path }), --order.front);
+		changed.runs = true;
 		return;
 	}
 	active.stage = 'encoding';
@@ -376,8 +583,8 @@ function judged(world: World, run: SimRun, active: Active, now: number, changed:
 	active.done = 0;
 	active.speed = speedOf(file);
 	active.since = now;
-	log(world, run.id, file.path, `plan: ${(file.why.reasons ?? []).join('; ')}`);
-	log(world, run.id, file.path, ffmpegLine(file));
+	log(state, run.id, file.path, `plan: ${(file.why.reasons ?? []).join(' · ')}`);
+	log(state, run.id, file.path, ffmpegLine(file));
 	changed.runs = true;
 }
 
@@ -386,17 +593,17 @@ function remove(run: SimRun, active: Active): void {
 }
 
 function verdictLine(
-	world: World,
+	state: State,
 	run: SimRun,
 	file: File,
 	kind: string,
 	extra: Record<string, unknown>
 ): void {
-	record(world, {
+	record(state, {
 		event: kind,
 		run: run.id,
 		source: run.source,
-		config_id: configId(world),
+		config_id: configId(state),
 		path: file.path,
 		reasons: file.why.reasons ?? [],
 		rules: file.why.rules ?? [],
@@ -409,7 +616,7 @@ function verdictLine(
 
 /** A file the run is done with, at the verdict it reached without a rewrite. */
 function settle(
-	world: World,
+	state: State,
 	run: SimRun,
 	active: Active,
 	file: File,
@@ -422,9 +629,9 @@ function settle(
 	run.counts[status] = (run.counts[status] ?? 0) + 1;
 	run.done += 1;
 	run.recent.unshift({ path: file.path, status, seconds, detail });
-	log(world, run.id, file.path, `${status}: ${detail}`);
+	log(state, run.id, file.path, `${status}: ${detail}`);
 	if (status === 'pending') {
-		verdictLine(world, run, file, 'pending', {});
+		verdictLine(state, run, file, 'pending', {});
 		changed.events = true;
 	}
 	remove(run, active);
@@ -434,7 +641,7 @@ function settle(
 /** A rewrite that did not happen: the file is as it was and the next sweep
  * tries again. */
 function defer(
-	world: World,
+	state: State,
 	run: SimRun,
 	active: Active,
 	file: File,
@@ -446,35 +653,31 @@ function defer(
 	run.counts.deferred = (run.counts.deferred ?? 0) + 1;
 	run.done += 1;
 	run.recent.unshift({ path: file.path, status: 'deferred', seconds, detail });
-	log(world, run.id, file.path, `deferred: ${detail}`);
-	verdictLine(world, run, file, 'deferred', { seconds, duration: file.seconds, detail });
+	log(state, run.id, file.path, `deferred ${file.path}: ${detail}`);
+	verdictLine(state, run, file, 'deferred', { seconds, duration: file.seconds, detail });
 	remove(run, active);
 	changed.runs = true;
 	changed.events = true;
 }
 
 /** The encode is done: the plan becomes the file. */
-function complete(world: World, run: SimRun, active: Active, now: number, changed: Changed): void {
-	const file = world.byPath.get(active.path)!;
+function complete(state: State, run: SimRun, active: Active, now: number, changed: Changed): void {
+	const file = state.byPath.get(active.path)!;
 	const seconds = Math.round(((now - active.since) / 1000) * 10) / 10;
 	const reasons = file.why.reasons ?? [];
 	const planned = file.planned;
 	const before = { ...file.why };
-	const made = rewrite(world, file, now);
-	record(world, {
+	const made = rewrite(state, file, now);
+	record(state, {
 		event: 'modified',
 		run: run.id,
 		source: run.source,
-		config_id: configId(world),
+		config_id: configId(state),
 		reasons,
 		rules: before.rules ?? [],
 		incidental: before.incidental ?? [],
 		incidental_rules: before.incidental_rules ?? [],
-		downmixed: planned
-			.filter((track) => track.flags?.includes('generated'))
-			.map((track) =>
-				track.channels === 2 ? '2.0' : track.channels === 6 ? '5.1' : `${track.channels}ch`
-			),
+		...changesOf(planned, made.was ?? []),
 		seconds,
 		waited: 0,
 		duration: file.seconds,
@@ -485,9 +688,9 @@ function complete(world: World, run: SimRun, active: Active, now: number, change
 	});
 	run.counts.modified = (run.counts.modified ?? 0) + 1;
 	run.done += 1;
-	run.recent.unshift({ path: file.path, status: 'modified', seconds, detail: reasons.join('; ') });
-	log(world, run.id, file.path, `encoded at ${active.speed}x in ${seconds}s`);
-	log(world, run.id, file.path, 'duration and stream count verify; published over the original');
+	run.recent.unshift({ path: file.path, status: 'modified', seconds, detail: reasons.join(' · ') });
+	log(state, run.id, file.path, `encoded at ${active.speed}x in ${seconds}s`);
+	log(state, run.id, file.path, 'duration and stream count verify. Published over the original');
 	remove(run, active);
 	changed.runs = true;
 	changed.library = true;
@@ -495,56 +698,56 @@ function complete(world: World, run: SimRun, active: Active, now: number, change
 }
 
 /** The run is over: its summary, and the library's word that it happened. */
-function close(world: World, run: SimRun, now: number): void {
+function close(state: State, run: SimRun, now: number): void {
 	run.stopped = run.queue.length;
 	run.queue = [];
 	const seconds = Math.round(((now - Date.parse(run.started)) / 1000) * 10) / 10;
 	if (run.kind === 'sweep') {
-		world.swept += 1;
-		record(world, {
+		state.swept += 1;
+		record(state, {
 			event: 'sweep',
 			run: run.id,
 			dry_run: run.dry_run,
-			files: run.total,
-			library_bytes: world.titles
+			files: run.done,
+			library_bytes: state.titles
 				.flatMap((title) => title.files)
 				.reduce((sum, file) => sum + file.bytes, 0),
-			config: configOf(world.settings, VERSION),
-			config_id: configId(world),
+			config: configOf(state.settings, VERSION),
+			config_id: configId(state),
 			cached: run.cached,
 			counts: run.counts,
 			seconds,
 			...(run.stopped ? { stopped: run.stopped } : {})
 		});
 	} else if (run.kind === 'recheck') {
-		record(world, {
+		record(state, {
 			event: 'recheck',
 			run: run.id,
 			dry_run: run.dry_run,
 			titles: run.titles.length,
-			files: run.total,
-			config_id: configId(world),
+			files: run.done,
+			config_id: configId(state),
 			counts: run.counts,
 			seconds,
 			...(run.stopped ? { stopped: run.stopped } : {})
 		});
 	}
-	world.runs = world.runs.filter((each) => each !== run);
+	state.runs = state.runs.filter((each) => each !== run);
 }
 
 // What the pages read.
 
-export function mayRewrite(world: World): boolean {
-	return world.settings.REWRITE_MODE === 'all';
+export function mayRewrite(state: State): boolean {
+	return state.settings.REWRITE_MODE === 'all';
 }
 
-function wireRun(world: World, run: SimRun, now: number): Run {
+function wireRun(state: State, run: SimRun, now: number): Run {
 	const remaining = run.active.reduce(
 		(sum, file) => sum + (file.stage === 'encoding' ? (file.duration - file.done) / file.speed : 0),
 		0
 	);
 	const queued = run.queue.reduce((sum, item) => {
-		const file = world.byPath.get(item.path);
+		const file = state.byPath.get(item.path);
 		return sum + (file?.status === 'pending' && !run.dry_run ? file.seconds / speedOf(file) : 0);
 	}, 0);
 	return {
@@ -567,7 +770,7 @@ function wireRun(world: World, run: SimRun, now: number): Run {
 			return { ...wire, seconds: Math.round((now - since) / 1000) };
 		}),
 		upcoming: run.queue.slice(0, UPCOMING).map((item) => {
-			const file = world.byPath.get(item.path);
+			const file = state.byPath.get(item.path);
 			const expected =
 				file?.status === 'pending' && !run.dry_run ? Math.round(file.seconds / speedOf(file)) : 0;
 			return { path: item.path, expected, skipped: item.skipped };
@@ -578,33 +781,43 @@ function wireRun(world: World, run: SimRun, now: number): Run {
 }
 
 export function activity(
-	world: World,
+	state: State,
 	now = Date.now()
 ): Omit<Activity, 'runs'> & { runs: Omit<Run, 'seen'>[] } {
-	const runs = world.runs.map((run) => {
-		const { seen: _seen, ...wire } = wireRun(world, run, now);
+	const runs = state.runs.map((run) => {
+		const { seen: _seen, ...wire } = wireRun(state, run, now);
 		void _seen;
 		return wire;
 	});
-	const next = nextRuns(String(world.settings.SWEEP_AT ?? ''), new Date(now), 1)?.[0];
-	const active = world.runs.flatMap((run) => run.active);
+	const next = nextRun(String(state.settings.SWEEP_AT ?? ''), new Date(now));
+	const active = state.runs.flatMap((run) => run.active);
 	return {
-		paused: world.paused,
-		paused_by: world.pausedBy,
-		paused_at: world.pausedAt,
-		up_since: world.upSince,
+		queue_preview: queued(state).slice(0, 3),
+		covers: coversFor(
+			state,
+			[...active, ...queued(state).slice(0, 3), ...pausesNow(state, now)].map((item) => item.path)
+		),
+		plans: plansFor(
+			state,
+			[...active, ...queued(state).slice(0, 3)].map((item) => item.path)
+		),
+		plans_current: state.current,
+		paused: state.paused,
+		paused_by: state.pausedBy,
+		paused_at: state.pausedAt,
+		up_since: state.upSince,
 		runs,
 		queue:
-			world.runs.reduce((sum, run) => sum + run.queue.length, 0) +
+			state.runs.reduce((sum, run) => sum + run.queue.length, 0) +
 			active.filter((file) => file.stage === 'waiting').length,
 		working: active.filter((file) => file.stage !== 'waiting').length,
 		rewrites: active.filter((file) => file.stage === 'encoding').length,
-		parked: world.titles
+		parked: state.titles
 			.flatMap((title) => title.files)
 			.filter((file) => file.hardlinked && file.status === 'pending').length,
-		may_rewrite: mayRewrite(world),
+		may_rewrite: mayRewrite(state),
 		next_sweep: next ? next.toISOString() : null,
-		holds: holdsNow(world, now)
+		pauses: pausesNow(state, now)
 	};
 }
 
@@ -612,75 +825,249 @@ export function activity(
 
 export type Refused = { status: number; body: Record<string, unknown> };
 
-function walking(world: World): SimRun | undefined {
-	return world.runs.find((run) => run.kind !== 'import');
+/** An answer that refused rather than returned. */
+export const refused = (answer: Refused | object): answer is Refused =>
+	'body' in answer && typeof (answer as Refused).status === 'number';
+
+type Delivered = { status: string; run: string; titles: string[] };
+
+function walking(state: State): SimRun | undefined {
+	return state.runs.find((run) => run.kind !== 'import');
 }
 
+/** Demo debug delivery: replace sample media with a 4K upgrade missing stereo. */
+export function simulateImport(
+	state: State,
+	arr: 'radarr' | 'sonarr',
+	now = Date.now()
+): Refused | Delivered {
+	const occupied = new Set(
+		state.runs.flatMap((run) => [
+			...(run.kind === 'import' ? run.queue.map((file) => file.path) : []),
+			...run.active.map((file) => file.path)
+		])
+	);
+	const title = state.titles.find(
+		(title) =>
+			title.spec.arr === arr &&
+			title.files.length &&
+			title.files.every((file) => !occupied.has(file.path) && !pausedTitle(state, title, file.path))
+	);
+	if (!title) return { status: 409, body: { status: 'all sample titles are busy or paused' } };
+	const files = title.files.slice(0, arr === 'sonarr' ? 3 : 1);
+	const run = newRun(state, 'import', now, state.settings.REWRITE_MODE === 'report', arr);
+	// Multiple deliveries can share a millisecond in tests or a fast browser.
+	run.id += `-${state.nextSeq}`;
+	for (const file of files) {
+		const spec = title.spec.files[title.files.indexOf(file)];
+		const oldPath = file.path;
+		const name = spec.name.replace(/(?:Bluray|WEB|HDTV)-\d+p/i, 'Bluray-2160p');
+		file.ext = '.mkv';
+		file.path = `${title.spec.folder}/${name === spec.name ? `${name} Bluray-2160p` : name}${file.ext}`;
+		file.name = file.path.slice(file.path.lastIndexOf('/') + 1);
+		state.byPath.delete(oldPath);
+		state.byPath.set(file.path, file);
+		// A sweep may already have discovered the old release but not opened it.
+		for (const other of state.runs) {
+			for (const queued of other.queue) {
+				if (queued.path === oldPath) queued.path = file.path;
+			}
+		}
+		file.source = [
+			{ index: 0, kind: 'video', codec: 'hevc', bitrate: 35_000_000, title: '4K UHD' },
+			{
+				index: 1,
+				kind: 'audio',
+				codec: 'eac3',
+				channels: 6,
+				lang: title.spec.lang ?? 'eng',
+				bitrate: 768_000,
+				flags: ['default']
+			}
+		];
+		file.bytes = bytesOf(file.source, spec.seconds);
+		file.tracks = [];
+		file.planned = [];
+		file.seconds = 0;
+		file.status = 'unchecked';
+		file.why = {};
+		file.judged = 0;
+		delete file.modified;
+		delete file.hardlinked;
+		run.queue.push({ path: file.path, skipped: false, discovery: true });
+	}
+	run.total = files.length;
+	state.runs.push(run);
+	record(state, {
+		event: 'webhook',
+		arr,
+		run: run.id,
+		files: files.length,
+		paths: files.map((file) => file.path),
+		title: title.spec.id
+	});
+	publish('runs');
+	publish('library');
+	publish('events');
+	return { status: 'imported', run: run.id, titles: [title.spec.name] };
+}
+
+// Clears the board and resumes, then delivers a film and a set of episodes,
+// the mix an install with both *arrs wired to it sees. One service with
+// nothing free still poses a board, so only both refusing is a refusal.
+function importsOnly(state: State, now: number): Refused | { status: string; titles: string[] } {
+	abort(state, now);
+	setPaused(state, false, 'demo', now);
+	const titles: string[] = [];
+	let refusal: Refused | undefined;
+	for (const arr of ['radarr', 'sonarr'] as const) {
+		const delivery = simulateImport(state, arr, now);
+		if (refused(delivery)) refusal = delivery;
+		else titles.push(...delivery.titles);
+	}
+	return titles.length ? { status: 'imported', titles } : (refusal as Refused);
+}
+
+// The board the demo opens on, rebuilt from the catalogue rather than rewound,
+// which is what a reload does, so the library and the history come back with
+// the runs. The account carries over, since posing a board is not a sign-out.
+// Every scenario below starts here, so pressing one twice lands the same way.
+function poseOpening(state: State): State {
+	const account = state.account;
+	stopTicking();
+	reset();
+	const fresh = currentState();
+	fresh.account = account;
+	seed(fresh);
+	fresh.seeded = true;
+	start(fresh);
+	publish('runs');
+	publish('library');
+	publish('events');
+	return fresh;
+}
+
+function fullBoard(state: State): { status: string; titles: string[] } {
+	poseOpening(state);
+	return { status: 'posed', titles: [] };
+}
+
+const BROKE = 'ffmpeg exited 1: Invalid data found when processing input';
+
+// The one verdict the sample library never reaches on its own: an opening board
+// carrying a broken rewrite looks unhealthy, so it lives behind a button. The
+// encode in flight is the file that breaks, since that is where a real one does.
+function failedRewrite(state: State, now: number): { status: string; titles: string[] } {
+	const fresh = poseOpening(state);
+	const changed: Changed = { runs: true, progress: false, library: true, events: true };
+	const broken: string[] = [];
+	for (const run of fresh.runs) {
+		for (const active of [...run.active]) {
+			if (!isActive(active) || active.stage !== 'encoding') continue;
+			const file = fresh.byPath.get(active.path)!;
+			file.failure = BROKE;
+			rejudge(fresh, file, now);
+			const seconds = Math.round(((now - active.since) / 1000) * 10) / 10;
+			run.counts.failed = (run.counts.failed ?? 0) + 1;
+			run.done += 1;
+			run.recent.unshift({ path: file.path, status: 'failed', seconds, detail: BROKE });
+			log(fresh, run.id, file.path, `failed: ${BROKE}`);
+			verdictLine(fresh, run, file, 'failed', { seconds, duration: file.seconds, detail: BROKE });
+			remove(run, active);
+			broken.push(file.title.spec.name);
+		}
+	}
+	announce(changed);
+	return { status: 'posed', titles: broken };
+}
+
+// Everything held with work behind it. The files in flight go back to the front
+// of their queue rather than finishing, so the board reads as stopped rather
+// than as one last encode running under a pause.
+function heldWork(state: State, now: number): { status: string; titles: string[] } {
+	const fresh = poseOpening(state);
+	for (const run of fresh.runs) {
+		for (const active of [...run.active]) run.queue.unshift({ path: active.path, skipped: false });
+		run.active = [];
+	}
+	setPaused(fresh, true, 'demo', now);
+	return { status: 'posed', titles: [] };
+}
+
+/** The boards the debug panel can pose, by the name it posts. */
+export const SCENARIOS: Record<
+	string,
+	(state: State, now: number) => Refused | { status: string; titles: string[] }
+> = {
+	full: fullBoard,
+	'imports-only': importsOnly,
+	failed: failedRewrite,
+	held: heldWork
+};
+
 export function startSweep(
-	world: World,
+	state: State,
 	mode: string,
 	now = Date.now()
 ): Refused | { status: string; run: string } {
-	const going = walking(world);
+	const going = walking(state);
 	if (going) return { status: 409, body: { status: 'a sweep is already running', run: going.id } };
-	const run = newRun(world, 'sweep', now, mode !== 'apply' || !mayRewrite(world));
+	const run = newRun(state, 'sweep', now, mode !== 'apply' || !mayRewrite(state));
 	run.walkUntil = now + WALK_MS;
-	run.total = world.titles.flatMap((title) => title.files).length;
-	world.runs.push(run);
+	run.total = state.titles.flatMap((title) => title.files).length;
+	state.runs.push(run);
 	publish('runs');
 	return { status: 'started', run: run.id };
 }
 
 export function recheck(
-	world: World,
+	state: State,
 	titles: Title[],
 	mode: string,
 	now = Date.now()
 ): Refused | { status: string; run: string; titles: number } {
-	const going = walking(world);
-	if (going) return { status: 409, body: { status: 'a sweep is already running', run: going.id } };
 	const label = titles.length === 1 ? titles[0].spec.name : `${titles.length} titles`;
-	const run = newRun(world, 'recheck', now, mode !== 'apply' || !mayRewrite(world), label);
+	const run = newRun(state, 'recheck', now, mode !== 'apply' || !mayRewrite(state), label);
 	run.titles = titles;
 	run.walkUntil = now + RECHECK_WALK_MS;
 	run.total = titles.flatMap((title) => title.files).length;
-	world.runs.push(run);
+	state.runs.push(run);
 	publish('runs');
 	return { status: 'started', run: run.id, titles: titles.length };
 }
 
-export function stopRun(world: World, id: string): Refused | { status: string } {
-	const run = world.runs.find((each) => each.id === id);
+export function stopRun(state: State, id: string): Refused | { status: string } {
+	const run = state.runs.find((each) => each.id === id);
 	if (!run) return { status: 404, body: { status: 'no such run is going' } };
 	run.stopping = true;
 	publish('runs');
 	return { status: 'stopping' };
 }
 
-export function setPaused(world: World, on: boolean, by: string, now = Date.now()): void {
-	world.paused = on;
-	world.pausedBy = on ? by : '';
-	world.pausedAt = on ? stamp(now) : '';
-	record(world, { event: on ? 'paused' : 'resumed', by });
+export function setPaused(state: State, on: boolean, by: string, now = Date.now()): void {
+	state.paused = on;
+	state.pausedBy = on ? by : '';
+	state.pausedAt = on ? stamp(now) : '';
+	record(state, { event: on ? 'paused' : 'resumed', by });
 	publish('runs');
 	publish('events');
 }
 
 export function abort(
-	world: World,
+	state: State,
 	now = Date.now()
 ): { status: string; stopped: number; rewrites: number } {
 	const changed: Changed = { runs: true, progress: false, library: false, events: true };
 	let rewrites = 0;
-	const stopped = world.runs.length;
-	for (const run of [...world.runs]) {
+	const stopped = state.runs.length;
+	for (const run of [...state.runs]) {
 		for (const active of [...run.active]) {
 			if (!isActive(active)) continue;
 			if (active.stage === 'encoding') rewrites += 1;
-			const file = world.byPath.get(active.path)!;
-			defer(world, run, active, file, 'the run stopped', now, changed);
+			const file = state.byPath.get(active.path)!;
+			defer(state, run, active, file, 'the run stopped', now, changed);
 		}
-		close(world, run, now);
+		close(state, run, now);
 	}
 	publish('runs');
 	publish('events');
@@ -688,25 +1075,25 @@ export function abort(
 }
 
 export function skip(
-	world: World,
+	state: State,
 	id: string,
 	path: string,
 	by: string,
 	now = Date.now()
 ): Refused | { status: string; where: string; rewrites: number } {
-	const run = world.runs.find((each) => each.id === id);
+	const run = state.runs.find((each) => each.id === id);
 	if (!run) return { status: 404, body: { status: 'that run is not going to reach that file' } };
 	const active = run.active.find((file) => file.path === path);
 	const queued = run.queue.find((item) => item.path === path);
 	if (!active && !queued)
 		return { status: 404, body: { status: 'that run is not going to reach that file' } };
-	const file = world.byPath.get(path)!;
-	record(world, { event: 'skipped', run: run.id, path, by, title: file.title.spec.id });
+	const file = state.byPath.get(path)!;
+	record(state, { event: 'skipped', run: run.id, path, by, title: file.title.spec.id });
 	let rewrites = 0;
 	if (active && isActive(active)) {
 		rewrites = active.stage === 'encoding' ? 1 : 0;
 		const changed: Changed = { runs: true, progress: false, library: false, events: true };
-		defer(world, run, active, file, `skipped by ${by}`, now, changed);
+		defer(state, run, active, file, `skipped by ${by}`, now, changed);
 	} else if (queued) {
 		queued.skipped = true;
 	}

@@ -109,11 +109,19 @@
 	],
 	"queue": 5,
 	"working": 2,
+	"queue_preview": [
+		{
+			"run": "2026-03-01T03:00:00+13:00#a1b2",
+			"path": "/data/media/movies/Blade Runner (1982)/Blade Runner (1982).mkv",
+			"expected": 7020.0,
+			"position": 1
+		}
+	],
 	"rewrites": 0,
 	"parked": 0,
 	"may_rewrite": true,
 	"next_sweep": "2026-03-02T03:00:00+13:00",
-	"holds": [
+	"pauses": [
 		{
 			"path": "/data/media/tv/The Bear",
 			"seconds": null,
@@ -124,5 +132,27 @@
 			"title": "arr:sonarr:31",
 			"name": "The Bear"
 		}
-	]
+	],
+	"covers": {
+		"/data/media/movies/Dune (2024)/Dune (2024) Bluray-2160p.mkv": {
+			"id": "arr:radarr:7",
+			"name": "Dune"
+		},
+		"/data/media/tv/The Bear": {
+			"id": "arr:sonarr:31",
+			"name": "The Bear"
+		}
+	},
+	"plans": {
+		"/data/media/movies/Dune (2024)/Dune (2024) Bluray-2160p.mkv": {
+			"status": "pending",
+			"changes": 1,
+			"adds": [
+				"Stereo"
+			],
+			"rebuilds": [],
+			"drops": 0
+		}
+	},
+	"plans_current": true
 }

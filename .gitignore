@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 # web/ has its own; this catches a tool run from the repo root by mistake.
 node_modules/
+.svelte-kit/
 *.egg-info/
 build/
 dist/

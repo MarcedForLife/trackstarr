@@ -1,7 +1,6 @@
 // The demo's stand-in for the service's event stream. $lib/stream opens one of
-// these instead of an EventSource, and the world publishes into it as the
-// simulation moves, so the pages refetch exactly as they would against a
-// service.
+// these instead of an EventSource, and the simulation publishes into it as it
+// moves, so the pages refetch exactly as they would against a service.
 
 /** What $lib/stream needs of a stream: EventSource's shape, without the rest. */
 export type Source = {

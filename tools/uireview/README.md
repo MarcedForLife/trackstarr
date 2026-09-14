@@ -19,8 +19,14 @@ node tools/uireview/serve-build.mjs
 ```
 
 The server exposes `web/build` at `http://localhost:5190` and proxies `/api` to
-port 5120. Start the Python listener separately. With `uv run dev.py`, the API
-is normally on 5121, so pass `TRACKSTARR_API_PORT=5121` to `serve-build.mjs`.
+port 5120, where the deployed container answers. Start the Python listener
+separately, or point `TRACKSTARR_API_PORT` at whichever port it is on.
+
+Port 5121 is the local demo (`tsd --demo`), a static site with no API behind it,
+so never proxy to it. `uv run dev.py` puts its API one port above `LISTEN_PORT`,
+which at the default 5120 is that same 5121: give it a `LISTEN_PORT` clear of
+both, or stop the demo first.
+
 `filmstrip.mjs` and `device.mjs` also require `ffmpeg` and `ffprobe` on `PATH`.
 Playwright is pinned here independently of the app.
 
