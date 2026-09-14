@@ -1,31 +1,26 @@
-"""What the service is doing right now, and the pause switch.
+"""Run progress and processing telemetry.
 
 :mod:`trackstarr.events` records the past; this describes the present and dies
 with the process. A run here is the run an event carries, named by
 :func:`trackstarr.events.run_id`.
 
 The registry is per-process, so a ``docker exec trackstarr sweep`` beside a
-running ``serve`` is invisible here. The pause flag is a file, so a second
-process reads the same answer.
+running ``serve`` is invisible here. Stop, skip and pause controls belong to
+:mod:`trackstarr.work` and :mod:`trackstarr.lifecycle`; a read passes their
+state in as a :class:`Control`.
 """
 
 import collections
-import json
 import logging
-import os
 import threading
 import time
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 
-from . import config, estimate, events, notify, runlog
-from .executor import running_count, terminate_running
-from .state import write_json
+from . import estimate, events, notify, paths, runlog
+from .executor import Cancel, running_count, terminate_phase, terminate_running
 
 log = logging.getLogger(__name__)
-
-#: Where the pause survives a restart. Coming back up sweeping would undo a
-#: deliberate pause at the moment nobody is watching.
-PAUSED_FILE = "paused.json"
 
 #: The kinds of run: a library walk, a delivery from an *arr (Radarr or
 #: Sonarr), and a re-check of chosen titles.
@@ -33,12 +28,9 @@ SWEEP = "sweep"
 IMPORT = "import"
 RECHECK = "recheck"
 
-#: The kinds that rewrite the sweep cache. Both write the whole file, so two at
-#: once would undo each other; see :func:`cache_holder`.
+#: The kinds that update the sweep cache. Cache maintenance waits for them;
+#: title re-checks may run alongside an existing walk.
 CACHE_KINDS = (SWEEP, RECHECK)
-
-#: How often a thread waiting out a pause checks whether its run was stopped.
-_HOLD_TICK = 1.0
 
 #: What the thread holding a file is doing. Waiting for a slot and encoding are
 #: both minutes, so the page must be told which, or a bar at zero reads as a
@@ -52,8 +44,9 @@ ENCODING = "encoding"
 _RECENT_FILES = 40
 
 #: How many waiting files a snapshot names. Enough to reach past the ones a
-#: reader can see without carrying a whole night's queue in every poll.
-_UPCOMING = 20
+#: reader can see without carrying a whole night's queue in every poll. The
+#: scheduler reads it to bound the rows it hands over.
+UPCOMING = 20
 
 #: How much of a verdict's detail a row carries. The rest is in the history.
 _DETAIL_MAX = 160
@@ -115,23 +108,46 @@ class Run:
     recent: collections.deque[Done] = field(
         default_factory=lambda: collections.deque(maxlen=_RECENT_FILES)
     )
-    #: Files found work for that no worker has picked up, with the seconds each
-    #: rewrite is expected to take. Only an applying sweep fills it.
-    queued: dict[str, float] = field(default_factory=dict)
-    #: Still listing files. Until it clears, ``queued`` is a floor.
+    #: Still listing files. Until it clears, the queued count is a floor.
     walking: bool = False
-    #: Asked to stop and winding down. Stays in the registry until it closes so
-    #: the page can say why it is emptying.
-    stopping: bool = False
-    #: Files somebody took off this run. Dies with it: a skip is "not in this
-    #: pass", where :mod:`trackstarr.holds` is "not for a while".
-    skipped: set[str] = field(default_factory=set)
     #: Still being handed files. Without it a delivery whose first file
     #: finished before its third was queued would close and reopen as two runs.
     filling: bool = False
     #: time.time() when this run last announced progress. See :func:`_moved`.
     told: float = 0.0
 
+
+@dataclass(frozen=True)
+class Queued:
+    """One file a run has work for that no thread has begun, in queue order."""
+
+    path: str
+    #: Seconds the rewrite is expected to take; zero for a probe or an import.
+    expected: float = 0.0
+    skipped: bool = False
+
+
+@dataclass(frozen=True)
+class Control:
+    """One run's queue state, copied from the scheduler for a read.
+
+    ``skipped`` holds the skipped active claims; waiting rows carry their own
+    flags so a reporting read need not copy a whole skipped backlog.
+    ``claimed`` carries the files a worker has taken but may not have opened;
+    :func:`begin` drops those. The rest of the queue is a count, a total estimate,
+    and the head of it.
+    """
+
+    stopping: bool = False
+    skipped: frozenset[str] = frozenset()
+    claimed: tuple[Queued, ...] = ()
+    queued: int = 0
+    expected: float = 0.0
+    upcoming: tuple[Queued, ...] = ()
+
+
+#: What a run with no scheduler control reads as: a walk whose work has drained.
+_UNCONTROLLED = Control()
 
 _runs: dict[str, Run] = {}
 _lock = threading.Lock()
@@ -140,139 +156,13 @@ _lock = threading.Lock()
 #: with the process, not to completion.
 _UP = time.time()
 
-#: Set while work may start; cleared is paused. An Event so a resume wakes
-#: every held thread at once.
-_running = threading.Event()
-_running.set()
-
-#: Who paused it and when. Written under _lock, alongside the Event.
-_paused_by = ""
-_paused_at = ""
-
 
 def reset() -> None:
-    """Put the registry back to how a fresh process finds it, stamp and all.
-
-    For tests: a run or a pause left behind would decide the next one. The
-    stamp moves so a test can tell one process's answers from another's.
-    """
-    global _paused_by, _paused_at, _UP
+    """Put reporting back to how a fresh process finds it, stamp and all."""
+    global _UP
     with _lock:
         _runs.clear()
-        _paused_by = _paused_at = ""
         _UP = time.time()
-    _running.set()
-
-
-def _paused_path() -> str:
-    return os.path.join(config.STATE_DIR, PAUSED_FILE)
-
-
-def paused() -> bool:
-    return not _running.is_set()
-
-
-def _read_flag() -> dict | None:
-    """The pause flag on disk, or None for no pause.
-
-    An unreadable flag reads as none: the alternative is an install stuck
-    paused with nothing able to explain why.
-    """
-    try:
-        with open(_paused_path()) as flag_file:
-            record = json.load(flag_file)
-    except FileNotFoundError:
-        return None
-    except (OSError, ValueError) as err:
-        log.warning("ignoring unreadable %s: %s", _paused_path(), err)
-        return None
-    if not isinstance(record, dict) or not record.get("paused"):
-        return None
-    return record
-
-
-def paused_on_disk() -> bool:
-    """Whether the flag on disk says paused. For the CLI, which is a second
-    process and cannot see the listener's registry."""
-    return _read_flag() is not None
-
-
-def load_paused() -> None:
-    """Restore a pause a previous run left behind. Never raises."""
-    global _paused_by, _paused_at
-    record = _read_flag()
-    if record is None:
-        return
-    with _lock:
-        _running.clear()
-        _paused_by = str(record.get("by") or "")
-        _paused_at = str(record.get("at") or "")
-    log.warning(
-        "processing is paused (since %s); nothing will be swept or rewritten until it resumes",
-        _paused_at or "an earlier run",
-    )
-
-
-def _save_paused() -> None:
-    """Write the flag. Never raises; a lost write costs only the restart
-    memory."""
-    try:
-        os.makedirs(config.STATE_DIR, exist_ok=True)
-        write_json(_paused_path(), {"paused": paused(), "by": _paused_by, "at": _paused_at})
-    except OSError as err:
-        log.warning("could not persist the pause flag: %s", err)
-
-
-def pause(by: str = "") -> bool:
-    """Stop anything new being picked up. Returns whether this changed it.
-
-    Rewrites already running finish: throwing away a nearly finished encode is
-    a bad trade. :func:`abort` is the impatient version.
-    """
-    global _paused_by, _paused_at
-    with _lock:
-        if paused():
-            return False
-        _running.clear()
-        _paused_by, _paused_at = by, events.timestamp()
-    _save_paused()
-    events.record("paused", by=by or None)
-    # The one registry change with no run appearing or leaving.
-    notify.publish(notify.RUNS)
-    log.warning("processing paused%s", f" by {by}" if by else "")
-    return True
-
-
-def resume(by: str = "") -> bool:
-    """Let work start again. Returns whether this changed it."""
-    global _paused_by, _paused_at
-    with _lock:
-        if not paused():
-            return False
-        _running.set()
-        _paused_by, _paused_at = "", ""
-    _save_paused()
-    events.record("resumed", by=by or None)
-    notify.publish(notify.RUNS)
-    log.info("processing resumed%s", f" by {by}" if by else "")
-    return True
-
-
-def wait_for_resume(timeout: float | None = None) -> bool:
-    """Block until work may start again. False if the timeout ran out first."""
-    return _running.wait(timeout)
-
-
-def hold(run_id: str | None = None) -> bool:
-    """Wait out a pause; False if the run was stopped before or during it.
-
-    Every thread about to start on a file passes through here, which is what
-    lets one flag stop the sweep and the webhook workers alike.
-    """
-    while not wait_for_resume(_HOLD_TICK):
-        if stopping(run_id):
-            return False
-    return not stopping(run_id)
 
 
 #: How often a run announces progress. A walk books verdicts as fast as it can
@@ -289,7 +179,7 @@ def _moved(run_id: str, floor: float = _MOVED_SECONDS) -> None:
     """Announce a run's progress, at most once every ``floor`` seconds.
 
     Takes the lock and publishes outside it. A run already gone says nothing;
-    :func:`close_run` publishes that.
+    the coordinator publishes retirement.
     """
     now = time.time()
     with _lock:
@@ -315,55 +205,46 @@ def open_run(
     """
     with _lock:
         run = _runs.get(run_id)
-        created = run is None
         if run is None:
             run = Run(run_id, kind, time.time(), dry_run=dry_run, label=label)
             _runs[run_id] = run
         run.filling = run.filling or filling
-    # A run appearing is what an idle page is waiting to hear.
-    if created:
-        notify.publish(notify.RUNS)
     return run
 
 
 def add_file(run_id: str) -> None:
-    """One more file for this run to get through."""
+    """One more file for this run to get through.
+
+    Called inside the scheduler's admission boundary, so it never publishes;
+    :func:`announce_queue` is what tells the pages, once that lock is released.
+    """
     with _lock:
         if run := _runs.get(run_id):
             run.total += 1
-    _moved(run_id)
 
 
 def seal(run_id: str) -> None:
-    """Mark a run as fully handed its files. Until then an import stays open,
-    since more may still be arriving."""
+    """Report that the producer has handed over all files; never retire here."""
+    with _lock:
+        if run := _runs.get(run_id):
+            run.filling = False
+
+
+def retire(run_id: str, *, closing: bool = False) -> bool:
+    """Remove drained reporting under scheduler -> registry lock order.
+
+    The scheduler must establish that no admission remains before calling.
+    Return notification information; never publish while its lock is held.
+    """
     with _lock:
         run = _runs.get(run_id)
         if run is None:
-            return
-        run.filling = False
-        closed = _close_if_done(run)
-    if closed:
-        notify.publish(notify.RUNS)
-
-
-def close_run(run_id: str) -> None:
-    with _lock:
-        gone = _runs.pop(run_id, None) is not None
-    if gone:
-        notify.publish(notify.RUNS)
-
-
-def _close_if_done(run: Run) -> bool:
-    """Drop an import with nothing left; whether it went. Call under the lock;
-    the caller publishes.
-
-    Only imports: a sweep is closed by the function running it, or an empty
-    library would retire it before the walk began.
-    """
-    if run.kind == IMPORT and not run.filling and not run.active and run.done >= run.total:
-        _runs.pop(run.id, None)
-        return True
+            return False
+        if closing or (
+            run.kind == IMPORT and not run.filling and not run.active and run.done >= run.total
+        ):
+            del _runs[run_id]
+            return True
     return False
 
 
@@ -384,34 +265,25 @@ def walking(run_id: str, still: bool) -> None:
     _moved(run_id)
 
 
-def queue(run_id: str | None, path: str, seconds: float = 0.0) -> None:
-    """Record a file needing work no worker has started.
-
-    ``seconds`` is the expected duration; zero where unknown. Removed in
-    :func:`begin`, or in :func:`tally` for a run stopped first.
-    """
-    if run_id is None:
-        return
-    with _lock:
-        if run := _runs.get(run_id):
-            run.queued[path] = seconds
-    _moved(run_id)
+def announce_queue(run_id: str | None) -> None:
+    """Publish queue progress after the scheduler releases its condition."""
+    if run_id is not None:
+        _moved(run_id)
 
 
-def begin(run_id: str | None, path: str) -> None:
+def begin(run_id: str | None, path: str, expected: float = 0.0) -> None:
     """Record that a thread has picked this file up.
 
-    A None run is accepted throughout: the CLI's fix has none. Nothing is
-    recorded for it.
+    ``expected`` is the seconds the work was queued under, carried by the task
+    itself. A None run is accepted throughout: the CLI's fix has none. Nothing
+    is recorded for it.
     """
     if run_id is None:
         return
     runlog.attach(run_id, path)
     with _lock:
         if run := _runs.get(run_id):
-            # Moved from queued to active, or the remaining work would count it
-            # twice. The estimate comes with it.
-            run.active[path] = Active(time.time(), expected=run.queued.pop(path, 0.0))
+            run.active[path] = Active(time.time(), expected=expected)
     _moved(run_id)
 
 
@@ -451,22 +323,23 @@ def progress(run_id: str | None, path: str, done: float, speed: float) -> None:
     _moved(run_id, _MOVED_SECONDS if first else _DRIFT_SECONDS)
 
 
-def finish(run_id: str | None, path: str) -> None:
+def finish(run_id: str | None, path: str, *, continuing: bool = False) -> None:
     """Record that the thread has released this file. It moves to the recent
-    list; the verdict lands on that row in :func:`tally`."""
+    list; the verdict lands on that row in :func:`tally`. A discovery handing
+    off to rewriting only releases telemetry, without a completed row."""
     if run_id is None:
         return
     runlog.detach()
     now = time.time()
     with _lock:
         run = _runs.get(run_id)
-        if run and (active := run.active.pop(path, None)):
+        if run and (active := run.active.pop(path, None)) and not continuing:
             run.recent.append(Done(path, round(now - active.since, 1)))
     _moved(run_id)
 
 
 def tally(
-    run_id: str | None,
+    run_id: str,
     status: str,
     path: str = "",
     detail: str = "",
@@ -478,25 +351,12 @@ def tally(
     without any file being picked up. ``cached`` gets no row: nothing was probed
     or logged, and a warm library is almost entirely these.
     """
-    if run_id is None:
-        return
-    closed = False
     with _lock:
         if run := _runs.get(run_id):
             run.done += 1
             run.counts[status] = run.counts.get(status, 0) + 1
-            # Usually gone already in begin(); still here for a file a stopped
-            # run never picked up.
-            run.queued.pop(path, None)
             if path:
                 _decide(run, path, status, detail[:_DETAIL_MAX], cached)
-            closed = _close_if_done(run)
-    # A run closing is a registry change, not progress; the pages treat them
-    # differently.
-    if closed:
-        notify.publish(notify.RUNS)
-    else:
-        _moved(run_id)
 
 
 def _decide(run: Run, path: str, status: str, detail: str, cached: bool) -> None:
@@ -514,114 +374,22 @@ def _decide(run: Run, path: str, status: str, detail: str, cached: bool) -> None
         run.recent.append(Done(path, status=status, detail=detail))
 
 
-def stop(run_id: str) -> bool:
-    """Ask a run to stop between files. Returns whether it existed.
-
-    A sweep still writes its cache and its summary.
-    """
-    with _lock:
-        run = _runs.get(run_id)
-        if run is None:
-            return False
-        run.stopping = True
-    # Published at once: every other tab shows a Stop button that no longer
-    # applies.
-    notify.publish(notify.RUNS)
-    log.info("run %s asked to stop", run_id)
-    return True
-
-
-def skip(run_id: str, path: str) -> str:
-    """Take one file off a run: ``active`` where a thread has it this second,
-    ``waiting`` where none has yet, or ``""`` where there is nothing to skip.
-
-    Only recorded here. An active file's rewrite is killed by the caller, which
-    is the whole difference between skipping it and waiting for it.
-    """
-    with _lock:
-        run = _runs.get(run_id)
-        if run is None:
-            return ""
-        if path in run.active:
-            where = "active"
-        elif path in run.queued:
-            where = "waiting"
-        elif any(done.path == path and done.status for done in run.recent):
-            # A verdict is the run finished with it, and the skip would sit in
-            # the set until the run closed. A released file with none yet is a
-            # sweep between the probe and the slot, which is still ahead.
-            return ""
-        else:
-            # A delivery's queue, which lives in the work queue rather than
-            # here, or that gap between a probe and a slot.
-            where = "waiting"
-        run.skipped.add(path)
-    notify.publish(notify.RUNS)
-    log.info("%s skipped on run %s", path, run_id)
-    return where
-
-
-def skipped(run_id: str | None, path: str) -> bool:
-    """Whether this file was taken off the run before a worker reached it."""
-    if run_id is None:
-        return False
-    with _lock:
-        run = _runs.get(run_id)
-        return bool(run and path in run.skipped)
-
-
-def stop_all() -> int:
-    """Ask every run to stop; how many were asked. Each still stops between
-    files."""
-    with _lock:
-        asked = [run for run in _runs.values() if not run.stopping]
-        for run in asked:
-            run.stopping = True
-    if asked:
-        notify.publish(notify.RUNS)
-        log.info("every run asked to stop (%d)", len(asked))
-    return len(asked)
-
-
-def drop(run_id: str | None) -> None:
+def drop(run_id: str) -> None:
     """Take a file off a run that will never reach it.
 
     A stopped delivery's queued files get no verdict, since nothing opened
     them, but a run whose ``done`` never reaches ``total`` never retires.
     """
-    if run_id is None:
-        return
-    closed = False
     with _lock:
         if run := _runs.get(run_id):
             run.total = max(run.done, run.total - 1)
-            closed = _close_if_done(run)
-    if closed:
-        notify.publish(notify.RUNS)
-    else:
-        _moved(run_id)
-
-
-def stopping(run_id: str | None) -> bool:
-    if run_id is None:
-        return False
-    with _lock:
-        run = _runs.get(run_id)
-        return bool(run and run.stopping)
-
-
-def running(kind: str) -> Run | None:
-    """The first run of a kind, for the guard against a second sweep."""
-    with _lock:
-        return next((run for run in _runs.values() if run.kind == kind), None)
 
 
 def cache_holder() -> Run | None:
-    """The run currently rewriting the sweep cache, if any.
+    """An active run updating the sweep cache, if any.
 
-    A sweep and a re-check both write the file whole, so a second starting
-    mid-walk would lose the first's verdicts. Clearing the cache is refused on
-    the same grounds.
+    Concurrent walks share their verdicts. Cache clearing still waits for all
+    walks, so their checkpoints cannot restore entries after a clear.
     """
     with _lock:
         return next((run for run in _runs.values() if run.kind in CACHE_KINDS), None)
@@ -658,6 +426,18 @@ def abort(path: str = "") -> int:
     return killed
 
 
+def abort_phase(cancel: Cancel) -> int:
+    """Kill the rewrite one claimed phase has going; how many were signalled.
+
+    Zero for a phase that never reached ffmpeg, including a probe and a rewrite
+    still waiting on its slot. Either way it is marked, so nothing starts after.
+    """
+    killed = terminate_phase(cancel)
+    if killed:
+        log.warning("aborted the rewrite of %s", cancel.path)
+    return killed
+
+
 def stamp(when: float) -> str:
     """A moment in the history's ``ts`` format."""
     return events.at(when)
@@ -671,14 +451,13 @@ def _still_to_go(active: Active, now: float) -> float:
     return max(0.0, active.expected - (now - active.since))
 
 
-def _rewriting_left(run: Run, now: float) -> float | None:
+def _rewriting_left(run: Run, now: float, waiting: float) -> float | None:
     """Roughly how many wall seconds this run's rewriting has left, or None
     with no rewriting in it.
 
     A floor: a walking sweep has not found all its work, a delivery competes
     for the same slots, and every estimate is a median.
     """
-    waiting = sum(run.queued.values())
     working = [_still_to_go(active, now) for active in run.active.values()]
     if not waiting and not any(working):
         return None
@@ -686,7 +465,33 @@ def _rewriting_left(run: Run, now: float) -> float | None:
     return max(estimate.backlog(waiting + sum(working)), max(working, default=0.0))
 
 
-def _as_json(run: Run, now: float) -> dict:
+def _by_age(run: Run) -> list[tuple[str, Active]]:
+    """The files this run's threads hold, longest-running first, so a page with
+    room for one shows the file holding everything up."""
+    return sorted(run.active.items(), key=lambda item: item[1].since)
+
+
+def _active_json(path: str, active: Active, now: float, skipped: bool) -> dict:
+    """One held file's row. The encode figures are zero for anything else."""
+    return {
+        "path": path,
+        "seconds": round(now - active.since, 1),
+        "stage": active.stage,
+        "duration": round(active.total, 1),
+        "done": round(active.done, 1),
+        "speed": round(active.speed, 2),
+        # Asked for but not yet given up: the kill and the thread noticing are
+        # two moments.
+        "skipped": skipped,
+    }
+
+
+def _as_json(run: Run, now: float, control: Control) -> dict:
+    # The scheduler still holds a claimed file; the thread working it is the
+    # one thing it cannot see, so the rows it hands over are filtered here.
+    claimed = [row for row in control.claimed if row.path not in run.active]
+    queued = len(claimed) + control.queued
+    waiting = sum(row.expected for row in claimed) + control.expected
     return {
         "id": run.id,
         "kind": run.kind,
@@ -699,34 +504,21 @@ def _as_json(run: Run, now: float) -> dict:
         "counts": dict(run.counts),
         # Work found but not started, and whether the listing is done. A count
         # under a walk still going is a floor.
-        "queued": len(run.queued),
+        "queued": queued,
         "walking": run.walking,
         # Null where the run has no rewriting in it.
-        "rewrite_seconds": _rewriting_left(run, now),
-        "stopping": run.stopping,
-        # Longest-running first, so a page with room for one shows the file
-        # holding everything up.
+        "rewrite_seconds": _rewriting_left(run, now, waiting),
+        "stopping": control.stopping,
         "active": [
-            {
-                "path": path,
-                "seconds": round(now - active.since, 1),
-                "stage": active.stage,
-                # All three are zero for anything but an encode.
-                "duration": round(active.total, 1),
-                "done": round(active.done, 1),
-                "speed": round(active.speed, 2),
-                # Asked for but not yet given up: the kill and the thread
-                # noticing are two moments.
-                "skipped": path in run.skipped,
-            }
-            for path, active in sorted(run.active.items(), key=lambda item: item[1].since)
+            _active_json(path, active, now, path in control.skipped)
+            for path, active in _by_age(run)
         ],
         # The head of the queue in the order it will be reached, so a page has
         # something to name when somebody wants one of them left alone. Bounded:
         # a first-night sweep queues thousands and the page shows a handful.
         "upcoming": [
-            {"path": path, "expected": round(seconds, 1), "skipped": path in run.skipped}
-            for path, seconds in list(run.queued.items())[:_UPCOMING]
+            {"path": row.path, "expected": round(row.expected, 1), "skipped": row.skipped}
+            for row in (*claimed, *control.upcoming)[:UPCOMING]
         ],
         # Newest first.
         "recent": [
@@ -741,19 +533,63 @@ def _as_json(run: Run, now: float) -> dict:
     }
 
 
-def snapshot() -> dict:
-    """Everything happening right now, as the overview reads it."""
-    now = time.time()
+@dataclass(frozen=True)
+class Capture:
+    """Detached bounded telemetry, copied under R and formatted after S and R."""
+
+    up: float
+    now: float
+    runs: tuple[Run, ...]
+
+    def workload(self) -> tuple[int, int]:
+        return (
+            sum(max(0, run.total - run.done - len(run.active)) for run in self.runs),
+            sum(len(run.active) for run in self.runs),
+        )
+
+    def as_json(self, controls: Mapping[str, Control]) -> dict:
+        rows = [
+            _as_json(run, self.now, controls.get(run.id, _UNCONTROLLED)) for run in self.runs
+        ]
+        rows.sort(key=lambda run: run["started"])
+        return {"up_since": stamp(self.up), "runs": rows}
+
+    def active_under(self, folder: str, controls: Mapping[str, Control]) -> list[dict]:
+        """The files threads hold inside one folder, each naming its run."""
+        inside = paths.within(folder)
+        rows: list[dict] = []
+        for run in sorted(self.runs, key=lambda run: run.started):
+            control = controls.get(run.id, _UNCONTROLLED)
+            rows.extend(
+                {
+                    "run": run.id,
+                    **_active_json(path, active, self.now, path in control.skipped),
+                    "stopping": control.stopping,
+                }
+                for path, active in _by_age(run)
+                if inside(path)
+            )
+        return rows
+
+
+def capture() -> Capture:
+    """Copy telemetry while the caller holds S when pairing it with controls."""
     with _lock:
-        runs = [_as_json(run, now) for run in _runs.values()]
-    # Oldest first: a nightly sweep stays at the top while deliveries come and
-    # go beneath it.
-    runs.sort(key=lambda run: run["started"])
-    return {
-        "paused": paused(),
-        "paused_by": _paused_by,
-        "paused_at": _paused_at,
-        # How a page tells a sweep that finished from one a restart cut off.
-        "up_since": stamp(_UP),
-        "runs": runs,
-    }
+        return Capture(
+            _UP,
+            time.time(),
+            tuple(
+                replace(
+                    run,
+                    counts=dict(run.counts),
+                    active={path: replace(active) for path, active in run.active.items()},
+                    recent=collections.deque(replace(done) for done in run.recent),
+                )
+                for run in _runs.values()
+            ),
+        )
+
+
+def snapshot(controls: Mapping[str, Control] | None = None) -> dict:
+    """Reporting alone; lifecycle captures telemetry and controls together."""
+    return capture().as_json(controls or {})
