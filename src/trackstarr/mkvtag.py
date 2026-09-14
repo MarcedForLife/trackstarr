@@ -84,6 +84,9 @@ class Outcome(enum.StrEnum):
     UNCHANGED = "unchanged"
     REFUSED = "refused"
     FAILED = "failed"
+    #: A skip reached the phase before the edit began. Nothing was written and
+    #: nothing is wrong with the file, so it is not a refusal to rewrite past.
+    STOPPED = "stopped"
 
 
 class RetagError(RuntimeError):
@@ -275,9 +278,16 @@ def _misread(stream: dict, edit: Edit, before: dict) -> str | None:
     return None
 
 
-def edit_track(path: str, index: int, edit: Edit) -> tuple[dict, dict, str, dict] | Result:
+def edit_track(
+    path: str, index: int, edit: Edit, commit: Callable[[], bool] | None = None
+) -> tuple[dict, dict, str, dict] | Result:
     """The edit itself, one at a time: the state before, the state asked for,
-    the kind and the state read back, or the Result that stopped it."""
+    the kind and the state read back, or the Result that stopped it.
+
+    ``commit`` is asked once the edit is settled and the lock is held, so a
+    phase waiting out another file's edit stays cancellable until its own
+    starts. A false answer writes nothing.
+    """
     with _edit_lock:
         try:
             streams, stream = _stream(path, index)
@@ -301,6 +311,8 @@ def edit_track(path: str, index: int, edit: Edit) -> tuple[dict, dict, str, dict
         wanted = before | ({"lang": edit.lang} if edit.lang is not None else {}) | edit.flags
         if wanted == before:
             return Result(path, Outcome.UNCHANGED, "already tagged that way")
+        if commit is not None and not commit():
+            return Result(path, Outcome.STOPPED, "stopped before the edit, nothing written")
         try:
             _propedit(path, _track_uid(path, streams, stream), before, wanted)
             _, read_back = _stream(path, index)
@@ -326,16 +338,19 @@ def mistook(path: str, wanted: dict, after: dict, verdict: str = "") -> Result |
     )
 
 
-def write_lang(path: str, index: int, lang: str) -> Result:
+def write_lang(
+    path: str, index: int, lang: str, commit: Callable[[], bool] | None = None
+) -> Result:
     """Set one track's language in place, for the rules rather than a page.
 
     No history and no re-judging of its own, the caller holds the plan the tag
     came from and books the verdict it reaches. A refusal is its cue to write
-    the tag the slow way, in the rewrite.
+    the tag the slow way, in the rewrite. ``commit`` is the queued phase's
+    gate; see :func:`edit_track`.
     """
     if why := unwritable(path):
         return Result(path, Outcome.REFUSED, why)
-    edited = edit_track(path, index, Edit(lang=lang))
+    edited = edit_track(path, index, Edit(lang=lang), commit)
     if isinstance(edited, Result):
         return edited
     _, wanted, _, after = edited

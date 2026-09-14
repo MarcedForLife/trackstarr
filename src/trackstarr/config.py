@@ -480,7 +480,7 @@ class Settings:
     #: process sharing STATE_DIR. 1 because spinning disks thrash; the README
     #: says how to measure a faster one.
     MAX_CONCURRENT_REWRITES: int
-    #: Files the sweep probes at once. Separate from the rewrite budget: a disk
+    #: Files imports and sweeps probe at once. Separate from the rewrite budget: a disk
     #: that wants one rewrite at a time still takes several probes, and a cold
     #: sweep at one probe at a time is hours.
     PROBE_WORKERS: int

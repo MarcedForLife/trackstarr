@@ -91,42 +91,55 @@ def apply(
     changed, and the new verdict is booked so the sheet reloads to it rather
     than waiting on the next sweep.
     """
-    if why := refusal(path, stored):
-        return Result(path, Outcome.REFUSED, why)
-    edited = edit_track(path, index, edit)
-    if isinstance(edited, Result):
-        return edited
-    before, wanted, kind, after = edited
-    changed = {
-        name: {"from": before[name], "to": after.get(name)}
-        for name in before
-        if after.get(name) != before[name]
-    }
-    if changed:
-        events.record("retagged", path=path, index=index, kind=kind, changed=changed, by=by)
-        log.info("%s stream %d retagged by %s: %s", path, index, by, changed)
-    # The verdict stands either way, so it is reached before the edit is held
-    # against what was asked for.
-    verdict = _rejudge(path, title)
-    return mistook(path, wanted, after, verdict) or Result(path, Outcome.RETAGGED, "", verdict)
+    with sweep_cache.observing(path, policy=Policy.from_config()) as observation:
+        if why := refusal(path, stored):
+            return Result(path, Outcome.REFUSED, why)
+        # Taken before the editor's own lock, so a rewrite publishing this file
+        # and an edit aimed at it settle one at a time rather than each judging
+        # what the other left.
+        observation.changing(path)
+        edited = edit_track(path, index, edit)
+        if isinstance(edited, Result):
+            if edited.status is Outcome.FAILED:
+                # mkvpropedit can fail with the header already written, so the
+                # stored verdict goes with the file it described.
+                observation.changed()
+            return edited
+        before, wanted, kind, after = edited
+        observation.changed()
+        changed = {
+            name: {"from": before[name], "to": after.get(name)}
+            for name in before
+            if after.get(name) != before[name]
+        }
+        if changed:
+            events.record("retagged", path=path, index=index, kind=kind, changed=changed, by=by)
+            log.info("%s stream %d retagged by %s: %s", path, index, by, changed)
+        # The verdict stands either way, so it is reached before the edit is held
+        # against what was asked for.
+        verdict = _rejudge(path, title, observation)
+        return mistook(path, wanted, after, verdict) or Result(
+            path, Outcome.RETAGGED, "", verdict
+        )
 
 
-def _rejudge(path: str, title: library.Title | None) -> str:
+def _rejudge(
+    path: str, title: library.Title | None, observation: sweep_cache.Observation
+) -> str:
     """Book the file's verdict as it now stands, and say what it is.
 
     Report only, through :func:`trackstarr.processing.process` so verdicts are
     reached in one place. The media servers are told too, as a rewrite tells
-    them, so their own track lists follow the file's. A walk starting after
-    the request's check can book over this entry at its next checkpoint; the
-    edit moved the file's size and mtime, so that entry fails its own key and
-    the file is probed again.
+    them, so their own track lists follow the file's. The observation begins
+    before the edit and conditional publication fences concurrent mutations,
+    including edits that happen to preserve size and mtime.
     """
     lang = title.lang if title else None
     # Keyed before the probe, as a sweep keys its verdicts, so a change landing
     # under the probe leaves a stale entry rather than a wrong one.
     key = cache_key(path, lang)
-    result = process(Job(path, lang), dry_run=True)
-    sweep.remember(path, key, result)
+    result = process(Job(path, lang), dry_run=True, policy=observation.policy)
+    sweep.remember(path, key, result, observation)
     # Our own edit moved the file, so the record follows it rather than losing
     # its claim to a change we made.
     rewrites.rekey(path, key)

@@ -5,17 +5,21 @@ import fcntl
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
-from conftest import configured_arr, needed_plan, read_events, set_config
-from trackstarr import config, estimate, holds, mkvtag, processing
-from trackstarr.executor import Outcome
+from conftest import cache_verdict, configured_arr, needed_plan, read_events, set_config
+from trackstarr import config, estimate, mkvtag, pauses, planner, processing, sweep_cache
+from trackstarr.executor import Cancel, Outcome
 from trackstarr.media import ProbeError
 from trackstarr.planner import OutStream, Plan
+from trackstarr.policy import Policy
 from trackstarr.processing import Job, process
 from trackstarr.status import Status
+from trackstarr.sweep import remember
 
 
 def stereo_from(*, generated: bool) -> Plan:
@@ -89,7 +93,7 @@ def test_report_mode_bottoms_out_in_process(monkeypatch):
     passes."""
     set_config(REWRITE_MODE="report")
     plan = needed_plan()
-    monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
+    monkeypatch.setattr(processing, "build_plan", lambda path, lang, policy=None: plan)
     monkeypatch.setattr(
         processing, "apply_plan", lambda plan: pytest.fail("report mode must not rewrite")
     )
@@ -97,13 +101,13 @@ def test_report_mode_bottoms_out_in_process(monkeypatch):
     assert result.status == "pending"
 
 
-def test_a_held_file_is_planned_and_reported_but_never_rewritten(monkeypatch):
+def test_a_paused_file_is_planned_and_reported_but_never_rewritten(monkeypatch):
     """The whole point: a title somebody is watching goes on being judged, so
     the library still shows the work, and nothing touches the file."""
-    holds.place("/data/media/movies/Dune (2024)", by="marc", reason="watching it")
+    pauses.place("/data/media/movies/Dune (2024)", by="marc", reason="watching it")
     set_config(MEDIA_DIRS=["/data/media/movies"])
     plan = needed_plan()
-    monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan)
+    monkeypatch.setattr(processing, "build_plan", lambda path, lang, policy=None: plan)
     monkeypatch.setattr(
         processing, "apply_plan", lambda plan: pytest.fail("a hold must not rewrite")
     )
@@ -111,13 +115,13 @@ def test_a_held_file_is_planned_and_reported_but_never_rewritten(monkeypatch):
     assert result.status is Status.PENDING
     # The row and pending.tsv say why this one is not being rewritten, since
     # the plan's own reasons would read as work about to happen.
-    assert "held by marc" in result.detail
+    assert "paused by marc" in result.detail
     assert "watching it" in result.detail
 
 
-def test_a_hold_on_one_title_leaves_the_rest_alone(stub_rewrite):
+def test_a_pause_on_one_title_leaves_the_rest_alone(stub_rewrite):
     """A hold is not a pause; everything else goes on being rewritten."""
-    holds.place("/data/media/movies/Dune (2024)", by="marc")
+    pauses.place("/data/media/movies/Dune (2024)", by="marc")
     stub_rewrite(needed_plan(path="/data/media/movies/Arrival (2016)/Arrival (2016).mkv"))
     result = process(Job("/data/media/movies/Arrival (2016)/Arrival (2016).mkv"), dry_run=False)
     assert result.status is Status.MODIFIED
@@ -254,11 +258,13 @@ def test_a_probe_failure_during_a_rewrite_is_reported_not_raised(tmp_path, monke
     path = tmp_path / "f.mkv"
     path.write_bytes(b"x")
 
-    def fail(plan, on_progress=None, on_encoded=None):
+    def fail(plan, on_progress=None, on_encoded=None, cancel=None, claim=None):
         raise ProbeError("moov atom not found")
 
     monkeypatch.setattr(processing, "apply_plan", fail)
-    monkeypatch.setattr(processing, "build_plan", lambda p, lang: needed_plan(str(path)))
+    monkeypatch.setattr(
+        processing, "build_plan", lambda p, lang, policy=None: needed_plan(str(path))
+    )
     result = process(Job(str(path)), dry_run=False)
     assert result.status is Status.FAILED
     assert "moov atom not found" in result.detail
@@ -287,18 +293,43 @@ def test_a_rewrite_waits_for_a_busy_slot_rather_than_failing(monkeypatch):
     held = processing._claim_slot()
     released: list[bool] = []
 
-    def release_on_first_wait(seconds):
+    def release_on_first_wait(cancel):
         """Stand in for the other worker finishing while we poll."""
         if not released:
             released.append(True)
             held.close()
 
-    monkeypatch.setattr(processing.time, "sleep", release_on_first_wait)
+    monkeypatch.setattr(processing, "_pause_for_slot", release_on_first_wait)
     got = processing._claim_slot()
     try:
         assert released == [True]
     finally:
         got.close()
+
+
+def test_a_skip_that_won_the_race_for_a_slot_hands_it_straight_back(monkeypatch):
+    """The slot came free as the skip landed. Keeping it would hold the budget
+    against a rewrite that is no longer going to happen."""
+    cancel = Cancel("/x.mkv")
+    locking = processing._try_lock
+
+    def lock_then_skip(name):
+        cancel.ask()
+        return locking(name)
+
+    monkeypatch.setattr(processing, "_try_lock", lock_then_skip)
+    assert processing._claim_slot(cancel) is None
+    assert not _is_locked("rewrite.lock.0")
+
+
+def test_a_file_skipped_while_the_slots_are_full_gives_up_waiting(monkeypatch):
+    """Every slot is somebody else's encode. Without this the skip is answered
+    an hour later, long after the page said the file had been left alone."""
+    set_config(MAX_CONCURRENT_REWRITES=1)
+    cancel = Cancel("/x.mkv")
+    with held_slot():
+        monkeypatch.setattr(processing, "_pause_for_slot", lambda waiting: waiting.ask())
+        assert processing._claim_slot(cancel) is None
 
 
 def tag_plan(path: str = "/x.mkv") -> Plan:
@@ -321,9 +352,15 @@ def stub_tag(monkeypatch):
         status: mkvtag.Outcome | None = None, detail: str = "", plan: Plan | None = None
     ) -> list:
         calls: list = []
-        monkeypatch.setattr(processing, "build_plan", lambda path, lang: plan or tag_plan())
+        monkeypatch.setattr(
+            processing, "build_plan", lambda path, lang, policy=None: plan or tag_plan()
+        )
 
-        def write_lang(path: str, index: int, lang: str):
+        def write_lang(path: str, index: int, lang: str, commit=None):
+            # Where the real editor asks: the lock is held and the edit is
+            # settled, so a no means nothing was written.
+            if commit is not None and not commit():
+                return mkvtag.Result(path, mkvtag.Outcome.STOPPED, "stopped before the edit")
             calls.append((path, index, lang))
             return mkvtag.Result(path, status or mkvtag.Outcome.RETAGGED, detail)
 
@@ -392,7 +429,7 @@ def test_a_file_that_cannot_be_edited_in_place_is_rewritten(monkeypatch, stub_ta
     the same tag, at the price of copying the file."""
     rewritten = []
 
-    def apply_plan(plan, on_progress=None, on_encoded=None):
+    def apply_plan(plan, on_progress=None, on_encoded=None, cancel=None, claim=None):
         rewritten.append(plan.path)
         return Outcome.APPLIED, ""
 
@@ -428,7 +465,7 @@ def test_a_rewrite_ordered_by_anything_else_writes_the_tag_itself():
 def test_a_plan_with_no_tag_to_write_is_not_a_fast_path():
     """The rule names itself only where it has a stream to stamp, so this is
     the door staying shut rather than a case the rules reach."""
-    assert processing._tag_only(replace(tag_plan(), streams=[])) is None
+    assert processing._tag_only(replace(tag_plan(), streams=[OutStream(0, "video")])) is None
 
 
 def test_a_tagged_title_is_rescanned_like_any_other(monkeypatch, stub_tag):
@@ -455,3 +492,262 @@ def test_a_tag_something_else_wrote_first_is_nobody_s_rewrite(monkeypatch, stub_
 
     assert result.status is Status.CONFORM
     assert [line for line in read_events() if line["event"] == "modified"] == []
+
+
+def test_a_file_skipped_while_it_was_planned_is_never_edited(monkeypatch, stub_tag):
+    """The skip landed during the probe, which is a read: nothing has changed
+    yet, so nothing should. Without the check the page says the file was left
+    alone and mkvpropedit writes the tag a moment later."""
+    _never_rewrite(monkeypatch)
+    calls = stub_tag()
+    cancel = Cancel("/x.mkv")
+    planned = processing.build_plan
+    monkeypatch.setattr(
+        processing,
+        "build_plan",
+        lambda path, lang, policy=None: (cancel.ask(), planned(path, lang, policy))[1],
+    )
+
+    result = process(Job("/x.mkv"), dry_run=False, cancel=cancel)
+
+    assert result.status is Status.DEFERRED
+    assert result.detail == processing.STOPPED_BEFORE_START
+    assert calls == [], "the editor was never reached"
+
+
+def test_a_skip_that_reaches_the_gate_is_deferred_rather_than_rewritten(monkeypatch, stub_tag):
+    """A stopped edit is not a refusal: rewriting instead would write the tag
+    the skip just stopped, the slow way."""
+    _never_rewrite(monkeypatch)
+    stub_tag(mkvtag.Outcome.STOPPED, "stopped before the edit")
+
+    result = process(Job("/x.mkv"), dry_run=False)
+
+    assert result.status is Status.DEFERRED
+    assert [line for line in read_events() if line["event"] == "modified"] == []
+
+
+def test_a_skip_after_the_edit_began_reports_what_really_happened(monkeypatch, stub_tag):
+    """The header is written and the skip has nothing left to prevent. Booking
+    it as deferred would leave the library showing the old tracks."""
+    _never_rewrite(monkeypatch)
+    stub_tag()
+    cancel = Cancel("/x.mkv")
+    assert cancel.commit(), "the edit is under way"
+
+    result = process(Job("/x.mkv"), dry_run=False, cancel=cancel)
+
+    assert not cancel.ask(), "too late to stop it"
+    assert result.status is Status.MODIFIED
+    assert len([line for line in read_events() if line["event"] == "modified"]) == 1
+
+
+def test_a_rewrite_skipped_while_it_waited_for_a_slot_is_deferred(monkeypatch, stub_rewrite):
+    """Every slot on the machine is busy and the file has been taken off its
+    run. It settles now rather than after an hour of somebody else's encode."""
+    set_config(MAX_CONCURRENT_REWRITES=1)
+    stub_rewrite(needed_plan())
+    monkeypatch.setattr(
+        processing, "apply_plan", lambda *a, **k: pytest.fail("nothing claimed a slot")
+    )
+    with held_slot():
+        monkeypatch.setattr(processing, "_pause_for_slot", lambda waiting: waiting.ask())
+        result = process(Job("/x.mkv"), dry_run=False, cancel=Cancel("/x.mkv"))
+
+    assert result.status is Status.DEFERRED
+    (recorded,) = [line for line in read_events() if line["event"] == "deferred"]
+    assert recorded["detail"] == processing.STOPPED_BEFORE_START
+
+
+def test_observed_policy_is_used_even_if_settings_change_before_planning(monkeypatch, tmp_path):
+    path = str(tmp_path / "film.mkv")
+    (tmp_path / "film.mkv").write_bytes(b"file")
+    set_config(LANGUAGES=("eng",))
+    monkeypatch.setattr(planner, "probe", lambda path: {"streams": []})
+    with sweep_cache.observing(path) as observation:
+        key = sweep_cache.cache_key(path, None)
+        before = observation.policy.fingerprint()
+        set_config(LANGUAGES=("fre",))
+        result = process(Job(path), True, policy=observation.policy)
+        assert result.plan.policy.fingerprint() == before
+        remember(path, key, result, observation)
+    stored = sweep_cache.read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    assert stored.current is False
+    assert path in stored.files
+
+
+def test_explicit_planning_is_independent_of_ambient_observation(monkeypatch, tmp_path):
+    path = tmp_path / "film.mkv"
+    path.write_bytes(b"file")
+    set_config(LANGUAGES=("eng",))
+    chosen = Policy.from_config()
+    monkeypatch.setattr(planner, "probe", lambda path: {"streams": []})
+    expected = planner.build_plan(str(path), None, chosen)
+    set_config(LANGUAGES=("fre",))
+    with sweep_cache.observing(str(path)):
+        set_config(LANGUAGES=("ger",))
+        assert planner.build_plan(str(path), None, chosen) == expected
+        assert planner.new_plan(str(path), None).policy == Policy.from_config()
+        assert process(Job(str(path)), True, policy=chosen).plan == expected
+
+
+def test_rewrite_recheck_keeps_policy_when_settings_change(monkeypatch, tmp_path):
+    path = tmp_path / "film.mkv"
+    path.write_bytes(b"file")
+    set_config(LANGUAGES=("eng",), REWRITE_MODE="all")
+    chosen = Policy.from_config()
+    planned = []
+
+    def build(path, lang, policy):
+        planned.append(policy)
+        return needed_plan(path, policy=policy) if len(planned) == 1 else Plan(path, policy)
+
+    def apply(plan, on_progress=None, on_encoded=None, cancel=None, claim=None):
+        set_config(LANGUAGES=("fre",))
+        return Outcome.APPLIED, ""
+
+    monkeypatch.setattr(processing, "build_plan", build)
+    monkeypatch.setattr(processing, "apply_plan", apply)
+    with sweep_cache.observing(str(path), policy=chosen) as observation:
+        key = sweep_cache.cache_key(str(path), None)
+        result = process(Job(str(path)), False, policy=chosen)
+        remember(str(path), key, result, observation)
+    assert planned == [chosen, chosen]
+    assert result.became.verdict.status is Status.CONFORM
+    stored = sweep_cache.read(sweep_cache.cache_path(), chosen.fingerprint())
+    assert stored.current
+    assert stored.files[str(path)]["status"] == "conform"
+    # A pinned policy does not pin operational pause/report controls.
+    set_config(REWRITE_MODE="report")
+    monkeypatch.setattr(
+        processing, "build_plan", lambda path, lang, policy: needed_plan(path, policy=policy)
+    )
+    assert process(Job(str(path)), False, policy=chosen).status is Status.PENDING
+
+
+def test_a_tag_owns_the_file_while_it_writes_the_header(monkeypatch, stub_tag, tmp_path):
+    """The verdict comes from a probe of what the edit left, so the file is the
+    edit's from before mkvpropedit is called until that verdict is booked."""
+    _never_rewrite(monkeypatch)
+    path = str(tmp_path / "x.mkv")
+    Path(path).write_bytes(b"file")
+    owned = []
+    stub_tag(plan=tag_plan(path))
+    write_lang = processing.mkvtag.write_lang
+
+    def watched(target, index, lang, commit=None):
+        owned.append(observation.changes)
+        return write_lang(target, index, lang, commit)
+
+    monkeypatch.setattr(processing.mkvtag, "write_lang", watched)
+    with sweep_cache.observing(path) as observation:
+        result = process(Job(path), dry_run=False, observation=observation)
+        assert observation.wrote
+
+    assert result.status is Status.MODIFIED
+    assert owned == [(path, path)]
+
+
+def test_a_refused_tag_gives_the_file_back_before_the_rewrite_waits(
+    monkeypatch, stub_tag, tmp_path
+):
+    """The rewrite it falls through to can wait hours for a slot. Holding the
+    file all that time would stall every read of it behind an edit that never
+    happened."""
+    path = str(tmp_path / "x.mkv")
+    Path(path).write_bytes(b"file")
+    stub_tag(mkvtag.Outcome.REFUSED, "an mp4 has no header to edit", plan=tag_plan(path))
+    workers = ThreadPoolExecutor()
+
+    def read_it() -> bool:
+        with sweep_cache.observing(path) as reader:
+            return reader.accepts({path})
+
+    def rewriting(plan, on_progress=None, on_encoded=None, cancel=None, claim=None):
+        # Where the wait for a slot happens; a read of the file must not queue
+        # behind it.
+        assert workers.submit(read_it).result(timeout=3)
+        assert claim()
+        return Outcome.APPLIED, ""
+
+    monkeypatch.setattr(processing, "apply_plan", rewriting)
+    try:
+        with sweep_cache.observing(path) as observation:
+            result = process(Job(path), dry_run=False, observation=observation)
+    finally:
+        workers.shutdown(wait=False)
+    assert result.status is Status.MODIFIED
+
+
+def test_a_rewrite_whose_verdict_never_landed_drops_the_stored_one(
+    monkeypatch, stub_rewrite, tmp_path
+):
+    """The file was published and nothing booked what it became, so the entry
+    describing what it was before goes with it."""
+    path = str(tmp_path / "x.mkv")
+    Path(path).write_bytes(b"file")
+    os.makedirs(config.STATE_DIR, exist_ok=True)
+    cache = sweep_cache.SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    cache_verdict(
+        cache, path, sweep_cache.cache_key(path, None), sweep_cache.Verdict(Status.PENDING)
+    )
+    cache.save()
+    stub_rewrite(needed_plan(path))
+
+    def lost(job, plan, key):
+        raise ProbeError("the probe went away with the verdict")
+
+    monkeypatch.setattr(processing, "_rejudged", lost)
+    with pytest.raises(ProbeError), sweep_cache.observing(path) as observation:
+        process(Job(path), dry_run=False, observation=observation)
+
+    stored = sweep_cache.read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    assert stored.files == {}
+
+
+def test_a_skip_landing_while_the_file_is_somebody_elses_writes_nothing(tmp_path):
+    """Both mutation entries wait for a file another edit holds, and a skip
+    arriving there is still in time: the tag defers and the rewrite never
+    reaches its rename."""
+    path = str(tmp_path / "x.mkv")
+    Path(path).write_bytes(b"file")
+    cancel = Cancel(path)
+    cancel.ask()
+    with sweep_cache.observing(path) as waiting, sweep_cache.observing(path) as holder:
+        assert holder.changing(path)
+        tagged = processing._tag_in_place(
+            Job(path), tag_plan(path), (1, "jpn"), "sweep", cancel, waiting
+        )
+        assert processing._claim(waiting, needed_plan(path), cancel)() is False
+
+    assert tagged.status is Status.DEFERRED
+    assert tagged.detail == processing.STOPPED_BEFORE_START
+    assert not waiting.wrote
+
+
+def test_skip_while_waiting_for_a_remux_destination_never_starts_a_tool(monkeypatch, tmp_path):
+    path = str(tmp_path / "file.mp4")
+    output = str(tmp_path / "file.mkv")
+    Path(path).write_text("source")
+    Path(output).write_text("destination")
+    plan = needed_plan(path, remuxing=True)
+    cancel = Cancel(path)
+    monkeypatch.setattr(processing, "build_plan", lambda *args: plan)
+    monkeypatch.setattr(processing, "apply_plan", lambda *a, **kw: pytest.fail("started tool"))
+    with sweep_cache.observing(output) as owner, sweep_cache.observing(path) as observation:
+        assert owner.changing(output)
+        stopped = threading.Event()
+        original = observation._settle
+
+        def waiting(paths, asked=None):
+            stopped.set()
+            return original(paths, asked)
+
+        monkeypatch.setattr(observation, "_settle", waiting)
+        with ThreadPoolExecutor() as pool:
+            result = pool.submit(
+                process, Job(path), False, cancel=cancel, observation=observation
+            )
+            assert stopped.wait(3)
+            cancel.ask()
+            assert result.result(timeout=3).status is Status.DEFERRED

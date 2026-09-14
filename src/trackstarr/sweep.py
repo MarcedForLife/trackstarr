@@ -13,13 +13,13 @@ import queue
 import time
 import zoneinfo
 from collections.abc import Callable, Iterator
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, as_completed
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 
-from . import config, cron, estimate, events, holds, notify, runs, sweep_cache
+from . import config, cron, estimate, events, lifecycle, notify, pauses, runs, sweep_cache, work
 from .arr import LibraryIndex, all_arrs, match_path, path_index
-from .executor import drop_staged, is_staged_file
+from .executor import Cancel, drop_staged, is_staged_file
 from .policy import Policy
 from .processing import (
     Job,
@@ -149,6 +149,9 @@ class Judged:
     became: Rewritten | None = None
     #: The verdict came from the cache, so the file was never probed.
     cached: bool = False
+    #: A queue control prevented observation. Count the displayed outcome, but
+    #: carry any saved entry through pruning without publishing a verdict.
+    unobserved: bool = False
     #: The sweep stopped before reaching this file. Not counted, reported or
     #: cached.
     skipped: bool = False
@@ -162,11 +165,15 @@ def _judge(
     run: str,
     force: bool = False,
     rewriting: bool | None = None,
+    policy: Policy | None = None,
+    expected: float = 0.0,
+    cancel: Cancel | None = None,
+    observation: sweep_cache.Observation | None = None,
 ) -> Judged:
     """Judge one file on a worker thread. Never raises, or the pool would
     abandon every file after it.
 
-    Reads the cache but never writes it; the walking thread books verdicts.
+    The caller publishes before releasing the worker claim; booking only counts.
 
     ``rewriting`` is whether this sweep will rewrite the file, here or later on
     another thread; defaults to ``not dry_run``. They differ in an applying
@@ -178,8 +185,19 @@ def _judge(
 
     A pause is waited out here, before the probe, so resuming picks the walk
     up mid-library.
+
+    ``expected`` is the seconds the rewrite was queued under, for the page's
+    readout while ffmpeg has yet to report one.
     """
-    if not runs.hold(run):
+    if work.scheduler.skipped(run, path):
+        return Judged(
+            Job(path, run=run),
+            None,
+            Verdict(Status.DEFERRED),
+            detail="skipped for this run",
+            unobserved=True,
+        )
+    if not lifecycle.hold(run):
         return Judged(Job(path), None, Verdict(Status.SKIP), skipped=True)
     if rewriting is None:
         rewriting = not dry_run
@@ -203,9 +221,16 @@ def _judge(
                 if stored := verdict.why.get("failed"):
                     gave_up = f"{stored} ({gave_up})"
                 return Judged(job, key, verdict, gave_up, cached=True)
-        runs.begin(run, path)
+        runs.begin(run, path, expected)
         try:
-            result = process(job, dry_run, source="sweep")
+            result = process(
+                job,
+                dry_run,
+                source="sweep",
+                policy=policy,
+                cancel=cancel,
+                observation=observation,
+            )
         finally:
             runs.finish(run, path)
         # Counted only when a rewrite was attempted. A reporting sweep's failure
@@ -286,23 +311,29 @@ def _registered(walk: Walk, run: str, dry_run: bool, label: str = "") -> Iterato
     dry_run = effective_dry_run(dry_run)
     if dry_run and not asked_for:
         log.info("REWRITE_MODE is report; the %s reports only", walk.kind)
-    record = runs.open_run(run, walk.kind, dry_run=dry_run, label=label)
-    try:
-        policy = Policy.from_config()
-        index = path_index(all_arrs())
-        if not index.complete and not dry_run and policy.needs_original_lang():
-            # With original languages unknown, the languages rule would drop a
-            # foreign film's own track. Only report-only is safe until the *arr
-            # answers again.
-            log.error(
-                "a *arr library could not be listed; this %s is report-only, nothing rewritten",
-                walk.kind,
-            )
-            # On the record too: the run card is already showing.
-            dry_run = record.dry_run = True
-        yield _Ready(policy, index, dry_run)
-    finally:
-        runs.close_run(run)
+    # Taken before the run is opened and held past the last write, so a
+    # shutdown waits for the cache and the report rather than for the queue.
+    with lifecycle.producer() as allowed:
+        if not allowed:
+            raise ValueError("the process is stopping")
+        record = lifecycle.open_run(run, walk.kind, dry_run=dry_run, label=label)
+        try:
+            policy = Policy.from_config()
+            index = path_index(all_arrs())
+            if not index.complete and not dry_run and policy.needs_original_lang():
+                # With original languages unknown, the languages rule would drop
+                # a foreign film's own track. Only report-only is safe until the
+                # *arr answers again.
+                log.error(
+                    "a *arr library could not be listed; this %s is report-only, "
+                    "nothing rewritten",
+                    walk.kind,
+                )
+                # On the record too: the run card is already showing.
+                dry_run = record.dry_run = True
+            yield _Ready(policy, index, dry_run)
+        finally:
+            lifecycle.close_run(run)
 
 
 def sweep(dry_run: bool, run: str | None = None) -> dict[Status, int]:
@@ -340,37 +371,59 @@ def sweep(dry_run: bool, run: str | None = None) -> dict[Status, int]:
         return totals.counts
 
 
-def _stash(judged: Judged, cache: SweepCache) -> None:
-    """Store one verdict in the cache without booking it against the run.
+def _observed(
+    path: str,
+    cache: SweepCache,
+    call: Callable[..., Judged],
+    stopped: Callable[[], bool] | None = None,
+) -> Judged:
+    """Publish while the scheduler still owns the path, outside its lock."""
+    policy = Policy.from_config()
+    try:
+        with sweep_cache.observing(
+            path, cache.path, policy=policy, stopped=stopped
+        ) as observation:
+            judged = call(policy=policy, observation=observation)
+            if not judged.skipped:
+                _stash(judged, cache, observation)
+            return judged
+    except sweep_cache.ObservationStoppedError:
+        cache.carry(path)
+        return Judged(
+            Job(path),
+            None,
+            Verdict(Status.DEFERRED),
+            detail="skipped while waiting for another edit",
+            unobserved=True,
+        )
 
-    Separate because an applying sweep stores a file twice: the pending verdict on
-    discovery, so the library shows the work while it waits, and then the
-    rewrite's result. Only the second is counted.
-    """
-    if judged.cached:
+
+def _stash(judged: Judged, cache: SweepCache, observation: sweep_cache.Observation) -> None:
+    if judged.cached or judged.unobserved:
         cache.carry(judged.job.path)
-    elif judged.became is not None:
-        # The judged file is gone; its replacement takes its entry. Drop first,
-        # since a rewrite that kept the name is both operations on one path.
-        cache.drop(judged.job.path)
-        cache.record(judged.became.path, judged.became.key, judged.became.verdict)
-    elif judged.verdict.status in CACHEABLE_STATUSES:
-        cache.record(judged.job.path, judged.key, judged.verdict)
-    else:
-        # Nothing to store, and the old entry is now wrong. Dropped so a
-        # checkpoint does not carry it forward.
-        cache.drop(judged.job.path)
+        return
+    became = judged.became
+    sweep_cache.publish(
+        observation,
+        judged.job.path,
+        became.path if became else judged.job.path,
+        became.key if became else judged.key,
+        became.verdict
+        if became
+        else (judged.verdict if judged.verdict.status in CACHEABLE_STATUSES else None),
+        observation.policy.fingerprint(),
+        cache,
+    )
 
 
 def _book(judged: Judged, totals: _Totals, cache: SweepCache, run: str) -> None:
-    """Store one verdict, tally it on the run, and add its report row.
+    """Tally one verdict on the run and add its report row.
 
     Called only from the walking thread, for discovery's own verdicts and for
-    rewrites' alike, which keeps the cache single-threaded.
+    rewrites' alike. Publication has already completed in the worker.
     """
-    _stash(judged, cache)
     totals.counts[judged.verdict.status] += 1
-    runs.tally(
+    lifecycle.tally(
         run,
         str(judged.verdict.status),
         path=judged.job.path,
@@ -382,27 +435,24 @@ def _book(judged: Judged, totals: _Totals, cache: SweepCache, run: str) -> None:
         totals.rows[judged.job.path] = _report_row(judged)
 
 
-def remember(path: str, key: FileKey | None, result: ProcessResult) -> None:
-    """Store one file's verdict for a caller outside a walk.
-
-    A webhook delivery and ``trackstarr fix`` judge a few files without a
-    :class:`SweepCache` open; without this the library would show them as
-    unchecked. ``key`` is the file as it stood before the probe, as
-    :func:`_judge` takes it.
-
-    A rewrite stores the file it wrote, at the path it published to, so a remux
-    drops the source's entry and stores the .mkv's. A verdict outside
-    :data:`CACHEABLE_STATUSES` drops the entry.
-    """
-    fingerprint = Policy.from_config().fingerprint()
-    if became := result.became:
-        sweep_cache.update(became.path, became.key, became.verdict, fingerprint)
-        if became.path != path:
-            # A remux: the source is gone, so its entry goes too.
-            sweep_cache.update(path, None, None, fingerprint)
-        return
-    verdict = verdict_of(result) if result.status in CACHEABLE_STATUSES else None
-    sweep_cache.update(path, key, verdict, fingerprint)
+def remember(
+    path: str,
+    key: FileKey | None,
+    result: ProcessResult,
+    observation: sweep_cache.Observation,
+) -> None:
+    """Publish an outside-walk result observed before stat/probe/mutation."""
+    became = result.became
+    sweep_cache.publish(
+        observation,
+        path,
+        became.path if became else path,
+        became.key if became else key,
+        became.verdict
+        if became
+        else (verdict_of(result) if result.status in CACHEABLE_STATUSES else None),
+        result.plan.policy.fingerprint() if result.plan else observation.policy.fingerprint(),
+    )
 
 
 def recheck(folders: list[str], dry_run: bool, run: str, label: str = "") -> dict[Status, int]:
@@ -412,8 +462,7 @@ def recheck(folders: list[str], dry_run: bool, run: str, label: str = "") -> dic
     :func:`trackstarr.library.selected`; ``label`` is the run card's name for
     them. pending.tsv is left alone, since it is the last full sweep's answer,
     and nothing is pruned, since that would drop the rest of the library's
-    verdicts. Refused while a sweep runs; see
-    :func:`trackstarr.runs.cache_holder`.
+    verdicts. Concurrent walks share fresh cache entries and the work queue.
     """
     walk = Walk(
         kind=runs.RECHECK,
@@ -461,7 +510,13 @@ def _write_report(walk: Walk, files: list[str], rows: dict[str, str]) -> None:
 
 
 def _rewrite(
-    found: Judged, index: LibraryIndex, cache: SweepCache, run: str, force: bool
+    found: Judged,
+    index: LibraryIndex,
+    cache: SweepCache,
+    run: str,
+    force: bool,
+    expected: float = 0.0,
+    cancel: Cancel | None = None,
 ) -> Judged:
     """Rewrite one file discovery found work for, on a rewrite thread.
 
@@ -470,16 +525,45 @@ def _rewrite(
     the walk, or a re-check would meet the failure ceiling here. A run stopped
     or a file skipped before this got a slot keeps discovery's pending verdict.
     """
-    if not runs.hold(run):
-        return found
-    if runs.skipped(run, found.job.path):
+    if work.scheduler.skipped(run, found.job.path):
         return replace(found, detail="skipped for this run")
-    return _judge(found.job.path, index, cache, dry_run=False, run=run, force=force)
+    if not lifecycle.hold(run):
+        return found
+    return _observed(
+        found.job.path,
+        cache,
+        functools.partial(
+            _judge,
+            found.job.path,
+            index,
+            cache,
+            False,
+            run,
+            force,
+            expected=expected,
+            cancel=cancel,
+        ),
+        stopped=cancel.stopped if cancel else None,
+    )
 
 
 #: How long the booking thread waits on a finished rewrite once the walk is
 #: over, so checkpoints keep moving through a rewrite phase of hours.
 _DRAIN_TICK = 5.0
+
+
+def _hurry(run: str, cache: SweepCache, waiting: dict[str, Judged], force: bool) -> None:
+    """Pre-check cache hits without probing or holding the scheduler lock."""
+    if force or cache.fingerprint != Policy.from_config().fingerprint():
+        return
+    cleared = set()
+    for path in work.scheduler.waiting_work(run):
+        found = waiting[path]
+        key = cache_key(path, found.job.lang)
+        verdict = cache.lookup(path, key)
+        if verdict is not None and verdict.status not in RETRY_STATUSES | {Status.PENDING}:
+            cleared.add((run, path))
+    work.scheduler.hurry(cleared)
 
 
 def _returning(finished: queue.Queue[Judged], found: Judged):
@@ -506,6 +590,7 @@ def _settle(
     totals: _Totals,
     cache: SweepCache,
     run: str,
+    waiting: dict[str, Judged],
     tick: float = 0.0,
 ) -> int:
     """Book every finished rewrite and return how many are still out.
@@ -518,6 +603,9 @@ def _settle(
             judged = finished.get(timeout=tick) if tick else finished.get_nowait()
         except queue.Empty:
             break
+        waiting.pop(judged.job.path, None)
+        if judged.cached:
+            totals.cached += 1
         _book(judged, totals, cache, run)
         outstanding -= 1
         # Only the first is waited for.
@@ -526,26 +614,28 @@ def _settle(
 
 
 def _walk_files(run: str, ready: _Ready, walk: Walk) -> _Totals:
-    """List the files, judge each one, and book what comes back.
+    """Register pruning's observation before the potentially slow listing.
 
-    Two pools: discovery probes, and what it finds goes to the rewrite pool.
-    On one pool an encode would stall every probe worker behind it.
+    Imports accepted while listing must survive even if this enumeration did
+    not see their paths. Registering only after listing would prune them.
     """
-    policy, dry_run = ready.policy, ready.dry_run
-    # Before the listing, which is slow: the page would read an empty queue as
-    # an empty workload.
     runs.walking(run, True)
-    files = walk.find(policy)
+    os.makedirs(config.STATE_DIR, exist_ok=True)
+    cache = SweepCache.load(cache_path(), ready.policy.fingerprint())
+    with sweep_cache.live(cache):
+        return _walk_cached(run, ready, walk, cache)
+
+
+def _walk_cached(run: str, ready: _Ready, walk: Walk, cache: SweepCache) -> _Totals:
+    """Discover on probe workers, queue rewrites, and account on this thread."""
+    policy, dry_run = ready.policy, ready.dry_run
+    files = list(dict.fromkeys(walk.find(policy)))
     runs.set_total(run, len(files))
     log.info("%s starting: %d files, dry_run=%s", walk.kind, len(files), dry_run)
 
     started = time.monotonic()
     last_checkpoint = started
     totals = _Totals(dict.fromkeys(Status, 0), walked=len(files))
-    os.makedirs(config.STATE_DIR, exist_ok=True)
-    # Loaded under this walk's fingerprint, so a rules change drops the stale
-    # verdicts rather than carrying them forward unjudged.
-    cache = SweepCache.load(cache_path(), policy.fingerprint())
     # Read once per walk: recent rewrite speeds, for the page's estimates.
     speeds = estimate.measured()
 
@@ -571,54 +661,73 @@ def _walk_files(run: str, ready: _Ready, walk: Walk) -> _Totals:
     publish = _publisher(cache)
     finished: queue.Queue[Judged] = queue.Queue()
     outstanding = 0
-    with (
-        sweep_cache.live(cache),
-        ThreadPoolExecutor(
-            max_workers=config.current().PROBE_WORKERS,
-            thread_name_prefix=walk.kind,
-        ) as probes,
-        ThreadPoolExecutor(
-            max_workers=config.current().MAX_CONCURRENT_REWRITES,
-            thread_name_prefix="rewrite",
-        ) as rewrites,
-    ):
-        # map, not as_completed: results arrive in walk order.
-        for i, judged in enumerate(probes.map(judge, files), 1):
+    waiting: dict[str, Judged] = {}
+    work.scheduler.start()
+    with lifecycle.group(run, priority=walk.force) as submit:
+        probes = []
+        for path in files:
+            cancel = Cancel(path)
+            probes.append(
+                submit(
+                    path,
+                    "probe",
+                    functools.partial(
+                        _observed,
+                        path,
+                        cache,
+                        functools.partial(judge, path),
+                        stopped=cancel.stopped,
+                    ),
+                    cancel=cancel,
+                )
+            )
+        handles: dict[Future[Judged], work.Handle] = {phase: phase.handle for phase in probes}
+        # Book as results land, so a promoted file can reach the rewrite queue
+        # without waiting behind an earlier, slower discovery result.
+        for i, future in enumerate(as_completed(probes), 1):
+            judged = future.result()
             if judged.skipped:
                 # Stopped: the pool still returns every task, so the rest
                 # arrive at once.
                 totals.stopped += 1
+                work.scheduler.complete_file(handles[future])
                 continue
             if judged.key:
                 totals.library_bytes += judged.key.size
             wanted = not dry_run and judged.verdict.status is Status.PENDING
-            # A held file is booked as discovery judged it rather than queued:
+            # A paused file is booked as discovery judged it rather than queued:
             # the rewrite would latch to report anyway, having spent a slot and
             # a second probe getting there.
-            hold = holds.held(judged.job.path) if wanted else None
-            if wanted and hold is None:
-                # Stored now so the library shows the work while it waits;
-                # counted once the rewrite answers.
-                _stash(judged, cache)
-                runs.queue(
-                    run,
-                    judged.job.path,
-                    speeds.seconds(judged.verdict.duration, judged.verdict.planned),
-                )
-                rewrites.submit(
-                    _rewrite, judged, ready.index, cache, run, walk.force
+            pause = pauses.paused(judged.job.path) if wanted else None
+            if wanted and pause is None:
+                # Queued under this estimate and worked under it: the rewrite
+                # carries it to the page's readout itself.
+                expected = speeds.seconds(judged.verdict.duration, judged.verdict.planned)
+                # One switch for the phase, held by the queue and carried into
+                # ffmpeg, so a skip reaches this rewrite alone.
+                cancel = Cancel(judged.job.path)
+                # Already published by discovery; counted once the rewrite answers.
+                waiting[judged.job.path] = judged
+                work.scheduler.continue_file(
+                    handles[future],
+                    functools.partial(
+                        _rewrite, judged, ready.index, cache, run, walk.force, expected, cancel
+                    ),
+                    expected,
+                    cancel,
                 ).add_done_callback(_returning(finished, judged))
                 outstanding += 1
             else:
+                work.scheduler.complete_file(handles[future])
                 if judged.cached:
                     totals.cached += 1
                 # Said here as well as in process(), which a verdict answered
                 # from the cache never reached, so the row and the report give
                 # the reason either way.
-                if hold is not None:
-                    judged = replace(judged, detail=hold.describe())
+                if pause is not None:
+                    judged = replace(judged, detail=pause.describe())
                 _book(judged, totals, cache, run)
-            outstanding = _settle(finished, outstanding, totals, cache, run)
+            outstanding = _settle(finished, outstanding, totals, cache, run, waiting=waiting)
             if i % 500 == 0:
                 log.info("  %d/%d ... %s", i, len(files), totals.counts)
             checkpoint()
@@ -626,8 +735,14 @@ def _walk_files(run: str, ready: _Ready, walk: Walk) -> _Totals:
         runs.walking(run, False)
         if outstanding:
             log.info("walk done; %d file(s) still to rewrite", outstanding)
+        last_hurry = started - _DRAIN_TICK
         while outstanding:
-            outstanding = _settle(finished, outstanding, totals, cache, run, _DRAIN_TICK)
+            if time.monotonic() - last_hurry >= _DRAIN_TICK:
+                _hurry(run, cache, waiting, walk.force)
+                last_hurry = time.monotonic()
+            outstanding = _settle(
+                finished, outstanding, totals, cache, run, waiting, _DRAIN_TICK
+            )
             checkpoint()
             publish()
         # A stopped or partial walk keeps the whole cache: save() cannot tell
@@ -773,13 +888,13 @@ def check(schedule: str, dirs: list[str], zone: str = "") -> ScheduleCheck:
 def run_scheduled() -> None:
     """Run the sweep a slot is owed, or log why not. Split from the loop so
     both refusals are testable without a thread."""
-    if runs.paused():
+    if lifecycle.paused():
         # Skipped, not queued: starting anyway would hold the library open all
         # night with the pool asleep on the gate.
         log.info("processing is paused, skipping this scheduled sweep")
     elif existing := runs.cache_holder():
-        # A manual sweep, an overrunning scheduled one or a re-check. Two walks
-        # would fight over the cache file.
+        # A manual sweep, an overrunning scheduled one or a re-check. Avoid
+        # starting another full-library walk while any of them is active.
         log.warning(
             "%s %s is still running, skipping this scheduled sweep", existing.kind, existing.id
         )
@@ -801,7 +916,7 @@ def scheduler() -> None:  # pragma: no cover
     without a restart. An empty or unparseable schedule waits here.
     """
     announced: str | None = None
-    while True:
+    while lifecycle.producing():
         schedule = config.current().SWEEP_AT
         try:
             delay = seconds_until(schedule) if schedule else None
@@ -822,6 +937,8 @@ def scheduler() -> None:  # pragma: no cover
             time.sleep(_TICK)
             continue
         time.sleep(delay)
+        if not lifecycle.producing():
+            break
         try:
             run_scheduled()
         except Exception:

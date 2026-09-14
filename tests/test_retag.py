@@ -6,6 +6,7 @@ import os
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -13,8 +14,10 @@ import pytest
 from conftest import (
     REWROTE,
     audio,
+    cache_verdict,
     needed_plan,
     probe_data,
+    publish_verdict,
     read_events,
     set_config,
     subtitle,
@@ -102,7 +105,9 @@ def tools(installed, monkeypatch):
     monkeypatch.setattr(
         retag,
         "process",
-        lambda job, dry_run: ProcessResult(Status.PENDING, needed_plan(job.path)),
+        lambda job, dry_run, policy=None, cancel=None, observation=None: ProcessResult(
+            Status.PENDING, needed_plan(job.path)
+        ),
     )
 
     def install(probes: list, listed: str = "", propedit=None) -> Tools:
@@ -536,7 +541,7 @@ def test_the_verdict_is_reached_in_the_titles_language_and_the_servers_told(
     monkeypatch.setattr(
         retag,
         "process",
-        lambda job, dry_run: (
+        lambda job, dry_run, policy=None, cancel=None, observation=None: (
             judged.append(job.lang),
             ProcessResult(Status.CONFORM, Plan(path=job.path)),
         )[1],
@@ -578,7 +583,7 @@ def judged_at(path: str) -> None:
     """A stored verdict for the file as it stands, so apply_all finds an
     entry and the staleness check passes."""
     found = os.stat(path)
-    sweep_cache.update(
+    publish_verdict(
         path,
         sweep_cache.FileKey(found.st_size, found.st_mtime_ns, 1, "jpn"),
         sweep_cache.Verdict(Status.CONFORM),
@@ -676,3 +681,101 @@ def test_a_track_already_in_that_language_is_unchanged(tools, mkv):
     booked."""
     tools([commentary_case("jpn")])
     assert mkvtag.write_lang(mkv, 1, "jpn").status is Outcome.UNCHANGED
+
+
+def test_a_phase_stopped_at_the_gate_writes_no_header(tools, mkv):
+    """The one thing a mark alone could not stop: an edit is over in a second
+    and has no process to signal, so the gate is what prevents it."""
+    fake = tools([commentary_case()])
+    stopped = mkvtag.write_lang(mkv, 1, "jpn", lambda: False)
+    assert stopped.status is Outcome.STOPPED
+    assert fake.edits == [], "the file was never opened for writing"
+
+
+def test_a_file_already_tagged_that_way_never_commits_a_phase(tools, mkv):
+    """The gate is asked where the edit begins, not where it was asked for: a
+    phase that turns out to have nothing to write stays cancellable."""
+    tools([commentary_case("jpn")])
+    asked = []
+    result = mkvtag.write_lang(mkv, 1, "jpn", lambda: asked.append(True) or True)
+    assert result.status is Outcome.UNCHANGED
+    assert asked == []
+
+
+def test_an_edit_waiting_its_turn_can_still_be_stopped(tools, mkv, monkeypatch):
+    """Two edits, one lock. Committing on the way in would make the second
+    uncancellable for as long as the first one's header write takes."""
+    tools([commentary_case(), commentary_case("jpn"), commentary_case("jpn")])
+    holding, release = threading.Event(), threading.Event()
+
+    def slow_propedit(path, uid, before, wanted):
+        holding.set()
+        assert release.wait(3)
+
+    monkeypatch.setattr(mkvtag, "_propedit", slow_propedit)
+    with ThreadPoolExecutor() as workers:
+        first = workers.submit(mkvtag.write_lang, mkv, 1, "jpn")
+        assert holding.wait(3)
+        # Stopped while it is queued at the lock, which is where a skip of a
+        # file waiting behind another file's edit lands.
+        waiting = workers.submit(mkvtag.write_lang, mkv, 1, "fre", lambda: False)
+        release.set()
+        assert first.result(timeout=5).status is Outcome.RETAGGED
+        assert waiting.result(timeout=5).status is Outcome.STOPPED
+
+
+def test_a_retag_fences_the_verdict_of_a_probe_that_read_the_file_first(
+    tools, mkv, monkeypatch
+):
+    """mkvpropedit can leave size and mtime where they were, so the probe that
+    read the file before the edit has to be turned away by the edit itself."""
+    tools([commentary_case(), commentary_case("jpn")])
+    entered, release = threading.Event(), threading.Event()
+    edit_track = retag.edit_track
+
+    def edit(path, index, change):
+        # Owned before the editor's lock, not at publication.
+        assert not older.accepts({path})
+        entered.set()
+        assert release.wait(3)
+        return edit_track(path, index, change)
+
+    monkeypatch.setattr(retag, "edit_track", edit)
+    with sweep_cache.observing(mkv) as older, ThreadPoolExecutor() as workers:
+        read_first = sweep_cache.cache_key(mkv, None)
+        edited = workers.submit(retag.apply, mkv, 1, Edit("jpn"), "admin", entry(mkv))
+        try:
+            assert entered.wait(3)
+        finally:
+            release.set()
+        result = edited.result(timeout=3)
+        assert result.status is Outcome.RETAGGED
+        assert not sweep_cache.publish(
+            older,
+            mkv,
+            mkv,
+            read_first,
+            sweep_cache.Verdict(Status.CONFORM),
+            Policy.from_config().fingerprint(),
+        )
+    stored = sweep_cache.read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    assert stored.files[mkv]["status"] == result.verdict
+    assert not sweep_cache._revisions
+
+
+def test_an_edit_that_failed_at_the_header_takes_the_stored_verdict_with_it(tools, mkv):
+    """mkvpropedit can fail with the header already written, so the entry
+    describing the tracks it had is not the file as it now stands."""
+    os.makedirs(sweep_cache.config.STATE_DIR, exist_ok=True)
+    cache = sweep_cache.SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    cache_verdict(
+        cache, mkv, sweep_cache.cache_key(mkv, None), sweep_cache.Verdict(Status.CONFORM)
+    )
+    cache.save()
+    tools([commentary_case()], propedit=subprocess.CompletedProcess([], 2, "", "Error: no\n"))
+
+    assert retag.apply(mkv, 1, Edit("jpn"), "admin", entry(mkv)).status is Outcome.FAILED
+
+    stored = sweep_cache.read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    assert stored.files == {}
+    assert not sweep_cache._revisions

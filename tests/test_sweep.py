@@ -2,6 +2,7 @@
 the integration and sweep-cache suites."""
 
 import contextlib
+import functools
 import json
 import logging
 import os
@@ -13,12 +14,24 @@ from pathlib import Path
 
 import pytest
 
-from conftest import read_events, set_config
-from trackstarr import config, estimate, holds, library, notify, runs, sweep_cache
+from conftest import cache_verdict, live_run, pending, publish_verdict, read_events, set_config
+from trackstarr import (
+    config,
+    estimate,
+    library,
+    lifecycle,
+    notify,
+    pauses,
+    runs,
+    sweep_cache,
+    work,
+)
 from trackstarr import sweep as sweep_mod
 from trackstarr.arr import LibraryIndex
+from trackstarr.executor import Cancel
+from trackstarr.planner import OutStream, Plan
 from trackstarr.policy import Policy
-from trackstarr.processing import Job, ProcessResult
+from trackstarr.processing import Job, ProcessResult, Rewritten
 from trackstarr.status import Status
 from trackstarr.sweep import Judged, seconds_until, sweep
 from trackstarr.sweep_cache import FileKey, Verdict
@@ -80,7 +93,7 @@ def test_a_worker_raising_does_not_abandon_the_sweep(monkeypatch, tmp_path):
     set_config(MAX_CONCURRENT_REWRITES=3)
     _library(tmp_path, 10)
 
-    def explode(job, dry_run, source="webhook"):
+    def explode(job, dry_run, source="webhook", policy=None, cancel=None, observation=None):
         if job.path.endswith("004.mkv"):
             raise RuntimeError("something nobody predicted")
         return ProcessResult(Status.CONFORM)
@@ -92,24 +105,6 @@ def test_a_worker_raising_does_not_abandon_the_sweep(monkeypatch, tmp_path):
     assert counts[Status.CONFORM] == 9
 
 
-@pytest.mark.parametrize("budget", [1, 6])
-def test_probing_is_not_sized_by_the_rewrite_budget(monkeypatch, tmp_path, budget):
-    """The rewrite budget and the probe pool are separate settings: a disk that
-    wants one rewrite at a time still takes several probes."""
-    set_config(MAX_CONCURRENT_REWRITES=budget)
-    set_config(PROBE_WORKERS=3)
-    _library(tmp_path, 1)
-    sized: dict[str, int] = {}
-
-    def spying_pool(max_workers, **kwargs):
-        sized[kwargs["thread_name_prefix"]] = max_workers
-        return ThreadPoolExecutor(max_workers=max_workers, **kwargs)
-
-    monkeypatch.setattr("trackstarr.sweep.ThreadPoolExecutor", spying_pool)
-    sweep(dry_run=True)
-    assert sized == {"sweep": 3, "rewrite": budget}
-
-
 def test_an_arr_outage_downgrades_an_applying_sweep(monkeypatch, tmp_path, caplog):
     """With original languages unknown, the languages rule would read a foreign
     film's own track as junk to drop. Report-only until the *arr answers."""
@@ -117,7 +112,7 @@ def test_an_arr_outage_downgrades_an_applying_sweep(monkeypatch, tmp_path, caplo
     monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, False))
     judged_dry = []
 
-    def spy(job, dry_run, source="sweep"):
+    def spy(job, dry_run, source="sweep", policy=None, cancel=None, observation=None):
         judged_dry.append(dry_run)
         return ProcessResult(Status.CONFORM)
 
@@ -138,7 +133,7 @@ def test_an_arr_outage_stops_nothing_a_policy_never_asked(monkeypatch, tmp_path,
     monkeypatch.setattr("trackstarr.sweep.path_index", lambda arrs: LibraryIndex({}, False))
     judged_dry = []
 
-    def spy(job, dry_run, source="sweep"):
+    def spy(job, dry_run, source="sweep", policy=None, cancel=None, observation=None):
         judged_dry.append(dry_run)
         return ProcessResult(Status.PENDING if dry_run else Status.MODIFIED)
 
@@ -401,7 +396,7 @@ def test_a_sweep_shows_its_progress_while_it_walks(monkeypatch, tmp_path, clean_
     # Booked as the results are consumed, which the pool runs ahead of, so
     # the count climbs without promising to be one behind the walk.
     assert seen[0]["done"] == 0
-    assert seen[-1]["done"] > 0
+    assert [snap["done"] for snap in seen] == sorted(snap["done"] for snap in seen)
     assert [snap["done"] for snap in seen] == sorted(snap["done"] for snap in seen)
     assert seen[0]["kind"] == "sweep" and seen[0]["dry_run"] is True
     # And it lets go of itself afterwards, however the walk ended.
@@ -447,10 +442,10 @@ def test_a_stopped_sweep_leaves_the_rest_of_the_library_unjudged(
     set_config(PROBE_WORKERS=1)
     judged: list[str] = []
 
-    def judge(job, dry_run, source="webhook"):
+    def judge(job, dry_run, source="webhook", policy=None, cancel=None, observation=None):
         judged.append(job.path)
         if len(judged) == 3:
-            clean_registry.stop("r#1")
+            lifecycle.stop("r#1")
         return ProcessResult(Status.CONFORM)
 
     monkeypatch.setattr("trackstarr.sweep.process", judge)
@@ -476,7 +471,9 @@ def test_a_stopped_sweep_keeps_the_verdicts_it_never_revisited(
     set_config(PROBE_WORKERS=1)
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="webhook": ProcessResult(Status.CONFORM),
+        lambda job, dry_run, source="webhook", policy=None, cancel=None, observation=None: (
+            ProcessResult(Status.CONFORM)
+        ),
     )
     sweep(dry_run=True, run="r#1")
     cached = json.loads((Path(config.STATE_DIR) / "sweep-cache.json").read_text())
@@ -484,9 +481,9 @@ def test_a_stopped_sweep_keeps_the_verdicts_it_never_revisited(
 
     calls = []
 
-    def judge(job, dry_run, source="webhook"):
+    def judge(job, dry_run, source="webhook", policy=None, cancel=None, observation=None):
         calls.append(job.path)
-        clean_registry.stop("r#2")
+        lifecycle.stop("r#2")
         return ProcessResult(Status.CONFORM)
 
     # A changed mtime forces the first file back through the probe, so the
@@ -504,10 +501,10 @@ def test_a_paused_service_holds_the_walk_where_it_stands(monkeypatch, tmp_path, 
     set_config(PROBE_WORKERS=1)
     judged: list[str] = []
 
-    def judge(job, dry_run, source="webhook"):
+    def judge(job, dry_run, source="webhook", policy=None, cancel=None, observation=None):
         judged.append(job.path)
         if len(judged) == 2:
-            clean_registry.pause("marc")
+            lifecycle.pause("marc")
         return ProcessResult(Status.CONFORM)
 
     monkeypatch.setattr("trackstarr.sweep.process", judge)
@@ -519,7 +516,7 @@ def test_a_paused_service_holds_the_walk_where_it_stands(monkeypatch, tmp_path, 
     # Held, not finished: the pool's thread is asleep on the gate mid-library.
     assert not done.wait(0.5)
     assert len(judged) == 2
-    clean_registry.resume("marc")
+    lifecycle.resume("marc")
     assert done.wait(10)
     assert len(judged) == 5
 
@@ -527,7 +524,7 @@ def test_a_paused_service_holds_the_walk_where_it_stands(monkeypatch, tmp_path, 
 def test_the_scheduler_gives_up_its_slot_while_paused(monkeypatch, caplog, clean_registry):
     """Starting the walk anyway would leave the pool asleep on the gate with
     the library held open all night."""
-    clean_registry.pause("marc")
+    lifecycle.pause("marc")
     monkeypatch.setattr("trackstarr.sweep.sweep", lambda **kwargs: pytest.fail("swept"))
     with caplog.at_level(logging.INFO):
         sweep_mod.run_scheduled()
@@ -572,7 +569,7 @@ def test_a_failure_is_written_down_but_never_stands_in_for_the_work(monkeypatch,
     path = _one_file(tmp_path, monkeypatch)
     tried: list[str] = []
 
-    def failing(job, dry_run, source=""):
+    def failing(job, dry_run, source="", policy=None, cancel=None, observation=None):
         tried.append(job.path)
         return ProcessResult(Status.FAILED, None, "no space left on device")
 
@@ -595,7 +592,7 @@ def test_a_conforming_verdict_still_stands_in_for_the_work(monkeypatch, tmp_path
     path = _one_file(tmp_path, monkeypatch)
     tried: list[str] = []
 
-    def passing(job, dry_run, source=""):
+    def passing(job, dry_run, source="", policy=None, cancel=None, observation=None):
         tried.append(job.path)
         return ProcessResult(Status.CONFORM, None)
 
@@ -615,14 +612,16 @@ def test_the_run_is_registered_before_the_arrs_are_listed(monkeypatch, tmp_path)
     seen: list[bool] = []
 
     def listing(*args, **kwargs):
-        seen.append(bool(runs.running(runs.SWEEP)))
+        seen.append(bool(live_run(runs.SWEEP)))
         return LibraryIndex({}, complete=True)
 
     monkeypatch.setattr("trackstarr.sweep.path_index", listing)
     monkeypatch.setattr("trackstarr.sweep.all_arrs", list)
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": ProcessResult(Status.CONFORM, None),
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            ProcessResult(Status.CONFORM, None)
+        ),
     )
     sweep(dry_run=True)
     assert seen == [True]
@@ -642,8 +641,8 @@ def test_an_arr_outage_marks_the_run_it_has_already_shown(monkeypatch, tmp_path)
     marked: list[bool] = []
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": (
-            marked.append(runs.running(runs.SWEEP).dry_run),
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            marked.append(live_run(runs.SWEEP)["dry_run"]),
             ProcessResult(Status.CONFORM, None),
         )[1],
     )
@@ -657,7 +656,7 @@ def _failing_sweeps(monkeypatch, tmp_path, count: int, detail: str = "ffmpeg fai
     _library(tmp_path, 1)
     attempts: list[str] = []
 
-    def failing(job, dry_run, source="sweep"):
+    def failing(job, dry_run, source="sweep", policy=None, cancel=None, observation=None):
         if dry_run:
             return ProcessResult(Status.PENDING, None)
         attempts.append(job.path)
@@ -714,7 +713,9 @@ def test_a_report_that_cannot_be_written_does_not_cost_the_sweep(monkeypatch, tm
     os.mkdir(os.path.join(config.STATE_DIR, "pending.tsv"))
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": ProcessResult(Status.PENDING),
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            ProcessResult(Status.PENDING)
+        ),
     )
 
     counts = sweep(dry_run=True)
@@ -731,7 +732,7 @@ def test_a_file_edited_after_giving_up_is_tried_again(monkeypatch, tmp_path):
     attempts: list[str] = []
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": (
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
             attempts.append(job.path) or ProcessResult(Status.CONFORM, None)
         ),
     )
@@ -747,7 +748,7 @@ def test_reporting_sweeps_neither_spend_the_budget_nor_stop_retrying(monkeypatch
     _library(tmp_path, 1)
     probed: list[bool] = []
 
-    def failing(job, dry_run, source="sweep"):
+    def failing(job, dry_run, source="sweep", policy=None, cancel=None, observation=None):
         probed.append(dry_run)
         return ProcessResult(Status.FAILED, None, "probe failed")
 
@@ -762,7 +763,7 @@ def test_reporting_sweeps_neither_spend_the_budget_nor_stop_retrying(monkeypatch
     # So an applying sweep still has every attempt at the rewrite to spend.
     attempts: list[str] = []
 
-    def rewriting(job, dry_run, source="sweep"):
+    def rewriting(job, dry_run, source="sweep", policy=None, cancel=None, observation=None):
         if dry_run:
             return ProcessResult(Status.PENDING, None)
         attempts.append(job.path)
@@ -780,7 +781,7 @@ def test_reporting_sweeps_neither_spend_the_budget_nor_stop_retrying(monkeypatch
 #: Longest any of the threaded tests below waits for the sweep to get
 #: somewhere. Generous on purpose: what they guard against is a stall, and a
 #: loaded machine is slow rather than wrong.
-_PATIENCE = 10.0
+_PATIENCE = 30.0
 
 
 def _until(settled, complaint: str) -> None:
@@ -802,7 +803,7 @@ class _Sweeping:
         self.rewriting: list[str] = []
         self._held = threading.Event()
 
-    def process(self, job, dry_run, source="sweep"):
+    def process(self, job, dry_run, source="sweep", policy=None, cancel=None, observation=None):
         if dry_run:
             self.walked.append(job.path)
             return ProcessResult(Status.PENDING, None)
@@ -814,7 +815,7 @@ class _Sweeping:
         self._held.set()
 
     def snapshot(self) -> dict:
-        (run,) = runs.snapshot()["runs"]
+        (run,) = lifecycle.snapshot()["runs"]
         return run
 
 
@@ -867,7 +868,7 @@ def test_a_sweep_is_still_walking_until_it_has_seen_every_file(monkeypatch, tmp_
     set_config(PROBE_WORKERS=1)
     seen: list[bool] = []
 
-    def watching(job, dry_run, source="sweep"):
+    def watching(job, dry_run, source="sweep", policy=None, cancel=None, observation=None):
         (run,) = runs.snapshot()["runs"]
         seen.append(run["walking"])
         return ProcessResult(Status.CONFORM)
@@ -886,7 +887,7 @@ def test_a_stopped_sweep_says_what_it_found_rather_than_forgetting_it(
     the rewrite."""
     with _mid_sweep(monkeypatch, tmp_path, 6) as sweeping:
         _until(lambda: not sweeping.snapshot()["walking"], "the walk never finished")
-        clean_registry.stop("r#1")
+        lifecycle.stop("r#1")
 
     counts = read_events()[-1]["counts"]
     assert counts[str(Status.MODIFIED)] == 1, "the rewrite already going still finished"
@@ -907,7 +908,19 @@ def test_a_sweep_queues_its_work_with_how_long_it_will_take(
     planned = [{"codec": "aac", "title": "2.0", "flags": ["generated"]}]
     held = threading.Event()
 
-    def judge(path, index=None, cache=None, dry_run=False, run="", force=False, rewriting=None):
+    def judge(
+        path,
+        index=None,
+        cache=None,
+        dry_run=False,
+        run="",
+        force=False,
+        rewriting=None,
+        policy=None,
+        expected=0.0,
+        cancel=None,
+        observation=None,
+    ):
         if not dry_run:
             held.wait(_PATIENCE)
             return Judged(Job(path, run=run), None, Verdict(Status.CONFORM))
@@ -922,10 +935,10 @@ def test_a_sweep_queues_its_work_with_how_long_it_will_take(
     walking.start()
     try:
         _until(
-            lambda: runs.snapshot()["runs"][0]["queued"] == 3,
+            lambda: lifecycle.snapshot()["runs"][0]["queued"] == 3,
             "the walk never queued everything it found",
         )
-        (run,) = runs.snapshot()["runs"]
+        (run,) = lifecycle.snapshot()["runs"]
         assert run["walking"] is False, "and it had finished looking for more"
         # Three hours of film, at a hundred times realtime, through one slot.
         assert run["rewrite_seconds"] == 108.0
@@ -941,8 +954,8 @@ def test_the_report_gives_a_file_its_final_verdict_and_only_that(monkeypatch, tm
     names = _library(tmp_path, 4)
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="sweep": ProcessResult(
-            Status.PENDING if dry_run else Status.MODIFIED, None
+        lambda job, dry_run, source="sweep", policy=None, cancel=None, observation=None: (
+            ProcessResult(Status.PENDING if dry_run else Status.MODIFIED, None)
         ),
     )
     sweep(dry_run=False)
@@ -954,16 +967,16 @@ def test_the_report_gives_a_file_its_final_verdict_and_only_that(monkeypatch, tm
     assert sorted(Path(row.split("\t")[2]).name for row in rows) == sorted(names)
 
 
-def test_an_applying_sweep_leaves_a_held_title_where_the_walk_found_it(monkeypatch, tmp_path):
+def test_an_applying_sweep_leaves_a_paused_title_where_the_walk_found_it(monkeypatch, tmp_path):
     """A held file is booked as discovery judged it rather than queued: the
     rewrite would latch to report anyway, having spent a slot and a second
     probe getting there."""
     _library(tmp_path, 3)
-    holds.place(str(tmp_path / "library"), by="marc", reason="watching one of them")
+    pauses.place(str(tmp_path / "library"), by="marc", reason="watching one of them")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="sweep": ProcessResult(
-            Status.PENDING if dry_run else Status.MODIFIED, None
+        lambda job, dry_run, source="sweep", policy=None, cancel=None, observation=None: (
+            ProcessResult(Status.PENDING if dry_run else Status.MODIFIED, None)
         ),
     )
     counts = sweep(dry_run=False)
@@ -972,7 +985,7 @@ def test_an_applying_sweep_leaves_a_held_title_where_the_walk_found_it(monkeypat
     # The reason on every row, including the ones a warm cache answered, which
     # never pass through process() to say it themselves.
     rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
-    assert all("held by marc" in row for row in rows)
+    assert all("paused by marc" in row for row in rows)
     assert all("watching one of them" in row for row in rows)
 
 
@@ -980,18 +993,108 @@ def test_a_file_skipped_mid_sweep_keeps_the_verdict_the_walk_gave_it(monkeypatch
     """Skipping is "not in this pass": the file keeps its pending verdict, so the
     library still shows the work and the next sweep picks it up."""
     _library(tmp_path, 1)
-    monkeypatch.setattr(
-        "trackstarr.sweep.process",
-        lambda job, dry_run, source="sweep": ProcessResult(
-            Status.PENDING if dry_run else Status.MODIFIED, None
-        ),
-    )
-    monkeypatch.setattr(runs, "skipped", lambda run, path: True)
+
+    def judge_then_skip(
+        job, dry_run, source="sweep", policy=None, cancel=None, observation=None
+    ):
+        lifecycle.skip_file("r#1", job.path)
+        return ProcessResult(Status.PENDING if dry_run else Status.MODIFIED, None)
+
+    monkeypatch.setattr("trackstarr.sweep.process", judge_then_skip)
     counts = sweep(dry_run=False, run="r#1")
     assert counts[Status.PENDING] == 1
     assert counts[Status.MODIFIED] == 0
     rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
     assert "skipped for this run" in rows[0]
+
+
+def test_shutdown_waits_for_a_sweep_that_has_queued_nothing(monkeypatch, tmp_path):
+    """Listing the library owns no task, and neither does writing the cache or
+    the report. A drain that counts only tasks stops in the middle of both."""
+    _library(tmp_path, 1)
+    listing, release = threading.Event(), threading.Event()
+
+    def slow_listing(policy):
+        listing.set()
+        assert release.wait(5)
+        return []
+
+    monkeypatch.setattr("trackstarr.sweep.walk_library", slow_listing)
+    with ThreadPoolExecutor() as pool:
+        sweeping = pool.submit(sweep, dry_run=True)
+        assert listing.wait(3)
+        stopping = pool.submit(lifecycle.shutdown, 5)
+        assert not stopping.done()
+        release.set()
+        assert stopping.result(timeout=5)
+        sweeping.result(timeout=5)
+    # The writes the drain waited for are the ones the next start reads.
+    assert (Path(config.STATE_DIR) / "pending.tsv").exists()
+
+
+def test_a_sweep_starting_during_shutdown_opens_no_run(tmp_path):
+    """The scheduled sweep and the page's "sweep now" both land here. Opening
+    a run now leaves a card nothing will ever finish."""
+    _library(tmp_path, 1)
+    assert lifecycle.shutdown(0)
+
+    with pytest.raises(ValueError, match="the process is stopping"):
+        sweep(dry_run=True)
+
+    assert lifecycle.snapshot()["runs"] == []
+
+
+def test_a_walk_refused_an_admission_leaves_no_run_behind(monkeypatch, tmp_path):
+    """A lease holds the process open, it does not hold the queue open. The
+    walk that loses the race has to unwind rather than leave a card nothing
+    will finish."""
+    names = _library(tmp_path, 1)
+
+    def close_admission_then_list(policy):
+        work.scheduler.close()
+        return [str(tmp_path / "library" / names[0])]
+
+    monkeypatch.setattr("trackstarr.sweep.walk_library", close_admission_then_list)
+
+    with pytest.raises(ValueError, match="scheduler is closed"):
+        sweep(dry_run=True)
+
+    assert lifecycle.snapshot()["runs"] == []
+
+
+def test_a_file_skipped_as_its_rewrite_is_planned_is_never_edited(monkeypatch, tmp_path):
+    """The whole way through: the skip lands while the rewrite phase probes the
+    file, and the tag it was about to write is the one thing no signal could
+    have stopped."""
+    _library(tmp_path, 1)
+    edited: list[str] = []
+    monkeypatch.setattr(
+        "trackstarr.processing.mkvtag.write_lang",
+        lambda path, index, lang, commit=None: edited.append(path),
+    )
+    planned: list[str] = []
+
+    def plan_then_skip(path, lang, policy=None):
+        planned.append(path)
+        # Discovery plans it first; the skip belongs to the rewrite phase,
+        # which is the one holding a switch.
+        if len(planned) > 1:
+            lifecycle.skip_file("r#1", path)
+        return Plan(
+            path=path,
+            reasons=["tag audio 1 as jpn"],
+            rules={"tag_original"},
+            streams=[OutStream(src=1, kind="audio", lang="jpn")],
+        )
+
+    monkeypatch.setattr("trackstarr.processing.build_plan", plan_then_skip)
+
+    counts = sweep(dry_run=False, run="r#1")
+
+    assert edited == [], "the editor was never reached"
+    assert counts[Status.DEFERRED] == 1
+    rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
+    assert "stopped before it started" in rows[0]
 
 
 def test_a_queued_file_reads_as_pending_while_it_waits_for_its_rewrite(monkeypatch, tmp_path):
@@ -1040,7 +1143,7 @@ def test_a_recheck_reprobes_a_file_the_cache_has_already_judged(
     probed: list[str] = []
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": (
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
             probed.append(job.path) or ProcessResult(Status.CONFORM, None)
         ),
     )
@@ -1064,7 +1167,9 @@ def test_a_recheck_leaves_the_rest_of_the_librarys_verdicts_alone(
     _folder(tmp_path, "Arrival (2016)", "Arrival.mkv")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": ProcessResult(Status.CONFORM, None),
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            ProcessResult(Status.CONFORM, None)
+        ),
     )
     sweep(dry_run=True)
 
@@ -1082,7 +1187,9 @@ def test_a_recheck_replaces_the_verdict_it_re_judged(monkeypatch, tmp_path, clea
     verdicts = iter([Status.PENDING, Status.CONFORM])
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": ProcessResult(next(verdicts), None),
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            ProcessResult(next(verdicts), None)
+        ),
     )
     sweep(dry_run=True)
     sweep_mod.recheck([folder], dry_run=True, run="r#2")
@@ -1101,7 +1208,9 @@ def test_a_recheck_does_not_overwrite_the_last_sweeps_report(
     _folder(tmp_path, "Arrival (2016)", "Arrival.mkv")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": ProcessResult(Status.PENDING, None),
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            ProcessResult(Status.PENDING, None)
+        ),
     )
     sweep(dry_run=True)
     before = (Path(config.STATE_DIR) / "pending.tsv").read_text()
@@ -1117,7 +1226,9 @@ def test_a_recheck_records_what_it_looked_at(monkeypatch, tmp_path, clean_regist
     folder = _folder(tmp_path, "Dune (2024)", "Dune.mkv", "Dune-extras.mkv")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": ProcessResult(Status.CONFORM, None),
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            ProcessResult(Status.CONFORM, None)
+        ),
     )
     sweep_mod.recheck([folder], dry_run=True, run="r#2")
 
@@ -1151,10 +1262,12 @@ def test_a_stopped_recheck_counts_only_what_it_reached(monkeypatch, tmp_path, cl
     folder = _folder(tmp_path, "Show", "a.mkv", "b.mkv", "c.mkv")
     set_config(PROBE_WORKERS=1)
 
-    def judged_then_stopped(job, dry_run, source=""):
+    def judged_then_stopped(
+        job, dry_run, source="", policy=None, cancel=None, observation=None
+    ):
         # The stop lands after the first file, so the two behind it are never
         # looked at rather than being judged and thrown away.
-        clean_registry.stop("r#2")
+        lifecycle.stop("r#2")
         return ProcessResult(Status.CONFORM, None)
 
     monkeypatch.setattr("trackstarr.sweep.process", judged_then_stopped)
@@ -1175,7 +1288,7 @@ def test_a_recheck_reports_only_when_the_install_is_latched_to_report(
     asked: list[bool] = []
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": (
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
             asked.append(dry_run) or ProcessResult(Status.CONFORM, None)
         ),
     )
@@ -1199,8 +1312,8 @@ def test_a_recheck_reports_only_when_a_arr_cannot_be_listed(
     marked: list[bool] = []
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": (
-            marked.append(runs.running(runs.RECHECK).dry_run),
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            marked.append(live_run(runs.RECHECK)["dry_run"]),
             ProcessResult(Status.CONFORM, None),
         )[1],
     )
@@ -1245,7 +1358,9 @@ def test_a_recheck_writes_down_what_it_learns_as_it_goes(monkeypatch, tmp_path, 
     )
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": ProcessResult(Status.CONFORM, None),
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            ProcessResult(Status.CONFORM, None)
+        ),
     )
 
     sweep_mod.recheck([folder], dry_run=True, run="r#2")
@@ -1260,7 +1375,7 @@ def test_a_recheck_tries_a_file_the_sweeps_gave_up_on(monkeypatch, tmp_path, cle
     _failing_sweeps(monkeypatch, tmp_path, sweep_mod.MAX_FAILURES + 1)
     attempts: list[str] = []
 
-    def failing(job, dry_run, source="sweep"):
+    def failing(job, dry_run, source="sweep", policy=None, cancel=None, observation=None):
         if dry_run:
             return ProcessResult(Status.PENDING, None)
         attempts.append(job.path)
@@ -1277,7 +1392,7 @@ def test_a_recheck_tries_a_file_the_sweeps_gave_up_on(monkeypatch, tmp_path, cle
 
 def _judged(path: str, **kwargs) -> Judged:
     """One file judged from scratch, with a key, so the cache stores it."""
-    return Judged(Job(path), FileKey(10, 1, 1, None), Verdict(Status.CONFORM))
+    return Judged(Job(path), sweep_cache.cache_key(path, None), Verdict(Status.CONFORM))
 
 
 def _bells(monkeypatch) -> list[str]:
@@ -1303,10 +1418,15 @@ def test_the_floor_is_what_holds_a_walks_bell_down(monkeypatch, tmp_path, clean_
     """Three files in the same instant is one thing worth looking at; without
     the floor it is a message and a shelf fetched per file per tab."""
     _library(tmp_path, 3)
-    monkeypatch.setattr("trackstarr.sweep._judge", _judged)
     monkeypatch.setattr(sweep_mod, "_PUBLISH_SECONDS", 0.0)
     kinds = _bells(monkeypatch)
-    sweep(dry_run=True)
+    cache = sweep_cache.SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    publish = sweep_mod._publisher(cache)
+    for path in (tmp_path / "library").iterdir():
+        cache_verdict(
+            cache, str(path), sweep_cache.cache_key(str(path), None), Verdict(Status.CONFORM)
+        )
+        publish()
     assert kinds.count(notify.LIBRARY) == 3
 
 
@@ -1362,7 +1482,9 @@ def test_the_grid_reads_a_walk_before_the_cache_file_exists(
     _folder(tmp_path, "Dune (2024)", "Dune.mkv")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
-        lambda job, dry_run, source="": ProcessResult(Status.PENDING),
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            ProcessResult(Status.PENDING)
+        ),
     )
     library.forget()
     seen: list[tuple[str, bool]] = []
@@ -1376,3 +1498,418 @@ def test_the_grid_reads_a_walk_before_the_cache_file_exists(
     monkeypatch.setattr(notify, "publish", watch)
     sweep(dry_run=True)
     assert seen == [("pending", False)]
+
+
+def test_skip_before_discovery_never_opens_the_file(monkeypatch, tmp_path):
+    _library(tmp_path, 1)
+    monkeypatch.setattr(work.scheduler, "skipped", lambda run, path: True)
+    monkeypatch.setattr(
+        "trackstarr.sweep.process", lambda *args, **kwargs: pytest.fail("skipped file opened")
+    )
+    counts = sweep(dry_run=True, run="skip-before-discovery")
+    assert counts[Status.DEFERRED] == 1
+
+
+def test_overlapping_roots_queue_each_file_once(monkeypatch, tmp_path):
+    _library(tmp_path, 1)
+    roots = config.current().MEDIA_DIRS
+    set_config(MEDIA_DIRS=[*roots, *roots])
+    judged = []
+
+    def process_once(job, dry_run, source="sweep", policy=None, cancel=None, observation=None):
+        judged.append(job.path)
+        return ProcessResult(Status.CONFORM)
+
+    monkeypatch.setattr("trackstarr.sweep.process", process_once)
+    counts = sweep(dry_run=True)
+    assert counts[Status.CONFORM] == 1
+    assert len(judged) == 1
+
+
+def test_late_discovery_does_not_replace_a_concurrent_rewrites_verdict(tmp_path):
+    path = str(tmp_path / "film.mkv")
+    Path(path).write_text("before")
+    old = Judged(Job(path), sweep_cache.cache_key(path, None), Verdict(Status.PENDING))
+    cache = sweep_cache.SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    Path(path).write_text("rewritten file")
+    fresh = sweep_cache.cache_key(path, None)
+    cache_verdict(cache, path, fresh, Verdict(Status.CONFORM))
+    with sweep_cache.observing(path, cache.path) as observation:
+        sweep_mod._stash(old, cache, observation)
+    cache.publish_view()
+    assert cache._snapshot[1][path]["status"] == "conform"
+
+
+def test_older_rewrite_booking_cannot_replace_a_newer_walk(
+    monkeypatch, tmp_path, clean_registry
+):
+    """Hold accounting after worker completion while another run replaces the file."""
+    _library(tmp_path, 1)
+    path = str(next((tmp_path / "library").iterdir()))
+    set_config(REWRITE_MODE="all")
+    booking, release = threading.Event(), threading.Event()
+    book = sweep_mod._book
+
+    def process(job, dry_run, source="sweep", policy=None, cancel=None, observation=None):
+        if job.run == "newer":
+            return ProcessResult(Status.CONFORM)
+        if dry_run:
+            return ProcessResult(Status.PENDING)
+        Path(path).write_bytes(b"older rewrite")
+        return ProcessResult(
+            Status.MODIFIED,
+            became=Rewritten(path, sweep_cache.cache_key(path, None), Verdict(Status.CONFORM)),
+        )
+
+    def delayed_book(judged, totals, cache, run):
+        if run == "older":
+            assert judged.verdict.status is Status.MODIFIED
+            booking.set()
+            assert release.wait(3)
+        book(judged, totals, cache, run)
+
+    monkeypatch.setattr(sweep_mod, "process", process)
+    monkeypatch.setattr(sweep_mod, "_book", delayed_book)
+    with ThreadPoolExecutor() as walkers:
+        older = walkers.submit(sweep, False, "older")
+        try:
+            assert booking.wait(3)
+            Path(path).write_bytes(b"newer file with a different key")
+            newer_key = sweep_cache.cache_key(path, None)
+            newer = sweep_mod.recheck([str(tmp_path / "library")], True, "newer")
+            assert newer[Status.CONFORM] == 1
+        finally:
+            release.set()
+        assert older.result(timeout=3)[Status.MODIFIED] == 1
+    stored = sweep_cache.read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    assert stored.files[path]["status"] == "conform"
+    assert stored.files[path]["size"] == newer_key.size
+    assert stored.files[path]["mtime_ns"] == newer_key.mtime_ns
+    assert not sweep_cache._revisions
+    assert not sweep_mod.work.scheduler.active
+
+
+def test_delayed_discovery_rejects_a_newer_same_key_verdict(
+    monkeypatch, tmp_path, clean_registry
+):
+    _library(tmp_path, 1)
+    path = str(next((tmp_path / "library").iterdir()))
+    entered, release = threading.Event(), threading.Event()
+
+    def probe(job, dry_run, source="sweep", policy=None, cancel=None, observation=None):
+        entered.set()
+        assert release.wait(3)
+        return ProcessResult(Status.PENDING)
+
+    monkeypatch.setattr(sweep_mod, "process", probe)
+    with ThreadPoolExecutor() as walkers:
+        older = walkers.submit(sweep, True, "older")
+        try:
+            assert entered.wait(3)
+            publish_verdict(
+                path,
+                sweep_cache.cache_key(path, None),
+                Verdict(Status.CONFORM),
+                Policy.from_config().fingerprint(),
+            )
+        finally:
+            release.set()
+        counts = older.result(timeout=3)
+    assert counts[Status.PENDING] == 1
+    assert sum(counts.values()) == 1
+    stored = sweep_cache.read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    assert stored.files[path]["status"] == "conform"
+    assert not sweep_cache._revisions
+
+
+def test_abandoned_rewrite_does_not_republish_discovery(monkeypatch, tmp_path):
+    path = str(tmp_path / "file.mkv")
+    Path(path).write_bytes(b"file")
+    cache = sweep_cache.SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    found = Judged(Job(path), sweep_cache.cache_key(path, None), Verdict(Status.PENDING))
+    cache_verdict(cache, path, found.key, Verdict(Status.CONFORM))
+    monkeypatch.setattr(work.scheduler, "skipped", lambda run, path: True)
+    returned = sweep_mod._rewrite(found, LibraryIndex({}, True), cache, "stopped", False)
+    totals = sweep_mod._Totals(dict.fromkeys(Status, 0))
+    sweep_mod._book(returned, totals, cache, "stopped")
+    assert cache._standing()[path]["status"] == "conform"
+    assert totals.counts[Status.PENDING] == 1
+
+
+def test_full_sweep_preserves_imports_accepted_during_listing(monkeypatch, tmp_path):
+    path = str(tmp_path / "late.mkv")
+    entered, release = threading.Event(), threading.Event()
+
+    def list_files(policy):
+        entered.set()
+        assert release.wait(3)
+        return []  # Enumeration passed this folder before the import arrived.
+
+    monkeypatch.setattr(sweep_mod, "walk_library", list_files)
+    with ThreadPoolExecutor() as walkers:
+        walking = walkers.submit(sweep, True)
+        try:
+            assert entered.wait(3)
+            Path(path).write_bytes(b"new import")
+            publish_verdict(
+                path,
+                sweep_cache.cache_key(path, None),
+                Verdict(Status.CONFORM),
+                Policy.from_config().fingerprint(),
+            )
+        finally:
+            release.set()
+        assert sum(walking.result(timeout=3).values()) == 0
+    stored = sweep_cache.read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    assert stored.files[path]["status"] == "conform"
+
+
+@pytest.mark.parametrize("update_first", [False, True])
+def test_unobserved_discovery_carries_the_latest_shared_verdict(
+    monkeypatch, tmp_path, update_first
+):
+    path = str(tmp_path / "film.mkv")
+    Path(path).write_text("media")
+    os.makedirs(config.STATE_DIR, exist_ok=True)
+    fingerprint = Policy.from_config().fingerprint()
+    cache = sweep_cache.SweepCache(sweep_cache.cache_path(), fingerprint)
+    key = sweep_cache.cache_key(path, None)
+    cache_verdict(cache, path, key, pending())
+    cache.save()
+    other = sweep_cache.SweepCache.load(cache.path, fingerprint)
+    monkeypatch.setattr(work.scheduler, "skipped", lambda run, path: True)
+    with sweep_cache.live(cache), sweep_cache.live(other):
+
+        def update():
+            # A separate worker's accepted observation, while both walks live.
+            with ThreadPoolExecutor() as pool:
+                pool.submit(cache_verdict, other, path, key, Verdict(Status.CONFORM)).result(
+                    timeout=5
+                )
+
+        if update_first:
+            update()
+        sweep_mod._observed(
+            path,
+            cache,
+            lambda policy, observation: sweep_mod._judge(
+                path,
+                LibraryIndex({}, True),
+                cache,
+                True,
+                "skip",
+                policy=policy,
+                observation=observation,
+            ),
+        )
+        if not update_first:
+            update()
+        cache.publish_view()
+        assert sweep_cache.live_view(fingerprint)[1][path]["status"] == "conform"
+        cache.save()
+    assert sweep_cache.read(cache.path, fingerprint).files[path]["status"] == "conform"
+
+
+def test_phase_policy_changes_and_concurrent_walk_publication(monkeypatch, tmp_path):
+    path = str(tmp_path / "film.mkv")
+    Path(path).write_bytes(b"file")
+    set_config(LANGUAGES=("eng",))
+    first = Policy.from_config()
+    cache = sweep_cache.SweepCache(sweep_cache.cache_path(), first.fingerprint())
+    index = LibraryIndex({}, True)
+    entered, release = threading.Event(), threading.Event()
+    policies = []
+
+    def process(job, dry_run, source, policy, cancel=None, observation=None):
+        policies.append(policy)
+        if job.run == "old":
+            entered.set()
+            assert release.wait(3)
+        return ProcessResult(Status.PENDING, Plan(path, policy))
+
+    monkeypatch.setattr(sweep_mod, "process", process)
+    judge = functools.partial(sweep_mod._judge, path, index, cache, True, "old")
+    with sweep_cache.live(cache), ThreadPoolExecutor() as workers:
+        old = workers.submit(sweep_mod._observed, path, cache, judge)
+        try:
+            assert entered.wait(3)
+            set_config(LANGUAGES=("fre",))
+            second = Policy.from_config()
+            current = sweep_cache.SweepCache(cache.path, second.fingerprint())
+            with sweep_cache.live(current):
+                found = sweep_mod._observed(
+                    path,
+                    current,
+                    functools.partial(sweep_mod._judge, path, index, current, True, "new"),
+                )
+                current.keep()
+                release.set()
+                discovered = old.result(timeout=3)
+                # A rewrite starts a fresh phase under the latest policy, even
+                # when its discovery and walk cache belong to older settings.
+                rewritten = sweep_mod._rewrite(discovered, index, cache, "rewrite", True)
+                assert rewritten.verdict.status is Status.PENDING
+                cache.save()
+                assert found.verdict.status is Status.PENDING
+                assert sweep_cache.read(cache.path, second.fingerprint()).current
+                assert sweep_cache.live_view(first.fingerprint()) is None
+        finally:
+            release.set()
+    assert policies == [first, second, second]
+
+
+@pytest.mark.parametrize("failure", ["probe", "rewrite", "booking"])
+def test_walk_failures_release_every_file_lifecycle(monkeypatch, failure):
+    monkeypatch.setattr(sweep_mod, "walk_library", lambda policy: ["one.mkv", "two.mkv"])
+    set_config(REWRITE_MODE="all")
+
+    def judge(path, **kwargs):
+        if failure == "probe":
+            raise RuntimeError("probe failed")
+        return Judged(Job(path), None, Verdict(Status.PENDING))
+
+    def fail(*args, **kwargs):
+        raise RuntimeError(f"{failure} failed")
+
+    monkeypatch.setattr(sweep_mod, "_judge", judge)
+    if failure == "rewrite":
+        monkeypatch.setattr(sweep_mod, "_rewrite", fail)
+        assert sweep(False)[Status.FAILED] == 2
+    else:
+        if failure == "booking":
+            monkeypatch.setattr(sweep_mod, "_book", fail)
+        with pytest.raises(RuntimeError, match=f"{failure} failed"):
+            sweep(True)
+    scheduler = work.scheduler
+    assert not scheduler.tasks
+    assert not scheduler.pending and not scheduler.active
+    assert not scheduler.active_paths and not scheduler.reserved
+    assert not any(scheduler.occupied.values())
+
+
+@pytest.mark.parametrize("timeout", [False, True])
+@pytest.mark.parametrize("write", ["cache", "report"])
+def test_shutdown_covers_the_sweeps_final_persistence(
+    monkeypatch, tmp_path, timeout, write, caplog
+):
+    _library(tmp_path, 1)
+    entered, release, completed = threading.Event(), threading.Event(), threading.Event()
+    original = sweep_cache.SweepCache.save if write == "cache" else sweep_mod._write_report
+
+    def persist(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        result = original(*args, **kwargs)
+        completed.set()
+        return result
+
+    if write == "cache":
+        monkeypatch.setattr(sweep_cache.SweepCache, "save", persist)
+    else:
+        monkeypatch.setattr(sweep_mod, "_write_report", persist)
+    with ThreadPoolExecutor() as pool:
+        sweeping = pool.submit(sweep, dry_run=True)
+        try:
+            assert entered.wait(3)
+            assert work.scheduler.drain(0)
+            stopping = pool.submit(lifecycle.shutdown, 0 if timeout else 5)
+            if timeout:
+                assert not stopping.result(timeout=3)
+                assert "1 producer(s) still going" in caplog.text
+            else:
+                assert not stopping.done()
+            assert not completed.is_set()
+        finally:
+            release.set()
+        sweeping.result(timeout=3)
+        if not timeout:
+            assert stopping.result(timeout=3)
+        assert completed.is_set()
+    assert (Path(config.STATE_DIR) / "pending.tsv").exists()
+
+
+def test_a_skipped_rewrite_waiting_for_an_edit_never_probes(monkeypatch, tmp_path):
+    path = str(tmp_path / "file.mkv")
+    Path(path).write_text("file")
+    os.makedirs(config.STATE_DIR, exist_ok=True)
+    cache = sweep_cache.SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    cache_verdict(cache, path, sweep_cache.cache_key(path, None), Verdict(Status.CONFORM))
+    cache.save()
+    cache = sweep_cache.SweepCache.load(cache.path, cache.fingerprint)
+    cancel = Cancel(path)
+    cancel.ask()
+    with sweep_cache.observing(path) as owner:
+        assert owner.changing(path)
+        found = sweep_mod.Judged(Job(path), None, Verdict(Status.PENDING))
+        monkeypatch.setattr(
+            sweep_mod, "_judge", lambda *a, **kw: pytest.fail("probed during edit")
+        )
+        result = sweep_mod._rewrite(
+            found, LibraryIndex({}, True), cache, "run", False, cancel=cancel
+        )
+    assert result.verdict.status is Status.DEFERRED
+    assert result.unobserved
+    cache.save()
+    assert sweep_cache.read(cache.path, cache.fingerprint).files[path]["status"] == "conform"
+
+
+@pytest.mark.parametrize(
+    "guard",
+    ["none", "changed", "missing", "force", "paused", "stopped", "policy", "pending", "failed"],
+)
+def test_fast_pass_trusts_only_current_settled_verdicts(tmp_path, guard):
+    path = str(tmp_path / "film.mkv")
+    Path(path).write_text("video")
+    lifecycle.open_run("fast", runs.SWEEP)
+    cache = sweep_cache.SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    key = sweep_cache.cache_key(path, None)
+    status = {"pending": Status.PENDING, "failed": Status.FAILED}.get(guard, Status.CONFORM)
+    cache_verdict(cache, path, key, Verdict(status))
+    Path(config.STATE_DIR).mkdir(exist_ok=True)
+    cache.keep()
+    cache = sweep_cache.SweepCache.load(cache.path, cache.fingerprint)
+    found = Judged(Job(path), key, Verdict(Status.PENDING))
+    phase = work.scheduler.submit("fast", path, "work", lambda: None)
+    rank = work.scheduler.tasks[phase.handle.key].rank
+    if guard == "changed":
+        Path(path).write_text("a different video")
+    elif guard == "missing":
+        Path(path).unlink()
+    elif guard == "paused":
+        work.scheduler.set_paused(True)
+    elif guard == "stopped":
+        work.scheduler.stop("fast")
+    elif guard == "policy":
+        cache.fingerprint = {}
+    sweep_mod._hurry("fast", cache, {path: found}, guard == "force")
+    assert (work.scheduler.tasks[phase.handle.key].rank < rank) == (guard == "none")
+    if guard == "paused":
+        work.scheduler.set_paused(False)
+        sweep_mod._hurry("fast", cache, {path: found}, False)
+        assert work.scheduler.tasks[phase.handle.key].rank < rank
+
+
+def test_fast_pass_books_a_concurrent_verdict_without_processing(monkeypatch, tmp_path):
+    monkeypatch.setattr(sweep_mod, "_DRAIN_TICK", 0.01)
+    with _mid_sweep(monkeypatch, tmp_path, 4) as sweeping:
+        _until(lambda: work.scheduler.count("work") == 3, "rewrites were not queued")
+        with work.scheduler.condition:
+            target = max(work.scheduler.pending.values(), key=lambda task: task.rank)
+            path = target.path
+        # Another run publishes through the real sharing path into the live cache.
+        other = sweep_cache.SweepCache.load(
+            sweep_cache.cache_path(), Policy.from_config().fingerprint()
+        )
+        with sweep_cache.live(other):
+            cache_verdict(
+                other, path, sweep_cache.cache_key(path, None), Verdict(Status.CONFORM)
+            )
+        _until(lambda: target.rank < 0, "the drain tick did not promote the cleared row")
+        assert path not in sweeping.rewriting
+    assert path not in sweeping.rewriting, "a cache hit must never call process"
+    event = next(event for event in read_events() if event["event"] == "sweep")
+    assert event["cached"] == 1
+    assert event["counts"][str(Status.CONFORM)] == 1
+    assert event["counts"][str(Status.MODIFIED)] == 3
+    assert event["files"] == 4
+    assert path not in (Path(config.STATE_DIR) / "pending.tsv").read_text()

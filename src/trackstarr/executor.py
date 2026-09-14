@@ -113,9 +113,58 @@ DURATION_DRIFT_FLOOR = 1.0
 #: is.
 _STDERR_TAIL = 500
 
-#: The ffmpeg runs this process has going and the file each is rewriting, so an
-#: abort can reach them all and a skip can reach one.
-_running_ffmpeg: dict[subprocess.Popen, str] = {}
+
+class Cancel:
+    """One rewrite's kill switch and the gate its mutation commits through.
+
+    A path is not enough to kill by: between a skip choosing a file and the
+    signal reaching it, the same path can be claimed again by another run, and
+    the kill would land on that one instead. The owner marks this while it
+    still holds the phase, and ffmpeg gives up at once if it was marked before
+    the process started.
+
+    A mark alone cannot stop a header edit, which is over in a second and has
+    no process to signal. Every path that changes a file passes :meth:`commit`
+    first, and the two are decided one at a time: a skip either arrives before
+    the edit and prevents it, or arrives after and lets it finish.
+    """
+
+    def __init__(self, path: str = ""):
+        #: The library file, for the abort that still works by name.
+        self.path = path
+        self.asked = threading.Event()
+        self._gate = threading.Lock()
+        self._committed = False
+
+    def ask(self) -> bool:
+        """Mark the phase stopped; whether it was in time to prevent a mutation."""
+        with self._gate:
+            self.asked.set()
+            return not self._committed
+
+    def stopped(self) -> bool:
+        """Whether a skip has arrived. Read before entering a mutation."""
+        return self.asked.is_set()
+
+    def commit(self) -> bool:
+        """Take the phase past the point a skip can stop it; whether it may go on.
+
+        Held only while choosing between the two, never while a tool runs.
+        """
+        with self._gate:
+            if self.asked.is_set() and not self._committed:
+                return False
+            self._committed = True
+            return True
+
+    def wait(self, timeout: float) -> bool:
+        """Sleep, returning early on a skip. Whether one arrived."""
+        return self.asked.wait(timeout)
+
+
+#: The ffmpeg runs this process has going and what each is rewriting, so an
+#: abort can reach them all and a skip can reach exactly one.
+_running_ffmpeg: dict[subprocess.Popen, Cancel] = {}
 _running_lock = threading.Lock()
 
 
@@ -131,27 +180,47 @@ def is_rewriting(path: str) -> bool:
     An in-place tag edit under it would hand ffmpeg a header it did not open.
     A run with no path on record answers for no file."""
     with _running_lock:
-        return bool(path) and path in _running_ffmpeg.values()
+        return bool(path) and any(cancel.path == path for cancel in _running_ffmpeg.values())
 
 
-def terminate_running(path: str = "") -> int:
-    """SIGTERM every running ffmpeg, or only the one rewriting ``path``; how
-    many were signalled.
+def _signal(procs: list[subprocess.Popen]) -> int:
+    """SIGTERM each of these; how many were signalled.
 
     Safe at any moment: a rewrite is staged and published only once verified,
     so a kill costs the encode and never the library file. A signalled rewrite
     ends as :data:`Outcome.DEFERRED`, so nothing counts it as a failure of the
     file.
     """
-    with _running_lock:
-        procs = [
-            proc for proc, rewriting in _running_ffmpeg.items() if not path or rewriting == path
-        ]
     for proc in procs:
         # Gone between the snapshot and here is the normal race, not an error.
         with contextlib.suppress(OSError):
             proc.terminate()
     return len(procs)
+
+
+def terminate_running(path: str = "") -> int:
+    """SIGTERM every running ffmpeg, or only the ones rewriting ``path``; how
+    many were signalled."""
+    with _running_lock:
+        procs = [
+            proc
+            for proc, cancel in _running_ffmpeg.items()
+            if (not path or cancel.path == path) and cancel.ask()
+        ]
+    return _signal(procs)
+
+
+def terminate_phase(cancel: Cancel) -> int:
+    """SIGTERM only the rewrite this phase started; how many were signalled.
+
+    Marked first, so a process that has yet to register finds the answer
+    waiting for it and never runs on.
+    """
+    if not cancel.ask():
+        return 0
+    with _running_lock:
+        procs = [proc for proc, running in _running_ffmpeg.items() if running is cancel]
+    return _signal(procs)
 
 
 #: Called about once a second per encode with (seconds written, speed as a
@@ -184,16 +253,17 @@ def _watch_progress(readout: IO[str], on_progress: ProgressCallback) -> None:
 
 
 def _run_ffmpeg(
-    args: list[str], on_progress: ProgressCallback | None = None, rewriting: str = ""
+    args: list[str], on_progress: ProgressCallback | None = None, cancel: Cancel | None = None
 ) -> tuple[int, str]:
     """Run ffmpeg to completion; its exit code and stderr.
 
     Not subprocess.run, which hides the Popen from :func:`terminate_running`.
     Raises TimeoutExpired like run() does, having killed the process.
     ``on_progress`` gets the readout down a pipe of its own, leaving
-    ``communicate`` the standard streams. ``rewriting`` is the library file
-    this call is for, which is how a skip finds the one process to signal.
+    ``communicate`` the standard streams. ``cancel`` names the work this call
+    is for, which is how an abort and a skip each find their process.
     """
+    cancel = cancel or Cancel()
     read_fd = write_fd = -1
     if on_progress is not None:
         read_fd, write_fd = os.pipe()
@@ -222,7 +292,7 @@ def _run_ffmpeg(
                 target=_watch_progress, args=(readout, on_progress), daemon=True
             ).start()
         with _running_lock:
-            _running_ffmpeg[proc] = rewriting
+            _running_ffmpeg[proc] = cancel
     except BaseException:
         if proc is not None:
             proc.kill()
@@ -233,6 +303,10 @@ def _run_ffmpeg(
             if descriptor >= 0:
                 os.close(descriptor)
         raise
+    # Skipped between the claim and this process starting: the skip's own
+    # signal found nothing to reach, so it is answered here instead.
+    if cancel.asked.is_set():
+        _signal([proc])
     try:
         _, stderr = proc.communicate(timeout=config.current().FFMPEG_TIMEOUT)
     except subprocess.TimeoutExpired:
@@ -259,25 +333,37 @@ def _verify(plan: Plan, out_info: dict) -> str | None:
     return None
 
 
+def _target_taken(plan: Plan) -> str:
+    """Why a remux may not publish, or "". An .mkv already beside the source is
+    not ours to overwrite. Recurs every sweep, so the detail says what to do."""
+    if plan.out_path == plan.path or not os.path.exists(plan.out_path):
+        return ""
+    return (
+        f"remux target already exists: {plan.out_path} "
+        f"(delete {plan.path} if the .mkv is a finished remux, "
+        "or delete the .mkv to redo it)"
+    )
+
+
 def apply_plan(
     plan: Plan,
     on_progress: ProgressCallback | None = None,
     on_encoded: Callable[[], None] | None = None,
+    cancel: Cancel | None = None,
+    claim: Callable[[], bool] | None = None,
 ) -> tuple[Outcome, str]:
     """Rewrite the file, replacing it only once the result verifies.
 
     The detail says what went wrong when nothing was replaced; the caller
     logs it. ``on_encoded`` fires when ffmpeg exits, before a cross-filesystem
-    publish copies the file.
+    publish copies the file. ``cancel`` comes from whoever owns the work; a
+    direct call gets one of its own, abortable by name like any other.
+    ``claim`` is asked for ownership of the source and the output just before
+    the rename, and answers false where a skip arrived while it waited.
     """
-    if plan.out_path != plan.path and os.path.exists(plan.out_path):
-        # An .mkv already beside the source is not ours to overwrite. Recurs
-        # every sweep, so the detail says what to do.
-        return Outcome.FAILED, (
-            f"remux target already exists: {plan.out_path} "
-            f"(delete {plan.path} if the .mkv is a finished remux, "
-            "or delete the .mkv to redo it)"
-        )
+    cancel = cancel or Cancel(plan.path)
+    if taken := _target_taken(plan):
+        return Outcome.FAILED, taken
 
     src_before = os.stat(plan.path)
     # A stale plan's stream maps could mangle the new file in ways _verify
@@ -295,7 +381,7 @@ def apply_plan(
     args = ffmpeg_args(plan, tmp)
     log.info("ffmpeg %s", " ".join(args[1:]))
     try:
-        code, stderr = _run_ffmpeg(args, on_progress, plan.path)
+        code, stderr = _run_ffmpeg(args, on_progress, cancel)
         if on_encoded is not None:
             on_encoded()
         if code < 0:
@@ -310,11 +396,22 @@ def apply_plan(
         if problem:
             return Outcome.FAILED, f"{problem}, result discarded"
 
+        # Ownership before the checks it makes good: waiting out another edit of
+        # the same file is itself a moment the source can change under us.
+        if claim is not None and not claim():
+            return Outcome.DEFERRED, "the rewrite was stopped before it was published"
+
         # An upgrade can land mid-rewrite; renaming over it would revert it.
         src_after = os.stat(plan.path)
         if SourceSignature.of(src_after) != SourceSignature.of(src_before):
             return Outcome.DEFERRED, "source changed during the rewrite, result discarded"
+        if taken := _target_taken(plan):
+            return Outcome.FAILED, taken
 
+        # The last moment a skip can still leave the library file as it was.
+        # Past this the rename is under way and a late one has nothing to undo.
+        if not cancel.commit():
+            return Outcome.DEFERRED, "the rewrite was stopped before it was published"
         _publish(tmp, plan.out_path, src_before)
         if plan.out_path != plan.path:
             # The .mkv is published; a leftover source is the next sweep's.

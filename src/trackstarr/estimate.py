@@ -3,7 +3,7 @@
 A rewrite costs roughly the file's running time divided by how fast this
 machine gets through one. That multiple varies mostly with how many downmixes
 the plan makes, so it is kept per shape: the set of layouts a rewrite
-generates, which :func:`trackstarr.processing.downmixed_names` records.
+generates, which :func:`trackstarr.processing.changed_tracks` records.
 
 The numbers below are a starting point; the install's own history replaces
 them as soon as there is enough of it.
@@ -87,7 +87,10 @@ def _worked(entry: dict) -> tuple[tuple[str, ...], float] | None:
     working = seconds - (waited if isinstance(waited, int | float) else 0.0)
     if duration <= 0 or working <= 0:
         return None
-    return tuple(sorted(entry.get("downmixed") or [])), duration / working
+    # Every track the rewrite encoded, rebuilds included: the work scales with
+    # what was written, not with whether it replaced something.
+    made = [*(entry.get("adds") or []), *(entry.get("rebuilds") or [])]
+    return tuple(sorted(made)), duration / working
 
 
 def measured(pages: int = _PAGES) -> Speeds:

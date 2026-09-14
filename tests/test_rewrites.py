@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import REWROTE
+from conftest import REWROTE, cache_verdict, set_config
 from trackstarr import config, rewrites, sweep_cache
 from trackstarr.policy import Policy
 from trackstarr.status import Status
@@ -32,16 +32,17 @@ def test_a_record_survives_the_rules_changing(media, tmp_path):
     file re-probed; the record predates all of that and stays."""
     rewrites.record(media, cache_key(media, "eng"), REWROTE)
     cache_path = os.path.join(config.STATE_DIR, "sweep-cache.json")
-    cache = SweepCache(cache_path, {"downmix": "2.0"})
-    cache.record(media, cache_key(media, "eng"), Verdict(Status.CONFORM))
+    cache = SweepCache(cache_path, Policy.from_config().fingerprint())
+    cache_verdict(cache, media, cache_key(media, "eng"), Verdict(Status.CONFORM))
     cache.save()
 
     # What a rule change does: the cache loads empty and the sweep rebuilds it.
-    rebuilt = SweepCache.load(cache_path, {"downmix": "5.1"})
-    rebuilt.record(media, cache_key(media, "eng"), Verdict(Status.CONFORM))
+    set_config(AUDIO_LAYOUTS=("5.1",))
+    rebuilt = SweepCache.load(cache_path, Policy.from_config().fingerprint())
+    cache_verdict(rebuilt, media, cache_key(media, "eng"), Verdict(Status.CONFORM))
     rebuilt.save()
 
-    stored = sweep_cache.read(cache_path, {"downmix": "5.1"})
+    stored = sweep_cache.read(cache_path, Policy.from_config().fingerprint())
     assert rewrites.against(stored.files) == {media: REWROTE}
 
 
