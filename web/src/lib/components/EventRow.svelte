@@ -5,19 +5,23 @@
 	import {
 		ago,
 		badge,
-		chips,
 		detail,
 		details,
 		dot,
 		headline,
+		layouts,
 		marker,
+		measures,
+		notes,
+		release,
 		type Event
 	} from '$lib/events';
 	import { stamp } from '$lib/format';
+	import { changed, isVerdict, CHIP, PLAIN_TONE } from '$lib/library';
 	import type { Card } from '$lib/library';
 
 	// One line of history, opening to the full record. On the events page's list,
-	// and in the overview's rail.
+	// and in the overview's activity panel.
 	let {
 		entry,
 		open = false,
@@ -36,13 +40,17 @@
 		before?: Event;
 		card?: Card;
 		onopen?: (card: Card) => void;
-		// The overview's rail: headline and time only until lg, where the row is
-		// wide enough for the events page's line and chips.
+		// The overview shows a short preview; the events page keeps the full line.
 		compact?: boolean;
 		// Ties the button to the panel it opens; unique within the page.
 		id: string;
 		ontoggle: () => void;
 	} = $props();
+
+	// Lines about one file, which name it the way a queue row does, and of those
+	// the ones whose plan the chips carry.
+	const FILES = new Set(['modified', 'pending', 'failed', 'deferred']);
+	const REWRITES = new Set(['modified', 'pending']);
 
 	// Both or neither: a thumb with nowhere to go swallows a tap.
 	const poster = $derived(card && onopen ? card : undefined);
@@ -51,30 +59,41 @@
 	// mark, so the list can be read down the column.
 	const mark = $derived(poster ? '' : badge(entry));
 
-	const line = $derived(detail(entry));
-	const marks = $derived(chips(entry));
-	const episode = $derived(marker(entry));
+	// The verdict this line reached, which the poster wears. A line about the
+	// service has none, and its mark already says which kind it is.
+	const verdict = $derived(isVerdict(entry.event) ? entry.event : undefined);
 
-	// By stylesheet, not a branch, so a resize across lg needs no measuring.
-	// Spelled out whole: Tailwind never generates a runtime-pasted prefix.
+	// The chips say what the rewrite changed, the layouts it wrote in the
+	// library's colour and what it cost in the plain one.
+	const marks = $derived([
+		...changed(layouts(entry)),
+		...measures(entry).map((chip) => ({ chip, tone: PLAIN_TONE }))
+	]);
+
+	// A line about a file leads with what the file is. A rewrite's words only
+	// repeat the chips beside them, so they go; a problem's say why the row is
+	// here, and a plan the chips cannot carry keeps its own.
+	const said = $derived.by(() => {
+		if (!FILES.has(entry.event)) return detail(entry);
+		const words = marks.length && REWRITES.has(entry.event) ? '' : detail(entry);
+		return [release(entry), words].filter(Boolean).join(' · ');
+	});
+	// How long and under what terms ride the end of it, as a file row's clock does.
+	const line = $derived([said, ...notes(entry)].filter(Boolean).join(' · '));
+	const episode = $derived(marker(entry));
+	const name = $derived(headline(entry, card?.name));
+
 	const lineClass = $derived(
 		compact
-			? 'mt-0.5 hidden text-[12.5px] text-dim lg:block'
-			: 'mt-0.5 block text-[12.5px] text-dim'
-	);
-	const marksClass = $derived(
-		compact ? 'mt-1.5 hidden flex-wrap gap-1.5 lg:flex' : 'mt-1.5 flex flex-wrap gap-1.5'
+			? 'mt-1 line-clamp-2 text-[12px] leading-relaxed text-dim sm:line-clamp-1'
+			: 'mt-1 block text-[12px] leading-relaxed wrap-anywhere text-dim'
 	);
 </script>
 
 {#snippet thumb()}
-	<!-- The column goes below lg in the overview's rail, which is too narrow to
-	     spare it there. `contents` wherever it stays, so what it holds is the flex
-	     item itself and keeps its own alignment; by stylesheet, not a branch, so
-	     a resize across lg needs no measuring. -->
-	<span class={compact ? 'hidden lg:contents' : 'contents'}>
+	<span class="contents">
 		{#if poster && onopen}
-			<TitleThumb card={poster} {onopen} />
+			<TitleThumb card={poster} {onopen} {verdict} />
 		{:else if mark}
 			<!-- Round, and as wide as a poster: it fills the column so the headlines
 			     line up, and its shape says a mark rather than a cover that failed
@@ -100,57 +119,59 @@
 	</span>
 {/snippet}
 
-<!-- The chips stay in the line's column; the panel takes the full width. -->
-<Disclosure {id} {open} {ontoggle} beside={poster || mark ? thumb : undefined}>
+<!-- The panel takes the full width; everything else sits in the line's column. -->
+<Disclosure
+	{id}
+	{open}
+	{ontoggle}
+	class="group block min-h-11 w-full text-left"
+	beside={poster || mark ? thumb : undefined}
+>
 	{#snippet summary(chevron)}
-		<span class="flex items-baseline gap-2.5">
-			<!-- The verdict's colour, in the line rather than in a column of its own:
-			     beside the round mark, a dot in its own column read as a second
-			     badge. Nudged up, since a 6px circle on the baseline sits low. -->
-			<span
-				aria-hidden="true"
-				class={`h-1.5 w-1.5 flex-none translate-y-[-2px] rounded-full ${dot(entry)}`}
-			></span>
-			<!-- The episode sits outside the truncation, so a long series title
-			     cannot take it over the end. Shrinks but does not grow: what follows
-			     reads as the end of the line rather than standing off at the far
-			     edge of a wide one. -->
-			<span
-				class={`flex min-w-0 items-baseline gap-1.5 font-medium ${
-					compact ? 'text-[12.5px] text-dim lg:text-[13.5px] lg:text-fg' : 'text-[13.5px]'
-				}`}
-			>
-				<!-- The card's name where there is one: a title's folder is named for
-				     the *arr that made it. -->
-				<span class="min-w-0 truncate">{headline(entry, card?.name)}</span>
-				{#if episode}
-					<span class="flex-none text-faint tabular-nums">{episode}</span>
+		<span class="flex items-baseline gap-2">
+			<!-- Only where nothing beside the words can carry it: a poster wears the
+			     verdict, and a line about the service has none worth a colour.
+			     Nudged up, since a 6px circle on the baseline sits low. -->
+			{#if !poster && !mark}
+				<span
+					aria-hidden="true"
+					class={`h-1.5 w-1.5 flex-none translate-y-[-2px] rounded-full ${dot(entry)}`}
+				></span>
+			{/if}
+			<!-- One column, as a file row has: the line under the title starts where
+			     the title does rather than under the dot. -->
+			<span class="min-w-0 flex-1">
+				<!-- The title alone, truncating, with the episode kept whole beside it
+				     and the time on the same line. The card's name where there is one:
+				     a title's folder is named for the *arr that made it. -->
+				<span class="flex items-baseline gap-1.5 text-[13px] font-medium text-fg">
+					<span class="truncate" title={name}>{name}</span>
+					{#if episode}
+						<span class="flex-none text-faint tabular-nums">{episode}</span>
+					{/if}
+					<time
+						datetime={entry.ts}
+						title={stamp(entry.ts)}
+						class="ml-auto flex-none text-[11px] whitespace-nowrap text-faint"
+					>
+						{ago(entry.ts)}
+					</time>
+					<!-- On the clock's line, not centred against the row. Words and chips
+					     under the title leave a centred chevron adrift from the time. -->
+					{@render chevron()}
+				</span>
+				{#if line}
+					<span class={lineClass}>{line}</span>
+				{/if}
+				{#if marks.length}
+					<span class="mt-1.5 flex flex-wrap gap-1">
+						{#each marks as change (change.chip)}
+							<span class={`${CHIP} ${change.tone}`}>{change.chip}</span>
+						{/each}
+					</span>
 				{/if}
 			</span>
-			<time
-				datetime={entry.ts}
-				title={stamp(entry.ts)}
-				class="flex-none text-[11px] whitespace-nowrap text-faint"
-			>
-				{ago(entry.ts)}
-			</time>
-			{@render chevron()}
 		</span>
-		{#if line}
-			<span class={lineClass}>{line}</span>
-		{/if}
-	{/snippet}
-
-	{#snippet aside()}
-		{#if marks.length}
-			<div class={marksClass}>
-				{#each marks as chip, at (at)}
-					<span class="rounded border border-line px-1.5 py-0.5 font-mono text-[11px] text-faint">
-						{chip}
-					</span>
-				{/each}
-			</div>
-		{/if}
 	{/snippet}
 
 	<!-- The row's full width: paths were wrapping early against an empty column. -->
