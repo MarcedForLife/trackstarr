@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import EventRow from '$lib/components/EventRow.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
-	import { key, THREAD, type Event } from '$lib/events';
+	import { key, type Event } from '$lib/events';
 	import type { Card } from '$lib/library';
 
 	// The last few lines of history. Holds only how much is shown and which lines
@@ -23,65 +23,63 @@
 	// open panel down one.
 	let opened = $state<Record<string, boolean>>({});
 
-	// How many lines the feed opens on. The desktop rows are rendered and hidden
-	// below lg.
-	const ROWS = 16;
-	const PHONE_ROWS = 8;
-	// How many more each press adds. Past the loaded window is the events page.
-	const MORE = 10;
+	const ROWS = 8;
+	const MORE = 8;
 	let extra = $state(0);
 
 	const rows = $derived(entries.slice(0, ROWS + extra).map((entry) => ({ entry, id: key(entry) })));
-	// Whether the button has anything left, at both lengths; CSS tells them apart.
-	const morePhone = $derived(entries.length > PHONE_ROWS + extra);
-	const moreDesk = $derived(entries.length > ROWS + extra);
+	const hasMore = $derived(entries.length > ROWS + extra);
 </script>
 
-<section class="min-w-0">
-	<h2 class="text-[11px] font-semibold tracking-wider text-faint uppercase">Activity</h2>
-	{#if rows.length}
-		<!-- The page's width, like the two panels above it: capped to keep the time
-		     near its line, the feed read as a column that had failed to fill.
-		     overflow-anchor: none, or scroll anchoring fights an expanding row. -->
-		<ol class="relative isolate mt-2.5 flex flex-col gap-2.5 [overflow-anchor:none]">
-			<!-- With the column it threads, which is from lg. -->
-			<span aria-hidden="true" class={`hidden lg:block ${THREAD}`}></span>
-			{#each rows as { entry, id }, at (id)}
-				<li class={at >= PHONE_ROWS + extra ? 'hidden lg:block' : ''}>
-					<EventRow
-						compact
-						{entry}
-						id={`activity-${at}`}
-						open={!!opened[id]}
-						card={entry.title ? titles[entry.title] : undefined}
-						{onopen}
-						ontoggle={() => (opened = { ...opened, [id]: !opened[id] })}
-					/>
-				</li>
-			{/each}
-		</ol>
-	{:else}
-		<p class="mt-2.5 text-[12.5px] text-dim">Nothing yet.</p>
-	{/if}
-	<!-- More lines without leaving the page, beside the way off it. -->
-	<div class="mt-3 flex items-center gap-4">
-		{#if morePhone}
-			<button
-				type="button"
-				onclick={() => (extra += MORE)}
-				class={`inline-flex items-center gap-1 text-[12.5px] font-medium text-dim hover:text-fg ${
-					moreDesk ? '' : 'lg:hidden'
-				}`}
-			>
-				Show more
-			</button>
+<section class="min-w-0" aria-labelledby="activity-heading">
+	<h2 id="activity-heading" class="text-[11px] font-semibold tracking-wider text-faint uppercase">
+		Activity
+	</h2>
+	<!-- No label of its own inside the card: the heading above it already says
+	     what these lines are. -->
+	<div class="mt-2.5 overflow-hidden rounded-xl border border-line bg-raised">
+		{#if rows.length}
+			<ol class="divide-y divide-line">
+				{#each rows as { entry, id }, at (id)}
+					<li class="px-4 py-3 transition-colors hover:bg-sunken/50">
+						<EventRow
+							compact
+							{entry}
+							id={`activity-${at}`}
+							open={!!opened[id]}
+							card={entry.title ? titles[entry.title] : undefined}
+							{onopen}
+							ontoggle={() => (opened = { ...opened, [id]: !opened[id] })}
+						/>
+					</li>
+				{/each}
+			</ol>
+		{:else}
+			<p class="px-4 py-6 text-[12.5px] text-dim">
+				No activity yet. Every sweep, import and rewrite appears here.
+			</p>
 		{/if}
-		<a
-			href={resolve('/events')}
-			class="inline-flex items-center gap-1 text-[12.5px] font-medium text-dim hover:text-fg"
-		>
-			All events
-			<Glyph name="next" size={11} />
-		</a>
+		<!-- More of the same list on the left, the way off it on the right. The
+		     link holds that edge whether or not there is more to show. -->
+		<div class="flex items-center gap-3 border-t border-line px-4 py-2">
+			{#if hasMore}
+				<button
+					type="button"
+					onclick={() => (extra += MORE)}
+					class="inline-flex min-h-10 items-center gap-1 text-[12.5px] font-medium text-dim hover:text-fg"
+				>
+					Show more
+					<!-- Turned down, or two right-pointing chevrons in one foot read as
+					     two ways off the page. -->
+					<span class="inline-flex rotate-90"><Glyph name="chevron" size={11} /></span>
+				</button>
+			{/if}
+			<a
+				href={resolve('/events')}
+				class="ml-auto inline-flex min-h-10 items-center gap-1 text-[12.5px] font-medium text-accent hover:underline"
+			>
+				All events <Glyph name="next" size={11} />
+			</a>
+		</div>
 	</div>
 </section>

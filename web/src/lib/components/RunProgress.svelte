@@ -14,9 +14,7 @@
 		type Run
 	} from '$lib/runs';
 
-	// A run in three lines: what it is doing, how far, and the way out. The
-	// compact RunCard for the library's bar and a title's sheet, so the same run
-	// reads one way.
+	// Compact progress and controls for the library bar and title sheet.
 	let {
 		run,
 		stopping = false,

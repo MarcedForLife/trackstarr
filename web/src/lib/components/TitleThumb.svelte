@@ -1,11 +1,17 @@
 <script lang="ts">
 	import { arrival, coverShow, type Arrival } from '$lib/covers';
 	import { display } from '$lib/display.svelte';
-	import { coverUrl, initials, verdictLabel, type Card } from '$lib/library';
+	import { coverUrl, dot, initials, verdictLabel, type Card, type Verdict } from '$lib/library';
 
 	// A title's poster at list-row size, opening the title from a line of
 	// history. Not PosterCard, whose tilt, sheen and long press are for a grid.
-	let { card, onopen }: { card: Card; onopen: (card: Card) => void } = $props();
+	let {
+		card,
+		onopen,
+		// The state to wear at the foot of the artwork, as a library card wears the
+		// title's. A history line passes what its own line is about, not card.state.
+		verdict
+	}: { card: Card; onopen: (card: Card) => void; verdict?: Verdict } = $props();
 
 	let missing = $state(false);
 
@@ -53,6 +59,13 @@
 				onerror={() => (missing = true)}
 				class={`absolute inset-0 h-full w-full object-cover ${showing}`}
 			/>
+		{/if}
+		{#if verdict}
+			<!-- Ringed rather than scrimmed: a ramp deep enough for a 6px dot is
+			     half a thumb, and the ring reads over artwork and initials alike. -->
+			<span
+				class={`absolute bottom-1 left-1 block h-1.5 w-1.5 rounded-full ring-2 ring-surface ${dot(verdict)}`}
+			></span>
 		{/if}
 	</span>
 </button>
