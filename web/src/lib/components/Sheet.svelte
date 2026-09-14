@@ -7,8 +7,10 @@
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { carry } from '$lib/carry';
 	import { dragDismiss } from '$lib/drag';
 	import { behind, keyboard } from '$lib/modal';
+	import { reduced } from '$lib/motion.svelte';
 
 	// A panel that comes up from the bottom over the page. A sheet rather than a
 	// route, so the grid keeps its scroll position. The backdrop and handle are
@@ -29,6 +31,8 @@
 	// Whether a drag is under way: the panel wears its transition when not
 	// dragged. The offset is not state; $lib/drag writes it per frame.
 	let dragging = $state(false);
+	// A growth still easing out, which a finger on the panel takes over from.
+	let growth: Animation | null = null;
 
 	// Past this the sheet goes rather than springing back: about a thumb's
 	// travel.
@@ -60,11 +64,39 @@
 		onclose();
 	}
 
-	// Where the handle has dragged the panel to.
+	// Where the handle has dragged the panel to. The finger owns the panel from
+	// here, so anything still easing lets go of it.
 	function moved(offset: number, live: boolean) {
 		dragging = live;
+		growth?.cancel();
 		if (panel) panel.style.transform = offset ? `translateY(${offset}px)` : '';
 	}
+
+	// The sheet stands on the floor, so content landing after it is up moves its
+	// top edge in one step. Ease the difference out on the panel and the edge
+	// travels instead. 260ms against the slide's 400ms, which it usually lands
+	// inside.
+	const GROWTH = 260;
+	const CURVE = 'cubic-bezier(0.33, 1, 0.68, 1)';
+
+	$effect(() => {
+		const box = panel;
+		if (!box) return;
+		let height = box.getBoundingClientRect().height;
+		// The first change after it comes up is the sheet filling, which the
+		// slide covers.
+		let filling = true;
+		const watch = new ResizeObserver(() => {
+			const now = box.getBoundingClientRect().height;
+			const grew = now - height;
+			height = now;
+			if (!open || dragging || reduced()) filling = true;
+			else if (filling) filling = false;
+			else if (Math.abs(grew) >= 1) growth = carry(box, grew, GROWTH, CURVE);
+		});
+		watch.observe(box);
+		return () => watch.disconnect();
+	});
 
 	// The page underneath stops scrolling and goes inert; the keyboard comes here
 	// and goes back after. See $lib/modal.

@@ -45,6 +45,17 @@ export const removeButton =
 // A note about the value held, sunken under its row.
 export const noteBox = 'rounded-lg border border-line bg-sunken px-3 py-2 text-[12.5px]';
 
+const rowShape =
+	'rounded-lg border px-2.5 shadow-[0_1px_2px_rgb(0_0_0/0.1),0_3px_8px_rgb(0_0_0/0.08)] sm:px-3.5';
+
+/** One file lifted off the sunken tray its list sits in, so a row reads as an
+ * object rather than a table rule. Picked tints over the fill instead of
+ * replacing it: a translucent accent on the tray would read as sinking. */
+export const fileRow = (picked = false) =>
+	picked
+		? `${rowShape} border-accent-fill/55 bg-raised bg-[linear-gradient(var(--accent-soft),var(--accent-soft))]`
+		: `${rowShape} border-line bg-raised`;
+
 const shape = `${control} ${radius} inline-flex items-center justify-center gap-2 px-3.5 text-[13px] whitespace-nowrap transition-colors disabled:opacity-(--disabled)`;
 
 // Three weights, one shape: plain for a reversible switch, accent for what a
@@ -59,7 +70,18 @@ export const danger = `${shape} border border-danger/45 bg-danger/10 font-semibo
 // A button that is only its word: Discard next to Save.
 export const quiet = `${shape} font-medium text-dim hover:text-fg`;
 
+// A button inside a panel rather than on the page: borderless, and 44px tall at
+// every width, unlike `control`. Shape only, since the tone has to read on
+// whichever ground the panel sits on.
+export const rowButton =
+	'inline-flex min-h-11 items-center justify-center rounded-lg text-[12px] font-medium disabled:opacity-(--disabled)';
+
 // A button that is only its glyph, as Pause is on a phone. A 44px square with
 // 12px corners reads as a knocked-off box, so it goes round; the word and the
 // corner come back at sm.
 export const glyph = `${control} inline-flex w-11 items-center justify-center gap-2 rounded-full border border-line-strong bg-raised text-[13px] font-medium whitespace-nowrap transition-colors active:bg-sunken disabled:opacity-(--disabled) sm:w-auto sm:rounded-[10px] sm:px-3.5`;
+
+// A button that is only its glyph at every width, as the sweep's pair is: round
+// on a phone, squared off beside other controls from sm up. The caller adds the
+// fill, since these come in weights like the worded buttons do.
+export const iconButton = `${control} inline-flex w-11 flex-none items-center justify-center rounded-full transition-colors disabled:opacity-(--disabled) sm:w-10 sm:rounded-[11px]`;

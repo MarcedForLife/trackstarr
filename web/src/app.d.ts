@@ -17,12 +17,15 @@ declare global {
 		// What is over the page. Every overlay gets a shallow-routing history
 		// entry, so back puts it away rather than leaving the page.
 		interface PageState {
+			queue?: boolean;
 			// The title sheet.
 			sheet?: boolean;
 			// Picking titles on the library, and the bar that goes with it.
 			picking?: boolean;
 			// The nav drawer, which only exists below lg.
 			menu?: boolean;
+			// A worker's log, opened from the file it belongs to.
+			log?: boolean;
 		}
 		// interface Platform {}
 	}

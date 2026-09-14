@@ -259,3 +259,19 @@ test('a look overtaken before it failed says nothing about the connection', asyn
 	// Nothing was missed, so a run gone from the next snapshot really did end.
 	expect(panel.seen[0].missed).toBe(false);
 });
+
+test('cold activity accepts labels arriving on a later refresh', async () => {
+	const path = '/media/Dune/file.mkv';
+	const seed = activity([], { covers: {} });
+	const snapshot = new Snapshot(seed);
+	const watching = reader();
+	snapshot.watch(watching);
+	expect(snapshot.current.covers?.[path]).toBeUndefined();
+	vi.mocked(getActivity).mockResolvedValue(
+		activity([], { covers: { [path]: { id: 'arr:radarr:1', name: 'Dune' } } })
+	);
+	await snapshot.look();
+	expect(snapshot.current.covers?.[path]).toEqual({ id: 'arr:radarr:1', name: 'Dune' });
+	expect(watching.seen[0].before.covers).toEqual({});
+	expect(watching.seen[0].now.covers?.[path].name).toBe('Dune');
+});

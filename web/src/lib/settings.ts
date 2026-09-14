@@ -46,7 +46,7 @@ export type SettingsSnapshot = {
 
 export class SettingsError extends Error {
 	constructor(public problems: string[]) {
-		super(problems.join('; '));
+		super(problems.join('. '));
 	}
 }
 

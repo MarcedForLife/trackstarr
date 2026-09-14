@@ -7,7 +7,7 @@ describe('named', () => {
 			named(
 				'/tv/House of the Dragon/Season 2/House of the Dragon (2022) - S02E05 - Regent [WEBRip-2160p][HDR10][AAC 2.0][h265]-HODL..mkv'
 			)
-		).toEqual({ name: 'House of the Dragon', episode: 'S02E05' });
+		).toEqual({ name: 'House of the Dragon', episode: 'S02E05', detail: '' });
 	});
 
 	test('two rewrites of one series differ where the line cannot cut', () => {
@@ -21,47 +21,56 @@ describe('named', () => {
 		expect(named('Lost (2004) - S01E01-E02 - Pilot [Bluray-1080p].mkv').episode).toBe('S01E01-E02');
 	});
 
-	test('a film keeps the year, having nothing else to be told apart by', () => {
+	// A film has nothing but its year to be told apart by, so it keeps it,
+	// beside the title rather than in it.
+	test('a film hands its year and release words back apart', () => {
 		expect(named('/films/Dune (2021)/Dune (2021) [Bluray-2160p][DTS 5.1][x265]-GRP.mkv')).toEqual({
-			name: 'Dune (2021)',
-			episode: ''
+			name: 'Dune',
+			episode: '',
+			detail: '(2021)'
 		});
+		// A release that names its quality outside the tags keeps that too.
+		expect(named('/films/Coffee Run (2020) Bluray-1080p.mkv').detail).toBe('(2020) Bluray-1080p');
 	});
 
 	// A title that opens on a bracket is why the tags are found by ' [' rather
 	// than by '['.
 	test('a bracket in the title is not a tag', () => {
-		expect(named('[REC] (2007) [Bluray-1080p][DTS 5.1][x264]-GRP.mkv').name).toBe('[REC] (2007)');
+		expect(named('[REC] (2007) [Bluray-1080p][DTS 5.1][x264]-GRP.mkv').name).toBe('[REC]');
 	});
 
 	test('a title of its own shape survives', () => {
 		expect(named('9-1-1 (2018) - S01E01 - Pilot [WEBDL-1080p].mkv')).toEqual({
 			name: '9-1-1',
-			episode: 'S01E01'
+			episode: 'S01E01',
+			detail: ''
 		});
 		expect(named('Doctor Who (2005) - S01E01 [HDTV-720p].mkv')).toEqual({
 			name: 'Doctor Who',
-			episode: 'S01E01'
+			episode: 'S01E01',
+			detail: ''
 		});
 	});
 
 	test('an untagged name loses only its extension', () => {
 		expect(named('/tv/some.release.name-GRP.mkv')).toEqual({
 			name: 'some.release.name-GRP',
-			episode: ''
+			episode: '',
+			detail: ''
 		});
 	});
 
 	// A hold is placed on a title, so what arrives is the folder the *arr made.
 	test("a title's own folder drops the provider's id and keeps the year", () => {
 		expect(named('/data/media/tv/MINDHUNTER (2017) {tvdb-328708}')).toEqual({
-			name: 'MINDHUNTER (2017)',
-			episode: ''
+			name: 'MINDHUNTER',
+			episode: '',
+			detail: '(2017)'
 		});
 	});
 
 	test('a dot in a folder is not an extension', () => {
-		expect(named('/data/media/tv/Mr. Robot (2015) {tvdb-289590}').name).toBe('Mr. Robot (2015)');
+		expect(named('/data/media/tv/Mr. Robot (2015) {tvdb-289590}').name).toBe('Mr. Robot');
 	});
 
 	test('a name with nothing to drop is handed back whole', () => {

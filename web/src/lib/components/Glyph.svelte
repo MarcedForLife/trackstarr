@@ -11,6 +11,7 @@
 		| 'arrow'
 		| 'cross'
 		| 'chevron'
+		| 'more'
 		| 'refresh'
 		| 'sliders'
 		| 'pencil';
@@ -87,6 +88,10 @@
 			stroke-linecap="round"
 			stroke-linejoin="round"
 		></path>
+	{:else if name === 'more'}
+		<circle cx="3" cy="8" r="1.35"></circle>
+		<circle cx="8" cy="8" r="1.35"></circle>
+		<circle cx="13" cy="8" r="1.35"></circle>
 	{:else if name === 'arrow'}
 		<!-- Shaft stopped short of the head, or the caps thicken it. -->
 		<g

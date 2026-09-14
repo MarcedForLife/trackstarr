@@ -160,6 +160,15 @@
 	initial-value: #f4f5f7;
 }
 
+/* The demo notice's violet, per theme rather than per palette so the bar never
+   reads as the app's own chrome. Registered like the rest, or a theme swap
+   snaps it while everything around it eases. */
+@property --demo {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: #a898f0;
+}
+
 /* Six palettes in light and dark on one set of tokens. app.html resolves
    the stored pair before first paint. The selectors match any element, so
    the Appearance swatches paint themselves. Brass is the original; the rest
@@ -215,6 +224,7 @@
 	color-scheme: dark;
 	--float-shadow: 0 12px 32px rgba(0, 0, 0, 0.62), 0 3px 10px rgba(0, 0, 0, 0.45);
 	--disabled: 0.5;
+	--demo: #a898f0;
 }
 [data-theme='light'] {
 	color-scheme: light;
@@ -222,6 +232,7 @@
 	/* Fading toward white costs more contrast than fading toward black, so the
 	   same 0.5 read two steps lighter here. 0.6 matches the dark fade. */
 	--disabled: 0.6;
+	--demo: #5a43c0;
 }
 
 /* The page and every swatch ease between palettes on the same curve. */
@@ -246,7 +257,8 @@
 		--danger var(--theme-swap) var(--theme-swap-ease),
 		--toggle-off var(--theme-swap) var(--theme-swap-ease),
 		--knob var(--theme-swap) var(--theme-swap-ease),
-		--knob-on var(--theme-swap) var(--theme-swap-ease);
+		--knob-on var(--theme-swap) var(--theme-swap-ease),
+		--demo var(--theme-swap) var(--theme-swap-ease);
 }
 
 /* While the hue slider moves. The root carries the attribute and every
@@ -578,6 +590,7 @@
 	--color-toggle-off: var(--toggle-off);
 	--color-knob: var(--knob);
 	--color-knob-on: var(--knob-on);
+	--color-demo: var(--demo);
 	--shadow-float: var(--float-shadow);
 }
 
@@ -606,6 +619,16 @@ body {
 	font-family: var(--font-sans);
 	/* The grey flash on tap says nothing our own :active states don't. */
 	-webkit-tap-highlight-color: transparent;
+}
+
+/* Both scrollers, since anchoring is for a thread being read and every list
+   here is a set that grows and re-sorts under the reader. It took a tapped row
+   off the top of the screen as its panel opened, and carried the grid to
+   wherever a re-sorted tile landed. A panel moves what follows it itself, see
+   $lib/shift. */
+html,
+main {
+	overflow-anchor: none;
 }
 
 /* Defaults a page may overrule, so in the base layer where utilities win. */
@@ -656,6 +679,8 @@ body {
 	animation: reveal-window var(--reveal) both;
 }
 
+/* One box, the window's own height: `100%` is each box's height, so a second
+   one here would slide at its own rate and cross the first. */
 .reveal > * > * {
 	animation: reveal-panel var(--reveal) both;
 }
@@ -669,6 +694,21 @@ body {
 @keyframes reveal-panel {
 	from {
 		transform: translateY(100%);
+	}
+}
+
+/* A menu arriving from under the button that raised it. Global, not scoped: the
+   pause and file-action popovers both wear it, and a scoped rule reaches only
+   its own component's element. */
+.menu {
+	animation: menu-in 150ms cubic-bezier(0.33, 1, 0.68, 1);
+	transform-origin: top right;
+}
+
+@keyframes menu-in {
+	from {
+		opacity: 0;
+		transform: translateY(-6px) scale(0.97);
 	}
 }
 

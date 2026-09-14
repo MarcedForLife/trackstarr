@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { fileRows, fileStatus, progressLabel, remaining } from '$lib/runs';
+import { fileReadout, fileRows, fileStatus, progressed, progressLabel, remaining } from '$lib/runs';
 import type { ActiveFile, Run } from '$lib/runs';
 
 function run(over: Partial<Run> = {}): Run {
@@ -53,6 +53,14 @@ describe('progressLabel', () => {
 });
 
 describe('remaining', () => {
+	test('keeps compact estimates short and preserves discovery uncertainty', () => {
+		const rewriting = run({ rewrite_seconds: 1440 });
+		expect(remaining(rewriting, false, 0, true)).toBe('~24m left');
+		expect(remaining({ ...rewriting, walking: true }, false, 0, true)).toBe('≥24m left');
+		expect(remaining(rewriting, true, 0, true)).toBe('');
+		expect(remaining({ ...rewriting, stopping: true }, false, 0, true)).toBe('');
+	});
+
 	test('says nothing for a run that is not moving', () => {
 		const going = run({ total: 1000, done: 500, seconds: 600 });
 		expect(remaining(going, true)).toBe('');
@@ -61,8 +69,8 @@ describe('remaining', () => {
 
 	test("takes the service's own figure over the rate, and counts it down", () => {
 		const rewriting = run({ rewrite_seconds: 240, queued: 12 });
-		expect(remaining(rewriting)).toBe('12 to rewrite · about 4m left');
-		expect(remaining(rewriting, false, 60)).toBe('12 to rewrite · about 3m left');
+		expect(remaining(rewriting)).toBe('about 4m left');
+		expect(remaining(rewriting, false, 60)).toBe('about 3m left');
 	});
 
 	test('hedges further while the walk is still finding work', () => {
@@ -106,23 +114,72 @@ describe('fileStatus', () => {
 		expect(fileStatus(file({ duration: 0 }))).toBe('');
 	});
 
-	test('reads how far through and how much longer off the encode', () => {
+	test('reads how far through, how fast, and how much longer off the encode', () => {
 		const encoding = file({ duration: 3600, done: 900, speed: 2 });
-		expect(fileStatus(encoding)).toBe('25% · 22m left');
+		expect(fileStatus(encoding)).toBe('25% · 2.0× · 22m left');
+	});
+
+	// A remux runs at hundreds of times realtime, where a tenth says nothing.
+	test('drops the decimal from a speed past ten times realtime', () => {
+		expect(fileStatus(file({ duration: 3600, done: 900, speed: 142.5 }))).toBe(
+			'25% · 143× · 19s left'
+		);
 	});
 
 	// The encode does not wait for the next snapshot, so the meantime is
 	// carried forward at the speed ffmpeg last reported.
 	test('carries the reading forward at the speed it was going at', () => {
-		expect(fileStatus(file({ duration: 3600, done: 900, speed: 2 }), 100)).toBe('30% · 20m left');
+		expect(fileStatus(file({ duration: 3600, done: 900, speed: 2 }), 100)).toBe(
+			'30% · 2.0× · 20m left'
+		);
 	});
 
 	test('gives how far without how long before ffmpeg reports a speed', () => {
 		expect(fileStatus(file({ duration: 3600, done: 900 }))).toBe('25%');
 	});
 
+	// The row hangs these off either end of its bar, so each stands alone.
+	test('splits the same numbers for a row that draws them apart', () => {
+		expect(fileReadout(file({ duration: 3600, done: 900, speed: 2 }))).toEqual({
+			speed: '2.0×',
+			far: '25%',
+			left: '22m left'
+		});
+		expect(fileReadout(file({ stage: 'working' }))).toEqual({ speed: '', far: '', left: '' });
+	});
+
 	test('never reads past the end of the file', () => {
-		expect(fileStatus(file({ duration: 3600, done: 3500, speed: 2 }), 600)).toBe('100%');
+		expect(fileStatus(file({ duration: 3600, done: 3500, speed: 2 }), 600)).toBe('100% · 2.0×');
+	});
+});
+
+describe('progressed', () => {
+	test('adds the encodes under way to the files finished', () => {
+		const run900 = run({
+			total: 10,
+			done: 4,
+			active: [file({ duration: 3600, done: 900 }), file({ path: '/data/b.mkv', duration: 100 })]
+		});
+		expect(progressed(run900)).toBeCloseTo(4.25);
+	});
+
+	test('carries a file forward at its speed between snapshots', () => {
+		const encoding = run({ total: 10, done: 4, active: [file({ duration: 3600, speed: 2 })] });
+		expect(progressed(encoding, 180)).toBeCloseTo(4.1);
+	});
+
+	test('counts nothing for a probe, which has no measured progress', () => {
+		expect(progressed(run({ done: 2, active: [file({ stage: 'working', duration: 3600 })] }))).toBe(
+			2
+		);
+	});
+
+	// The last reading lands before the file does, so a full bar would read as a
+	// finished run with files still open.
+	test('holds an encode short of the file it belongs to', () => {
+		const ending = run({ total: 5, done: 4, active: [file({ duration: 3600, done: 3600 })] });
+		expect(progressed(ending)).toBe(4.99);
+		expect(progressed(run({ total: 5, done: 5 }))).toBe(5);
 	});
 });
 

@@ -1,10 +1,11 @@
 // What the service is doing this second, and the buttons that change it.
 // $lib/events is what happened; this is what is happening.
 
+import type { FileCovers, FilePlans, QueueItem } from '$lib/queue';
 import { request } from '$lib/api';
 import { mark } from '$lib/clock.svelte';
 import { duration, named, soon, titled } from '$lib/format';
-import type { Hold } from '$lib/holds';
+import type { Pause } from '$lib/pauses';
 import { asVerdict, pip, verdictHint, verdictLabel, type Verdict } from '$lib/library';
 // Re-exported so a page reads this module's answers from one import.
 export { duration, named, titled };
@@ -82,6 +83,13 @@ export type Run = {
 };
 
 export type Activity = {
+	covers?: FileCovers;
+	queue_preview?: QueueItem[];
+	// What a rewrite would do to each previewed file, so a queued row draws its
+	// plan without opening. Absent from older builds.
+	plans?: FilePlans;
+	// False where the rules have moved on since those checks.
+	plans_current?: boolean;
 	paused: boolean;
 	paused_by: string;
 	paused_at: string;
@@ -101,7 +109,7 @@ export type Activity = {
 	// Titles and files nobody wants rewritten yet. Small and set by hand, so it
 	// rides the snapshot rather than needing a fetch of its own. Absent from
 	// older builds.
-	holds?: Hold[];
+	pauses?: Pause[];
 	// Whether REWRITE_MODE lets this install rewrite. When false the page must not
 	// offer a rewrite, since it would be silently downgraded.
 	may_rewrite: boolean;
@@ -139,14 +147,14 @@ export const stopEverything = () =>
 	control('abort') as Promise<{ stopped: number; rewrites: number }>;
 
 // One file taken off a run, and its rewrite killed where a thread already had
-// it. Lasts as long as the run; $lib/holds is the longer-lived answer.
+// it. Lasts as long as the run; $lib/pauses is the longer-lived answer.
 export const skipFile = (run: string, path: string) =>
 	control('skip', { run, path }) as Promise<{ where: 'active' | 'waiting'; rewrites: number }>;
 
-/** A run's name: "Sweep", "Radarr import", "Re-check: <title or count>". */
+/** A run's name: "Sweep", "Radarr", "Re-check: <title or count>". */
 export function source(run: Run): string {
 	if (run.kind === 'import') {
-		return `${run.label ? run.label[0].toUpperCase() + run.label.slice(1) : 'An'} import`;
+		return run.label ? run.label[0].toUpperCase() + run.label.slice(1) : 'Import';
 	}
 	if (run.kind === 'recheck') return `Re-check: ${run.label || 'the selected titles'}`;
 	return 'Sweep';
@@ -198,6 +206,23 @@ export function fraction(run: Run): number {
 	return Math.min(1, run.done / run.total);
 }
 
+// A rewrite's last reading lands before the file does, so partial credit stops
+// short of the file it belongs to and a full bar still means a finished run.
+const NEARLY_A_FILE = 0.99;
+
+/**
+ * Files finished, plus how far the rewrites under way have written.
+ *
+ * A long encode otherwise holds the count still for minutes. Only an encode
+ * counts, since a probe has no measured progress.
+ */
+export function progressed(run: Run, age = 0): number {
+	return run.active.reduce(
+		(count, file) => count + (fileBar(file) ? Math.min(fileFraction(file, age), NEARLY_A_FILE) : 0),
+		run.done
+	);
+}
+
 // Under this many files the count says it all; a percentage adds nothing.
 const WORTH_A_PERCENTAGE = 100;
 
@@ -221,7 +246,8 @@ function ahead(seconds: number): string {
 }
 
 /** "about 3h 40m left · done 6:15 am", hedged as the caller wants it. */
-function until(seconds: number, hedge: string): string {
+function until(seconds: number, hedge: string, compact = false): string {
+	if (compact) return `${hedge === 'at least' ? '≥' : '~'}${duration(seconds)} left`;
 	const by = seconds >= WORTH_A_CLOCK ? ` · done ${soon(ahead(seconds))}` : '';
 	return `${hedge} ${duration(seconds)} left${by}`;
 }
@@ -234,21 +260,20 @@ function until(seconds: number, hedge: string): string {
  * so far is all there is. Empty rather than a bad guess: too early, no total,
  * stopping, or paused.
  */
-export function remaining(run: Run, paused = false, age = 0): string {
+export function remaining(run: Run, paused = false, age = 0, compact = false): string {
 	if (paused || run.stopping) return '';
 	if (run.rewrite_seconds) {
 		// Counts down between snapshots. Nothing once it runs out: an encode past
 		// the machine's own rate, which the next snapshot answers.
 		const left = run.rewrite_seconds - age;
 		if (left <= 0) return '';
-		const found = run.queued ? `${run.queued.toLocaleString()} to rewrite · ` : '';
-		return found + until(left, run.walking ? 'at least' : 'about');
+		return until(left, run.walking ? 'at least' : 'about', compact);
 	}
 	const seconds = run.seconds + age;
 	if (!run.total || run.done < ENOUGH_FILES || seconds < ENOUGH_SECONDS) return '';
 	const left = run.total - run.done;
 	if (left <= 0) return '';
-	return until((seconds / run.done) * left, 'about');
+	return until((seconds / run.done) * left, 'about', compact);
 }
 
 // One line under a run: a file being worked on, one waiting its turn, or one
@@ -357,14 +382,40 @@ export function fileBar(file: ActiveFile): boolean {
 	return file.stage === 'encoding' && file.duration > 0;
 }
 
-/** Beside the file's bar: how far through and how long left, or why there is
- * no bar. A slot wait gets a line rather than reading as nothing happening. */
+// Past ten times realtime the decimal is noise, and a remux runs at hundreds.
+function rate(speed: number): string {
+	return `${speed >= 10 ? Math.round(speed) : speed.toFixed(1)}×`;
+}
+
+// The numbers a bar is worth captioning with, each empty where nothing honest
+// can be said. Split so a row can hang them off either end of its bar.
+export type FileReadout = { speed: string; far: string; left: string };
+
+export function fileReadout(file: ActiveFile, age = 0): FileReadout {
+	if (!fileBar(file)) return { speed: '', far: '', left: '' };
+	const left = fileLeft(file, age);
+	return {
+		speed: file.speed > 0 ? rate(file.speed) : '',
+		far: `${Math.floor(fileFraction(file, age) * 100)}%`,
+		left: left === null ? '' : `${duration(left)} left`
+	};
+}
+
+/** The readout on one line, for a label and for where a row is too narrow to
+ * split it. A slot wait gets a line rather than reading as nothing happening. */
 export function fileStatus(file: ActiveFile, age = 0): string {
 	if (file.stage === 'waiting') return 'Waiting for a free rewrite slot';
-	if (!fileBar(file)) return '';
-	const far = `${Math.floor(fileFraction(file, age) * 100)}%`;
-	const left = fileLeft(file, age);
-	return left === null ? far : `${far} · ${duration(left)} left`;
+	const { speed, far, left } = fileReadout(file, age);
+	return [far, speed, left].filter(Boolean).join(' · ');
+}
+
+// Only the head of the queue is drawn, and past it a position says less than
+// the estimate beside it.
+const PLACES = ['Next up', '2nd in line', '3rd in line'];
+
+/** Where a queued file sits, 1 being the file that starts next. */
+export function queuePlace(place: number): string {
+	return PLACES[place - 1] ?? '';
 }
 
 // Reading order: what changed, what needs a look, then the untouched majority.

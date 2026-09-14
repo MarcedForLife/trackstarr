@@ -17,15 +17,32 @@ export const PRIMARY: Destination[] = [
 	{ href: '/events', label: 'Events', icon: 'events' }
 ];
 
-// The pages behind the gear. With PRIMARY, every route the layout prefetches.
-export const SETTINGS: Pathname[] = [
+// The pages behind the gear, in the two groups the drawer draws a rule between:
+// what the service does, then what this browser and login do.
+export const SERVICE_SETTINGS: Pathname[] = [
 	'/settings',
 	'/settings/rules',
 	'/settings/sweep',
-	'/settings/connections',
-	'/settings/appearance',
-	'/settings/account'
+	'/settings/connections'
 ];
+
+export const LOCAL_SETTINGS: Pathname[] = ['/settings/appearance', '/settings/account'];
+
+// With PRIMARY, every route the layout prefetches.
+export const SETTINGS: Pathname[] = [...SERVICE_SETTINGS, ...LOCAL_SETTINGS];
+
+// Shared by the mobile header, desktop heading and browser title.
+export const PAGE_TITLES: Partial<Record<Pathname, string>> = {
+	'/': 'Overview',
+	'/library': 'Library',
+	'/events': 'Events',
+	'/settings': 'General',
+	'/settings/rules': 'Rules',
+	'/settings/sweep': 'Sweep',
+	'/settings/connections': 'Connections',
+	'/settings/appearance': 'Appearance',
+	'/settings/account': 'Account'
+};
 
 /** A pathname as the routes above spell it, with the deployment's base path
  * off the front. `page.url.pathname` carries the base, and the demo build sits

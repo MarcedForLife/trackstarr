@@ -3,7 +3,6 @@
 	import Glyph from '$lib/components/Glyph.svelte';
 	import { ripple } from '$lib/ripple';
 	import { shift } from '$lib/shift';
-	import { unclip } from '$lib/unclip';
 
 	// A row that opens to show what it had no room for: a button with the aria, a
 	// chevron that turns, and a panel unmounted while shut that opens on
@@ -108,10 +107,12 @@
 {/if}
 
 <!-- Unmounted while shut, so a long list carries no hidden panels. Opens on
-     `.reveal` in layout.css; `shift` moves what follows and `unclip` lets the
-     clip go afterwards. -->
+     `.reveal` in layout.css; `shift` moves what follows and owns the clip. -->
 {#if open && panel}
-	<div {id} class={`reveal ${panelClass}`} use:shift use:unclip>
-		<div>{@render panel()}</div>
+	<div {id} class={`reveal ${panelClass}`} use:shift>
+		<!-- The window, then one box holding whatever the snippet renders: the
+		     slide back is `translateY(100%)`, so two boxes each slide their own
+		     height and only one of them can match the window. -->
+		<div><div>{@render panel()}</div></div>
 	</div>
 {/if}

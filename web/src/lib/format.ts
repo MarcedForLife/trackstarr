@@ -106,22 +106,26 @@ export function basename(path: string | undefined): string {
 const EPISODE = / - (S\d{1,3}E\d{1,3}(?:-E\d{1,3})*)(?: - |$)/;
 // Only stripped where an episode follows, so a film keeps its year.
 const YEAR = / \((?:19|20)\d\d\)$/;
+// A film's year and whatever the release adds after it.
+const RELEASE = / \((?:19|20)\d\d\)/;
 // A media extension, not any dot: these names reach here as folders too, and
 // "Mr. Robot (2015)" cut at its last dot reads "Mr".
 const EXTENSION = /\.[a-z0-9]{2,4}$/i;
 // What the *arrs hang off a title's own folder: "Mindhunter (2017) {tvdb-328708}".
 const PROVIDER_ID = /(?: \{[^{}]*\})+$/;
 
-/** A file as a truncating line names it: what it is, and which one. */
-export type Named = { name: string; episode: string };
+/** A file as a truncating line names it: what it is, which one of a series,
+ * and the year and release words that go on a line of their own. */
+export type Named = { name: string; episode: string; detail: string };
 
 /**
  * A release file name as a person says it.
  *
  * The *arrs name files `<title> (<year>) - <episode> [tags...].<ext>`, and a
  * history line on a phone cut every episode of one series to the same title.
- * The episode comes back separately so a caller can keep it out of the
- * truncation; an episode drops its year, a film keeps it.
+ * The parts come back apart so a row can hold the title on one line and put
+ * the rest on the next; an episode drops its year, a film carries it in
+ * `detail`.
  *
  * A title's own folder comes through here too, where a hold is placed on one,
  * so the provider's id goes the way the tags do.
@@ -134,16 +138,19 @@ export function named(path: string | undefined): Named {
 		.replace(PROVIDER_ID, '')
 		.trim();
 	// Nothing but tags: the file name beats an empty line.
-	if (!whole) return { name: base, episode: '' };
+	if (!whole) return { name: base, episode: '', detail: '' };
 	const found = whole.match(EPISODE);
-	if (!found) return { name: whole, episode: '' };
-	return { name: whole.slice(0, found.index).replace(YEAR, ''), episode: found[1] };
+	if (found)
+		return { name: whole.slice(0, found.index).replace(YEAR, ''), episode: found[1], detail: '' };
+	const at = whole.match(RELEASE)?.index;
+	if (at === undefined) return { name: whole, episode: '', detail: '' };
+	return { name: whole.slice(0, at), episode: '', detail: whole.slice(at + 1) };
 }
 
-/** Name and episode as one, for somewhere with room for both. */
+/** Every part as one, for somewhere with room for all of them. */
 export function titled(path: string | undefined): string {
-	const { name, episode } = named(path);
-	return episode ? `${name} ${episode}` : name;
+	const { name, episode, detail } = named(path);
+	return [name, episode, detail].filter(Boolean).join(' ');
 }
 
 /** A moment as date and time in the browser's clock, for the `title` on a
