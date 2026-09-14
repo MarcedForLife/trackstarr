@@ -1296,6 +1296,8 @@ def test_a_cover_the_browser_already_pauses_is_not_sent_again(
         first = conn.getresponse()
         tag = first.getheader("ETag")
         first.read()
+        # A missing tag reaches putheader as None and fails there, not here.
+        assert (first.status, bool(tag)) == (200, True)
 
         conn.request(
             "GET",

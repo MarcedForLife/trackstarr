@@ -199,6 +199,28 @@ def _no_worker_threads(monkeypatch):
     monkeypatch.setattr(lifecycle, "wake", lambda: None)
 
 
+#: Long enough for a warm-up caught mid-fetch, which the client's HTTP timeout
+#: bounds.
+_WARM_UP_WAIT = 90
+
+
+def _settle_covers() -> None:
+    """Join the warm-up and drop what it remembered."""
+    assert covers._warming.acquire(timeout=_WARM_UP_WAIT), "a cover warm-up never finished"
+    covers._warming.release()
+    covers.forget()
+
+
+@pytest.fixture(autouse=True)
+def _settled_covers():
+    """A warm-up left running remembers for an hour every poster it could not
+    fetch, which answers the next test's cover request with a 404. Settled both
+    sides, since the handler claims it just after the response the test read."""
+    _settle_covers()
+    yield
+    _settle_covers()
+
+
 @pytest.fixture
 def fast_scrypt(monkeypatch):
     """Interactive-cost scrypt would make this suite crawl. Each hash stores
@@ -705,7 +727,6 @@ def one_title(monkeypatch, tmp_path):
     swept.save()
     yield str(folder)
     library.forget()
-    covers.forget()
 
 
 def cache_verdict(cache, path, key, verdict):
