@@ -4,6 +4,7 @@ rewritten file, and a webhook connection pointing back here."""
 import logging
 import os
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from . import auth, config
@@ -316,7 +317,7 @@ def path_index(arrs: list[Arr]) -> LibraryIndex:
     return LibraryIndex(items, complete)
 
 
-def innermost[T](folders: dict[str, T], path: str) -> T | None:
+def innermost[T](folders: Mapping[str, T], path: str) -> T | None:
     """The value under the deepest key containing ``path``, or None.
 
     Walks the folders outwards, so a nested title wins. Purely lexical.
