@@ -10,7 +10,7 @@ import sys
 import textwrap
 from types import FrameType
 
-from . import __version__, auth, config, events, policy, runs, sessions, users
+from . import __version__, auth, config, events, lifecycle, policy, sessions, sweep_cache, users
 from .app import serve
 from .arr import LibraryIndex, all_arrs, match_path, path_index
 from .command import ffmpeg_args
@@ -21,7 +21,7 @@ from .planner import build_plan, describe
 from .processing import Job, process, state_dir_errors
 from .status import Status
 from .sweep import remember, sweep
-from .sweep_cache import cache_key
+from .sweep_cache import cache_key, observing
 
 log = logging.getLogger("trackstarr")
 
@@ -216,9 +216,16 @@ def cmd_fix(files: list[str], original: str | None) -> int:
     failed = False
     for job in jobs:
         # Before the probe, so the verdict is keyed to the file as it was.
-        key = cache_key(job.path, job.lang)
-        result = process(job, dry_run=False, source="cli")
-        remember(job.path, key, result)
+        with observing(job.path, policy=policy.Policy.from_config()) as observation:
+            key = cache_key(job.path, job.lang)
+            result = process(
+                job,
+                dry_run=False,
+                source="cli",
+                policy=observation.policy,
+                observation=observation,
+            )
+            remember(job.path, key, result, observation)
         print(f"{result.status}  {job.path}")
         # A deferred plan is stale, so its reasons would mislead.
         if (
@@ -312,9 +319,14 @@ def _run_serve(args: argparse.Namespace) -> int:  # pragma: no cover
 def _run_sweep(args: argparse.Namespace) -> int:
     # Only the pause flag is shared between processes. Having a shell is the
     # authorisation, so this sweeps anyway and says so.
-    if runs.paused_on_disk():
+    if lifecycle.paused_on_disk():
         log.warning("the service is paused; this sweep runs anyway")
-    counts = sweep(dry_run=not args.apply)
+    try:
+        counts = sweep(dry_run=not args.apply)
+    finally:
+        # The walk drains its own group; this stops the dispatch thread it
+        # started, so the command owns the queue for exactly its own run.
+        lifecycle.shutdown()
     # Deferred is a benign race the next sweep retries.
     return 0 if counts[Status.FAILED] == 0 else 1
 
@@ -390,7 +402,11 @@ def main(argv: list[str] | None = None) -> int:
         messages += config.media_dir_warnings()
     for message in messages:
         log.warning("%s", message)
-    return handler(args)
+    try:
+        return handler(args)
+    finally:
+        # Nothing outlives this process to write them.
+        sweep_cache.flush()
 
 
 if __name__ == "__main__":

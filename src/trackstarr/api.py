@@ -23,11 +23,13 @@ from . import (
     connections,
     covers,
     events,
-    holds,
     jobs,
     library,
+    lifecycle,
     links,
     notify,
+    paths,
+    pauses,
     ratings,
     retag,
     runlog,
@@ -60,7 +62,7 @@ _STREAM_HEARTBEAT = 20.0
 _PING = b'data: {"kind": "ping"}\n\n'
 
 
-def _queue_status() -> dict:
+def _queue_status(workload: tuple[int, int] | None = None) -> dict:
     """What is waiting, what is in progress, and whether a start may rewrite.
 
     ``queue`` counts every file still owed, from any source: queued deliveries,
@@ -70,7 +72,7 @@ def _queue_status() -> dict:
     ``may_rewrite`` tells the page whether REWRITE_MODE would downgrade an
     apply to a report; nothing else it can read says so.
     """
-    waiting, working = runs.workload()
+    waiting, working = runs.workload() if workload is None else workload
     return {
         "queue": waiting,
         "working": working,
@@ -81,45 +83,34 @@ def _queue_status() -> dict:
         "next_sweep": sweep.next_scheduled(),
         # Small and set by hand, so it rides the snapshot every page already
         # polls rather than needing a fetch of its own.
-        "holds": holds.as_json(),
+        "pauses": pauses.as_json(),
     }
 
 
-#: Longest reason kept with a hold. A sentence, not a note.
+#: Longest reason kept with a pause. A sentence, not a note.
 _REASON_MAX = 120
 
 
-def _under_media(path: str) -> bool:
-    """Whether a path lies in a swept library.
-
-    A hold is matched by prefix, so one on ``/`` would quietly stop the whole
-    library being rewritten.
-    """
-    candidate = os.path.normpath(path)
-    return any(
-        candidate == root or candidate.startswith(os.path.join(root, ""))
-        for root in (os.path.normpath(media) for media in config.current().MEDIA_DIRS)
-    )
-
-
-def _hold_targets(body: dict) -> tuple[list[tuple[str, str, str]], tuple[int, str] | None]:
-    """What a hold request names, as (path, title id, name), or the refusal.
+def _pause_targets(body: dict) -> tuple[list[tuple[str, str, str]], tuple[int, str] | None]:
+    """What a pause request names, as (path, title id, name), or the refusal.
 
     Titles come from ``ids`` and resolve through the library, so an id can only
     ever reach a folder the library knows. ``paths`` is for a single file,
-    which the overview names off a run, and is checked against MEDIA_DIRS.
+    which the overview names off a run, and is checked against MEDIA_DIRS once
+    canonical, so the path validated is the one the store will key on.
     """
     wanted = body.get("ids")
     ids = [str(entry) for entry in wanted if str(entry)] if isinstance(wanted, list) else []
     named = body.get("paths")
-    paths = [str(entry) for entry in named if str(entry)] if isinstance(named, list) else []
-    if not ids and not paths:
-        return [], (400, "name the titles or files to hold")
-    found = [(title.folder, title.id, title.name) for title in library.selected(ids)]
+    files = [str(entry) for entry in named if str(entry)] if isinstance(named, list) else []
+    if not ids and not files:
+        return [], (400, "name the titles or files to pause")
+    found = library.pause_targets(ids) if ids else []
     if len(found) != len(ids):
         return [], (404, "no such title")
-    for path in paths:
-        if not _under_media(path):
+    for spelling in files:
+        path = paths.canonical(spelling)
+        if not lifecycle.under_media(path):
             return [], (400, "that file is not in a swept library")
         found.append((path, "", os.path.basename(path)))
     return found, None
@@ -251,14 +242,96 @@ def _serve_status(handler: Handler, query: str) -> None:
     handler.send_json({"version": __version__, **_queue_status()})
 
 
+def _activity_snapshot() -> dict:
+    snapshot = lifecycle.snapshot()
+    snapshot.update(_queue_status((snapshot["queue"], snapshot["working"])))
+    queued = [item["path"] for item in snapshot["queue_preview"]]
+    working = [item["path"] for run in snapshot["runs"] for item in run["active"]]
+    shown = [*queued, *working, *(pause["path"] for pause in snapshot["pauses"])]
+    snapshot["covers"] = library.covers_for_paths(shown)
+    # A row keeps its plan from the queue until release. A paused file draws none.
+    snapshot["plans"], snapshot["plans_current"] = library.plans_for_paths([*queued, *working])
+    return snapshot
+
+
 def _serve_runs(handler: Handler, query: str) -> None:
     """Every run and the queue. Readable by a viewer; only the buttons are
     an admin's."""
-    handler.send_json({**runs.snapshot(), **_queue_status()})
+    handler.send_json(_activity_snapshot())
 
 
-def _serve_holds(handler: Handler, query: str) -> None:
-    handler.send_json({"holds": holds.as_json()})
+def _serve_queue(handler: Handler, query: str) -> None:
+    params = urllib.parse.parse_qs(query)
+    try:
+        offset = max(0, int(params.get("offset", ["0"])[0]))
+        limit = min(100, max(1, int(params.get("limit", ["50"])[0])))
+    except ValueError:
+        handler.reply(400, "offset and limit must be whole numbers")
+        return
+    page = lifecycle.queue_page(params.get("q", [""])[0], offset, limit)
+    paths = [item["path"] for item in page["items"]]
+    page["covers"] = library.covers_for_paths(paths)
+    page["plans"], page["plans_current"] = library.plans_for_paths(paths)
+    handler.send_json(page)
+
+
+def _queue_action(handler: Handler, signed_in: users.Account) -> None:
+    try:
+        answer = _apply_queue_action(handler, signed_in)
+    except lifecycle.ConflictError as err:
+        handler.reply(409, str(err))
+    except ValueError as err:
+        handler.reply(400, str(err))
+    except OSError:
+        handler.reply(500, "could not store the pause; no files were paused")
+    else:
+        if answer is not None:
+            handler.send_json(answer)
+
+
+def _apply_queue_action(handler: Handler, signed_in: users.Account) -> dict | None:
+    body = handler.read_json()
+    if body is None:
+        return None
+    action = body.get("action")
+    if action == "undo":
+        if not lifecycle.restore(body.get("token")):
+            handler.reply(409, "the queue was reordered again; undo is no longer available")
+            return None
+        return {"restored": True}
+    if action not in ("top", "skip", "pause"):
+        handler.reply(400, "choose top, skip, pause or undo")
+        return None
+    items = body.get("items")
+    if (
+        not isinstance(items, list)
+        or not 1 <= len(items) <= 1000
+        or any(
+            not isinstance(item, dict)
+            or not isinstance(item.get("run"), str)
+            or not isinstance(item.get("path"), str)
+            for item in items
+        )
+    ):
+        handler.reply(400, "name between 1 and 1000 queued files by run and path")
+        return None
+    keys = {(item["run"], item["path"]) for item in items}
+    if action == "top":
+        promoted = lifecycle.promote(keys)
+        return {"moved": promoted.changed, "undo": promoted.undo or None}
+    seconds = body.get("seconds", 0)
+    if action == "pause" and (
+        not isinstance(seconds, int | float) or isinstance(seconds, bool) or seconds < 0
+    ):
+        handler.reply(400, "seconds must be a nonnegative number")
+        return None
+    if action == "skip":
+        return {"changed": lifecycle.skip(keys, signed_in.name).changed}
+    return {"changed": lifecycle.pause_selection(keys, float(seconds), signed_in.name).changed}
+
+
+def _serve_pauses(handler: Handler, query: str) -> None:
+    handler.send_json({"pauses": pauses.as_json()})
 
 
 def _serve_settings(handler: Handler, query: str) -> None:
@@ -341,6 +414,26 @@ def _serve_run_log(handler: Handler, query: str) -> None:
         handler.reply(400, "run and path are required")
         return
     handler.send_json({"run": run, "path": path, "lines": runlog.lines(run, path)})
+
+
+def _serve_title_work(handler: Handler, query: str) -> None:
+    wanted = urllib.parse.parse_qs(query).get("id", [""])[0]
+    titles = library.selected([wanted]) if wanted else []
+    if not titles:
+        handler.reply(404, "no such title")
+        return
+    # Resolved before the capture, so reaching the catalogue never holds the
+    # scheduler's condition.
+    handler.send_json(lifecycle.title_work(titles[0].folder))
+
+
+def _serve_file(handler: Handler, query: str) -> None:
+    asked = urllib.parse.parse_qs(query)
+    path = asked.get("path", [""])[0]
+    if not path:
+        handler.reply(400, "path is required")
+        return
+    handler.send_json(library.file_detail(path, card=asked.get("card", [""])[0] == "1"))
 
 
 def _serve_title(handler: Handler, query: str) -> None:
@@ -526,10 +619,10 @@ def _run_mode(handler: Handler, body: dict) -> str | None:
 def _walk_refused(handler: Handler) -> bool:
     """Whether a walk cannot start now, with the refusal already served.
 
-    Two walks would fight over the cache and pending.tsv, so the second is
-    turned down naming the first. A re-check counts as a walk.
+    Full sweeps remain exclusive library walks. Title re-checks use their
+    own admission path and may join a running sweep.
     """
-    if runs.paused():
+    if lifecycle.paused():
         handler.reply(409, "processing is paused. Resume it first")
         return True
     if existing := runs.cache_holder():
@@ -544,7 +637,7 @@ def _recheck_titles(handler: Handler, signed_in: users.Account) -> None:
     """Re-probe the chosen titles now, ignoring the cache.
 
     A sweep over picked titles: same modes, REWRITE_MODE latch, pause and
-    one-walk-at-a-time rule, but every file is re-probed since the stored
+    shared work queue, but every file is re-probed since the stored
     verdict is usually what is in question. The body names title ids,
     resolved against the library, so it can reach nothing else.
     """
@@ -559,7 +652,8 @@ def _recheck_titles(handler: Handler, signed_in: users.Account) -> None:
     if not ids:
         handler.reply(400, "name the titles to run")
         return
-    if _walk_refused(handler):
+    if lifecycle.paused():
+        handler.reply(409, "processing is paused. Resume it first")
         return
     chosen = library.selected(ids)
     if not chosen:
@@ -574,12 +668,13 @@ def _recheck_titles(handler: Handler, signed_in: users.Account) -> None:
         signed_in.name,
         mode,
     )
-    threading.Thread(
-        target=_recheck_thread,
+    if not lifecycle.launch(
+        _recheck_thread,
         args=([title.folder for title in chosen], mode != "apply", run, label),
-        daemon=True,
         name="recheck",
-    ).start()
+    ):
+        handler.reply(503, "the service is stopping")
+        return
     handler.send_json({"status": "started", "run": run, "titles": len(chosen)})
 
 
@@ -587,7 +682,7 @@ def _retag_targets(body: dict) -> tuple[list[tuple[str, int]], tuple[int, str] |
     """The tracks a retag names, as (path, stream index), or the refusal.
 
     Paths rather than title ids, since a track is one stream of one file,
-    and checked against MEDIA_DIRS as a hold on a file is.
+    and checked against MEDIA_DIRS as a pause on a file is.
     """
     named = body.get("tracks")
     if not isinstance(named, list) or not named:
@@ -602,11 +697,11 @@ def _retag_targets(body: dict) -> tuple[list[tuple[str, int]], tuple[int, str] |
         # bool is an int, so `true` would otherwise pass as stream 1.
         if not isinstance(path, str) or not isinstance(index, int) or isinstance(index, bool):
             return [], (400, "each track is a path and a stream index")
-        if not _under_media(path):
+        if not lifecycle.under_media(path):
             return [], (400, "that file is not in a swept library")
-        # Normalised, since the sweep cache is keyed by the path as walked and a
+        # Canonical, since the sweep cache is keyed by the path as walked and a
         # spelling that misses its entry would read as a file never judged.
-        path = os.path.normpath(path)
+        path = paths.canonical(path)
         if any(path == named_path for named_path, _ in targets):
             # The staleness check reads one snapshot of the cache, which the
             # first edit to a file puts out of date for the second.
@@ -741,7 +836,7 @@ def _update_settings(handler: Handler, signed_in: users.Account) -> None:
         return
     log.info("settings updated: %s", ", ".join(sorted(body)))
     # A raised budget needs threads; a no-op when the pool already matches.
-    jobs.start_workers()
+    lifecycle.wake()
     # The library memoises for minutes, and a corrected address must not
     # wait that long. Cost: one refetch.
     library.forget()
@@ -807,9 +902,9 @@ def _start_sweep(handler: Handler, signed_in: users.Account) -> None:
         return
     run = events.run_id()
     log.info("sweep started from the web UI by %s (mode=%s)", signed_in.name, mode)
-    threading.Thread(
-        target=_sweep_thread, args=(run, mode != "apply"), daemon=True, name="sweep-now"
-    ).start()
+    if not lifecycle.launch(_sweep_thread, args=(run, mode != "apply"), name="sweep-now"):
+        handler.reply(503, "the service is stopping")
+        return
     handler.send_json({"status": "started", "run": run})
 
 
@@ -827,7 +922,7 @@ def _stop_run(handler: Handler, signed_in: users.Account) -> None:
     if not run:
         handler.reply(400, "name the run to stop")
         return
-    if not runs.stop(run):
+    if not lifecycle.stop(run):
         # Almost always a page acting on a run that has since finished.
         handler.reply(404, "no such run is going")
         return
@@ -850,8 +945,8 @@ def _pause(handler: Handler, signed_in: users.Account, on: bool) -> None:
     """
     if handler.read_json() is None:
         return
-    (runs.pause if on else runs.resume)(signed_in.name)
-    handler.send_json({**runs.snapshot(), **_queue_status()})
+    (lifecycle.pause if on else lifecycle.resume)(signed_in.name)
+    handler.send_json(_activity_snapshot())
 
 
 def _abort(handler: Handler, signed_in: users.Account) -> None:
@@ -866,7 +961,7 @@ def _abort(handler: Handler, signed_in: users.Account) -> None:
     # Runs first, or a killed rewrite's run would pick up the next file.
     # Keyed "stopped", not "runs": the page takes any answer with a `runs`
     # key for a snapshot.
-    stopped = runs.stop_all()
+    stopped = lifecycle.stop_all()
     handler.send_json({"status": "stopping", "stopped": stopped, "rewrites": runs.abort()})
 
 
@@ -874,7 +969,7 @@ def _skip_file(handler: Handler, signed_in: users.Account) -> None:
     """Leave one of a run's files alone, killing its rewrite if it has one.
 
     A skip lasts as long as the run. Nothing stops the next sweep reaching
-    the file, which is what :mod:`trackstarr.holds` is for.
+    the file, which is what :mod:`trackstarr.pauses` is for.
     """
     body = handler.read_json()
     if body is None:
@@ -884,23 +979,22 @@ def _skip_file(handler: Handler, signed_in: users.Account) -> None:
     if not run or not path:
         handler.reply(400, "name the run and the file to skip")
         return
-    where = runs.skip(run, path)
+    try:
+        where, killed = lifecycle.skip_file(run, path, signed_in.name)
+    except lifecycle.ConflictError as err:
+        handler.reply(409, str(err))
+        return
     if not where:
         handler.reply(404, "that run is not going to reach that file")
         return
-    # Signalled once the skip is on the record, so a page refetching
-    # mid-kill is told why the file stopped.
-    killed = runs.abort(path) if where == "active" else 0
-    events.record("skipped", run=run, path=path, by=signed_in.name)
-    log.info("%s skipped by %s", path, signed_in.name)
     handler.send_json({"status": "skipped", "where": where, "rewrites": killed})
 
 
-def _place_hold(handler: Handler, signed_in: users.Account) -> None:
-    """Leave a title or a file alone until it lapses or somebody lifts it.
+def _place_pause(handler: Handler, signed_in: users.Account) -> None:
+    """Leave a title or a file alone until it lapses or somebody resumes it.
 
-    Files are still probed, planned and reported while held; only the
-    rewrite waits. ``seconds`` is how long, 0 for a hold only a person
+    Files are still probed, planned and reported while paused; only the
+    rewrite waits. ``seconds`` is how long, 0 for a pause only a person
     ends.
     """
     body = handler.read_json()
@@ -908,45 +1002,47 @@ def _place_hold(handler: Handler, signed_in: users.Account) -> None:
         return
     seconds = body.get("seconds") or 0
     if not isinstance(seconds, int | float) or isinstance(seconds, bool) or seconds < 0:
-        handler.reply(400, "seconds is how long to hold it for, 0 for no end")
+        handler.reply(400, "seconds is how long to pause it for, 0 for no end")
         return
-    targets, refusal = _hold_targets(body)
+    targets, refusal = _pause_targets(body)
     if refusal:
         handler.reply(*refusal)
         return
-    if holds.full():
-        handler.reply(409, f"{holds.MAX_HOLDS} things are already held. Lift one first")
-        return
     reason = str(body.get("reason") or "")[:_REASON_MAX]
     try:
-        for path, title, name in targets:
-            holds.place(path, float(seconds), signed_in.name, reason, title, name)
-    except OSError as err:
-        log.error("could not write the holds: %s", err)
-        handler.reply(500, "could not store the hold")
+        pauses.place_many(targets, float(seconds), signed_in.name, reason)
+    except pauses.CapacityError:
+        handler.reply(409, f"{pauses.MAX_PAUSES} things are already paused. Resume one first")
         return
-    handler.send_json({"status": "held", "holds": holds.as_json()})
+    except ValueError as err:
+        handler.reply(400, str(err))
+        return
+    except OSError as err:
+        log.error("could not write the pauses: %s", err)
+        handler.reply(500, "could not store the pause")
+        return
+    handler.send_json({"status": "paused", "pauses": pauses.as_json()})
 
 
-def _lift_hold(handler: Handler, signed_in: users.Account) -> None:
-    """Let a held title or file be rewritten again. The next sweep reaches
+def _resume_pause(handler: Handler, signed_in: users.Account) -> None:
+    """Let a paused title or file be rewritten again. The next sweep reaches
     it; nothing is started here."""
     body = handler.read_json()
     if body is None:
         return
-    targets, refusal = _hold_targets(body)
+    targets, refusal = _pause_targets(body)
     if refusal:
         handler.reply(*refusal)
         return
     try:
-        lifted = [
-            path for path, _, _ in targets if holds.lift(path, signed_in.name) is not None
-        ]
+        resumed = pauses.resume_many([path for path, _, _ in targets], signed_in.name)
     except OSError as err:
-        log.error("could not write the holds: %s", err)
-        handler.reply(500, "could not lift the hold")
+        log.error("could not write the pauses: %s", err)
+        handler.reply(500, "could not resume the pause")
         return
-    handler.send_json({"status": "lifted", "lifted": len(lifted), "holds": holds.as_json()})
+    handler.send_json(
+        {"status": "resumed", "resumed": len(resumed), "pauses": pauses.as_json()}
+    )
 
 
 def _change_password(handler: Handler, signed_in: users.Account) -> None:
@@ -988,13 +1084,16 @@ class Route[Handle](NamedTuple):
 #: served before this table.
 _GET_ROUTES: dict[str, Route[_GetHandler]] = {
     "/api/status": Route(Access.VIEWER, _serve_status),
+    "/api/queue": Route(Access.VIEWER, _serve_queue),
     "/api/runs": Route(Access.VIEWER, _serve_runs),
     "/api/runs/log": Route(Access.VIEWER, _serve_run_log),
-    "/api/holds": Route(Access.VIEWER, _serve_holds),
+    "/api/pauses": Route(Access.VIEWER, _serve_pauses),
     "/api/settings": Route(Access.VIEWER, _serve_settings),
     "/api/events": Route(Access.VIEWER, _serve_events),
     "/api/library": Route(Access.VIEWER, _serve_library),
     "/api/library/summary": Route(Access.VIEWER, _serve_summary),
+    "/api/library/work": Route(Access.VIEWER, _serve_title_work),
+    "/api/library/file": Route(Access.VIEWER, _serve_file),
     "/api/library/title": Route(Access.VIEWER, _serve_title),
     "/api/library/links": Route(Access.VIEWER, _serve_links),
     "/api/library/cover": Route(Access.VIEWER, _serve_cover),
@@ -1011,14 +1110,15 @@ _POST_ROUTES: dict[str, Route[_PostHandler]] = {
     "/api/settings": Route(Access.ADMIN, _update_settings),
     "/api/connections/test": Route(Access.ADMIN, _test_connection),
     "/api/sweep/check": Route(Access.ADMIN, _check_sweep),
+    "/api/queue": Route(Access.ADMIN, _queue_action),
     "/api/runs/start": Route(Access.ADMIN, _start_sweep),
     "/api/runs/stop": Route(Access.ADMIN, _stop_run),
     "/api/runs/pause": Route(Access.ADMIN, _pause_run),
     "/api/runs/resume": Route(Access.ADMIN, _resume_run),
     "/api/runs/abort": Route(Access.ADMIN, _abort),
     "/api/runs/skip": Route(Access.ADMIN, _skip_file),
-    "/api/holds": Route(Access.ADMIN, _place_hold),
-    "/api/holds/lift": Route(Access.ADMIN, _lift_hold),
+    "/api/pauses": Route(Access.ADMIN, _place_pause),
+    "/api/pauses/resume": Route(Access.ADMIN, _resume_pause),
     "/api/library/run": Route(Access.ADMIN, _recheck_titles),
     "/api/library/retag": Route(Access.ADMIN, _retag_tracks),
     "/api/library/clear": Route(Access.ADMIN, _clear_library),

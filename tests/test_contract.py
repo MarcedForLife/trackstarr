@@ -24,14 +24,15 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import trackstarr
-from conftest import api, configured_arr, set_config, sign_in
+from conftest import api, configured_arr, seed_verdict, set_config, sign_in
 from trackstarr import (
     config,
     connections,
     events,
-    holds,
     library,
+    lifecycle,
     notify,
+    pauses,
     policy,
     rewrites,
     runs,
@@ -39,6 +40,7 @@ from trackstarr import (
     sweep,
     sweep_cache,
     users,
+    work,
 )
 from trackstarr.policy import Policy
 from trackstarr.status import Status
@@ -251,7 +253,8 @@ def seed_library(monkeypatch, clock: Clock) -> None:
     os.makedirs(config.STATE_DIR, exist_ok=True)
     cache = SweepCache(sweep_cache.cache_path(), Policy.from_config().fingerprint())
     clock.now = NOW - 2 * DAY
-    cache.record(
+    seed_verdict(
+        cache,
         DUNE_FILE,
         FileKey(58_720_256_000, 1_709_284_200_000_000_000, 1, "eng"),
         Verdict(
@@ -265,7 +268,8 @@ def seed_library(monkeypatch, clock: Clock) -> None:
     )
     clock.tick(DAY)
     episode_one = FileKey(2_251_799_813, 1_740_704_400_000_000_000, 1, "eng")
-    cache.record(
+    seed_verdict(
+        cache,
         EPISODE_ONE,
         episode_one,
         Verdict(Status.CONFORM, "", tracks=EPISODE_TRACKS, duration=3420.0),
@@ -285,7 +289,8 @@ def seed_library(monkeypatch, clock: Clock) -> None:
         },
     )
     clock.tick(300)
-    cache.record(
+    seed_verdict(
+        cache,
         EPISODE_TWO,
         FileKey(2_147_483_648, 1_740_704_700_000_000_000, 1, "eng"),
         Verdict(
@@ -301,7 +306,8 @@ def seed_library(monkeypatch, clock: Clock) -> None:
             failures=2,
         ),
     )
-    cache.record(
+    seed_verdict(
+        cache,
         HOLIDAY,
         FileKey(734_003_200, 1_561_939_200_000_000_000, 1, None),
         Verdict(
@@ -310,7 +316,8 @@ def seed_library(monkeypatch, clock: Clock) -> None:
             why={"skip": ".avi is not in ALLOWED_EXTS"},
         ),
     )
-    cache.record(
+    seed_verdict(
+        cache,
         WANAKA,
         FileKey(1_073_741_824, 1_625_097_600_000_000_000, 1, None),
         Verdict(Status.CONFORM, "", tracks=WANAKA_TRACKS, duration=612.0),
@@ -352,7 +359,8 @@ def seed_history() -> None:
         from_path=EPISODE_ONE.removesuffix(".mkv") + ".mp4",
         incidental=["clear release tags on audio 1 ('Surround 5.1')"],
         incidental_rules=["release_tags"],
-        downmixed=["2.0"],
+        adds=["2.0"],
+        drops=1,
         bytes_before=2_147_483_648,
         bytes_after=2_251_799_813,
     )
@@ -367,7 +375,7 @@ def seed_history() -> None:
         waited=None,
         duration=3305.0,
         path=EPISODE_TWO,
-        detail="hard-linked 2 times; a download client still has it",
+        detail="a download client still has this hard-linked",
     )
     events.record(
         "failed",
@@ -393,7 +401,7 @@ def seed_history() -> None:
         rules=["downmix"],
         incidental=[],
         incidental_rules=[],
-        downmixed=["2.0"],
+        adds=["2.0"],
     )
     events.record(
         "recheck",
@@ -406,9 +414,9 @@ def seed_history() -> None:
         counts={"conform": 1, "failed": 1},
         seconds=41.7,
     )
-    # A title held for an evening and let go the same night: both lines, and
+    # A title paused for an evening and let go the same night: both lines, and
     # nothing left standing from this pass. The one still on is in seed_runs.
-    holds.place(
+    pauses.place(
         SEVERANCE,
         4 * 3600,
         by="admin",
@@ -416,7 +424,7 @@ def seed_history() -> None:
         title=SEVERANCE_ID,
         name="Severance",
     )
-    holds.lift(SEVERANCE, by="admin")
+    pauses.resume(SEVERANCE, by="admin")
     events.record("skipped", run=LAST_SWEEP, path=EPISODE_TWO, by="admin")
     # A track edited in place: the stream, and both sides of each tag moved.
     events.record(
@@ -430,8 +438,8 @@ def seed_history() -> None:
         },
         by="admin",
     )
-    assert runs.pause(by="admin")
-    assert runs.resume(by="admin")
+    assert lifecycle.pause(by="admin")
+    assert lifecycle.resume(by="admin")
     # Both sides on both names: a name set for the first time moves from "",
     # which is what settings._changes writes and all it can write.
     events.record(
@@ -449,43 +457,48 @@ def seed_runs(clock: Clock) -> None:
     """A sweep nine hours in with one file encoding and two queued behind it,
     a delivery waiting on the slot, and a re-check asked to stop."""
     clock.now = NOW - 9 * 3600
-    runs.open_run(SWEEP_RUN, runs.SWEEP)
+    lifecycle.open_run(SWEEP_RUN, runs.SWEEP)
     runs.set_total(SWEEP_RUN, 1180)
     runs.walking(SWEEP_RUN, False)
     for _ in range(1174):
-        runs.tally(SWEEP_RUN, "conform", cached=True)
+        lifecycle.tally(SWEEP_RUN, "conform", cached=True)
     clock.now = NOW - 5400
     runs.begin(SWEEP_RUN, EPISODE_TWO)
     clock.tick(95.3)
     runs.finish(SWEEP_RUN, EPISODE_TWO)
-    runs.tally(SWEEP_RUN, "failed", path=EPISODE_TWO, detail="ffmpeg exited 1")
+    lifecycle.tally(SWEEP_RUN, "failed", path=EPISODE_TWO, detail="ffmpeg exited 1")
     runs.begin(SWEEP_RUN, EPISODE_ONE)
     clock.tick(1834.2)
     runs.finish(SWEEP_RUN, EPISODE_ONE)
-    runs.tally(SWEEP_RUN, "modified", path=EPISODE_ONE, detail="add 2.0 downmix")
-    runs.queue(SWEEP_RUN, DUNE_FILE, 9330.0)
-    runs.queue(SWEEP_RUN, f"{MOVIES}/Blade Runner (1982)/Blade Runner (1982).mkv", 7020.0)
-    runs.queue(SWEEP_RUN, CONTACT, 0.0)
-    # One of the queued files taken off this sweep, and a title held past it.
-    assert runs.skip(SWEEP_RUN, CONTACT) == "waiting"
-    holds.place(BEAR, 0, by="admin", reason="not until I say", title=BEAR_ID, name="The Bear")
+    lifecycle.tally(SWEEP_RUN, "modified", path=EPISODE_ONE, detail="add 2.0 downmix")
+    work.scheduler.submit(
+        SWEEP_RUN,
+        f"{MOVIES}/Blade Runner (1982)/Blade Runner (1982).mkv",
+        "work",
+        lambda: None,
+        7020.0,
+    )
+    work.scheduler.submit(SWEEP_RUN, CONTACT, "work", lambda: None)
+    # One of the queued files taken off this sweep, and a title paused past it.
+    assert work.scheduler.skip_file(SWEEP_RUN, CONTACT)[0] == "waiting"
+    pauses.place(BEAR, 0, by="admin", reason="not until I say", title=BEAR_ID, name="The Bear")
     clock.now = NOW - 1500
-    runs.begin(SWEEP_RUN, DUNE_FILE)
+    runs.begin(SWEEP_RUN, DUNE_FILE, 9330.0)
     runs.stage(SWEEP_RUN, DUNE_FILE, runs.ENCODING, 9330.0)
     clock.tick(1200)
     runs.progress(SWEEP_RUN, DUNE_FILE, 1800.0, 1.5)
 
     clock.now = NOW - 300
-    runs.open_run(IMPORT_RUN, runs.IMPORT, label="radarr", filling=True)
+    lifecycle.open_run(IMPORT_RUN, runs.IMPORT, label="radarr", filling=True)
     runs.add_file(IMPORT_RUN)
     runs.begin(IMPORT_RUN, ARRIVAL_FILE)
     runs.stage(IMPORT_RUN, ARRIVAL_FILE, runs.WAITING)
-    runs.seal(IMPORT_RUN)
+    lifecycle.seal(IMPORT_RUN)
 
     clock.now = NOW - 120
-    runs.open_run(RECHECK_RUN, runs.RECHECK, dry_run=True, label="Severance")
+    lifecycle.open_run(RECHECK_RUN, runs.RECHECK, dry_run=True, label="Severance")
     runs.set_total(RECHECK_RUN, 2)
-    assert runs.stop(RECHECK_RUN)
+    assert lifecycle.stop(RECHECK_RUN)
 
 
 @pytest.fixture
@@ -530,6 +543,7 @@ def hold(name: str, answer: dict) -> None:
 
 
 def test_runs(ask):
+    library.known()  # This fixture represents activity after catalogue warmup.
     hold("runs", ask("GET", "/api/runs"))
 
 
@@ -549,8 +563,8 @@ def test_events(ask):
     hold("events", ask("GET", "/api/events"))
 
 
-def test_holds(ask):
-    hold("holds", ask("GET", "/api/holds"))
+def test_pauses(ask):
+    hold("pauses", ask("GET", "/api/pauses"))
 
 
 def test_settings(ask):
@@ -579,7 +593,7 @@ def recorded_events() -> set[str]:
     a new event without a seeded line fails and so does a stale one."""
     names: set[str] = set()
     for module in SOURCE.glob("*.py"):
-        names.update(re.findall(r'\brecord\(\s*"([a-z-]+)"', module.read_text()))
+        names.update(re.findall(r'\brecord\(\s*"([a-z_-]+)"', module.read_text()))
     return names
 
 
@@ -594,8 +608,8 @@ def test_vocabulary(ask, monkeypatch):
     list here too, so a publish of a kind nothing lists fails on this side."""
     published: set[str] = set()
     monkeypatch.setattr(notify, "publish", published.add)
-    runs.pause(by="admin")
-    runs.resume(by="admin")
+    lifecycle.pause(by="admin")
+    lifecycle.resume(by="admin")
     runs.progress(SWEEP_RUN, DUNE_FILE, 1810.0, 1.5)
     assert published <= set(notify.KINDS)
     hold(

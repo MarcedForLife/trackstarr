@@ -1,9 +1,11 @@
 """Command line startup checks. No media, no network."""
 
+import json
 import logging
 import os
 import signal
 import time
+from pathlib import Path
 
 import pytest
 
@@ -16,7 +18,6 @@ from trackstarr.planner import OutStream, Plan
 from trackstarr.policy import Policy
 from trackstarr.processing import ProcessResult
 from trackstarr.status import Status
-from trackstarr.sweep_cache import read
 from trackstarr.tracks import Lang
 
 
@@ -129,7 +130,7 @@ def test_fix_rewrites_files_and_reports_failures(startup_ok, monkeypatch, capsys
     calls = []
     runs = []
 
-    def fake_process(job, dry_run, source):
+    def fake_process(job, dry_run, source, policy=None, cancel=None, observation=None):
         calls.append((job.path, job.lang, dry_run, source))
         runs.append(job.run)
         return results[job.path]
@@ -159,7 +160,9 @@ def test_fix_still_matches_arr_items_when_original_is_given(startup_ok, monkeypa
     jobs = []
     monkeypatch.setattr(
         "trackstarr.cli.process",
-        lambda job, dry_run, source: jobs.append(job) or ProcessResult(Status.CONFORM),
+        lambda job, dry_run, source, policy=None, cancel=None, observation=None: (
+            jobs.append(job) or ProcessResult(Status.CONFORM)
+        ),
     )
 
     assert main(["fix", "--original", "ja", "/lib/Movie/Movie.mkv"]) == 0
@@ -173,7 +176,9 @@ def test_fix_refuses_when_an_arr_cannot_answer(startup_ok, monkeypatch, caplog):
     monkeypatch.setattr("trackstarr.cli.path_index", lambda arrs: LibraryIndex({}, False))
     monkeypatch.setattr(
         "trackstarr.cli.process",
-        lambda job, dry_run, source: pytest.fail("nothing may be rewritten"),
+        lambda job, dry_run, source, policy=None, cancel=None, observation=None: pytest.fail(
+            "nothing may be rewritten"
+        ),
     )
     assert main(["fix", "/lib/a.mkv"]) == 1
     assert "could not be listed" in caplog.text
@@ -187,7 +192,9 @@ def test_fix_proceeds_when_the_policy_never_asks_the_language(startup_ok, monkey
     jobs = []
     monkeypatch.setattr(
         "trackstarr.cli.process",
-        lambda job, dry_run, source: jobs.append(job) or ProcessResult(Status.CONFORM),
+        lambda job, dry_run, source, policy=None, cancel=None, observation=None: (
+            jobs.append(job) or ProcessResult(Status.CONFORM)
+        ),
     )
     assert main(["fix", "/lib/a.mkv"]) == 0
     (job,) = jobs
@@ -200,7 +207,9 @@ def test_fix_with_original_proceeds_through_an_arr_outage(startup_ok, monkeypatc
     jobs = []
     monkeypatch.setattr(
         "trackstarr.cli.process",
-        lambda job, dry_run, source: jobs.append(job) or ProcessResult(Status.CONFORM),
+        lambda job, dry_run, source, policy=None, cancel=None, observation=None: (
+            jobs.append(job) or ProcessResult(Status.CONFORM)
+        ),
     )
     assert main(["fix", "--original", "ja", "/lib/a.mkv"]) == 0
     (job,) = jobs
@@ -211,7 +220,9 @@ def test_fix_exit_code_flags_a_deferral_alone(startup_ok, monkeypatch):
     """Deferred means not rewritten, and a one-shot command's retry is the caller."""
     monkeypatch.setattr(
         "trackstarr.cli.process",
-        lambda job, dry_run, source: ProcessResult(Status.DEFERRED, detail="source changed"),
+        lambda job, dry_run, source, policy=None, cancel=None, observation=None: ProcessResult(
+            Status.DEFERRED, detail="source changed"
+        ),
     )
     assert main(["fix", "--original", "en", "/lib/c.mkv"]) == 1
 
@@ -252,7 +263,7 @@ def test_secret_refuses_a_path_shaped_name():
 
 def _planned(monkeypatch, plan):
     """Make cmd_plan see one prepared plan instead of probing a real file."""
-    monkeypatch.setattr("trackstarr.cli.build_plan", lambda path, lang: plan)
+    monkeypatch.setattr("trackstarr.cli.build_plan", lambda path, lang, policy=None: plan)
 
 
 def test_plan_prints_the_policy_it_judged_under(startup_ok, monkeypatch, capsys):
@@ -378,7 +389,7 @@ def test_a_sweep_typed_into_a_paused_install_runs_and_says_so(startup_ok, monkey
     """The pause lives in the listener's memory and this is another process,
     so refusing here would refuse a command somebody meant. It sweeps, and
     the line is what stops the result reading as the pause not working."""
-    monkeypatch.setattr("trackstarr.cli.runs.paused_on_disk", lambda: True)
+    monkeypatch.setattr("trackstarr.cli.lifecycle.paused_on_disk", lambda: True)
     monkeypatch.setattr("trackstarr.cli.sweep", lambda dry_run: dict.fromkeys(Status, 0))
     assert main(["sweep"]) == 0
     assert "runs anyway" in caplog.text
@@ -390,7 +401,9 @@ def test_fix_says_so_in_report_mode(startup_ok, monkeypatch, capsys):
     set_config(REWRITE_MODE="report")
     monkeypatch.setattr(
         "trackstarr.cli.process",
-        lambda job, dry_run, source: ProcessResult(Status.CONFORM),
+        lambda job, dry_run, source, policy=None, cancel=None, observation=None: ProcessResult(
+            Status.CONFORM
+        ),
     )
     main(["fix", "f.mkv"])
     assert "REWRITE_MODE is report" in capsys.readouterr().out
@@ -401,7 +414,9 @@ def test_fix_prints_why_a_file_was_skipped(startup_ok, monkeypatch, capsys):
     plan = Plan(path="f.mkv", skip="hardlinked, left for the download client")
     monkeypatch.setattr(
         "trackstarr.cli.process",
-        lambda job, dry_run, source: ProcessResult(Status.SKIP, plan),
+        lambda job, dry_run, source, policy=None, cancel=None, observation=None: ProcessResult(
+            Status.SKIP, plan
+        ),
     )
     assert main(["fix", "f.mkv"]) == 0
     assert "hardlinked, left for the download client" in capsys.readouterr().out
@@ -410,18 +425,21 @@ def test_fix_prints_why_a_file_was_skipped(startup_ok, monkeypatch, capsys):
 def test_fix_books_its_verdict_where_the_collection_reads_it(startup_ok, monkeypatch, tmp_path):
     """The same gap the webhook had: a command that judges a handful of files
     has none of a sweep's bookkeeping, so its verdicts reached the history and
-    nothing the library looks at."""
+    nothing the library looks at. Written rather than left in a batch, too:
+    nothing outlives the command to close the window for it."""
     media = tmp_path / "f.mkv"
     media.write_bytes(b"x" * 10)
     plan = needed_plan(str(media))
     monkeypatch.setattr(
         "trackstarr.cli.process",
-        lambda job, dry_run, source: ProcessResult(Status.PENDING, plan),
+        lambda job, dry_run, source, policy=None, cancel=None, observation=None: ProcessResult(
+            Status.PENDING, plan
+        ),
     )
     assert main(["fix", str(media), "--original", "eng"]) == 0
 
-    stored = read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
-    assert stored.files[str(media)]["status"] == "pending"
+    stored = json.loads(Path(sweep_cache.cache_path()).read_text())["files"]
+    assert stored[str(media)]["status"] == "pending"
 
 
 def test_secret_reports_a_state_dir_it_cannot_write(monkeypatch, caplog):
@@ -525,7 +543,8 @@ def test_a_lowercase_log_level_still_works(startup_ok, monkeypatch):
     """--log-level debug has always worked, and argparse choices= would have
     quietly taken that away."""
     monkeypatch.setattr(
-        "trackstarr.cli.build_plan", lambda path, lang: Plan(path=path, skip="nothing to do")
+        "trackstarr.cli.build_plan",
+        lambda path, lang, policy=None: Plan(path=path, skip="nothing to do"),
     )
     assert main(["--log-level", "debug", "plan", "--original", "eng", "f.mkv"]) == 0
 
@@ -539,7 +558,8 @@ def test_a_rule_that_cannot_fire_is_reported_to_a_command_handed_its_files(
     set_rules(remux="always")
     set_config(ALLOWED_EXTS={".mkv"})
     monkeypatch.setattr(
-        "trackstarr.cli.build_plan", lambda path, lang: Plan(path=path, skip="nothing to do")
+        "trackstarr.cli.build_plan",
+        lambda path, lang, policy=None: Plan(path=path, skip="nothing to do"),
     )
     with caplog.at_level(logging.WARNING):
         main(["plan", "--original", "eng", "f.mkv"])

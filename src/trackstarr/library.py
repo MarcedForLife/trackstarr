@@ -11,20 +11,22 @@ empty answer, not a reason to walk it inside a web request. What a rewrite of
 ours left a file comes from :mod:`trackstarr.rewrites`, joined on by path.
 """
 
-import contextlib
 import logging
 import os
 import re
 import threading
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import NamedTuple
 
-from . import config, ratings, rewrites, state, sweep_cache
+from . import config, notify, ratings, rewrites, state, sweep_cache
 from .arr import Arr, all_arrs, innermost, original_of
 from .client import API_ERRORS
+from .planner import Changes, changes
 from .policy import Policy
 from .status import Status
 
@@ -165,14 +167,172 @@ _lock = threading.Lock()
 _cached: tuple[float, Shelf] | None = None
 
 
+class Identity(NamedTuple):
+    """The immutable activity projection; no verdicts or service clients."""
+
+    id: str
+    name: str
+
+
+class Catalogue:
+    """One bounded acquisition worker shared by library and activity reads.
+
+    No network or verdict-cache work runs under this lock. A reset fences an
+    old response but retains its future until it finishes, so repeated settings
+    changes cannot queue workers. Only full-library callers wait for acquisition.
+    """
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="title-labels")
+        self.future: Future | None = None
+        self.generation = 0
+        self.connection: tuple = ()
+        self.labels: Mapping[str, Identity] = MappingProxyType({})
+        self.unclaimed: dict[str, Identity] = {}
+        self.services: dict[str, dict[str, Identity]] = {}
+        self.result: tuple[dict[str, Title], bool] | None = None
+        self.expires = 0.0
+        self.failures = 0
+        self.closed = False
+
+    def invalidate(self) -> None:
+        """Invalidate full titles (including ratings), retaining same-server labels."""
+        with self.lock:
+            self.generation += 1
+            self.result = None
+            self.expires = 0.0
+
+    def request(self) -> tuple[Mapping[str, Identity], Future | None]:
+        with self.lock:
+            arrs = all_arrs()
+            connection = tuple((arr.name, arr.url, arr.key) for arr in arrs)
+            if connection != self.connection:
+                unchanged = set(self.connection) & set(connection)
+                self.services = {
+                    name: self.services[name]
+                    for name, url, key in connection
+                    if (name, url, key) in unchanged and name in self.services
+                }
+                self.connection = connection
+                self.generation += 1
+                self.unclaimed = {}
+                self.labels = self._labels()
+                self.result = None
+                self.expires = 0.0
+                self.failures = 0
+            if (
+                not self.closed
+                and time.monotonic() >= self.expires
+                and (self.future is None or self.future.done())
+            ):
+                self.future = self.executor.submit(self.refresh, self.generation, arrs)
+            return self.labels, self.future
+
+    def refresh(self, generation: int, arrs: list[Arr]) -> None:
+        acquired = _from_arrs(arrs)
+        titles: dict[str, Title] = {}
+        for fetched in acquired.values():
+            if fetched is not None:
+                for folder, title in fetched.items():
+                    titles.setdefault(folder, title)
+        complete = all(fetched is not None for fetched in acquired.values())
+        with self.lock:
+            if generation != self.generation or self.closed:
+                return
+            self.result = titles, complete
+            for name, fetched in acquired.items():
+                if fetched is not None:
+                    self.services[name] = {
+                        folder: Identity(title.id, title.name)
+                        for folder, title in fetched.items()
+                    }
+            labels = self._labels()
+            changed = self.labels != labels
+            self.labels = labels
+            if complete:
+                self.failures = 0
+                self.expires = time.monotonic() + _INDEX_TTL
+            else:
+                self.failures = min(self.failures + 1, 6)
+                self.expires = time.monotonic() + min(15 * 2 ** (self.failures - 1), 300)
+        if changed:
+            notify.publish(notify.RUNS)
+
+    def _labels(self) -> Mapping[str, Identity]:
+        """First configured service owns duplicates, including retained labels."""
+        labels: dict[str, Identity] = {}
+        for name, _, _ in self.connection:
+            for folder, label in self.services.get(name, {}).items():
+                labels.setdefault(folder, label)
+        return MappingProxyType({**self.unclaimed, **labels})
+
+    def read(self) -> tuple[dict[str, Title], bool]:
+        while True:
+            _, future = self.request()
+            if future is not None:
+                future.result()
+            with self.lock:
+                if self.result is not None:
+                    return self.result
+                if self.closed:
+                    return {}, False
+
+    def include_folders(self, claimed: dict[str, Title], titles: list[Title]) -> None:
+        """Copy locally discovered folders while the full view already has them."""
+        with self.lock:
+            if self.result is None or self.result[0] is not claimed or self.closed:
+                return
+            self.unclaimed = {
+                title.folder: Identity(title.id, title.name)
+                for title in titles
+                if title.arr is None
+            }
+            labels = self._labels()
+            changed = labels != self.labels
+            self.labels = labels
+        if changed:
+            notify.publish(notify.RUNS)
+
+    def stop(self) -> None:
+        """Fence publication and join the worker, bounded by client HTTP timeouts."""
+        with self.lock:
+            self.closed = True
+            self.generation += 1
+            self.labels = MappingProxyType({})
+            self.result = None
+        self.executor.shutdown(wait=True)
+
+
+_catalogue = Catalogue()
+
+
+def start_refresh() -> None:
+    """Warm activity identities even when only the overview is open."""
+    _catalogue.request()
+
+
+def stop_refresh() -> None:
+    _catalogue.stop()
+
+
+def reset_refresh() -> None:
+    """Join the previous worker before resetting lifecycle state (tests/restart)."""
+    global _catalogue
+    stop_refresh()
+    _catalogue = Catalogue()
+
+
 def forget() -> None:
-    """Drop every memo so the next read refetches.
+    """Drop full-library memos so the next read refetches.
 
     Called when the *arr settings change, and by tests. The parsed cache and
     the built grid go too: neither is keyed on the rules, so a settings save
-    must not serve an answer judged under the old ones.
+    must not serve an answer judged under the old ones. Activity identities
+    survive policy/ratings changes; request() fences changed connections.
     """
     global _built, _cached, _parsed
+    _catalogue.invalidate()
     with _lock:
         _built = None
         _cached = None
@@ -251,27 +411,28 @@ def _title_of(arr: Arr, item: dict, scored: dict[str, float]) -> Title | None:
     )
 
 
-def _from_arrs() -> tuple[dict[str, Title], bool]:
-    """Every *arr title keyed by folder, and whether all of them answered.
+def _from_arrs(arrs: list[Arr]) -> dict[str, dict[str, Title] | None]:
+    """Titles per service; None distinguishes a failure from an empty response.
 
     First wins on a duplicate folder, matching :func:`trackstarr.arr.path_index`.
     """
-    titles: dict[str, Title] = {}
-    complete = True
+    services: dict[str, dict[str, Title] | None] = {}
     scored = ratings.scores()
-    for arr in all_arrs():
+    for arr in arrs:
         try:
             fetched = arr.all_items()
         except API_ERRORS as err:
             log.warning(
                 "%s: could not list its titles for the library view (%s)", arr.name, err
             )
-            complete = False
+            services[arr.name] = None
             continue
+        titles: dict[str, Title] = {}
         for item in fetched:
             if title := _title_of(arr, item, scored):
                 titles.setdefault(title.folder, title)
-    return titles, complete
+        services[arr.name] = titles
+    return services
 
 
 def imdb_ids() -> set[str] | None:
@@ -310,9 +471,8 @@ def _shelf(stored: sweep_cache.Stored) -> Shelf:
     with _lock:
         if _cached and time.monotonic() - _cached[0] < _INDEX_TTL:
             return _cached[1]
-    # Outside the lock: better two fetches than a lock held through two
-    # library-sized HTTP calls.
-    claimed, complete = _from_arrs()
+    # Catalogue acquisition is shared with the activity refresh worker.
+    claimed, complete = _catalogue.read()
     folders = dict(claimed)
     for path in stored.files:
         if innermost(claimed, path) is not None:
@@ -328,6 +488,7 @@ def _shelf(stored: sweep_cache.Stored) -> Shelf:
             )
     titles = list(folders.values())
     shelf = Shelf(titles, complete, stored.current, {title.id: title for title in titles})
+    _catalogue.include_folders(claimed, titles)
     with _lock:
         _cached = (time.monotonic(), shelf)
     return shelf
@@ -372,11 +533,7 @@ def clear() -> int:
     included. The memos go too: `_cached` is on a timer, and a page still
     showing cleared verdicts gets pressed twice.
     """
-    stored = _read_cache()
-    dropped = len(stored.files)
-    # Already gone is fine.
-    with contextlib.suppress(FileNotFoundError):
-        os.remove(sweep_cache.cache_path())
+    dropped = sweep_cache.clear()
     forget()
     log.info("cleared %d stored verdict(s)", dropped)
     return dropped
@@ -426,56 +583,9 @@ class Rollup:
         return MIXED if judged > 1 else worst
 
 
-class Changes(NamedTuple):
-    """What one file's plan would add, rebuild and drop."""
-
-    adds: list[str]
-    rebuilds: list[str]
-    drops: int
-
-
-def _dropped(entry: dict) -> list[dict]:
-    """The file's streams the rewrite would not carry over."""
-    kept = {track.get("src") for track in entry.get("planned") or []}
-    return [track for track in entry.get("tracks") or [] if track.get("index") not in kept]
-
-
-def _claim(dropped: list[dict], generated: dict) -> bool:
-    """Remove from ``dropped`` the track this generated one replaces.
-
-    Mirrors :func:`trackstarr.planner._claim_replacement`, so a regenerated
-    downmix is one change on a card rather than a layout gained and a track
-    lost. Matched by language first: a German 2.0 dropped for a French one is
-    two changes. An untagged drop is claimed by any match in its layout.
-    """
-    for lang in (generated.get("lang"), None):
-        for at, track in enumerate(dropped):
-            if (
-                track.get("kind") == "audio"
-                and track.get("channels") == generated.get("channels")
-                and track.get("lang") == lang
-            ):
-                del dropped[at]
-                return True
-    return False
-
-
 def _changes(entry: dict) -> Changes:
-    """The file's plan as the three tallies a card carries.
-
-    A generated track claims its drop before its name is checked, so an unnamed
-    rebuild still keeps its predecessor out of the drop count.
-    """
-    dropped = _dropped(entry)
-    adds: list[str] = []
-    rebuilds: list[str] = []
-    for track in entry.get("planned") or []:
-        if "generated" not in (track.get("flags") or []):
-            continue
-        named = rebuilds if _claim(dropped, track) else adds
-        if name := track.get("title"):
-            named.append(name)
-    return Changes(adds, rebuilds, len(dropped))
+    """The tally for one cache entry."""
+    return changes(entry.get("planned") or [], entry.get("tracks") or [])
 
 
 def _untagged(entry: dict) -> bool:
@@ -747,6 +857,22 @@ def _file(entry: dict) -> dict:
     }
 
 
+def file_detail(path: str, *, card: bool = False) -> dict:
+    """The saved verdict and plan for one exact path; never read or probe the file.
+
+    The card means tallying every verdict under the title, which is the whole
+    cost of the answer, so only a caller opening the title asks for one.
+    """
+    stored = _read_cache()
+    entry = stored.files.get(path)
+    owners, cards = cards_for_paths([path]) if card else ({}, {})
+    return {
+        "card": cards.get(owners.get(path, "")),
+        "current": stored.current,
+        "file": _file({**entry, "path": path}) if entry is not None else None,
+    }
+
+
 def title(title_id: str) -> dict | None:
     """One title with its files, or None for an unknown id.
 
@@ -795,6 +921,62 @@ def selected(title_ids: list[str]) -> list[Title]:
     """
     index = known().index
     return [found for title_id in title_ids if (found := index.get(title_id))]
+
+
+def pause_targets(title_ids: list[str]) -> list[tuple[str, str, str]]:
+    """Resolve only locally known ids; pause commands never wait for a service.
+
+    The library view populates unclaimed folders as well as catalogue titles.
+    A cold or changed connection may have no identities yet; paths remain usable.
+    """
+    labels, _ = _catalogue.request()
+    wanted = {label.id: (folder, label.id, label.name) for folder, label in labels.items()}
+    return [wanted[title_id] for title_id in title_ids if title_id in wanted]
+
+
+def covers_for_paths(paths: Iterable[str]) -> dict[str, dict]:
+    """Small title identities for live rows, without calculating library verdicts."""
+    # Deduped in the order given, so the answer does not reshuffle per process.
+    wanted = dict.fromkeys(path for path in paths if path)
+    if not wanted:
+        return {}
+    folders, _ = _catalogue.request()
+    return {
+        path: {"id": title.id, "name": title.name}
+        for path in wanted
+        if (title := innermost(folders, path)) is not None
+    }
+
+
+def plans_for_paths(paths: Iterable[str]) -> tuple[dict[str, dict], bool]:
+    """What a rewrite would do to each path, and whether the rules behind those
+    answers still stand.
+
+    For rows that name a file before anything opens it. A path with no stored
+    verdict is absent, which is how a queue row says it has yet to be checked.
+    Both halves come off one read, so freshness cannot describe a capture the
+    tallies were not taken from.
+    """
+    wanted = dict.fromkeys(path for path in paths if path)
+    if not wanted:
+        return {}, True
+    stored = _read_cache()
+    plans: dict[str, dict] = {}
+    for path in wanted:
+        entry = stored.files.get(path)
+        if entry is None:
+            continue
+        changes = _changes(entry)
+        why = entry.get("why") or {}
+        plans[path] = {
+            "status": entry.get("status") or UNCHECKED,
+            # Every line the open panel lists, including the ride-alongs.
+            "changes": len(why.get("reasons") or []) + len(why.get("incidental") or []),
+            "adds": changes.adds,
+            "rebuilds": changes.rebuilds,
+            "drops": changes.drops,
+        }
+    return plans, stored.current
 
 
 def cards_for_paths(paths: Iterable[str]) -> tuple[dict[str, str], dict[str, dict]]:

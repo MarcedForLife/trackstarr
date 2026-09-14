@@ -118,11 +118,17 @@ def test_warming_fetches_the_posters_the_grid_has_not_got(media, monkeypatch):
     assert len(asked) == 2
 
 
+#: A guard against hanging the suite, not a measure of how quick a warm-up is.
+#: Loaded machines schedule these threads late, and a tight budget made the
+#: delay look like a failure.
+_SETTLE = 30
+
+
 def _warm_up_finished() -> bool:
     """Wait for the background warm-up to let go of its lock."""
-    for _ in range(500):
-        if covers._warming.acquire(blocking=False):
-            covers._warming.release()
+    deadline = time.monotonic() + _SETTLE
+    while time.monotonic() < deadline:
+        if not covers._warming.locked():
             return True
         time.sleep(0.01)
     return False
@@ -140,11 +146,14 @@ def test_warming_returns_at_once_and_runs_one_walk_at_a_time(media, monkeypatch)
     def slow_walk():
         walks.append(1)
         walking.set()
-        let_go.wait(5)
+        let_go.wait(_SETTLE)
 
     monkeypatch.setattr(covers, "_warm_all", slow_walk)
     covers.warm()
-    assert walking.wait(5), "the caller was not made to wait for it"
+    # The claim is taken before the thread starts, so whether the walk was
+    # taken on at all is settled here rather than by waiting for its body.
+    assert covers._warming.locked(), "warm() took no walk on"
+    assert walking.wait(_SETTLE), "the walk never reached its body"
     covers.warm()
     let_go.set()
 
