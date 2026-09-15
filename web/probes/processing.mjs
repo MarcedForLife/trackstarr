@@ -39,16 +39,26 @@ try {
 		activity = structuredClone(shape.runs);
 		const labels = activity.covers;
 		activity.covers = {};
-		// A judged queued file, so the waiting row has chips to draw.
-		activity.plans = {
-			[activity.queue_preview[0].path]: {
-				status: 'pending',
-				changes: 2,
-				adds: ['2.0'],
-				rebuilds: ['5.1'],
-				drops: 1
-			}
-		};
+		// Deliberately neither the rows processing nor the rows waiting, so the
+		// readout can only be the setting.
+		activity.slots = 3;
+		// A judged file, queued and paused, so both rows have chips to draw.
+		const held = '/data/media/movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv';
+		const plan = { status: 'pending', changes: 2, adds: ['2.0'], rebuilds: ['5.1'], drops: 1 };
+		activity.plans = { [activity.queue_preview[0].path]: plan, [held]: plan };
+		activity.pauses = [
+			{
+				path: held,
+				seconds: 5400,
+				until: '2026-03-01T13:00:00+13:00',
+				by: 'admin',
+				reason: 'waiting on the remux',
+				at: '2026-03-01T11:18:00+13:00',
+				title: null,
+				name: 'Arrival'
+			},
+			...activity.pauses
+		];
 		events = { ...shape.events, events: [saved] };
 		offline = false;
 		const browser = await playwright[engine].launch();
@@ -77,18 +87,51 @@ try {
 			const queued = processing.getByRole('listitem').filter({ hasText: 'Blade Runner' });
 			await queued.getByLabel('adds 2.0, rebuilds 5.1, drops 1 track').waitFor();
 			assert.deepEqual(await queued.locator('[aria-label^="adds"] > span').allInnerTexts(), [
-				'+2.0',
-				'5.1',
+				'+1',
+				'~1',
 				'−1'
 			]);
 			assert.doesNotMatch(
 				await processing.getByRole('listitem').filter({ hasText: 'Dune' }).innerText(),
-				/Not checked yet|\+2\.0/
+				/Not checked yet|\+\d/
 			);
 			assert.doesNotMatch(
 				await processing.getByRole('listitem').filter({ hasText: 'Arrival' }).innerText(),
 				/Not checked yet/
 			);
+			// A waiting row is numbered as the queue screen numbers it.
+			assert.match(await queued.innerText(), /#1/);
+			assert.doesNotMatch(await processing.innerText(), /Next up|in line/);
+
+			// A paused file reads as the rows above it do: what it is, how long is
+			// left, then what a rewrite would still do.
+			await processing.locator('button[aria-controls="paused-files"]').click();
+			const pausedList = processing.locator('#paused-files');
+			const paused = pausedList.getByRole('listitem').filter({ hasText: 'Arrival' });
+			await paused.getByLabel('adds 2.0, rebuilds 5.1, drops 1 track').waitFor();
+			assert.match(await paused.innerText(), /1h 30m left/);
+			assert.match(await paused.innerText(), /\(2016\) Bluray-1080p/);
+			assert.equal(
+				await paused.getByRole('button', { name: 'Resume Arrival', exact: true }).count(),
+				1
+			);
+			// A pause on a title folder has no file under it to judge.
+			assert.doesNotMatch(
+				await pausedList.getByRole('listitem').filter({ hasText: 'The Bear' }).innerText(),
+				/Not checked yet/
+			);
+
+			// The rewrite ceiling is a setting, and says so where it is felt.
+			const slots = processing.getByRole('button', { name: '3 rewrite threads', exact: true });
+			await slots.click();
+			const why = page.locator('#rewrite-threads');
+			await why.getByText(/rewritten in parallel/).waitFor();
+			assert.equal(
+				await why.getByRole('link', { name: 'Change it in settings', exact: true }).count(),
+				1
+			);
+			await page.keyboard.press('Escape');
+			await page.waitForFunction(() => !document.querySelector('#rewrite-threads:popover-open'));
 
 			activity.covers = labels;
 			await wake(page);
@@ -97,6 +140,16 @@ try {
 			assert.equal(await page.getByRole('button', { name: 'Results', exact: true }).count(), 0);
 			assert.doesNotMatch(await processing.innerText(), /Recently processed|Results/);
 			await feed.getByText('Swept 12 files', { exact: true }).waitFor();
+
+			// The panels opened above carry the feed down with them, and a blind
+			// measured mid-carry reads their travel as its own drift.
+			await page.waitForFunction((selector) => {
+				const section = document.querySelector(selector);
+				const now = section.getBoundingClientRect().top;
+				const still = window.__wasAt === now;
+				window.__wasAt = now;
+				return still;
+			}, 'section[aria-labelledby="activity-heading"]');
 
 			// A panel opens like a blind, so only the window's edge travels and what
 			// it uncovers stays put. Two boxes in one window each slid their own
