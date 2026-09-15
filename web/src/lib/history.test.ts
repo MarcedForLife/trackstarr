@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { EventPage } from '$lib/events';
 import { History } from '$lib/history.svelte';
 import type { Card } from '$lib/library';
@@ -226,4 +226,65 @@ test('nothing is looked for while a read is under way or the range has ended', a
 	// Nothing new can ever land inside a range that ended, so re-reading a
 	// settled window every ten seconds buys nothing.
 	expect(ready()).toBe(false);
+});
+
+afterEach(() => vi.useRealTimers());
+
+test('manual refresh shows results immediately but holds feedback and blocks duplicate presses', async () => {
+	vi.useFakeTimers();
+	const history = holding(page([]));
+	answers(page([line('2026-09-05T04:00:00Z')]));
+	const refreshing = history.refresh(600);
+	await vi.advanceTimersByTimeAsync(0);
+	expect(history.entries).toHaveLength(1);
+	expect(history.refreshing).toBe(true);
+	expect(history.busy).toBe(true);
+	await history.refresh(600);
+	expect(getEvents).toHaveBeenCalledTimes(1);
+	await vi.advanceTimersByTimeAsync(599);
+	expect(history.refreshing).toBe(true);
+	await vi.advanceTimersByTimeAsync(1);
+	await refreshing;
+	expect(history.refreshing).toBe(false);
+	expect(history.busy).toBe(false);
+});
+
+test('slow refresh stays busy until the request completes without an extra delay', async () => {
+	vi.useFakeTimers();
+	const history = holding(page([]));
+	let finish!: (value: EventPage) => void;
+	vi.mocked(getEvents).mockReturnValueOnce(new Promise((resolve) => (finish = resolve)));
+	const refreshing = history.refresh(600);
+	await vi.advanceTimersByTimeAsync(1200);
+	expect(history.refreshing).toBe(true);
+	finish(page([]));
+	await refreshing;
+	expect(history.refreshing).toBe(false);
+});
+
+test('failed manual refresh keeps the last successful timestamp and releases feedback', async () => {
+	vi.useFakeTimers();
+	const history = new History(page([]), { onfresh: () => {}, fetchedAt: 123 });
+	vi.mocked(getEvents).mockRejectedValueOnce(new Error('offline'));
+	const refreshing = history.refresh(600);
+	await vi.advanceTimersByTimeAsync(600);
+	await refreshing;
+	expect(history.fetchedAt).toBe(123);
+	expect(history.failure).toBe('Could not reach the service.');
+	expect(history.refreshing).toBe(false);
+	expect(history.busy).toBe(false);
+});
+
+test('successful refreshes and quiet checks advance freshness, older pages do not', async () => {
+	vi.useFakeTimers();
+	vi.setSystemTime(1000);
+	const history = new History(page([], { next: 4096 }), { onfresh: () => {}, fetchedAt: 123 });
+	answers(page([], { next: 4096 }));
+	await history.more();
+	expect(history.fetchedAt).toBe(123);
+	await history.refresh();
+	expect(history.fetchedAt).toBe(1000);
+	vi.setSystemTime(2000);
+	await look();
+	expect(history.fetchedAt).toBe(2000);
 });

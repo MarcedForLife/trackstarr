@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import Glyph from './Glyph.svelte';
 	import type { GlyphName } from './Glyph.svelte';
-	import { button, danger, iconButton, primary } from '$lib/controls';
+	import { button, danger, frosted, iconButton, primary } from '$lib/controls';
 	import { REPORT_ONLY_NOTE, type RunMode } from '$lib/library';
 	import { popover } from '$lib/popover.svelte';
 
@@ -121,7 +121,7 @@
 			popover="manual"
 			role="dialog"
 			aria-label={choice.label}
-			class="fixed m-0 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong bg-raised p-3.5 text-fg shadow-lg"
+			class={`fixed m-0 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong ${frosted} p-3.5 text-fg shadow-lg`}
 		>
 			<p class="text-[13px] font-semibold">{choice.label} the whole library</p>
 			{#if choice.mode === 'apply' && !mayRewrite}

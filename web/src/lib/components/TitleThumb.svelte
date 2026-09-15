@@ -1,18 +1,12 @@
 <script lang="ts">
 	import { arrival, coverShow, type Arrival } from '$lib/covers';
 	import { display } from '$lib/display.svelte';
-	import { coverUrl, dot, initials, verdictLabel, type Card, type Verdict } from '$lib/library';
+	import { coverUrl, initials, verdictLabel, type Card } from '$lib/library';
 
 	// A title's poster at list-row size, opening the title from a line of
 	// history. As tall as a line that carries chips, so it ends where they do.
 	// Not PosterCard, whose tilt, sheen and long press are for a grid.
-	let {
-		card,
-		onopen,
-		// The state to wear at the foot of the artwork, as a library card wears the
-		// title's. A history line passes what its own line is about, not card.state.
-		verdict
-	}: { card: Card; onopen: (card: Card) => void; verdict?: Verdict } = $props();
+	let { card, onopen }: { card: Card; onopen: (card: Card) => void } = $props();
 
 	let missing = $state(false);
 
@@ -26,12 +20,13 @@
 </script>
 
 <!-- The padding is the tap target and the margin gives it back. self-start, or
-     the button stretched to an open panel's full height. -->
+     the button stretched to an open panel's full height. Raised over the row's
+     press. -->
 <button
 	type="button"
 	onclick={() => onopen(card)}
 	aria-label={`${card.name}${card.year ? ` (${card.year})` : ''} — ${verdictLabel(card.state)}`}
-	class="thumb -m-1 block flex-none self-start p-1"
+	class="thumb relative z-10 -m-1 block flex-none self-start p-1"
 >
 	<span
 		class="relative block aspect-[2/3] w-11 overflow-hidden rounded-md border border-line bg-sunken shadow-[0_1px_2px_rgb(0_0_0/0.25)]"
@@ -60,13 +55,6 @@
 				onerror={() => (missing = true)}
 				class={`absolute inset-0 h-full w-full object-cover ${showing}`}
 			/>
-		{/if}
-		{#if verdict}
-			<!-- Ringed rather than scrimmed: a ramp deep enough for a 6px dot is
-			     half a thumb, and the ring reads over artwork and initials alike. -->
-			<span
-				class={`absolute bottom-1 left-1 block h-1.5 w-1.5 rounded-full ring-2 ring-surface ${dot(verdict)}`}
-			></span>
 		{/if}
 	</span>
 </button>

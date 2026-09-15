@@ -139,7 +139,7 @@ try {
 			const feed = page.locator('section[aria-labelledby="activity-heading"]');
 			assert.equal(await page.getByRole('button', { name: 'Results', exact: true }).count(), 0);
 			assert.doesNotMatch(await processing.innerText(), /Recently processed|Results/);
-			await feed.getByText('Swept 12 files', { exact: true }).waitFor();
+			await feed.getByText('Plan complete · 12 files', { exact: true }).waitFor();
 
 			// The panels opened above carry the feed down with them, and a blind
 			// measured mid-carry reads their travel as its own drift.
@@ -183,8 +183,9 @@ try {
 			await page.waitForURL('**/events?filter=issues');
 			await page.waitForFunction(
 				() =>
-					document.querySelector('[role="radio"][aria-checked="true"]')?.textContent.trim() ===
-					'Issues'
+					document
+						.querySelector('[aria-label="Filter event types"] [aria-pressed="true"]')
+						?.textContent.trim() === 'Issues'
 			);
 			await page.goBack();
 			await page.getByRole('heading', { name: /Working/ }).waitFor();
@@ -239,13 +240,19 @@ try {
 			await page.getByRole('button', { name: 'Resume', exact: true }).click();
 			await page.getByRole('heading', { name: /Idle/ }).waitFor();
 
-			await feed.getByText('Swept 1,180 files', { exact: true }).waitFor();
-			assert.equal(await feed.getByText('Swept 1,180 files', { exact: true }).count(), 1);
+			await feed.getByText('Process complete · 1,180 files', { exact: true }).waitFor();
+			assert.equal(
+				await feed.getByText('Process complete · 1,180 files', { exact: true }).count(),
+				1
+			);
 			assert.equal(await processing.getByRole('link', { name: /failed/ }).count(), 0);
 			assert.doesNotMatch(await processing.innerText(), /Dune|Recently processed|Results/);
 			await page.reload();
-			await feed.getByText('Swept 1,180 files', { exact: true }).waitFor();
-			assert.equal(await feed.getByText('Swept 1,180 files', { exact: true }).count(), 1);
+			await feed.getByText('Process complete · 1,180 files', { exact: true }).waitFor();
+			assert.equal(
+				await feed.getByText('Process complete · 1,180 files', { exact: true }).count(),
+				1
+			);
 			assert.equal(
 				await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
 				true

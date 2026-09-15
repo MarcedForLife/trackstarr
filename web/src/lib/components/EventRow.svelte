@@ -16,8 +16,8 @@
 		release,
 		type Event
 	} from '$lib/events';
-	import { stamp } from '$lib/format';
-	import { changed, isVerdict, CHIP, PLAIN_TONE } from '$lib/library';
+	import { named, stamp } from '$lib/format';
+	import { changed, isVerdict, verdictLabel, verdictText, CHIP, PLAIN_TONE } from '$lib/library';
 	import type { Card } from '$lib/library';
 
 	// One line of history, opening to the full record. On the events page's list,
@@ -59,8 +59,7 @@
 	// mark, so the list can be read down the column.
 	const mark = $derived(poster ? '' : badge(entry));
 
-	// The verdict this line reached, which the poster wears. A line about the
-	// service has none, and its mark already says which kind it is.
+	// File outcomes are named beside the chips.
 	const verdict = $derived(isVerdict(entry.event) ? entry.event : undefined);
 
 	// The chips say what the rewrite changed, the layouts it wrote in the
@@ -88,19 +87,22 @@
 	// How long and under what terms ride the end of it, as a file row's clock does.
 	const line = $derived([said, ...notes(entry)].filter(Boolean).join(' · '));
 	const episode = $derived(marker(entry));
-	const name = $derived(headline(entry, card?.name));
+	// File outcomes have their own label below, leaving the title easy to scan.
+	const name = $derived(
+		FILES.has(entry.event) ? card?.name || named(entry.path).name : headline(entry, card?.name)
+	);
 
 	const lineClass = $derived(
 		compact
 			? 'mt-1 line-clamp-2 text-[12px] leading-relaxed text-dim sm:line-clamp-1'
-			: 'mt-1 block text-[12px] leading-relaxed wrap-anywhere text-dim'
+			: 'mt-1 line-clamp-2 text-[12px] leading-relaxed wrap-anywhere text-dim sm:line-clamp-1'
 	);
 </script>
 
 {#snippet thumb()}
 	<span class="contents">
 		{#if poster && onopen}
-			<TitleThumb card={poster} {onopen} {verdict} />
+			<TitleThumb card={poster} {onopen} />
 		{:else if mark}
 			<!-- Round, and as wide as a poster: it fills the column so the headlines
 			     line up, and its shape says a mark rather than a cover that failed
@@ -118,7 +120,7 @@
 				tabindex="-1"
 				aria-hidden="true"
 				onclick={ontoggle}
-				class="flex h-11 w-11 flex-none items-center justify-center self-center rounded-full border border-line bg-sunken text-dim transition-colors hover:border-line-strong hover:text-fg active:bg-raised"
+				class="relative z-10 flex h-11 w-11 flex-none items-center justify-center self-center rounded-full border border-line bg-sunken text-dim transition-colors hover:border-line-strong hover:text-fg active:bg-raised"
 			>
 				<Glyph name={mark} size={14} />
 			</button>
@@ -126,18 +128,19 @@
 	</span>
 {/snippet}
 
-<!-- The panel takes the full width; everything else sits in the line's column. -->
+<!-- The panel takes the full width; everything else sits in the line's column.
+     `after` spreads the press over the caller's padded row. -->
 <Disclosure
 	{id}
 	{open}
 	{ontoggle}
-	class="group block min-h-11 w-full text-left"
+	class="group flex h-full min-h-11 w-full items-start rounded-md text-left after:absolute after:inset-0 after:content-['']"
+	panelClass="mt-3"
 	beside={poster || mark ? thumb : undefined}
 >
 	{#snippet summary(chevron)}
-		<span class="flex items-baseline gap-2">
-			<!-- Only where nothing beside the words can carry it: a poster wears the
-			     verdict, and a line about the service has none worth a colour.
+		<span class="flex w-full items-baseline gap-2">
+			<!-- A fallback mark for an event without a poster or service icon.
 			     Nudged up, since a 6px circle on the baseline sits low. -->
 			{#if !poster && !mark}
 				<span
@@ -168,10 +171,18 @@
 					{@render chevron()}
 				</span>
 				{#if line}
-					<span class={lineClass}>{line}</span>
+					<span class={lineClass} title={line}>{line}</span>
 				{/if}
-				{#if marks.length}
-					<span class="mt-1.5 flex flex-wrap gap-1">
+				{#if marks.length || verdict}
+					<span class="mt-2 flex flex-wrap items-center gap-1.5">
+						{#if verdict}
+							<span
+								class={`mr-1 inline-flex items-center gap-1.5 text-[11px] font-medium ${verdictText[verdict]}`}
+							>
+								<span aria-hidden="true" class={`h-1.5 w-1.5 rounded-full ${dot(entry)}`}></span>
+								{verdictLabel(verdict)}
+							</span>
+						{/if}
 						{#each marks as change (change.chip)}
 							<span class={`${CHIP} ${change.tone}`} title={change.label} aria-label={change.label}
 								>{change.chip}</span
@@ -186,7 +197,7 @@
 	<!-- The row's full width: paths were wrapping early against an empty column. -->
 	{#snippet panel()}
 		<dl
-			class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 rounded-lg border border-line bg-sunken px-3 py-2.5 text-[12px]"
+			class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 rounded-lg border border-line bg-sunken p-3 text-[12px] leading-relaxed sm:p-4"
 		>
 			{#each details(entry, before) as row (row.label)}
 				<dt class="whitespace-nowrap text-faint">{row.label}</dt>

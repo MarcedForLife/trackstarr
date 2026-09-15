@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Sheet, { SLIDE } from './Sheet.svelte';
-	import { button } from '$lib/controls';
 	import { overlay } from '$lib/overlay';
 	import { portal } from '$lib/portal';
 	import { titled } from '$lib/runs';
@@ -53,12 +52,9 @@
 <div use:portal>
 	<Sheet {open} onclose={() => sheet.lower()} label={`Worker log for ${titled(path)}`}>
 		<div class="flex max-h-[min(44rem,calc(88dvh-1.5rem))] min-h-0 flex-col">
-			<header class="flex items-start justify-between gap-3 px-4 pt-3">
-				<div class="min-w-0">
-					<h2 class="text-base font-semibold tracking-tight">Worker log</h2>
-					<p class="mt-1 font-mono text-[11px] wrap-anywhere text-faint">{path}</p>
-				</div>
-				<button class={button} onclick={() => sheet.lower()}>Close</button>
+			<header class="min-w-0 px-4">
+				<h2 class="text-base font-semibold tracking-tight">Worker log</h2>
+				<p class="mt-1 font-mono text-[11px] wrap-anywhere text-faint">{path}</p>
 			</header>
 			<div
 				bind:this={tail}

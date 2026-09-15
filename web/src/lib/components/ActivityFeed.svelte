@@ -41,7 +41,7 @@
 		{#if rows.length}
 			<ol class="divide-y divide-line">
 				{#each rows as { entry, id }, at (id)}
-					<li class="px-4 py-3 transition-colors hover:bg-sunken/50">
+					<li class="relative px-4 py-3 transition-[background-color] hover:bg-sunken/50">
 						<EventRow
 							compact
 							{entry}

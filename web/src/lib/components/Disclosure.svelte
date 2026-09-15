@@ -67,7 +67,8 @@
 		panel?: Snippet;
 	} = $props();
 
-	// The panel's own timing, both ways: one tap, one speed.
+	// The panel measures its opening; closing keeps the shared short duration.
+	let openingDuration = $state<number>();
 	const TURN = 'duration-(--reveal-span) ease-(--reveal-ease)';
 
 	// A row that picks is a checkbox; nothing opens while it is one.
@@ -95,6 +96,9 @@
 	     its own place and colour. -->
 	<span
 		aria-hidden="true"
+		style:transition-duration={open && openingDuration !== undefined
+			? `${openingDuration}ms`
+			: undefined}
 		class={`inline-flex flex-none transition-transform ${angle} ${TURN} ${
 			bare
 				? ''
@@ -152,7 +156,13 @@
      and owns the clip both ways. -->
 {#if open && panel}
 	<!-- Positioned, so a row whose press covers the card does not cover this. -->
-	<div bind:this={box} {id} class={`reveal relative ${panelClass}`} use:shift out:fold>
+	<div
+		bind:this={box}
+		{id}
+		class={`reveal relative ${panelClass}`}
+		use:shift={(duration) => (openingDuration = duration)}
+		out:fold
+	>
 		<!-- The window, then one box holding whatever the snippet renders: the
 		     slide back is `translateY(100%)`, so two boxes each slide their own
 		     height and only one of them can match the window. -->

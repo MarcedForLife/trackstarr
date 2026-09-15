@@ -92,7 +92,7 @@ describe('remaining', () => {
 	});
 
 	test('adds the time of day once there is enough left to be worth one', () => {
-		expect(remaining(run({ rewrite_seconds: 3600 }))).toMatch(/^about 1h 0m left · done .+/);
+		expect(remaining(run({ rewrite_seconds: 3600 }))).toMatch(/^about 1h left · done .+/);
 	});
 
 	test('falls back to the rate a reporting sweep has got through files at', () => {

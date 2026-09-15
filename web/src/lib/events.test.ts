@@ -57,8 +57,8 @@ describe('a track edited in place', () => {
 
 	test('is headlined by its title and detailed by its track', () => {
 		// The card's name where the page has it, the file's own otherwise.
-		expect(headline(line, 'Severance (2022)')).toBe('Retagged Severance (2022)');
-		expect(headline(line)).toBe('Retagged Severance');
+		expect(headline(line, 'Severance (2022)')).toBe('Edited tags: Severance (2022)');
+		expect(headline(line)).toBe('Edited tags: Severance');
 		expect(detail(line)).toBe('Audio stream 1 · language und to jpn · commentary on');
 	});
 
@@ -114,3 +114,24 @@ test('older item pause events keep their title wording', () => {
 	expect(headline(entry({ event: 'held' }), 'Dune')).toBe('Paused Dune');
 	expect(headline(entry({ event: 'lifted' }), 'Dune')).toBe('Resumed Dune');
 });
+
+describe('run summaries match the available actions', () => {
+	test.each([
+		[true, 'Plan'],
+		[false, 'Process'],
+		[undefined, 'Sweep']
+	])('names the mode %s and distinguishes stopped runs', (dry_run, action) => {
+		const run = entry({ event: 'sweep', dry_run, files: 1 });
+		expect(headline(run)).toBe(`${action} complete · 1 file`);
+		expect(headline({ ...run, stopped: 2 })).toBe(`${action} stopped after 1 file`);
+	});
+});
+
+test.each(['paused', 'resumed', 'held', 'lifted', 'item_paused', 'item_resumed', 'skipped'])(
+	'%s keeps the actor in expanded details only',
+	(event) => {
+		const line = entry({ event, by: 'operator' });
+		expect(detail(line)).not.toContain('operator');
+		expect(details(line).find((row) => row.label === 'By')?.values).toEqual(['operator']);
+	}
+);

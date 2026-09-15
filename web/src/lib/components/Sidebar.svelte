@@ -133,14 +133,13 @@
 	</a>
 {/snippet}
 
-<!-- `invisible` when closed keeps the drawer's links out of the tab order
-     without any JS; lg:visible hands the rail straight back. -->
+<!-- Visibility hides the closed drawer from the tab order after its exit;
+     the desktop rail stays visible regardless of the drawer state. -->
 <aside
 	id="app-sidebar"
 	aria-label="Main"
-	class={`fixed inset-y-0 right-0 z-50 flex w-[17rem] flex-none flex-col overflow-x-hidden overflow-y-auto overscroll-contain border-l border-line bg-sunken p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] transition-[transform,visibility] duration-300 ease-out lg:visible lg:static lg:z-auto lg:h-dvh lg:translate-x-0 lg:border-r lg:border-l-0 lg:pt-3 lg:transition-[width] ${
-		open ? 'visible translate-x-0' : 'invisible translate-x-full'
-	} ${collapsed ? 'lg:w-16' : 'lg:w-60'}`}
+	data-open={open}
+	class={`mobile-drawer fixed inset-y-0 right-0 z-50 flex w-[17rem] flex-none flex-col overflow-x-hidden overflow-y-auto overscroll-contain border-l border-line bg-sunken p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] duration-300 ease-out lg:visible lg:static lg:z-auto lg:h-dvh lg:translate-x-0 lg:border-r lg:border-l-0 lg:pt-3 lg:transition-[width] ${collapsed ? 'lg:w-16' : 'lg:w-60'}`}
 >
 	<div class={`flex items-center gap-2 pt-1 pb-3 ${collapsed ? 'px-3 lg:justify-center' : 'px-3'}`}>
 		<!-- The mark and name are the way home. The mark presses under the pointer

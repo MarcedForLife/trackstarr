@@ -19,7 +19,8 @@ export function duration(seconds: number): string {
 	if (seconds < 60) return `${Math.round(seconds)}s`;
 	const minutes = Math.floor(seconds / 60);
 	if (minutes < 60) return `${minutes}m`;
-	return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+	const hours = `${Math.floor(minutes / 60)}h`;
+	return minutes % 60 ? `${hours} ${minutes % 60}m` : hours;
 }
 
 // Largest first, so 90000 is 25 hours rather than 1500 minutes.

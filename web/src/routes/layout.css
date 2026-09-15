@@ -738,3 +738,50 @@ main {
 		transition-duration: 0.01ms !important;
 	}
 }
+
+/* Keep the menu mounted so a reversal continues from its current position.
+   Hide after the exit; opening makes it visible immediately. */
+@media (width < 64rem) {
+	.mobile-drawer,
+	.mobile-drawer-scrim {
+		--drawer-duration: 150ms;
+		--drawer-ease: cubic-bezier(0.23, 1, 0.32, 1);
+		opacity: 0;
+		visibility: hidden;
+		pointer-events: none;
+		transition:
+			opacity var(--drawer-duration) var(--drawer-ease),
+			transform var(--drawer-duration) var(--drawer-ease),
+			visibility 0s var(--drawer-duration);
+	}
+
+	.mobile-drawer {
+		transform: translateX(6%);
+	}
+
+	.mobile-drawer[data-open='true'],
+	.mobile-drawer-scrim[data-open='true'] {
+		--drawer-duration: 200ms;
+		opacity: 1;
+		visibility: visible;
+		pointer-events: auto;
+		transform: none;
+		transition-delay: 0s;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.mobile-drawer,
+		.mobile-drawer-scrim {
+			transform: none;
+			transition:
+				opacity 150ms var(--drawer-ease),
+				visibility 0s 150ms;
+			/* Retain a gentle fade instead of the global instant-motion fallback. */
+			transition-duration: 150ms, 0s !important;
+		}
+		.mobile-drawer[data-open='true'],
+		.mobile-drawer-scrim[data-open='true'] {
+			transition-delay: 0s;
+		}
+	}
+}

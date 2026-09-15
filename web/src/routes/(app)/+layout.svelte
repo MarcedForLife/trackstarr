@@ -2,6 +2,7 @@
 	import { afterNavigate, beforeNavigate, goto, preloadCode } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { scrim as veil } from '$lib/controls';
 	import { dropPendingCovers } from '$lib/covers';
 	import { behind, keyboard } from '$lib/modal';
 	import { PRIMARY, routeOf, SETTINGS } from '$lib/nav';
@@ -188,13 +189,12 @@
 	<!-- Tapping off the drawer closes it. A button, so a keyboard reaches it. -->
 	<button
 		bind:this={scrim}
+		data-open={open}
 		type="button"
 		tabindex={open ? 0 : -1}
 		aria-label="Close the menu"
 		onclick={close}
-		class={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-300 lg:hidden ${
-			open ? 'opacity-100' : 'pointer-events-none opacity-0'
-		}`}
+		class={`mobile-drawer-scrim fixed inset-0 z-40 ${veil} lg:hidden`}
 	></button>
 
 	<div class="flex min-w-0 flex-1 flex-col lg:min-h-0">

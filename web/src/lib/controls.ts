@@ -148,3 +148,12 @@ export const glyph = `${control} inline-flex w-11 items-center justify-center ga
 // on a phone, squared off beside other controls from sm up. The caller adds the
 // fill, since these come in weights like the worded buttons do.
 export const iconButton = `${control} inline-flex w-11 flex-none items-center justify-center rounded-full transition-colors disabled:opacity-(--disabled) sm:w-10 sm:rounded-[11px]`;
+
+// What every popover is made of. The tray rather than the card, since most of
+// these open over a card and raised over raised cannot read as glass at any
+// alpha. The wider blur keeps the words legible at 70.
+export const frosted = 'bg-sunken/70 backdrop-blur-xl';
+
+// The veil under anything frosted. Light enough that the glass above it has
+// something to show, and one token so the sheet and the drawer cannot drift.
+export const scrim = 'bg-black/45';

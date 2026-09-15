@@ -187,8 +187,8 @@
 		<div
 			class={`relative z-10 shrink-0 transition-shadow duration-200 ${scrolled ? 'shadow-[0_6px_14px_-2px_rgb(0_0_0/0.3),0_1px_0_rgb(255_255_255/0.08)]' : ''}`}
 		>
-			<header class="px-4 pt-3">
-				<div class="flex items-center justify-between gap-3">
+			<header class="px-4">
+				<div class="flex items-center gap-3">
 					<h2 id="queue-title" class="flex items-center gap-2 text-lg font-semibold tracking-tight">
 						<span class="flex text-dim"><Glyph name="list" size={18} /></span>
 						<span
@@ -196,7 +196,6 @@
 							></span
 						>
 					</h2>
-					<button class={button} onclick={leave}>Close</button>
 				</div>
 				<p class="mt-2 text-[12px] leading-relaxed text-dim">
 					Files start in queue order as workers become available.

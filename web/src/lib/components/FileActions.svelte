@@ -3,6 +3,7 @@
 	import Glyph from '$lib/components/Glyph.svelte';
 	import { SPANS } from '$lib/pauses';
 	import { refusalText } from '$lib/api';
+	import { frosted } from '$lib/controls';
 	import { popover } from '$lib/popover.svelte';
 
 	let {
@@ -102,7 +103,7 @@
 	popover="manual"
 	role="group"
 	aria-label={`Actions for ${label}`}
-	class="pointer-events-auto fixed m-0 max-h-[calc(100dvh-1.5rem)] w-64 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-line-strong bg-raised p-1 text-fg shadow-lg"
+	class={`pointer-events-auto fixed m-0 max-h-[calc(100dvh-1.5rem)] w-64 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-line-strong ${frosted} p-1 text-fg shadow-lg`}
 >
 	{#if choosingPause}
 		<!-- No way back: the spans are the whole pane, and a dismissed menu reopens

@@ -215,11 +215,14 @@ export function headline(entry: Event, title = ''): string {
 		case 'failed':
 		case 'deferred':
 			return `${verdictLabel(entry.event)}: ${title || release()}`;
-		case 'sweep':
-			// A stopped sweep's count is part of a library, and must say so.
+		case 'sweep': {
+			// Match Plan and Process without implying every checked file changed.
+			// Older events without a mode keep the neutral run name.
+			const action = entry.dry_run === undefined ? 'Sweep' : entry.dry_run ? 'Plan' : 'Process';
 			return entry.stopped
-				? `Sweep stopped after ${count(entry.files, 'file')}`
-				: `Swept ${count(entry.files, 'file')}`;
+				? `${action} stopped after ${count(entry.files, 'file')}`
+				: `${action} complete · ${count(entry.files, 'file')}`;
+		}
 		case 'recheck':
 			// Counted in titles, which is what was selected. Files are the detail
 			// line's.
@@ -239,7 +242,7 @@ export function headline(entry: Event, title = ''): string {
 		case 'skipped':
 			return `Skipped ${release()}`;
 		case 'retagged':
-			return `Retagged ${title || release()}`;
+			return `Edited tags: ${title || release()}`;
 		case 'webhook': {
 			// Counted even for one, since a release file name truncates at any
 			// width. The name goes on the second line.
@@ -249,7 +252,7 @@ export function headline(entry: Event, title = ''): string {
 		case 'config':
 			return 'Rules applied';
 		case 'settings':
-			return `Changed ${count(moved(entry).length, 'setting')}`;
+			return `Saved ${count(moved(entry).length, 'setting')}`;
 		// An event this build has no words for is still worth a line.
 		default:
 			return entry.event;
@@ -286,8 +289,8 @@ export function release(entry: Event): string {
 }
 
 /** How long ago, as a person says it rather than as a clock does. */
-export function ago(ts: string): string {
-	const seconds = Math.max(0, (Date.now() - new Date(ts).getTime()) / 1000);
+export function ago(ts: string, now = Date.now()): string {
+	const seconds = Math.max(0, (now - new Date(ts).getTime()) / 1000);
 	if (seconds < 90) return 'just now';
 	const minutes = Math.round(seconds / 60);
 	if (minutes < 60) return `${minutes}m ago`;
@@ -336,20 +339,16 @@ export function detail(entry: Event): string {
 		case 'resumed':
 		case 'lifted':
 		case 'item_resumed':
-			return entry.by ? `By ${entry.by}.` : '';
+			return '';
 		case 'held': // Events written before pause terminology.
 		case 'item_paused':
-			return [
-				`Paused ${entry.seconds ? `for ${duration(entry.seconds)}` : 'until resumed'}`,
-				entry.reason,
-				entry.by && `by ${entry.by}`
-			]
+			return [entry.seconds ? `For ${duration(entry.seconds)}` : 'Until resumed', entry.reason]
 				.filter(Boolean)
 				.join(' · ');
 		case 'skipped':
 			// The run it was taken off is in the opened row; a skip lasts no
 			// longer than that run.
-			return entry.by ? `Left alone for that run by ${entry.by}.` : '';
+			return 'Skipped for this run';
 		case 'retagged':
 			return [stream(entry), ...retagged(entry)].join(' · ');
 		case 'webhook': {
@@ -362,7 +361,7 @@ export function detail(entry: Event): string {
 			return rest ? `${shown.join(' · ')} + ${rest} more` : shown.join(' · ');
 		}
 		case 'config':
-			return 'The rules in force from here on.';
+			return 'Active rules for subsequent processing';
 		case 'settings': {
 			// The first two; the rest are one tap away.
 			const lines = moved(entry);
@@ -446,7 +445,7 @@ export function details(entry: Event, before?: Event): Detail[] {
 			add('Replaced', [entry.from_path], true);
 			add('Problem', [entry.detail]);
 			add('Reasons', entry.reasons ?? []);
-			add('Alongside', entry.incidental ?? []);
+			add('Additional changes', entry.incidental ?? []);
 			add('Rules', [[...(entry.rules ?? []), ...(entry.incidental_rules ?? [])].join(', ')]);
 			add('Added', entry.adds ?? []);
 			add('Rebuilt', entry.rebuilds ?? []);
@@ -466,12 +465,10 @@ export function details(entry: Event, before?: Event): Detail[] {
 			add('Files', [entry.event === 'recheck' ? count(entry.files, 'file') : undefined]);
 			add('Verdicts', verdicts(entry));
 			// Only on a stopped run.
-			add('Not looked at', [
-				entry.stopped === undefined ? undefined : count(entry.stopped, 'file')
-			]);
+			add('Not checked', [entry.stopped === undefined ? undefined : count(entry.stopped, 'file')]);
 			add('Library', [entry.library_bytes ? size(entry.library_bytes) : undefined], true);
-			add('Reused', [
-				entry.cached === undefined ? undefined : `${entry.cached.toLocaleString()} verdicts`
+			add('Cached results', [
+				entry.cached === undefined ? undefined : count(entry.cached, 'result')
 			]);
 			break;
 		case 'config': {
@@ -487,6 +484,10 @@ export function details(entry: Event, before?: Event): Detail[] {
 			}
 			break;
 		}
+		case 'paused':
+		case 'resumed':
+			add('By', [entry.by]);
+			break;
 		case 'settings':
 			add('Changed', moved(entry));
 			add('By', [entry.by]);
@@ -522,7 +523,7 @@ const HAYSTACKS = new WeakMap<Event, { title: string; text: string }>();
 /**
  * A line as the words a search runs against, which is everything the row can
  * show, opened or not. The event's own name goes in too, since the headline
- * reads "Swept" rather than "sweep".
+ * may use "Plan" rather than "sweep".
  */
 export function searchable(entry: Event, title = ''): string {
 	const held = HAYSTACKS.get(entry);

@@ -3,11 +3,12 @@
 	import EventRow from '$lib/components/EventRow.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
 	import Page from '$lib/components/Page.svelte';
-	import Segmented from '$lib/components/Segmented.svelte';
+	import Select from '$lib/components/Select.svelte';
+	import ToolbarMenu from '$lib/components/ToolbarMenu.svelte';
 	import TitleSheet from '$lib/components/TitleSheet.svelte';
 	import { Snapshot } from '$lib/activity.svelte';
-	import { count, CUSTOM, key, said, searchable, SPANS, type Event } from '$lib/events';
-	import { button, control, glyph, quiet, radius } from '$lib/controls';
+	import { ago, count, CUSTOM, key, said, searchable, SPANS, type Event } from '$lib/events';
+	import { button, control, quiet, radius } from '$lib/controls';
 	import { History } from '$lib/history.svelte';
 	import type { Card } from '$lib/library';
 	import { Recheck } from '$lib/recheck.svelte';
@@ -21,12 +22,22 @@
 	// Read once at construction; everything after is the class's.
 	// svelte-ignore state_referenced_locally
 	const history = new History(data.history, {
+		fetchedAt: data.fetchedAt,
 		// A different list: old open ids and depth mean nothing in it.
 		onfresh: () => {
 			open = {};
 			fromTheTop();
 		}
 	});
+
+	const fetched = $derived(new Date(history.fetchedAt));
+	let now = $state(Date.now());
+	// Keep the age honest even when polling stops or the service is unreachable.
+	$effect(() => {
+		const timer = setInterval(() => (now = Date.now()), 15_000);
+		return () => clearInterval(timer);
+	});
+	const fetchedAge = $derived(ago(fetched.toISOString(), now));
 
 	// Only an admin may run anything, so only an admin is offered the buttons.
 	const admin = $derived(page.data.user?.role === 'admin');
@@ -65,6 +76,7 @@
 	}
 
 	let filter = $state('all');
+	let animateFilter = $state(false);
 	$effect(() => {
 		const requested = page.url.searchParams.get('filter');
 		filter = FILTERS.some((option) => option.value === requested) ? requested! : 'all';
@@ -81,6 +93,18 @@
 			kinds: ['sweep', 'recheck', 'webhook', 'config', 'settings', 'paused', 'resumed']
 		}
 	];
+
+	const periods = [
+		...SPANS.map((span) => ({
+			value: span.value,
+			label: span.value === 'all' ? 'All time' : span.said.replace('the last', 'Last')
+		})),
+		{ value: CUSTOM, label: 'Custom range' }
+	];
+	const typeLabel = $derived(FILTERS.find((option) => option.value === filter)?.label ?? 'All');
+	const periodLabel = $derived(
+		periods.find((option) => option.value === history.span)?.label ?? 'All time'
+	);
 
 	const kinds = $derived(FILTERS.find((option) => option.value === filter)?.kinds ?? []);
 
@@ -125,6 +149,31 @@
 	let limit = $state(PAGE);
 	const shown = $derived(rows.slice(0, limit));
 
+	// Group the visible window in the reader's timezone, preserving API order.
+	const days = $derived.by(() => {
+		const groups: { day: string; label: string; rows: typeof shown }[] = [];
+		for (const row of shown) {
+			const date = new Date(row.entry.ts);
+			const day = date.toDateString();
+			let group = groups[groups.length - 1];
+			if (!group || group.day !== day) {
+				group = {
+					day,
+					label: date.toLocaleDateString(undefined, {
+						weekday: 'long',
+						month: 'short',
+						day: 'numeric',
+						year: 'numeric'
+					}),
+					rows: []
+				};
+				groups.push(group);
+			}
+			group.rows.push(row);
+		}
+		return groups;
+	});
+
 	// A different filter is a different list, so it starts from the top. In the
 	// handler, since an effect ran a frame late.
 	function fromTheTop() {
@@ -167,122 +216,120 @@
 </script>
 
 <!-- wide: release names and paths wrapped onto a third line at 42rem. -->
-<Page wide lead="Every sweep, import and rewrite, newest first.">
-	<!-- Two questions, a row each: what happened, and how far back. Each row is a
-	     track and one button, so both rows start and end on one edge on a phone.
-	     Refresh rides with the kinds rather than at the page's right edge, where
-	     a wide screen left it stranded a screen away from what it reloads. -->
-	<div class="mt-6 flex flex-col gap-3">
-		<div class="flex items-center gap-2">
-			<div class="min-w-0 flex-1 sm:flex-none">
-				<Segmented options={FILTERS} value={filter} onchange={choose} />
-			</div>
-			<button
-				onclick={() => history.refresh()}
-				disabled={history.busy}
-				aria-label="Refresh"
-				title="Read the history again"
-				class={`flex-none ${glyph}`}
-			>
-				<Glyph name="refresh" />
-				<!-- The word from sm up, where the row has room for it. -->
-				<span class="hidden sm:inline">{history.busy ? 'Reading…' : 'Refresh'}</span>
-			</button>
-		</div>
-
-		<!-- Nine segments is more than a phone fits, and a hand-picked range is a
-		     different kind of answer (between when and when), so it stands outside
-		     the track as the toggle it is: the app's pressed chip with a chevron
-		     that turns, not a sixth segment. With it held Segmented hides its
-		     thumb on -1. -->
-		<div class="flex min-w-0 items-center gap-2">
-			<div class="min-w-0 flex-1 sm:flex-none">
-				<Segmented
-					options={SPANS}
-					value={history.span}
-					tight
-					label="How far back"
-					onchange={(chosen) => history.look(chosen)}
-				/>
-			</div>
-			<button
-				aria-pressed={history.span === CUSTOM}
-				aria-expanded={history.span === CUSTOM}
-				aria-label="A range you pick"
-				onclick={() => history.look(history.span === CUSTOM ? 'all' : CUSTOM)}
-				class={`${control} ${radius} flex flex-none items-center gap-1.5 border px-3 text-[13px] whitespace-nowrap transition-colors ${
-					history.span === CUSTOM
-						? 'border-line-strong bg-raised font-semibold text-fg'
-						: 'border-line font-medium text-dim hover:text-fg'
-				}`}
-			>
-				Range
-				<span
-					class={`text-faint transition-transform duration-200 ${
-						history.span === CUSTOM ? 'rotate-90' : ''
-					}`}
-				>
-					<Glyph name="chevron" size={11} />
-				</span>
-			</button>
-		</div>
-
-		{#if history.span === CUSTOM}
-			<!-- A panel of its own, so two fields and a way to empty them read as
-			     what the button opened rather than as controls loose in the page.
-			     Native pickers: the platform's wheel beats anything drawn here, and
-			     the value is local wall-clock. -->
-			<!-- Hugs its fields from sm up, or Clear ended up a screen away from the
-			     end it clears on a wide one. -->
-			<div class="rounded-xl border border-line bg-sunken p-3 sm:self-start">
-				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-					{#each [{ id: 'from', label: 'From' }, { id: 'to', label: 'To' }] as end (end.id)}
-						<label class="flex min-w-0 items-center gap-2.5 sm:flex-none">
-							<span class="w-9 flex-none text-[12.5px] font-medium text-dim sm:w-auto">
-								{end.label}
-							</span>
-							<input
-								type="datetime-local"
-								value={end.id === 'from' ? history.from : history.to}
-								onchange={(picked) => {
-									const value = picked.currentTarget.value;
-									if (end.id === 'from') history.from = value;
-									else history.to = value;
-									history.refresh();
-								}}
-								class={`${control} ${radius} min-w-0 flex-1 border border-line-strong bg-field px-3 text-base sm:flex-none sm:text-[13px]`}
-							/>
-						</label>
-					{/each}
-					<!-- Both ends at once: an empty end is an open one, which the row
-					     cannot otherwise reach, and Android's picker has no clear.
-					     Last in the row, and last on its own line on a phone. -->
-					<button
-						onclick={() => {
-							history.from = '';
-							history.to = '';
-							history.refresh();
-						}}
-						disabled={!history.from && !history.to}
-						class={`${quiet} self-end sm:self-auto`}
-					>
-						Clear
-					</button>
-				</div>
-			</div>
-		{/if}
-
-		<!-- Last, since the kinds and the window say which lines the page holds and
-		     this says which of them to read. Capped from sm up, or the box invites a
-		     sentence. -->
+<Page wide lead="Recent activity, newest first.">
+	<!-- Search and dates narrow the history; event kinds remain one press away. -->
+	<div
+		class="mt-6 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:gap-3"
+	>
 		<input
 			bind:value={search}
 			oninput={fromTheTop}
 			type="search"
 			placeholder="Find a file, rule or run"
 			aria-label="Find in these events"
-			class={`${control} ${radius} min-w-0 border border-line-strong bg-field px-3 text-base placeholder:text-faint sm:max-w-72 sm:text-[13px]`}
+			class={`${control} ${radius} col-span-2 min-w-0 border border-line-strong bg-field px-3 text-base placeholder:text-faint sm:col-span-1 sm:text-[13px]`}
 		/>
+		<div class="flex min-w-0 items-center gap-2 sm:gap-3">
+			<ToolbarMenu
+				compact
+				label="Time range"
+				icon="calendar"
+				detail={periodLabel}
+				active={history.bounded}
+			>
+				<div class="flex">
+					<Select
+						grow
+						label="Time range"
+						options={periods}
+						value={history.span}
+						onchange={(value) => history.look(value)}
+					/>
+				</div>
+				{#if history.span === CUSTOM}
+					<div class="mt-3 space-y-3">
+						{#each [{ id: 'from', label: 'From' }, { id: 'to', label: 'To' }] as end (end.id)}
+							<label class="block min-w-0">
+								<span class="mb-1.5 block text-[12px] font-medium text-dim">{end.label}</span>
+								<input
+									type="datetime-local"
+									value={end.id === 'from' ? history.from : history.to}
+									onchange={(picked) => {
+										const value = picked.currentTarget.value;
+										if (end.id === 'from') history.from = value;
+										else history.to = value;
+										history.refresh();
+									}}
+									class={`${control} ${radius} w-full min-w-0 border border-line-strong bg-field px-2 text-base sm:text-[13px]`}
+								/>
+							</label>
+						{/each}
+						<button
+							type="button"
+							onclick={() => {
+								history.from = '';
+								history.to = '';
+								history.refresh();
+							}}
+							disabled={!history.from && !history.to}
+							class={quiet}>Clear dates</button
+						>
+					</div>
+				{/if}
+			</ToolbarMenu>
+		</div>
+		<div
+			class="event-types grid min-w-0 grid-cols-4 gap-1 rounded-xl border border-line bg-sunken p-1 sm:flex sm:w-fit"
+			class:animate-filter={animateFilter}
+			role="group"
+			aria-label="Filter event types"
+		>
+			{#each FILTERS as option (option.value)}
+				<button
+					type="button"
+					aria-pressed={filter === option.value}
+					onclick={(event) => {
+						animateFilter = event.detail > 0;
+						choose(option.value);
+					}}
+					class={`${control} relative isolate min-w-0 flex-1 rounded-lg px-1 text-[12px] font-medium sm:flex-none sm:px-3 ${filter === option.value ? 'text-fg' : 'text-dim hover:text-fg'}`}
+				>
+					{option.label}
+				</button>
+			{/each}
+		</div>
+	</div>
+	<div
+		class="mt-2 flex min-h-11 min-w-0 flex-wrap items-center gap-x-2 text-[12px] text-dim sm:min-h-10"
+	>
+		<p class="min-w-0 flex-1">
+			<span class="tabular-nums">{count(rows.length, 'event')}</span>{cutting
+				? ' matched'
+				: ' loaded'}
+			{#if filter !== 'all'}
+				{` · ${typeLabel}`}{/if}
+			{#if history.bounded}
+				{` · ${periodLabel}`}{/if}
+		</p>
+		<div class="ml-auto flex flex-none items-center gap-1 sm:gap-2">
+			<time
+				datetime={fetched.toISOString()}
+				title={fetched.toLocaleString()}
+				class="whitespace-nowrap text-faint">Updated {fetchedAge}</time
+			>
+			<!-- Held wide, so Refreshing does not shift it. -->
+			<button
+				type="button"
+				onclick={() => history.refresh(600)}
+				aria-label={history.refreshing ? 'Refreshing events' : 'Refresh events'}
+				aria-busy={history.refreshing}
+				disabled={history.busy}
+				class={`flex ${control} ${radius} min-w-28 flex-none items-center justify-center gap-1.5 border border-transparent px-2.5 text-[13px] font-medium hover:bg-raised hover:text-fg disabled:opacity-(--disabled)`}
+			>
+				<span class="flex" class:refreshing={history.refreshing}><Glyph name="refresh" /></span>
+				<span role="status">{history.refreshing ? 'Refreshing…' : 'Refresh'}</span>
+			</button>
+		</div>
 	</div>
 
 	{#if history.failure}
@@ -305,28 +352,39 @@
 			{/if}
 		</p>
 	{:else}
-		<ol
-			aria-label="Events"
-			class="mt-6 divide-y divide-line overflow-hidden rounded-xl border border-line bg-raised"
-		>
-			{#each shown as { entry, at, id } (id)}
-				<!-- Rows off screen are skipped whole. 6rem is the guess for an unseen
+		<div class="mt-3 space-y-6" aria-label="Events">
+			{#each days as group (group.day)}
+				<section aria-label={group.label}>
+					<div class="mb-2.5 flex items-center gap-3">
+						<h2 class="text-[12px] font-medium text-dim">{group.label}</h2>
+						<span class="h-px flex-1 bg-line" aria-hidden="true"></span>
+					</div>
+					<ol class="divide-y divide-line overflow-hidden rounded-xl border border-line bg-raised">
+						{#each group.rows as { entry, at, id } (id)}
+							<!-- Rows off screen are skipped whole. 6rem is the guess for an unseen
 				     row. -->
-				<li
-					class="px-4 py-3 transition-colors [contain-intrinsic-size:auto_6rem] [content-visibility:auto] hover:bg-sunken/50"
-				>
-					<EventRow
-						{entry}
-						id={`event-${at}`}
-						open={!!open[id]}
-						before={entry.event === 'config' ? earlierConfig(at) : undefined}
-						card={entry.title ? history.titles[entry.title] : undefined}
-						onopen={look}
-						ontoggle={() => toggle(id)}
-					/>
-				</li>
+							<li
+								class="relative px-3 py-4 transition-[background-color] [contain-intrinsic-size:auto_6rem] [content-visibility:auto] hover:bg-sunken/50 sm:px-5 {open[
+									id
+								]
+									? 'bg-sunken/50'
+									: ''}"
+							>
+								<EventRow
+									{entry}
+									id={`event-${at}`}
+									open={!!open[id]}
+									before={entry.event === 'config' ? earlierConfig(at) : undefined}
+									card={entry.title ? history.titles[entry.title] : undefined}
+									onopen={look}
+									ontoggle={() => toggle(id)}
+								/>
+							</li>
+						{/each}
+					</ol>
+				</section>
 			{/each}
-		</ol>
+		</div>
 		<!-- Only while loaded rows remain. Reaching further back is a press. -->
 		{#if limit < rows.length}
 			<div use:whenNear={() => (limit = Math.min(limit + PAGE, rows.length))} class="h-px"></div>
@@ -359,3 +417,51 @@
 
 <!-- The library's own sheet, runs and all. -->
 <TitleSheet bind:this={sheet} runner={admin ? recheck.runner : undefined} onshut={sheetShut} />
+
+<style>
+	/* Transition the selection surface so rapid presses retarget smoothly. */
+	.event-types button::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		border-radius: inherit;
+		background: var(--color-raised);
+		box-shadow:
+			0 0 0 1px var(--color-line),
+			0 1px 2px rgb(0 0 0 / 0.05);
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.event-types button[aria-pressed='true']::before {
+		opacity: 1;
+	}
+
+	.event-types.animate-filter button::before {
+		transition: opacity 150ms var(--reveal-ease);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.event-types.animate-filter button::before {
+			transition-duration: 100ms;
+		}
+	}
+
+	/* A continuous progress cue: one turn matches the manual feedback floor. */
+	.refreshing {
+		animation: refresh-turn 600ms linear infinite;
+	}
+
+	@keyframes refresh-turn {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.refreshing {
+			animation: none;
+		}
+	}
+</style>

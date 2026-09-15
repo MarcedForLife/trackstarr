@@ -36,6 +36,7 @@ type Options = {
 	/** The list was replaced, not added to: open rows and scroll depth mean
 	 * nothing now. */
 	onfresh: () => void;
+	fetchedAt?: number;
 };
 
 export class History {
@@ -49,6 +50,9 @@ export class History {
 	/** A read the buttons should show. */
 	busy = $state(false);
 	failure = $state('');
+	refreshing = $state(false);
+	/** Last successful read of the newest events, including quiet catch-ups. */
+	fetchedAt = $state(0);
 
 	/** How far back to look, by $lib/events' SPANS name. */
 	span = $state('all');
@@ -66,6 +70,7 @@ export class History {
 
 	constructor(loaded: EventPage, options: Options) {
 		this.#options = options;
+		this.fetchedAt = options.fetchedAt ?? Date.now();
 		this.entries = loaded.events;
 		this.titles = loaded.titles ?? {};
 		this.cursor = loaded.next;
@@ -117,12 +122,19 @@ export class History {
 
 	/** Read the window from the top. A changed window is a different list, not
 	 * a filter over this one. */
-	async refresh() {
+	async refresh(minimumMs = 0) {
+		if (minimumMs && this.busy) return;
+		// The feedback floor runs alongside the request; results need not wait.
+		const feedback = minimumMs
+			? new Promise<void>((resolve) => setTimeout(resolve, minimumMs))
+			: undefined;
+		this.refreshing = true;
 		this.busy = true;
 		this.failure = '';
 		try {
 			this.#reading = this.#asked();
 			const page = await getEvents(fetch, PAGE, null, this.#reading);
+			this.fetchedAt = Date.now();
 			this.entries = page.events;
 			this.titles = page.titles ?? {};
 			this.cursor = page.next;
@@ -130,6 +142,8 @@ export class History {
 		} catch {
 			this.failure = 'Could not reach the service.';
 		} finally {
+			await feedback;
+			this.refreshing = false;
 			this.busy = false;
 			// The newest lines came with this read; the catch-up can wait.
 			this.#feed.mark();
@@ -168,6 +182,7 @@ export class History {
 		// Recomputed: this is the one read that wants a preset to have moved on.
 		const now = this.#asked();
 		const page = await getEvents(fetch, CATCH_UP, null, now);
+		this.fetchedAt = Date.now();
 		// A lookup for the length of this call.
 		// eslint-disable-next-line svelte/prefer-svelte-reactivity
 		const known = new Set(this.entries.map(key));

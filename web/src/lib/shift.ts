@@ -47,7 +47,7 @@ function following(node: HTMLElement): HTMLElement[] {
 // one back. Keyed on the node, which `fold` and `unfold` are given.
 const panels = new WeakMap<HTMLElement, { shut: () => number; reopen: () => void }>();
 
-export function shift(node: HTMLElement) {
+export function shift(node: HTMLElement, onOpeningDuration?: (duration: number) => void) {
 	// The clipping window, where the reveal's animation runs, and the panel
 	// inside it.
 	const opening = node.firstElementChild;
@@ -77,12 +77,17 @@ export function shift(node: HTMLElement) {
 	}
 	clip.addEventListener('animationend', ran);
 
-	// Read off the element running it, so the two agree every frame.
-	const timing = getComputedStyle(clip);
-	const span = ms(timing.animationDuration);
-	const easing = timing.animationTimingFunction;
-
+	// Keep the token's short close, but give taller openings more travel time.
+	// 120px or less takes 220ms; 300px takes 250ms; 480px and up takes 280ms.
 	let height = node.getBoundingClientRect().height;
+	const timing = getComputedStyle(clip);
+	const closeSpan = ms(timing.animationDuration);
+	const easing = timing.animationTimingFunction;
+	const span =
+		closeSpan < 1 ? closeSpan : Math.round(closeSpan + Math.min(60, Math.max(0, height - 120) / 6));
+	clip.style.animationDuration = `${span}ms`;
+	inner.style.animationDuration = `${span}ms`;
+	onOpeningDuration?.(span);
 
 	// Anything that would clamp its scroll while the panel is collapsed for a
 	// measurement, and be left there once it is back.
@@ -160,7 +165,7 @@ export function shift(node: HTMLElement) {
 	 * home by then, so what dissolves is the last dark bar of the panel, which
 	 * otherwise blinked out. Any earlier and the row is an empty gap closing. */
 	function shut(): number {
-		if (closing.length) return span;
+		if (closing.length) return closeSpan;
 		watch.disconnect();
 		const style = getComputedStyle(node);
 		node.style.overflow = 'hidden';
@@ -174,15 +179,15 @@ export function shift(node: HTMLElement) {
 					},
 					{ height: '0px', marginTop: '0px', marginBottom: '0px' }
 				],
-				{ duration: span, easing, fill: 'forwards' }
+				{ duration: closeSpan, easing, fill: 'forwards' }
 			),
 			node.animate([{ opacity: 1, offset: 0.5 }, { opacity: 0 }], {
-				duration: span,
+				duration: closeSpan,
 				easing: 'linear',
 				fill: 'forwards'
 			})
 		];
-		return span;
+		return closeSpan;
 	}
 
 	/** Opened again before the close finished. Svelte hands the same node to the

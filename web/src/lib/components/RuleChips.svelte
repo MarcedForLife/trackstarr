@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { frosted } from '$lib/controls';
 	import { popover } from '$lib/popover.svelte';
 	import type { Change } from '$lib/library';
 
@@ -51,8 +52,7 @@
 
 	// Sized for the longest line one carries, a cleared release title, without
 	// running to the window edge on a phone.
-	const PANEL =
-		'fixed m-0 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong bg-raised p-2.5 text-fg shadow-lg';
+	const PANEL = `fixed m-0 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong ${frosted} p-2.5 text-fg shadow-lg`;
 	const CHIP = 'rounded border border-line px-1.5 py-1 font-mono text-[10.5px]';
 	const ACTING = `${CHIP} bg-accent-soft text-accent`;
 	const RIDES = `${CHIP} text-faint`;
