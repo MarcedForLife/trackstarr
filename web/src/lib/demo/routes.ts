@@ -537,8 +537,9 @@ function ratings(here: State) {
 /** What /api/status carries beside the version: the queue's numbers, without
  * the runs. */
 function queueStatus(here: State) {
-	const { queue, working, rewrites, parked, may_rewrite, next_sweep, pauses } = activity(here);
-	return { queue, working, rewrites, parked, may_rewrite, next_sweep, pauses };
+	const { queue, working, rewrites, slots, parked, may_rewrite, next_sweep, pauses } =
+		activity(here);
+	return { queue, working, rewrites, slots, parked, may_rewrite, next_sweep, pauses };
 }
 
 function pause(ms: number): Promise<void> {

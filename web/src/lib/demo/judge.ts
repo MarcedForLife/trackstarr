@@ -4,7 +4,7 @@
 // the way it would for real. Regeneration, remuxing, cover art and stray
 // streams are left out; the sample files carry none of them.
 
-import type { LibraryFile, Track, Verdict, Why } from '$lib/library';
+import type { Change, LibraryFile, Track, Verdict, Why } from '$lib/library';
 import type { SettingValue } from '$lib/settings';
 
 export type Settings = Record<string, SettingValue>;
@@ -63,6 +63,9 @@ class Plan {
 	rules: string[] = [];
 	incidental: string[] = [];
 	incidentalRules: string[] = [];
+	// Each line under its rule, as the service pairs them; see _record in
+	// planner.py. A title sheet's chips read it.
+	changes: Change[] = [];
 	dropped = new Set<number>();
 	cleared = new Set<number>();
 
@@ -76,6 +79,7 @@ class Plan {
 		const [reasons, rules] =
 			how === 'always' ? [this.reasons, this.rules] : [this.incidental, this.incidentalRules];
 		reasons.push(reason);
+		this.changes.push({ rule, text: reason });
 		if (!rules.includes(rule)) rules.push(rule);
 		return true;
 	}
@@ -237,6 +241,7 @@ export function judge(
 		why.incidental = plan.incidental;
 		why.incidental_rules = plan.incidentalRules;
 	}
+	if (plan.changes.length) why.changes = plan.changes;
 	if (!plan.reasons.length) return { status: 'conform', planned: [], why };
 
 	// A rewrite: every surviving track in output order, each naming the stream

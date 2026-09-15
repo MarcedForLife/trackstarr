@@ -414,9 +414,14 @@ export function stopTicking(): void {
 
 type Changed = { runs: boolean; progress: boolean; library: boolean; events: boolean };
 
-/** How many rewrites may run at once, less the ones running. */
+/** How many rewrites may run at once. */
+function slots(state: State): number {
+	return Math.max(1, Number(state.settings.MAX_CONCURRENT_REWRITES) || 1);
+}
+
+/** The same, less the ones running. */
 function freeSlots(state: State): number {
-	const most = Math.max(1, Number(state.settings.MAX_CONCURRENT_REWRITES) || 1);
+	const most = slots(state);
 	const busy = state.runs.reduce(
 		(count, run) =>
 			count +
@@ -435,7 +440,7 @@ export function tick(state: State, now = Date.now()): void {
 	const runs = [...state.runs];
 	for (const run of runs) {
 		if (run.walkUntil !== null && now >= run.walkUntil) {
-			finishWalk(state, run, now, changed);
+			finishWalk(state, run);
 			changed.runs = true;
 		}
 		for (const active of [...run.active]) {
@@ -485,6 +490,12 @@ export function tick(state: State, now = Date.now()): void {
 		const skipped = run.queue.filter((item) => item.skipped);
 		run.done += skipped.length;
 		run.queue = run.queue.filter((item) => !item.skipped);
+		// The last probe has landed, so every plan is this ruleset's. Not for a
+		// walk stopped part way, which left the rest unjudged.
+		if (run.kind === 'sweep' && !state.current && !run.stopping && !finding(run)) {
+			state.current = true;
+			changed.library = true;
+		}
 		if (run.walkUntil === null && !run.active.length && (!run.queue.length || run.stopping)) {
 			close(state, run, now);
 			changed.runs = true;
@@ -503,9 +514,10 @@ function announce(changed: Changed): void {
 	if (changed.events) publish('events');
 }
 
-/** The walk is over: what it found, what it can take from the cache, and what
- * it has to open or rewrite. */
-function finishWalk(state: State, run: SimRun, now: number, changed: Changed): void {
+/** The listing is over: what the walk can take from the cache, and what it
+ * queues to open or rewrite. The probes run from the queue like any other
+ * work, a few at a time, which is what the service does with them. */
+function finishWalk(state: State, run: SimRun): void {
 	const files =
 		run.kind === 'recheck'
 			? run.titles.flatMap((title) => title.files)
@@ -515,7 +527,7 @@ function finishWalk(state: State, run: SimRun, now: number, changed: Changed): v
 	for (const file of files) {
 		if (opening(file)) {
 			probes += 1;
-			judged(state, run, pickUp(state, run, file, now), now, changed, true);
+			run.queue.push({ path: file.path, skipped: false, discovery: true });
 		} else if (file.status === 'pending' && !run.dry_run) {
 			run.queue.push({ path: file.path, skipped: false });
 		} else {
@@ -526,7 +538,17 @@ function finishWalk(state: State, run: SimRun, now: number, changed: Changed): v
 	run.total = files.length;
 	run.cached = files.length - probes;
 	run.walkUntil = null;
-	if (run.kind === 'sweep') state.current = true;
+}
+
+/** Whether a run is still finding work: listing, or probing what it listed.
+ * An import is handed its files, so it never walks. */
+function finding(run: SimRun): boolean {
+	if (run.kind === 'import') return false;
+	return (
+		run.walkUntil !== null ||
+		run.queue.some((item) => item.discovery) ||
+		run.active.some((file) => isActive(file) && file.discovery)
+	);
 }
 
 /** A probe has finished: the file is judged, and either rewritten, reported or
@@ -757,11 +779,11 @@ function wireRun(state: State, run: SimRun, now: number): Run {
 		seconds: Math.round((now - Date.parse(run.started)) / 1000),
 		dry_run: run.dry_run,
 		label: run.label,
-		total: run.walkUntil === null ? run.total : Math.round(run.total * 0.4),
+		total: run.total,
 		done: run.done,
 		counts: run.counts,
 		queued: run.queue.length,
-		walking: run.walkUntil !== null,
+		walking: finding(run),
 		rewrite_seconds: run.dry_run ? null : Math.round(remaining + queued),
 		stopping: run.stopping,
 		active: run.active.map((file) => {
@@ -799,7 +821,7 @@ export function activity(
 		),
 		plans: plansFor(
 			state,
-			[...active, ...queued(state).slice(0, 3)].map((item) => item.path)
+			[...active, ...queued(state).slice(0, 3), ...pausesNow(state, now)].map((item) => item.path)
 		),
 		plans_current: state.current,
 		paused: state.paused,
@@ -812,6 +834,7 @@ export function activity(
 			active.filter((file) => file.stage === 'waiting').length,
 		working: active.filter((file) => file.stage !== 'waiting').length,
 		rewrites: active.filter((file) => file.stage === 'encoding').length,
+		slots: slots(state),
 		parked: state.titles
 			.flatMap((title) => title.files)
 			.filter((file) => file.hardlinked && file.status === 'pending').length,
