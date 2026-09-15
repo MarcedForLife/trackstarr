@@ -8,6 +8,7 @@
 	import { page } from '$app/state';
 	import { button } from '$lib/controls';
 	import Glyph from '$lib/components/Glyph.svelte';
+	import Reveal from '$lib/components/Reveal.svelte';
 	import Segmented from '$lib/components/Segmented.svelte';
 
 	let dismissed = $state(false);
@@ -70,7 +71,9 @@
 	const heading = 'text-[11px] font-semibold tracking-wider text-faint uppercase';
 </script>
 
-{#if !dismissed}
+<!-- Every part of the line opens and closes on its own height, so the page
+     under it travels instead of jumping a panel's worth. -->
+<Reveal when={!dismissed}>
 	<div
 		class="border-b border-demo/30 bg-demo/12 pt-[env(safe-area-inset-top)] text-[12.5px] text-dim lg:pt-0"
 		role="note"
@@ -114,7 +117,7 @@
 				<Glyph name="cross" />
 			</button>
 		</div>
-		{#if debugging && page.data.user?.role === 'admin'}
+		<Reveal when={debugging && page.data.user?.role === 'admin'}>
 			<div id="demo-debug" class="border-t border-demo/25 px-4 py-3">
 				<!-- A row each, since a scenario poses the whole board rather than
 				     delivering from the service picked above. Under one heading the
@@ -169,8 +172,8 @@
 					</button>
 				</div>
 			</div>
-		{/if}
-		{#if crediting}
+		</Reveal>
+		<Reveal when={crediting}>
 			<p class="px-4 pb-2 leading-relaxed">
 				Artwork from Wikimedia Commons, each under its own licence:
 				{#each shown as credit, at (credit.id)}
@@ -190,6 +193,6 @@
 				{/each}
 				The files, verdicts and history are invented.
 			</p>
-		{/if}
+		</Reveal>
 	</div>
-{/if}
+</Reveal>

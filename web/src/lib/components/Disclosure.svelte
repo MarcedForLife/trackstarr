@@ -1,8 +1,9 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
+	import { pressGesture } from '$lib/press';
 	import { ripple } from '$lib/ripple';
-	import { shift } from '$lib/shift';
+	import { fold, shift, unfold } from '$lib/shift';
 
 	// A row that opens to show what it had no room for: a button with the aria, a
 	// chevron that turns, and a panel unmounted while shut that opens on
@@ -19,8 +20,19 @@
 		// How far the chevron turns: a quarter from right to down, or a half from
 		// down to up.
 		turn = 'quarter',
+		// Where the chevron and `after` sit against a row of several lines.
+		// Centred reads adrift once a row grows a third line.
+		align = 'center',
 		// Whether a press ripples, for a row too wide for a flash to say where.
 		press = false,
+		// A long press on the row, and whether lifting now would land it.
+		hold,
+		onarm,
+		// A finger or button held on the row, for a caller that raises it.
+		onpress,
+		// Whether this row is picked, and by being set at all, whether a tap picks
+		// rather than opens. The caller answers the press; this is what it says.
+		picked,
 		// The panel's spacing.
 		panelClass = 'mt-2',
 		// The row, given the chevron to place inside its own line.
@@ -29,8 +41,9 @@
 		aside,
 		// Something left of the summary; the panel still takes the full width.
 		beside,
-		// A control right of the summary, on its line but outside the button: a
+		// Controls right of the summary, on its line but outside the button: a
 		// control within a control is neither valid nor reachable by keyboard.
+		// Given the chevron, for a row that wants it pressable on its own.
 		after,
 		panel
 	}: {
@@ -40,30 +53,52 @@
 		class?: string;
 		mark?: number;
 		turn?: 'quarter' | 'half';
+		align?: 'center' | 'start';
 		press?: boolean;
+		hold?: () => void;
+		onarm?: (on: boolean) => void;
+		onpress?: (on: boolean) => void;
+		picked?: boolean;
 		panelClass?: string;
-		summary: Snippet<[Snippet]>;
+		summary: Snippet<[Snippet<[boolean?]>]>;
 		aside?: Snippet;
 		beside?: Snippet;
-		after?: Snippet;
+		after?: Snippet<[Snippet<[boolean?]>]>;
 		panel?: Snippet;
 	} = $props();
 
-	// Opening slower than closing.
-	const OPENING = 'duration-[260ms] ease-[cubic-bezier(0.22,1,0.36,1)]';
-	const CLOSING = 'duration-[180ms] ease-[cubic-bezier(0.4,0,0.2,1)]';
+	// The panel's own timing, both ways: one tap, one speed.
+	const TURN = 'duration-(--reveal-span) ease-(--reveal-ease)';
+
+	// A row that picks is a checkbox; nothing opens while it is one.
+	const aria = $derived(
+		picked === undefined
+			? { 'aria-expanded': open, 'aria-controls': id }
+			: { role: 'checkbox', 'aria-checked': picked }
+	);
 
 	// Tailwind v4 puts rotate in its own property; `transition-transform` covers
 	// it, a hand-written transition on `transform` would not.
 	const half = $derived(turn === 'half');
 	const angle = $derived(open ? (half ? '-rotate-90' : 'rotate-90') : half ? 'rotate-90' : '');
+
+	// Svelte hands the same node back when a row is opened again before its
+	// close has finished, and only this puts it right.
+	let box = $state<HTMLElement>();
+	$effect(() => {
+		if (open && box) unfold(box);
+	});
 </script>
 
-{#snippet chevron()}
+{#snippet chevron(bare = false)}
+	<!-- Bare where the caller has put it in a control of its own, which brings
+	     its own place and colour. -->
 	<span
 		aria-hidden="true"
-		class={`inline-flex flex-none self-center text-faint transition-transform group-hover:text-fg ${angle} ${
-			open ? OPENING : CLOSING
+		class={`inline-flex flex-none transition-transform ${angle} ${TURN} ${
+			bare
+				? ''
+				: `text-faint group-hover:text-fg ${align === 'start' ? 'mt-1 self-start' : 'self-center'}`
 		}`}
 	>
 		<Glyph name="chevron" size={mark} />
@@ -71,23 +106,29 @@
 {/snippet}
 
 {#snippet toggle()}
-	<!-- The whole summary is the target. -->
-	<button
-		onclick={ontoggle}
-		aria-expanded={open}
-		aria-controls={id}
-		class={shape}
-		use:ripple={press}
-	>
-		{@render summary(chevron)}
-	</button>
+	<!-- The whole summary is the target. Where a long press means something the
+	     gesture answers the tap as well, since a click would double it. -->
+	{#if hold}
+		<button
+			use:pressGesture={{ ontap: ontoggle, onhold: hold, onarm, onpress }}
+			{...aria}
+			class={`${shape} pressable`}
+			use:ripple={press}
+		>
+			{@render summary(chevron)}
+		</button>
+	{:else}
+		<button onclick={ontoggle} {...aria} class={shape} use:ripple={press}>
+			{@render summary(chevron)}
+		</button>
+	{/if}
 {/snippet}
 
 {#snippet row()}
 	{#if after}
-		<div class="flex items-center gap-3">
+		<div class={`flex gap-3 ${align === 'start' ? 'items-start' : 'items-center'}`}>
 			<div class="min-w-0 flex-1">{@render toggle()}</div>
-			{@render after()}
+			{@render after(chevron)}
 		</div>
 	{:else}
 		{@render toggle()}
@@ -107,12 +148,26 @@
 {/if}
 
 <!-- Unmounted while shut, so a long list carries no hidden panels. Opens on
-     `.reveal` in layout.css; `shift` moves what follows and owns the clip. -->
+     `.reveal` in layout.css and shuts on `fold`; `shift` moves what follows
+     and owns the clip both ways. -->
 {#if open && panel}
-	<div {id} class={`reveal ${panelClass}`} use:shift>
+	<!-- Positioned, so a row whose press covers the card does not cover this. -->
+	<div bind:this={box} {id} class={`reveal relative ${panelClass}`} use:shift out:fold>
 		<!-- The window, then one box holding whatever the snippet renders: the
 		     slide back is `translateY(100%)`, so two boxes each slide their own
 		     height and only one of them can match the window. -->
 		<div><div>{@render panel()}</div></div>
 	</div>
 {/if}
+
+<style>
+	/* A held row answers a finger as a poster does: sideways is the gesture's,
+	   never a scroll, and no callout or grey flash. `pan-y` not `none`, since a
+	   drag down the list is the scroller's until the press is made. */
+	.pressable {
+		touch-action: pan-y;
+		user-select: none;
+		-webkit-touch-callout: none;
+		-webkit-tap-highlight-color: transparent;
+	}
+</style>

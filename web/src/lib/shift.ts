@@ -6,6 +6,9 @@
 //
 // The same two transforms uncover whatever the panel gains later, a file's log
 // or its saved plan, so a late answer does not drop the rows below it.
+//
+// `fold` runs the whole thing backwards for the close, so a row shuts the way
+// it opened rather than being cut.
 
 import { carry, offsetOf } from '$lib/carry';
 
@@ -39,6 +42,10 @@ function following(node: HTMLElement): HTMLElement[] {
 	}
 	return found;
 }
+
+// What a mounted panel offers its close, since an action has no way to hand
+// one back. Keyed on the node, which `fold` and `unfold` are given.
+const panels = new WeakMap<HTMLElement, { shut: () => number; reopen: () => void }>();
 
 export function shift(node: HTMLElement) {
 	// The clipping window, where the reveal's animation runs, and the panel
@@ -141,6 +148,63 @@ export function shift(node: HTMLElement) {
 			});
 	}
 
+	// The close: the box's height, and the fade that goes with it.
+	let closing: Animation[] = [];
+
+	/** The box's own height, which is the one thing a transform cannot take with
+	 * it: the row's card has to shrink round the panel rather than snap shut and
+	 * leave it hanging. Everything under it then moves by layout, so the carries
+	 * above are the open's alone.
+	 *
+	 * The fade is the tail half only, on its own clock. The height is nearly
+	 * home by then, so what dissolves is the last dark bar of the panel, which
+	 * otherwise blinked out. Any earlier and the row is an empty gap closing. */
+	function shut(): number {
+		if (closing.length) return span;
+		watch.disconnect();
+		const style = getComputedStyle(node);
+		node.style.overflow = 'hidden';
+		closing = [
+			node.animate(
+				[
+					{
+						height: `${node.getBoundingClientRect().height}px`,
+						marginTop: style.marginTop,
+						marginBottom: style.marginBottom
+					},
+					{ height: '0px', marginTop: '0px', marginBottom: '0px' }
+				],
+				{ duration: span, easing, fill: 'forwards' }
+			),
+			node.animate([{ opacity: 1, offset: 0.5 }, { opacity: 0 }], {
+				duration: span,
+				easing: 'linear',
+				fill: 'forwards'
+			})
+		];
+		return span;
+	}
+
+	/** Opened again before the close finished. Svelte hands the same node to the
+	 * next open, so the height it was left at has to go, and what the restored
+	 * box shoves back down travels there rather than jumping. */
+	function reopen() {
+		if (!closing.length) return;
+		const boxes = following(node);
+		const was = boxes.map((element) => element.getBoundingClientRect().top);
+		for (const run of closing) run.cancel();
+		closing = [];
+		letGo();
+		boxes.forEach((element, at) => {
+			const by = element.getBoundingClientRect().top - was[at];
+			if (Math.abs(by) < 1) return;
+			const run = moving.get(element);
+			moving.set(element, carry(element, -by, span, easing));
+			run?.cancel();
+		});
+		watch.observe(node);
+	}
+
 	// Nothing to move, either from reduced motion or a panel that opened empty.
 	if (span < 1 || height < 1)
 		return { destroy: () => clip.removeEventListener('animationend', ran) };
@@ -156,13 +220,28 @@ export function shift(node: HTMLElement) {
 		follow();
 	});
 	watch.observe(node);
+	panels.set(node, { shut, reopen });
 
 	return {
 		destroy() {
 			clip.removeEventListener('animationend', ran);
+			panels.delete(node);
 			watch.disconnect();
 			// Shut mid-open: the space collapses with the panel.
 			for (const run of moving.values()) run.cancel();
 		}
 	};
+}
+
+/** A Svelte `out:` for the same node, so the panel leaves the way it arrived
+ * instead of being cut. It must sit on its branch's own child, or Svelte skips
+ * the outro. */
+export function fold(node: HTMLElement) {
+	return { duration: panels.get(node)?.shut() ?? 0 };
+}
+
+/** Aborts a fold. Svelte reuses the node when a row is opened again mid-close,
+ * and nothing else would put it back. */
+export function unfold(node: HTMLElement) {
+	panels.get(node)?.reopen();
 }
