@@ -157,6 +157,12 @@ class Judged:
     skipped: bool = False
 
 
+def _cancelled(status: Status, cancel: Cancel | None) -> bool:
+    """Whether a skip is what stopped this rewrite. A mark that landed too late
+    to prevent the publication is not one."""
+    return status is Status.DEFERRED and cancel is not None and cancel.stopped()
+
+
 def _judge(
     path: str,
     index: LibraryIndex,
@@ -245,7 +251,16 @@ def _judge(
                     path,
                     failures,
                 )
-        return Judged(job, key, verdict_of(result, failures), result.detail, result.became)
+        return Judged(
+            job,
+            key,
+            verdict_of(result, failures),
+            result.detail,
+            result.became,
+            # Nothing was written, so the file keeps the verdict it already has
+            # rather than having it cleared.
+            unobserved=_cancelled(result.status, cancel),
+        )
     except Exception as err:
         log.exception("unhandled error judging %s", path)
         return Judged(Job(path), None, Verdict(Status.FAILED), detail=str(err))
@@ -523,13 +538,14 @@ def _rewrite(
     Judged again from scratch: discovery's plan can be hours old by the time a
     slot frees, and a probe is cheap beside an encode. ``force`` must come from
     the walk, or a re-check would meet the failure ceiling here. A run stopped
-    or a file skipped before this got a slot keeps discovery's pending verdict.
+    or a file skipped keeps discovery's pending verdict, whether the skip
+    arrived before the slot or mid-encode.
     """
     if work.scheduler.skipped(run, found.job.path):
         return replace(found, detail="skipped for this run")
     if not lifecycle.hold(run):
         return found
-    return _observed(
+    judged = _observed(
         found.job.path,
         cache,
         functools.partial(
@@ -545,6 +561,9 @@ def _rewrite(
         ),
         stopped=cancel.stopped if cancel else None,
     )
+    if _cancelled(judged.verdict.status, cancel):
+        return replace(found, detail="skipped for this run")
+    return judged
 
 
 #: How long the booking thread waits on a finished rewrite once the walk is

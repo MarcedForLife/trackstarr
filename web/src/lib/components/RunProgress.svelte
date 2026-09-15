@@ -1,18 +1,10 @@
 <script lang="ts">
 	import { since, ticking } from '$lib/clock.svelte';
 	import Bar from '$lib/components/Bar.svelte';
+	import FileProgress from '$lib/components/FileProgress.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
-	import {
-		fileBar,
-		fileFraction,
-		fileStatus,
-		fraction,
-		measured,
-		percent,
-		progressLabel,
-		titled,
-		type Run
-	} from '$lib/runs';
+	import { button } from '$lib/controls';
+	import { fraction, measured, percent, progressLabel, type Run } from '$lib/runs';
 
 	// Compact progress and controls for the library bar and title sheet.
 	let {
@@ -41,10 +33,9 @@
 
 	// The longest-held file, which is the whole readout for a run of one.
 	const file = $derived(run.active[0]);
-	const status = $derived(file ? fileStatus(file, age) : '');
 </script>
 
-<div class="flex items-baseline gap-2.5">
+<div class="flex items-center gap-2.5">
 	<p class="min-w-0 flex-1 truncate text-[13px] font-medium">
 		{run.dry_run ? 'Planning' : 'Processing'}
 		{run.label || noun}
@@ -53,12 +44,10 @@
 		<button
 			onclick={onstop}
 			disabled={stopping || run.stopping}
-			class="relative -my-1 flex-none rounded-md border border-line-strong px-2 py-1 text-[11.5px] leading-none font-medium text-dim transition-colors after:absolute after:-inset-2.5 after:content-[''] hover:border-danger/45 hover:text-danger active:bg-danger/10 disabled:opacity-(--disabled)"
+			class={`${button} flex-none self-stretch text-danger`}
 		>
-			<span class="inline-flex items-center gap-1.5">
-				<Glyph name="stop" size={9} />
-				{run.stopping ? 'Stopping' : 'Stop'}
-			</span>
+			<Glyph name="stop" size={9} />
+			{stopping || run.stopping ? 'Stopping…' : 'Stop'}
 		</button>
 	{/if}
 </div>
@@ -75,23 +64,8 @@
 
 <!-- The file, only while there is something to say. Keyed on the path, so a
      new file gets a fresh bar rather than a glide from the old fraction. -->
-{#if file && !run.stopping && (fileBar(file) || status)}
+{#if file && !run.stopping}
 	{#key file.path}
-		<div class="mt-2.5">
-			<!-- Whole, unlike a file list's rows: one file with the width to say it. -->
-			<p class="truncate text-[11.5px] text-faint" title={file.path}>{titled(file.path)}</p>
-			<div class="mt-1.5 flex items-center gap-2.5">
-				{#if fileBar(file)}
-					<Bar
-						file
-						fill={fileFraction(file, age)}
-						now={Math.floor(fileFraction(file, age) * 100)}
-						max={100}
-						text={`${titled(file.path)}: ${status}`}
-					/>
-				{/if}
-				<span class="flex-none text-[11px] text-faint tabular-nums">{status}</span>
-			</div>
-		</div>
+		<FileProgress {file} {age} class="mt-2.5" />
 	{/key}
 {/if}

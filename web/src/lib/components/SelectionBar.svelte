@@ -1,6 +1,7 @@
 <script lang="ts">
 	import RunButtons from '$lib/components/RunButtons.svelte';
 	import RunProgress from '$lib/components/RunProgress.svelte';
+	import { quietInline } from '$lib/controls';
 	import { dragDismiss } from '$lib/drag';
 	import { type RunMode } from '$lib/library';
 	import type { Run } from '$lib/runs';
@@ -161,7 +162,7 @@
 		<div class="relative flow-root">
 			{#if run}
 				<!-- A run owns the bar; the selection stays underneath to run again.
-				     The same lines the sheet's panel shows. -->
+				     The only place a whole run is shown, sheet open or not. -->
 				<div class="swap" out:dissolve>
 					<RunProgress {run} {stopping} {onstop} />
 				</div>
@@ -197,22 +198,11 @@
 									: 'Select a title'}
 							</p>
 							<div class="flex flex-none items-center gap-1">
-								<button
-									type="button"
-									onclick={onall}
-									disabled={!selectable}
-									class="rounded-md px-2 py-1 text-[12px] font-medium text-dim transition-colors hover:text-fg disabled:opacity-(--disabled)"
-								>
+								<button type="button" onclick={onall} disabled={!selectable} class={quietInline}>
 									Select all
 								</button>
 								{#if picked}
-									<button
-										type="button"
-										onclick={onclear}
-										class="rounded-md px-2 py-1 text-[12px] font-medium text-dim transition-colors hover:text-fg"
-									>
-										Clear
-									</button>
+									<button type="button" onclick={onclear} class={quietInline}>Clear</button>
 								{/if}
 							</div>
 						</div>

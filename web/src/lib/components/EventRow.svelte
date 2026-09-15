@@ -67,7 +67,14 @@
 	// library's colour and what it cost in the plain one.
 	const marks = $derived([
 		...changed(layouts(entry)),
-		...measures(entry).map((chip) => ({ chip, tone: PLAIN_TONE }))
+		...measures(entry).map((chip) => ({
+			chip,
+			tone: PLAIN_TONE,
+			label:
+				chip === `−${entry.drops}`
+					? `Drops ${entry.drops} track${entry.drops === 1 ? '' : 's'}`
+					: chip
+		}))
 	]);
 
 	// A line about a file leads with what the file is. A rewrite's words only
@@ -111,7 +118,7 @@
 				tabindex="-1"
 				aria-hidden="true"
 				onclick={ontoggle}
-				class="flex h-10 w-10 flex-none items-center justify-center self-center rounded-full border border-line bg-sunken text-dim transition-colors hover:border-line-strong hover:text-fg active:bg-raised"
+				class="flex h-11 w-11 flex-none items-center justify-center self-center rounded-full border border-line bg-sunken text-dim transition-colors hover:border-line-strong hover:text-fg active:bg-raised"
 			>
 				<Glyph name={mark} size={14} />
 			</button>
@@ -166,7 +173,9 @@
 				{#if marks.length}
 					<span class="mt-1.5 flex flex-wrap gap-1">
 						{#each marks as change (change.chip)}
-							<span class={`${CHIP} ${change.tone}`}>{change.chip}</span>
+							<span class={`${CHIP} ${change.tone}`} title={change.label} aria-label={change.label}
+								>{change.chip}</span
+							>
 						{/each}
 					</span>
 				{/if}

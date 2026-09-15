@@ -11,12 +11,15 @@ const WARMING_MS = 5000;
 // The poller under the snapshot is a timer and a stream subscription, neither of
 // which says anything about what the class does with an answer. Held here so a
 // test can make the look itself, one at a time and in its own order.
-const harness = vi.hoisted(() => ({ watches: [] as { ask: () => Promise<void> }[] }));
+const harness = vi.hoisted(() => ({
+	watches: [] as { ask: () => Promise<void> }[],
+	prod: vi.fn()
+}));
 
 vi.mock('$lib/poll', () => ({
 	poll: (watch: { ask: () => Promise<void> }) => {
 		harness.watches.push(watch);
-		return { prod: () => {}, now: () => {}, mark: () => {}, stop: () => {} };
+		return { prod: harness.prod, now: () => {}, mark: () => {}, stop: () => {} };
 	}
 }));
 
@@ -293,3 +296,19 @@ test.each(['report', 'apply'] as const)(
 		expect(recheck.runner.busy).toBe('');
 	}
 );
+
+test('stopping a sheet run requests a fresh snapshot and releases its controls when ended', async () => {
+	vi.mocked(runTitles).mockResolvedValue({ run: 'r1', titles: 1 });
+	const recheck = watching();
+	await recheck.runOne('coffee', 'report');
+	snapshot([run()]);
+	await look();
+	harness.prod.mockClear();
+	await recheck.stop();
+	expect(harness.prod).toHaveBeenCalledOnce();
+	snapshot([]);
+	await look();
+	expect(recheck.runner.run).toBeNull();
+	expect(recheck.runner.starting).toBe(false);
+	expect(recheck.runner.busy).toBe('');
+});

@@ -683,6 +683,21 @@ def test_a_stopped_rewrite_is_deferred_rather_than_failed(tmp_path, monkeypatch)
     assert not os.listdir(config.current().WORK_DIR)
 
 
+def test_a_skipped_rewrite_is_deferred_whatever_ffmpeg_exits_with(tmp_path, monkeypatch):
+    """The real ffmpeg traps SIGTERM and exits 255, so an exit code alone would
+    book a cancelled rewrite as a broken one and mark the file Failed."""
+    source = tmp_path / "f.mkv"
+    source.write_bytes(b"content")
+    cancel = executor.Cancel(str(source))
+    cancel.ask()
+    _ffmpeg_says(monkeypatch, code=255, stderr="Exiting normally, received signal 15.")
+
+    outcome, detail = apply_plan(needed_plan(str(source)), cancel=cancel)
+    assert outcome is Outcome.DEFERRED
+    assert "stopped" in detail
+    assert source.read_bytes() == b"content"
+
+
 def _encode_then_skip(monkeypatch) -> None:
     """A clean encode whose phase is skipped the moment ffmpeg exits, which is
     the window between a verified result and the rename that publishes it."""

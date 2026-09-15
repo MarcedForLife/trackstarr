@@ -4,7 +4,10 @@
 	import type { Card } from '$lib/library';
 	import type { FileCover } from '$lib/queue';
 	import { portal } from '$lib/portal';
-	import TitleSheet from './TitleSheet.svelte';
+	import TitleSheet, { type Runner } from './TitleSheet.svelte';
+
+	// What running this title takes, from the page that owns the runs.
+	let { runner }: { runner?: Runner } = $props();
 
 	let mounted = $state(false);
 	let error = $state('');
@@ -67,5 +70,5 @@
 <!-- A title opened over a queue must be outside its transformed sheet, and above
      its inert backdrop. Mounted only on demand, then the normal sheet. -->
 {#if mounted}
-	<div use:portal><TitleSheet bind:this={sheet} onshut={closed} /></div>
+	<div use:portal><TitleSheet bind:this={sheet} {runner} onshut={closed} /></div>
 {/if}

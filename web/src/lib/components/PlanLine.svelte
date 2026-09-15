@@ -2,9 +2,8 @@
 	import { changed, CHIP, PLAIN_CHIP } from '$lib/library';
 	import type { FileChanges } from '$lib/queue';
 
-	// What a rewrite would do to a file, on a row's own line: the layouts it
-	// names, or the count where it names none. Draws nothing for a judged file
-	// with no work to do.
+	// What a rewrite would do to a file, counted on its row with layout names
+	// available on hover. Draws nothing for a judged file with no work to do.
 	let {
 		plan,
 		current = true,
@@ -20,12 +19,7 @@
 		chipsOnly?: boolean;
 	} = $props();
 
-	// Past three the rest become a tally: they wrap otherwise, and a row of six
-	// ran to three lines with the drop alone on the last. `spread` still names
-	// every one of them.
-	const SHOWN = 3;
 	const chips = $derived(plan ? changed(plan) : []);
-	const over = $derived(Math.max(0, chips.length - SHOWN));
 	// A file no sweep has reached says so, or an empty line reads as no work.
 	const judged = $derived(!!plan && plan.status !== 'unchecked');
 	// Why there are no chips, where that is worth a line. A replan may not ask for
@@ -51,10 +45,9 @@
 			<span class="text-[11px] text-faint">{note}</span>
 		{:else if chips.length || plan?.drops}
 			<span class="flex flex-wrap gap-1" title={spread} aria-label={spread}>
-				{#each chips.slice(0, SHOWN) as change (change.chip)}
+				{#each chips as change (change.chip)}
 					<span class={`${CHIP} ${change.tone}`}>{change.chip}</span>
 				{/each}
-				{#if over}<span class={PLAIN_CHIP}>{over} more</span>{/if}
 				{#if plan?.drops}<span class={PLAIN_CHIP}>&minus;{plan.drops}</span>{/if}
 			</span>
 		{:else if plan?.changes}

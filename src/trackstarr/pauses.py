@@ -60,10 +60,9 @@ class Pause:
 
     def describe(self) -> str:
         """The pause in a phrase, for a run row and for pending.tsv."""
-        who = f" by {self.by}" if self.by else ""
         until = f" until {events.at(self.until)}" if self.until else ""
         because = f" ({self.reason})" if self.reason else ""
-        return f"paused{who}{until}{because}"
+        return f"paused{until}{because}"
 
     def as_json(self) -> dict:
         return {

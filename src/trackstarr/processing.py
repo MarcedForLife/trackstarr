@@ -545,7 +545,9 @@ def process(
     if outcome is Outcome.DEFERRED:
         log.info("deferred %s: %s", job.path, detail)
         # Recorded because a file that defers every pass leaves no other trace.
-        events.record("deferred", path=job.path, detail=detail, **event_fields)
+        # A cancelled one has the skip that asked for it.
+        if cancel is None or not cancel.stopped():
+            events.record("deferred", path=job.path, detail=detail, **event_fields)
         return ProcessResult(Status.DEFERRED, plan, detail)
     log.warning("rewrite of %s failed: %s", job.path, detail)
     events.record("failed", path=job.path, detail=detail, **event_fields)

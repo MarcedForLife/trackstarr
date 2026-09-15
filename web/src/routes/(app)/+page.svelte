@@ -74,6 +74,10 @@
 		ondone: () => {}
 	});
 
+	// One runner for every sheet on the page: the strip's, the feed's, and the
+	// ones the panel's rows open.
+	const runner = $derived(admin ? recheck.runner : undefined);
+
 	function look(card: Card) {
 		sheetUp = true;
 		sheet.open(card);
@@ -101,7 +105,7 @@
 </script>
 
 <Page wide>
-	<ServicePanel {snapshot} {admin} onmoved={moved} onpressed={history.now} />
+	<ServicePanel {snapshot} {admin} {runner} onmoved={moved} onpressed={history.now} />
 
 	<!-- One column at every width: side by side the two read as half-empty boxes
 	     and the shelf was cut to five posters. -->
@@ -112,4 +116,4 @@
 </Page>
 
 <!-- The library's own sheet, runs and all. -->
-<TitleSheet bind:this={sheet} runner={admin ? recheck.runner : undefined} onshut={sheetShut} />
+<TitleSheet bind:this={sheet} {runner} onshut={sheetShut} />

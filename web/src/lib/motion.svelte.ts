@@ -3,7 +3,7 @@
 // query and one listener for the tab; `reduced()` is reactive, so a change
 // under an open page takes effect.
 
-import { cubicOut } from 'svelte/easing';
+import { backOut, cubicOut } from 'svelte/easing';
 import { display } from '$lib/display.svelte';
 
 // Guarded: the tests run in node, with no window.
@@ -38,9 +38,22 @@ export function rowSlide(): { duration: number; easing: (t: number) => number } 
 	return { duration: still ? 0 : ROW_SLIDE, easing: cubicOut };
 }
 
-/** How long a row arriving in one of those lists takes to fade up. */
+/** The fade for something small arriving or leaving in place: a row in one
+ * of those lists, or a bar's segment giving way to its fill. Shorter than the
+ * slide, so a leaving row has gone before the rows under it land in its
+ * place. */
 export function rowFade(): { duration: number } {
 	return { duration: still ? 0 : 150 };
+}
+
+// Long enough for the overshoot to read, on a mark twenty pixels wide.
+const POP = 200;
+
+/** `transition:scale` for the tick a selection wears: up from half size with
+ * a little overshoot, so ticks appearing on every row at once read as the
+ * gesture landing rather than a redraw. */
+export function tickPop(): { duration: number; easing: (t: number) => number; start: number } {
+	return { duration: still ? 0 : POP, easing: backOut, start: 0.5 };
 }
 
 /** A whole block of the page arriving or leaving on its own height, which is

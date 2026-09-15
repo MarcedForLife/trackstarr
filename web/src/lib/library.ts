@@ -151,6 +151,8 @@ export type TitleDetail = {
 	id: string;
 	name: string;
 	kind: string;
+	// The word its card leads with, as of this read rather than the card's.
+	state: Verdict;
 	year?: number;
 	lang?: string;
 	folder: string;

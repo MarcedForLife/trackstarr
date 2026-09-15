@@ -128,10 +128,8 @@ export class Recheck {
 		starting: this.#fromSheet && (this.#starting || this.warming),
 		error: this.#fromSheet ? this.refusal : '',
 		run: this.#fromSheet ? this.running : null,
-		stopping: this.stopping,
-		done: this.#fromSheet ? this.line('this title') : '',
-		onrun: (id: string, mode: RunMode) => this.runOne(id, mode),
-		onstop: () => this.stop()
+		onrefresh: () => this.prod(),
+		onrun: (id: string, mode: RunMode) => this.runOne(id, mode)
 	});
 
 	// What the last run came to: files looked at, and the three verdicts worth a
@@ -166,7 +164,7 @@ export class Recheck {
 	}
 
 	/** One title from inside its own sheet. The sheet stays open and its panel
-	 * becomes the progress bar; the selection is untouched. */
+	 * follows the title's own work; the selection is untouched. */
 	runOne(id: string, mode: RunMode) {
 		return this.#launch([id], true, mode);
 	}
@@ -177,6 +175,7 @@ export class Recheck {
 		try {
 			await stopRun(this.#watching);
 			this.refusal = '';
+			this.#snapshot.prod();
 		} catch (error) {
 			// Usually the run finished between the look and the press. Shown in
 			// the service's words rather than silently.

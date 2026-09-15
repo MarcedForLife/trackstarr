@@ -4,7 +4,8 @@
 	import { coverUrl, dot, initials, verdictLabel, type Card, type Verdict } from '$lib/library';
 
 	// A title's poster at list-row size, opening the title from a line of
-	// history. Not PosterCard, whose tilt, sheen and long press are for a grid.
+	// history. As tall as a line that carries chips, so it ends where they do.
+	// Not PosterCard, whose tilt, sheen and long press are for a grid.
 	let {
 		card,
 		onopen,
@@ -33,7 +34,7 @@
 	class="thumb -m-1 block flex-none self-start p-1"
 >
 	<span
-		class="relative block aspect-[2/3] w-10 overflow-hidden rounded-md border border-line bg-sunken shadow-[0_1px_2px_rgb(0_0_0/0.25)]"
+		class="relative block aspect-[2/3] w-11 overflow-hidden rounded-md border border-line bg-sunken shadow-[0_1px_2px_rgb(0_0_0/0.25)]"
 	>
 		<!-- The initials until the cover lands, and instead of one that never
 		     does: the picture fades in over them, so a cover that fails to load

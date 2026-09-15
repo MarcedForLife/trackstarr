@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest';
-import { readQueue, type QueuePage } from '$lib/queue';
+import { atFront, readQueue, type QueuePage } from '$lib/queue';
 
 vi.mock('$lib/api', () => ({ request: vi.fn() }));
 const { request } = await import('$lib/api');
@@ -89,4 +89,22 @@ test('a queue shorter than the rows asked for is read in one request', async () 
 	answers = [{ ...said(0, 7), total: 12, matched: 12 }];
 	expect(await readQueue('', 150, () => true)).not.toBeNull();
 	expect(asked).toEqual(['/api/queue?q=&offset=0']);
+});
+
+/** Rows as a title's work lists them, at the given places. */
+const at = (...places: number[]) =>
+	places.map((position) => ({
+		run: 'sweep',
+		path: `/media/${position}.mkv`,
+		expected: 0,
+		position
+	}));
+
+test('a title holding the head of the queue has nowhere to be moved', () => {
+	expect(atFront(at(1))).toBe(true);
+	expect(atFront(at(1, 2, 3))).toBe(true);
+	// A gap means the files behind it would move up.
+	expect(atFront(at(1, 3))).toBe(false);
+	expect(atFront(at(2))).toBe(false);
+	expect(atFront([])).toBe(false);
 });

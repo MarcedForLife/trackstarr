@@ -115,7 +115,8 @@ def test_a_paused_file_is_planned_and_reported_but_never_rewritten(monkeypatch):
     assert result.status is Status.PENDING
     # The row and pending.tsv say why this one is not being rewritten, since
     # the plan's own reasons would read as work about to happen.
-    assert "paused by operator" in result.detail
+    assert result.detail == "paused (watching it)"
+    assert pauses.paused("/data/media/movies/Dune (2024)").as_json()["by"] == "operator"
     assert "watching it" in result.detail
 
 
@@ -555,8 +556,9 @@ def test_a_rewrite_skipped_while_it_waited_for_a_slot_is_deferred(monkeypatch, s
         result = process(Job("/x.mkv"), dry_run=False, cancel=Cancel("/x.mkv"))
 
     assert result.status is Status.DEFERRED
-    (recorded,) = [line for line in read_events() if line["event"] == "deferred"]
-    assert recorded["detail"] == processing.STOPPED_BEFORE_START
+    assert result.detail == processing.STOPPED_BEFORE_START
+    # No line of its own: the skip that stopped it wrote one.
+    assert not [line for line in read_events() if line["event"] == "deferred"]
 
 
 def test_observed_policy_is_used_even_if_settings_change_before_planning(monkeypatch, tmp_path):

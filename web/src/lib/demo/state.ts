@@ -462,6 +462,7 @@ export function detail(state: State, title: Title): TitleDetail {
 		id: spec.id,
 		name: spec.name,
 		kind: spec.kind,
+		state: card(state, title).state,
 		folder: spec.folder,
 		current: state.current,
 		files: title.files.map(wireFile),

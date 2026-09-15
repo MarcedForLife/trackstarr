@@ -791,6 +791,18 @@ def test_a_rewritten_file_leads_the_others_of_its_verdict(media, monkeypatch):
     ]
 
 
+def test_a_title_leads_with_the_word_its_card_does(media, monkeypatch):
+    """The sheet re-reads it from here once the card it opened with is a
+    rewrite out of date."""
+    folder = f"{media}/Show"
+    stub_arrs(monkeypatch, [movie(1, "Show", folder)], name="sonarr")
+    cache(
+        (f"{folder}/s01e01.mkv", Verdict(Status.CONFORM)),
+        (f"{folder}/s01e02.mkv", pending()),
+    )
+    assert library.title("arr:sonarr:1")["state"] == "pending"
+
+
 def test_a_card_counts_the_files_a_rewrite_left(media, monkeypatch):
     """The poster says Passed either way, so the count is the whole of what
     marks a title trackstarr has been through."""

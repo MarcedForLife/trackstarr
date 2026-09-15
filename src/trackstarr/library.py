@@ -641,6 +641,19 @@ def _weight(rollup: Rollup) -> float:
     return len(rollup.adds) + len(rollup.rebuilds) + rollup.drops / max(rollup.files, 1)
 
 
+def _verdict(title: Title, rollup: Rollup) -> str:
+    """The word a title leads with.
+
+    No verdict means either nothing downloaded (a wishlist entry) or files no
+    sweep has reached (work outstanding). Only the *arr can tell them apart.
+    Verdicts on disk beat what the *arr believes.
+    """
+    verdict = rollup.state
+    if verdict == UNCHECKED and not title.on_disk:
+        return MISSING
+    return verdict
+
+
 def _card(title: Title, rollup: Rollup | None) -> dict:
     """One title as the grid draws it: enough to sort, filter and label a
     poster, nothing a sheet would show."""
@@ -668,17 +681,11 @@ def _card(title: Title, rollup: Rollup | None) -> dict:
         # wrote; see :func:`trackstarr.processing._rejudged`.
         "processed": int(rollup.judged),
     }
-    # No verdict means either nothing downloaded (a wishlist entry) or files
-    # no sweep has reached (work outstanding). Only the *arr can tell them
-    # apart. Verdicts on disk beat what the *arr believes.
-    verdict = rollup.state
-    if verdict == UNCHECKED and not title.on_disk:
-        verdict = MISSING
     return {
         "id": title.id,
         "name": title.name,
         "kind": title.kind,
-        "state": verdict,
+        "state": _verdict(title, rollup),
         **{name: value for name, value in optional.items() if value not in (None, 0, {}, [])},
     }
 
@@ -885,6 +892,7 @@ def title(title_id: str) -> dict | None:
         return None
     folders = {found.folder: found}
     made = rewrites.against(stored.files)
+    rollup = _tally(stored.files, folders, made).get(found.id, Rollup())
     entries = [
         {**entry, "path": path, **({"modified": made[path]} if path in made else {})}
         for path, entry in stored.files.items()
@@ -896,6 +904,9 @@ def title(title_id: str) -> dict | None:
         "id": found.id,
         "name": found.name,
         "kind": found.kind,
+        # The card's word, read again here: a sheet left open through a
+        # rewrite has only the card it opened with.
+        "state": _verdict(found, rollup),
         "year": found.year,
         "lang": found.lang,
         "folder": found.folder,

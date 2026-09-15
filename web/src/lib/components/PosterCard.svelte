@@ -11,7 +11,6 @@
 		verdictLabel,
 		type Card
 	} from '$lib/library';
-	import Mark from '$lib/components/Mark.svelte';
 	import Tick from '$lib/components/Tick.svelte';
 	import { pressGesture } from '$lib/press';
 
@@ -85,6 +84,7 @@
 		canHold: () => !!onhold && !picking,
 		within,
 		onpress: lift ? pressing : undefined,
+		carries: true,
 		onarm: (on: boolean) => (armed = on)
 	});
 
@@ -99,11 +99,16 @@
 		'flex h-full w-full items-center justify-center bg-raised text-lg font-semibold text-faint';
 
 	const written = $derived(changed(card));
+	const changesLabel = $derived(
+		[
+			...written.map((change) => change.label),
+			...(card.drops ? [`Drops ${card.drops} track${card.drops === 1 ? '' : 's'}`] : [])
+		].join(', ')
+	);
 
-	// A title trackstarr has rewritten reads Passed like any other, so the mark
-	// beside the word is the only thing saying its files are the ones we made.
-	// How much of the title that is goes in the label: a number on the card was
-	// noise on a film, always one, and no fraction on a series.
+	// How much of the title we rewrote. Not drawn on the card, which said it with
+	// our own star and read as a maker's mark; the word and the Modified filter
+	// carry it, and `spread` puts this in the label.
 	const rewritten = $derived.by(() => {
 		const made = card.modified ?? 0;
 		const files = card.files ?? 0;
@@ -154,7 +159,8 @@
 	class:pans-both={pan === 'both'}
 	class="poster group block w-full text-left"
 	aria-pressed={picking ? selected : undefined}
-	aria-label={`${card.name}${card.year ? ` (${card.year})` : ''} — ${spread}`}
+	aria-label={`${card.name}${card.year ? ` (${card.year})` : ''} — ${spread}${verdict && changesLabel ? `, ${changesLabel}` : ''}`}
+	title={verdict && changesLabel ? changesLabel : undefined}
 >
 	<!-- data-tilt is how the field finds the element it turns; `frame` is scoped.
 	     --fx is the effects multiplier the lift, shadow and keystone read, set
@@ -219,27 +225,11 @@
 
 			<span class="scrim pointer-events-none absolute inset-x-0 bottom-0 block h-1/2"></span>
 			{#if verdict}
+				<!-- The chips ride above the word rather than under it, so the word
+				     lands on one line whatever a card has to say. -->
 				<span class="pointer-events-none absolute inset-x-2 bottom-2 block">
-					<span class="flex items-center gap-1.5" title={spread}>
-						<!-- Half the gap between the dots that sits between them and the
-						     word, so a run of them reads as one mark. -->
-						<span class="flex flex-none items-center gap-0.5">
-							{#each dots as state (state)}
-								<span class={`h-1.5 w-1.5 rounded-full ${dot(state)}`}></span>
-							{/each}
-						</span>
-						<span class="truncate text-[11px] font-medium text-white/70">
-							{verdictLabel(card.state)}
-						</span>
-						<!-- Our own star after the word: this title is as it should be,
-						     and trackstarr made it so. In Passed's green, since accent on
-						     a card means work outstanding. -->
-						{#if rewritten}
-							<Mark size={11} class="flex-none text-ok" />
-						{/if}
-					</span>
 					{#if written.length || card.drops}
-						<span class="mt-1 flex flex-wrap gap-1">
+						<span class="mb-1 flex flex-wrap gap-1">
 							{#each written as change (change.chip)}
 								<span
 									class={`rounded px-1 py-px font-mono text-[10px] leading-tight ${change.tone}`}
@@ -256,6 +246,18 @@
 							{/if}
 						</span>
 					{/if}
+					<span class="flex items-center gap-1.5" title={spread}>
+						<!-- Half the gap between the dots that sits between them and the
+						     word, so a run of them reads as one mark. -->
+						<span class="flex flex-none items-center gap-0.5">
+							{#each dots as state (state)}
+								<span class={`h-1.5 w-1.5 rounded-full ${dot(state)}`}></span>
+							{/each}
+						</span>
+						<span class="truncate text-[11px] font-medium text-white/70">
+							{verdictLabel(card.state)}
+						</span>
+					</span>
 				</span>
 			{/if}
 

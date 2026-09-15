@@ -11,6 +11,7 @@
 	import PosterCard from '$lib/components/PosterCard.svelte';
 	import Segmented from '$lib/components/Segmented.svelte';
 	import Select from '$lib/components/Select.svelte';
+	import SelectButton from '$lib/components/SelectButton.svelte';
 	import SelectionBar from '$lib/components/SelectionBar.svelte';
 	import TitleSheet from '$lib/components/TitleSheet.svelte';
 	import VerdictChips from '$lib/components/VerdictChips.svelte';
@@ -253,8 +254,10 @@
 	async function restock() {
 		try {
 			shelf = await getShelf();
-			// The sheet is still showing the verdicts the run replaced. Not awaited.
-			if (sheetUp && sheetId) sheet?.reload(shelf.titles.find((card) => card.id === sheetId));
+			// The sheet re-reads its own verdicts; the card behind its header is
+			// this page's to hand over.
+			const card = sheetUp ? shelf.titles.find((card) => card.id === sheetId) : undefined;
+			if (card) sheet?.fill(card);
 		} catch {
 			/* the posters on screen are still the last thing anyone knew */
 		}
@@ -426,35 +429,11 @@
 				/>
 			</div>
 			{#if admin}
-				<!-- The word only where there is room; the tick is the mark the
-				     posters grow. -->
-				<button
-					type="button"
-					aria-pressed={selection.picking}
+				<SelectButton
+					picking={selection.picking}
+					what="titles"
 					onclick={() => (selection.picking ? bar.dismiss() : selection.enter())}
-					title={selection.picking ? 'Stop selecting titles' : 'Select titles to plan or process'}
-					class={`flex ${control} ${radius} flex-none items-center gap-1.5 border px-2.5 text-[13px] font-medium transition-colors sm:px-3 ${
-						selection.picking
-							? 'border-accent-fill/50 bg-accent-fill/12 text-fg'
-							: 'border-line-strong bg-field text-dim'
-					}`}
-				>
-					<svg
-						viewBox="0 0 14 14"
-						width="12"
-						height="12"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.7"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-						aria-hidden="true"
-						class="flex-none"
-					>
-						<path d="M2 7.4 5.2 10.6 12 3.6" />
-					</svg>
-					<span class="hidden sm:inline">{selection.picking ? 'Cancel' : 'Select'}</span>
-				</button>
+				/>
 			{/if}
 		</div>
 	</div>

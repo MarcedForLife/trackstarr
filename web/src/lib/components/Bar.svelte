@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { fade } from 'svelte/transition';
+	import { rowFade } from '$lib/motion.svelte';
+
 	// A progress bar: a run against its files, or a file against its running
 	// time. scaleX rather than width, which would relayout everything under it.
 	let {
@@ -40,18 +43,24 @@
 	aria-valuemax={indeterminate ? undefined : max}
 	aria-valuenow={indeterminate ? undefined : now}
 	aria-valuetext={text}
-	class={`overflow-hidden rounded-full bg-sunken ${
+	class={`relative overflow-hidden rounded-full bg-sunken ${
 		file ? 'h-[3px] min-w-0 flex-1' : 'h-1'
 	} ${extra}`}
 >
+	<!-- Both out of flow, so the segment fades off the track as the fill fades
+	     up once there is something to measure. -->
 	{#if indeterminate}
-		<div class="crossing h-full w-[30%] rounded-full bg-accent-fill/70"></div>
+		<div
+			class="crossing absolute inset-y-0 left-0 w-[30%] rounded-full bg-accent-fill/70"
+			transition:fade={rowFade()}
+		></div>
 	{:else}
 		<div
-			class={`h-full origin-left rounded-full transition-transform ${
+			class={`absolute inset-0 origin-left rounded-full transition-transform ${
 				glide ? 'duration-1000 ease-linear' : 'duration-500 ease-out'
 			} ${file ? 'bg-accent-fill/70' : done ? 'bg-ok' : 'bg-accent-fill'}`}
 			style={`transform: scaleX(${fill})`}
+			transition:fade={rowFade()}
 		></div>
 	{/if}
 </div>

@@ -117,6 +117,7 @@ const shelved = pins<Shelf>()({ ...shelf, titles: shelf.titles.map(verdicted) })
 const summarised = pins<Summary>()({ ...summary, head: summary.head.map(verdicted) });
 pins<TitleDetail>()({
 	...title,
+	state: asVerdict(title.state),
 	files: title.files.map((file) => ({ ...file, status: asVerdict(file.status) }))
 });
 pins<EventPage>()({

@@ -1,6 +1,7 @@
 import { request } from '$lib/api';
 import type { Verdict } from '$lib/library';
 import type { Pause } from '$lib/pauses';
+import type { ActiveFile } from '$lib/runs';
 
 export type FileCover = { id: string; name: string };
 export type FileCovers = Record<string, FileCover>;
@@ -89,6 +90,12 @@ function absorb(page: QueuePage, next: QueuePage): void {
 	// one stale page leaves all of it stale.
 	page.plans_current &&= next.plans_current;
 }
+/** Whether these rows already hold the head of the queue, so a reorder would
+ * move nothing: one place for a file, the first n for a title's n files. */
+export function atFront(items: QueueItem[]): boolean {
+	return items.length > 0 && Math.max(...items.map((item) => item.position)) === items.length;
+}
+
 export type QueueAnswer = {
 	moved?: number;
 	changed?: number;
@@ -106,9 +113,12 @@ export function queueAction(
 	});
 }
 
+/** One of a title's files a worker holds, with its run and that run's state. */
+export type TitleActive = ActiveFile & { run: string; stopping: boolean };
+
 export type TitleWork = {
 	queued: QueueItem[];
-	active: { run: string; path: string; stage: string; stopping: boolean; skipped?: boolean }[];
+	active: TitleActive[];
 	pauses: Pause[];
 };
 export function getTitleWork(id: string): Promise<TitleWork> {
@@ -137,20 +147,21 @@ export function fileState(work: TitleWork | undefined, path: string): FileState 
 		work?.pauses.find((pause) => pause.path === path) ??
 		work?.pauses.find((pause) => path.startsWith(`${pause.path}/`));
 	const active = running.some((item) => item.stage !== 'waiting');
-	const stopping = running.some((item) => item.stopping || item.skipped);
+	// The file's own skip. A run winding up leaves the encode it is on running.
+	const stopping = running.some((item) => item.skipped);
 	const runs = waiting.length > 1 ? ` · ${waiting.length} runs` : '';
 	const label = stopping
 		? 'Stopping…'
 		: running.length
 			? active
-				? 'Processing now'
+				? 'Processing'
 				: 'Waiting for a worker'
 			: paused
 				? paused.path === path
 					? 'Paused'
 					: 'Title paused'
 				: waiting.length
-					? `Pending (#${Math.min(...waiting.map((item) => item.position))})${runs}`
+					? `Queued (#${Math.min(...waiting.map((item) => item.position))})${runs}`
 					: '';
 	return { waiting, running, paused, active, stopping, label };
 }

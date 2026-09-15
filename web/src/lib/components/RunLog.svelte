@@ -53,7 +53,7 @@
 <div use:portal>
 	<Sheet {open} onclose={() => sheet.lower()} label={`Worker log for ${titled(path)}`}>
 		<div class="flex max-h-[min(44rem,calc(88dvh-1.5rem))] min-h-0 flex-col">
-			<header class="flex items-start justify-between gap-3 px-4 pt-3 sm:px-6">
+			<header class="flex items-start justify-between gap-3 px-4 pt-3">
 				<div class="min-w-0">
 					<h2 class="text-base font-semibold tracking-tight">Worker log</h2>
 					<p class="mt-1 font-mono text-[11px] wrap-anywhere text-faint">{path}</p>
@@ -63,7 +63,7 @@
 			<div
 				bind:this={tail}
 				onscroll={scrolled}
-				class="mt-3 min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain border-t border-line px-4 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6"
+				class="mt-3 min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain border-t border-line px-4 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
 			>
 				{#if failure}
 					<p role="alert" class="text-[12px] text-danger">{failure}</p>

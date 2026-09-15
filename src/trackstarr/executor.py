@@ -384,9 +384,9 @@ def apply_plan(
         code, stderr = _run_ffmpeg(args, on_progress, cancel)
         if on_encoded is not None:
             on_encoded()
-        if code < 0:
-            # Signalled: someone pressed stop. Deferred, since nothing is wrong
-            # with the file.
+        if code != 0 and (code < 0 or cancel.stopped()):
+            # Stopped, not broken: ffmpeg traps SIGTERM and exits 255, so the
+            # exit code alone cannot say which.
             return Outcome.DEFERRED, "the rewrite was stopped, nothing rewritten"
         if code != 0:
             stderr_tail = stderr.strip()[-_STDERR_TAIL:]

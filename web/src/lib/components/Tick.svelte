@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { scale } from 'svelte/transition';
+	import { tickPop } from '$lib/motion.svelte';
+
 	// The round mark a selection wears: on a poster in the grid, and beside a
 	// file in the queue. Drawn, not a checkbox, so the two read as one gesture.
 	let {
@@ -14,6 +17,7 @@
 
 <span
 	aria-hidden="true"
+	transition:scale={tickPop()}
 	class={`flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
 		on || some ? 'border-accent-fill bg-accent-fill text-on-accent' : `${off} text-transparent`
 	} ${shape}`}

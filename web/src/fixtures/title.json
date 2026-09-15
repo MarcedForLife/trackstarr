@@ -2,6 +2,7 @@
 	"id": "arr:sonarr:12",
 	"name": "Severance",
 	"kind": "series",
+	"state": "failed",
 	"year": 2022,
 	"lang": "eng",
 	"folder": "/data/media/tv/Severance",

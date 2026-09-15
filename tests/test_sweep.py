@@ -985,8 +985,7 @@ def test_an_applying_sweep_leaves_a_paused_title_where_the_walk_found_it(monkeyp
     # The reason on every row, including the ones a warm cache answered, which
     # never pass through process() to say it themselves.
     rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
-    assert all("paused by operator" in row for row in rows)
-    assert all("watching one of them" in row for row in rows)
+    assert all("paused (watching one of them)" in row for row in rows)
 
 
 def test_a_file_skipped_mid_sweep_keeps_the_verdict_the_walk_gave_it(monkeypatch, tmp_path):
@@ -1006,6 +1005,31 @@ def test_a_file_skipped_mid_sweep_keeps_the_verdict_the_walk_gave_it(monkeypatch
     assert counts[Status.MODIFIED] == 0
     rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
     assert "skipped for this run" in rows[0]
+
+
+def test_a_rewrite_cancelled_mid_encode_leaves_the_file_pending(monkeypatch, tmp_path):
+    """The kill lands once ffmpeg is going. Nothing was written, so the file is
+    still pending, its stored verdict stands, and the skip is the only line."""
+    _library(tmp_path, 1)
+
+    def encode_then_kill(
+        job, dry_run, source="sweep", policy=None, cancel=None, observation=None
+    ):
+        if dry_run:
+            return ProcessResult(Status.PENDING, None)
+        lifecycle.skip_file("r#1", job.path)
+        return ProcessResult(Status.DEFERRED, None, "the rewrite was stopped")
+
+    monkeypatch.setattr("trackstarr.sweep.process", encode_then_kill)
+    counts = sweep(dry_run=False, run="r#1")
+
+    assert counts[Status.PENDING] == 1
+    assert counts[Status.DEFERRED] == 0
+    # The verdict discovery published is still there for the grid to draw.
+    stored = sweep_cache.read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    assert [entry["status"] for entry in stored.files.values()] == ["pending"]
+    # One line, the skip's: a cancelled rewrite is not news of its own.
+    assert [line["event"] for line in read_events() if line.get("path")] == ["skipped"]
 
 
 def test_shutdown_waits_for_a_sweep_that_has_queued_nothing(monkeypatch, tmp_path):
@@ -1092,9 +1116,10 @@ def test_a_file_skipped_as_its_rewrite_is_planned_is_never_edited(monkeypatch, t
     counts = sweep(dry_run=False, run="r#1")
 
     assert edited == [], "the editor was never reached"
-    assert counts[Status.DEFERRED] == 1
+    # Nothing was written, so the file keeps the verdict the walk gave it.
+    assert counts[Status.PENDING] == 1
     rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
-    assert "stopped before it started" in rows[0]
+    assert "skipped for this run" in rows[0]
 
 
 def test_a_queued_file_reads_as_pending_while_it_waits_for_its_rewrite(monkeypatch, tmp_path):
@@ -1847,8 +1872,9 @@ def test_a_skipped_rewrite_waiting_for_an_edit_never_probes(monkeypatch, tmp_pat
         result = sweep_mod._rewrite(
             found, LibraryIndex({}, True), cache, "run", False, cancel=cancel
         )
-    assert result.verdict.status is Status.DEFERRED
-    assert result.unobserved
+    # Neither probed nor written, so the file keeps the verdict it had.
+    assert result.verdict.status is Status.PENDING
+    assert result.detail == "skipped for this run"
     cache.save()
     assert sweep_cache.read(cache.path, cache.fingerprint).files[path]["status"] == "conform"
 

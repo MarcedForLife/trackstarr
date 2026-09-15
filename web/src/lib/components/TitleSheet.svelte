@@ -1,22 +1,49 @@
+<script module lang="ts">
+	import type { RunMode } from '$lib/library';
+	import type { Run } from '$lib/runs';
+
+	/** Running one title from inside its sheet. The page owns the run and the
+	 * floating bar that shows it; a page with nowhere to run passes no runner. */
+	export type Runner = {
+		// False where REWRITE_MODE latches to report only. Process still shows and
+		// explains when pressed.
+		mayRewrite: boolean;
+		// Why a run cannot start now, or empty.
+		refuses: string;
+		// Which press is under way, so only that one says so.
+		busy: '' | RunMode;
+		starting: boolean;
+		// The service's words when it refused the last press.
+		error: string;
+		// The run this sheet started, while it is going. The pair stays dead until
+		// it ends, rather than offering a second run over the first.
+		run: Run | null;
+		onrefresh: () => void;
+		onrun: (id: string, mode: RunMode) => void;
+	};
+</script>
+
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import TitleFile, { type Editing } from './TitleFile.svelte';
+	import TitleFile from './TitleFile.svelte';
+	import { type Editing } from './FileAccount.svelte';
 	import { poll } from '$lib/poll';
-	import { getTitleWork, queueAction, type TitleWork } from '$lib/queue';
+	import { atFront, getTitleWork, queueAction, type TitleWork } from '$lib/queue';
+	import { mark as now, since, ticking } from '$lib/clock.svelte';
 	import PauseMenu from '$lib/components/PauseMenu.svelte';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Disclosure from '$lib/components/Disclosure.svelte';
-	import Glyph from '$lib/components/Glyph.svelte';
+	import FileProgress from '$lib/components/FileProgress.svelte';
 	import RunButtons from '$lib/components/RunButtons.svelte';
-	import RunProgress from '$lib/components/RunProgress.svelte';
 	import ServiceIcon from '$lib/components/ServiceIcon.svelte';
 	import Sheet, { SLIDE } from '$lib/components/Sheet.svelte';
 	import { refusalText } from '$lib/api';
 	import { MARKS, type MarkName } from '$lib/connections';
 	import { arrival, coverShow, type Arrival } from '$lib/covers';
-	import { button } from '$lib/controls';
-	import { duration } from '$lib/format';
+	import { button, control, radius, subtle } from '$lib/controls';
+	import { count } from '$lib/events';
+	import { duration, named, titled } from '$lib/format';
 	import {
 		forTitle,
 		getPauses,
@@ -31,11 +58,9 @@
 		kindName,
 		verdictLabel,
 		verdictText,
-		worstOf,
 		type Card,
 		type LibraryFile,
 		type Listed,
-		type RunMode,
 		type TitleDetail,
 		type TitleLink,
 		type TitleServer
@@ -44,7 +69,7 @@
 	import { summarise, type Outcome, type Summary } from '$lib/retag';
 	import { whenNear } from '$lib/reveal';
 	import { seasons, type Season } from '$lib/seasons';
-	import { skipFile, type Run } from '$lib/runs';
+	import { skipFile } from '$lib/runs';
 	import { getSettings } from '$lib/settings';
 
 	// One title, with what each file is and what a rewrite would leave. Owns
@@ -55,30 +80,6 @@
 	// the grid's card; a run or queue row knows only which title its file belongs
 	// to, and the rest arrives with the detail.
 	type Opening = Pick<Card, 'id' | 'name'> & Partial<Card>;
-
-	// Running this one title from inside the sheet. The library page still owns
-	// the poll and the bar that shows the run once the sheet is gone; a page with
-	// nowhere to run passes no runner and gets no panel.
-	type Runner = {
-		// False where REWRITE_MODE latches to report only. Process still shows and
-		// explains when pressed.
-		mayRewrite: boolean;
-		// Why a run cannot start now, or empty.
-		refuses: string;
-		// Which press is under way, so only that one says so.
-		busy: '' | RunMode;
-		starting: boolean;
-		// The service's words when it refused the last press.
-		error: string;
-		// The run this panel started, while it is going.
-		run: Run | null;
-		// A stop sent but not yet confirmed.
-		stopping: boolean;
-		// What the run came to.
-		done: string;
-		onrun: (id: string, mode: RunMode) => void;
-		onstop: () => void;
-	};
 
 	// `onshut` lets a caller polling for the sheet stop.
 	let { runner, onshut }: { runner?: Runner; onshut?: () => void } = $props();
@@ -112,10 +113,10 @@
 	let pauses = $state<Pause[]>([]);
 	let pauseBusy = $state('');
 	let pauseError = $state('');
-	// The detail names the kind and the worst verdict too, for a title opened
-	// without a card behind it.
+	// The detail names the kind too, for a title opened without a card behind
+	// it. Its verdict word beats the card's, which is as old as the tap.
 	const kind = $derived(opened?.kind ?? detail?.kind ?? '');
-	const verdict = $derived(opened?.state ?? (detail ? worstOf(detail.files) : undefined));
+	const verdict = $derived(detail?.state ?? opened?.state);
 	const manyFiles = $derived(kind === 'series' || (detail?.total ?? opened?.files ?? 0) > 1);
 	const pause = $derived(
 		opened
@@ -182,12 +183,24 @@
 	let workError = $state('');
 	let workBusy = $state(false);
 	let workTicket = 0;
-	let queueNotice = $state('');
-	let queueUndo = $state<string | null>(null);
 	const queued = $derived(work?.queued ?? []);
 	const activeWork = $derived(work?.active ?? []);
 	const involved = $derived(queued.length > 0 || activeWork.length > 0);
-	const stoppingWork = $derived(activeWork.some((item) => item.stopping || item.skipped));
+	// Whether the queue has answered for this title, one way or the other. What
+	// the header and the controls say depends on it, so they hold until it has.
+	const known = $derived(!!work || !!workError);
+	// A file asked to stop. Not its run winding up, which leaves the encode going.
+	const stoppingWork = $derived(activeWork.some((item) => item.skipped));
+	// When the reading arrived, so the bars glide on from it between polls.
+	let workSeen = $state(0);
+	const workAge = $derived(since(workSeen));
+	$effect(() => (activeWork.length ? ticking() : undefined));
+
+	// The header names the title, so a bar needs only what tells one file from
+	// its siblings.
+	function worked(path: string): string {
+		return manyFiles ? named(path).episode || titled(path) : '';
+	}
 
 	const processing = $derived(
 		new Set(activeWork.filter((item) => item.stage !== 'waiting').map((item) => item.path)).size
@@ -199,6 +212,12 @@
 	const queuePosition = $derived(
 		queued.length ? Math.min(...queued.map((item) => item.position)) : 0
 	);
+	// Already at the head, where Prioritise would move nothing.
+	const front = $derived(atFront(queued));
+	// A count for a series, since its files are spread down the queue; one file's
+	// own place for a film, which is what a reorder moves. The count keeps its
+	// noun so the two are never read for each other, and the rows below say the
+	// place the same way this does.
 	const workStatus = $derived(
 		stoppingWork
 			? 'Stopping…'
@@ -206,43 +225,32 @@
 				? [
 						processing ? `${processing} processing` : '',
 						workerWaiting ? `${workerWaiting} waiting for a worker` : '',
-						queueCount ? `${queueCount} queued · next at position ${queuePosition}` : ''
+						queueCount ? `Queued (${count(queueCount, 'file')})` : ''
 					]
 						.filter(Boolean)
 						.join(' · ')
 				: processing
-					? 'Processing now'
+					? 'Processing'
 					: workerWaiting
 						? 'Waiting for a worker'
 						: queueCount
-							? `Queue position ${queuePosition}`
+							? `Queued (#${queuePosition})`
 							: ''
 	);
 
-	async function queueAct(action: 'top' | 'skip' | 'undo') {
+	async function queueAct(action: 'top' | 'skip') {
 		workBusy = true;
 		pauseError = '';
-		queueNotice = '';
 		try {
-			if (action === 'skip') {
-				await cancelWork();
-				queueUndo = null;
-				queueNotice = activeWork.length ? 'Cancellation requested.' : 'Skipped.';
-			} else {
-				const answer = await queueAction(action, queued, { token: queueUndo ?? undefined });
-				queueUndo = answer.undo ?? null;
-				queueNotice =
-					action === 'undo'
-						? 'Queue order restored.'
-						: answer.moved
-							? 'Moved to top.'
-							: 'This title is no longer waiting.';
-			}
+			if (action === 'skip') await cancelWork();
+			else await queueAction('top', queued);
 		} catch (error) {
 			pauseError = refusalText(error);
 		} finally {
 			workBusy = false;
 			await readWork();
+			runner?.onrefresh();
+			workPoll.now();
 		}
 	}
 
@@ -258,8 +266,13 @@
 		const ticket = ++workTicket;
 		try {
 			const answer = await getTitleWork(id);
+			// The queue letting go is the verdict changing. Read the new word
+			// first, so the header goes from Processing to it rather than through
+			// the one it had.
+			if (involved && !answer.active.length && !answer.queued.length) await reload();
 			if (up && !workBusy && opened?.id === id && ticket === workTicket) {
 				work = answer;
+				workSeen = now();
 				pauses = answer.pauses;
 				workError = '';
 			}
@@ -271,11 +284,21 @@
 	const workPoll = poll({
 		ask: readWork,
 		ready: () => up && !workBusy,
-		pace: () => 5000,
+		pace: () => (stoppingWork ? 1000 : 5000),
 		gap: 1000,
 		kinds: ['runs', 'progress']
 	});
 	onDestroy(workPoll.stop);
+
+	// A sweep in another process re-judges files too. Only when told: the
+	// verdicts change under nothing else.
+	const detailPoll = poll({
+		ask: reload,
+		ready: () => up && !!detail && !loading,
+		gap: 2000,
+		kinds: ['library']
+	});
+	onDestroy(detailPoll.stop);
 
 	// Placeholder rows while the verdicts load, so the sheet opens at the height
 	// it is about to need.
@@ -291,11 +314,11 @@
 		up = true;
 		opened = card;
 		work = undefined;
-		queueNotice = '';
-		queueUndo = null;
 		workError = '';
 		workTicket++;
 		workPoll.now();
+		// A change heard while shut is about the last title, or one open() reads.
+		detailPoll.mark();
 		detail = null;
 		// A second title tapped brings a second cover, which has yet to arrive.
 		cover = 'coming';
@@ -351,7 +374,6 @@
 		try {
 			pauses = await placePause({ ids: [opened.id] }, seconds);
 			await cancelWork();
-			queueUndo = null;
 		} finally {
 			pauseBusy = '';
 			workBusy = false;
@@ -383,29 +405,20 @@
 		return MARKS.find((known) => known === name) ?? null;
 	}
 
-	// A share of the line below sm, natural width from sm up, as RunButtons does.
-	const spread = 'flex-1 sm:flex-none';
-
-	// One button to open the title elsewhere: centred in the row a phone gives it,
-	// left-aligned in the column from sm up so the marks line up down its edge.
-	const link = `${button} ${spread} sm:justify-start`;
+	// One link to open the title elsewhere, at its own width and never squeezed:
+	// the row pans where they do not fit. The padding is the hover ground only,
+	// so the row pulls it back off the left; see the block.
+	const link = `${subtle} !px-2 flex-none`;
 
 	// The services the header offers, whether they have been asked yet or not.
 	const offered = $derived(links ?? detail?.servers ?? []);
 
-	// From sm up the cover stands as tall as the buttons beside it and their
-	// gaps: 40px each and 8px between, so three make 136 and four make 184.
-	// Never shorter than three, so a title with two links keeps the poster a
-	// title with three gets, and four is the most the service can offer one
-	// title. Written out, since Tailwind reads its classes from the source.
-	const poster = $derived(offered.length > 3 ? 'sm:h-46' : 'sm:h-34');
-
-	// Equal shares on mobile, including queue actions and a lone Pause. Longer
-	// series labels can wrap within their share; desktop uses natural widths.
+	// Equal shares at every width, as the idle row has. Longer series labels wrap
+	// within their share rather than taking it from the others.
 	const cell = $derived(
 		runner && !involved
 			? 'w-full'
-			: 'min-w-0 w-full !px-2 leading-tight !whitespace-normal sm:w-auto sm:!px-3.5 sm:!whitespace-nowrap'
+			: 'min-w-0 w-full !px-2 leading-tight !whitespace-normal sm:!px-3.5'
 	);
 
 	// Every close goes through the entry, or the next back would raise the sheet
@@ -427,17 +440,17 @@
 		}, SLIDE);
 	}
 
-	/** The card behind a title opened without one, once the caller has it. */
+	/** The card behind the header, from a caller that has a fresher one than the
+	 * tap did, or one where the tap had none. */
 	export function fill(card: Card) {
 		if (opened?.id === card.id) opened = card;
 	}
 
-	/** Re-read the title after a run rewrote its verdicts. Silent, unlike open():
-	 * skeletons would lose the reader's place. */
-	export async function reload(card?: Card) {
+	// Re-read the title after something rewrote its verdicts. Silent, unlike
+	// open(): skeletons would lose the reader's place.
+	async function reload() {
 		const showing = opened;
 		if (!showing) return;
-		if (card) opened = card;
 		try {
 			const found = await getTitle(showing.id);
 			if (opened?.id === showing.id) detail = found;
@@ -497,14 +510,18 @@
 
 <Sheet open={up} onclose={close} label={opened?.name ?? 'Title'}>
 	{#if opened}
-		<div class="px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
-			<div class="flex flex-wrap gap-4">
-				<!-- As tall as the links beside it; see `poster`. Width follows the
-				     height at a poster's 2:3. The tile holds the shape and the border
-				     while the cover fades in over it, so the header does not shift or
-				     flash as the picture lands. -->
+		<div class="px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+			<!-- Two columns, so the links take a second row of the right-hand one from
+			     sm up and the whole width under both on a phone. -->
+			<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3">
+				<!-- Stands the height of the name, the path and the links beside it, its
+				     width following at a poster's 2:3, so the two columns end on one line.
+				     The links pan rather than wrap, or a second row of them would make
+				     this taller, which would make it wider, which would wrap a third. The tile holds the shape
+				     and the border while the cover fades in over it, so the header does
+				     not shift or flash as the picture lands. -->
 				<span
-					class={`relative block aspect-[2/3] h-[7.5rem] w-auto flex-none overflow-hidden rounded-lg border border-line bg-sunken ${poster}`}
+					class="relative row-span-2 block aspect-[2/3] min-h-[7.5rem] w-auto flex-none self-stretch overflow-hidden rounded-lg border border-line bg-sunken sm:min-h-34"
 				>
 					<img
 						src={art}
@@ -513,7 +530,7 @@
 						class={`absolute inset-0 h-full w-full object-cover ${showing}`}
 					/>
 				</span>
-				<div class="min-w-0 flex-1">
+				<div class="min-w-0">
 					<h2 class="text-[17px] font-semibold tracking-tight">{opened.name}</h2>
 					<p class="mt-0.5 text-[12.5px] text-dim">
 						{#if kind}
@@ -532,7 +549,7 @@
 					<p
 						class={`mt-2 text-[13px] font-medium ${involved ? 'text-accent' : ((verdict && verdictText[verdict]) ?? 'text-dim')}`}
 					>
-						{#if workStatus || pause || verdict}
+						{#if known && (workStatus || pause || verdict)}
 							{workStatus || (pause ? 'Paused' : verdictLabel(verdict!))}
 						{:else}{@render holding('w-24')}{/if}
 					</p>
@@ -541,14 +558,15 @@
 					</p>
 				</div>
 
-				<!-- Where to watch it and where it is managed. A row under the cover on
-				     a phone, a column beside the title from sm up, where the header has
-				     room to spare and a row of its own cost a line. A server still being
-				     asked holds its place greyed, so a late answer does not shove
-				     everything up under the thumb. The mark leads on its dark tile, and
-				     the label drops to the name; "Open in" stays for a screen reader. -->
+				<!-- Where to watch it and where it is managed. A row under the path at
+				     every width, beside the cover, rather than a column whose height the
+				     cover had to answer to. Pulled left by the first mark's own padding, so the marks
+				     start where the name and the path do. A server still being asked holds its place greyed, so a
+				     late answer does not shove everything up under the thumb. The mark
+				     leads on its dark tile, and the label drops to the name; "Open in"
+				     stays for a screen reader. -->
 				{#if offered.length}
-					<div class="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-col sm:flex-nowrap">
+					<div class="col-start-2 -ml-2 flex gap-2 overflow-x-auto">
 						{#each offered as server (server.server)}
 							{@const found = server.url ?? ''}
 							{#if found}
@@ -570,98 +588,99 @@
 			<!-- One sunken block, near the thumb, for everything here that does
 			     something. Pause sits with the runs: it answers the same question, and
 			     Process on a paused title rewrites nothing. A run takes the row over. -->
-			{#if acting || pause}
+			{#if acting || pause || involved}
 				<div
 					role="group"
 					aria-label="Title controls"
 					class="mt-4 rounded-xl border border-line bg-sunken p-3"
 				>
-					{#if runner?.run && !involved}
-						<RunProgress
-							run={runner.run}
-							stopping={runner.stopping}
-							noun="this title"
-							onstop={runner.onstop}
-						/>
-					{:else if acting}
-						<!-- One row at every width; stacked, the panel pushed the rows below
-						     the fold. Three equal columns, since the three are one decision
-						     and a narrower Pause read as the lesser of them. Nothing to run:
-						     Pause alone, at its own width rather than a third of the row. -->
-						<div
-							class={runner && !involved
-								? 'grid grid-cols-3 items-center gap-3'
-								: 'grid auto-cols-fr grid-flow-col items-center gap-2 sm:flex sm:flex-wrap'}
-						>
-							{#if runner && !involved}
-								<RunButtons
-									columns
-									mayRewrite={runner.mayRewrite}
-									refuses={runner.refuses}
-									disabled={runner.starting || workBusy || !work || !!workError}
-									busy={runner.busy}
-									onrun={(mode) => opened && runner.onrun(opened.id, mode)}
-								/>
-							{/if}
-							{#if admin && involved}
-								{#if queued.length}<button
-										class={`${cell} ${button}`}
-										disabled={workBusy || !!workError || stoppingWork}
-										onclick={() => queueAct('top')}
-										>{manyFiles ? 'Move queued to top' : 'Move to top'}</button
-									>{/if}
-								<button
-									class={`${cell} ${button} text-danger`}
-									disabled={workBusy || !!workError || stoppingWork}
-									onclick={() => queueAct('skip')}
-									>{activeWork.length
-										? manyFiles
-											? 'Cancel all'
-											: 'Cancel'
-										: manyFiles
-											? 'Skip queued'
-											: 'Skip'}</button
-								>
-							{/if}
-							{#if admin && pause}
-								<button
-									onclick={release}
-									disabled={!!pauseBusy || workBusy || !!workError}
-									class={`${cell} ${button}`}
-								>
-									{pauseBusy === 'resume' ? 'Resuming…' : 'Resume'}
-								</button>
-							{:else if admin}
-								{#key opened.id}
-									<PauseMenu
-										label={opened.name}
-										onchoose={keep}
-										disabled={!!pauseBusy || workBusy || !!workError}
-										hint={involved
-											? 'Stops this title’s current work. A later sweep can process it after the pause ends.'
-											: 'A later sweep can process this title after the pause ends.'}
-										class={`${cell} ${button}`}
-									/>
-								{/key}
-							{/if}
+					{#if acting && !known}
+						<!-- Held at the row's height until the queue has answered, since which
+						     buttons the row holds turns on it: the idle pair landing first and
+						     giving way to Prioritise and Skip read as a flash. As many as the
+						     idle row has, which is what most titles come to. -->
+						<div class="grid auto-cols-fr grid-flow-col gap-3" aria-hidden="true">
+							{#each { length: runner ? 3 : 1 }, at (at)}
+								<span class={`${control} ${radius} border border-line bg-raised`}></span>
+							{/each}
 						</div>
+					{:else}
+						<!-- What each worker has. The page's floating bar carries the run
+						     itself, so the panel keeps to this title at every stage. -->
+						{#if activeWork.length}
+							<div class={`space-y-2.5 ${acting ? 'mb-3' : ''}`}>
+								{#each activeWork as file (file.path)}
+									<FileProgress {file} age={workAge} caption={worked(file.path)} />
+								{/each}
+							</div>
+						{/if}
+						{#if acting}
+							<!-- One row at every width; stacked, the panel pushed the rows below
+							     the fold. Equal columns, since the buttons are one decision and
+							     a narrower Pause read as the lesser of them. -->
+							<div
+								class={runner && !involved
+									? 'grid grid-cols-3 items-center gap-3'
+									: 'grid auto-cols-fr grid-flow-col items-center gap-2 sm:gap-3'}
+							>
+								{#if runner && !involved}
+									<RunButtons
+										columns
+										mayRewrite={runner.mayRewrite}
+										refuses={runner.refuses}
+										disabled={runner.starting || !!runner.run || workBusy || !!workError}
+										busy={runner.busy}
+										onrun={(mode) => opened && runner.onrun(opened.id, mode)}
+									/>
+								{/if}
+								{#if admin && involved}
+									{#if queued.length && !front}<button
+											class={`${cell} ${button}`}
+											disabled={workBusy || !!workError || stoppingWork}
+											onclick={() => queueAct('top')}
+											>{manyFiles ? 'Prioritise all' : 'Prioritise'}</button
+										>{/if}
+									<button
+										class={`${cell} ${button} text-danger`}
+										disabled={workBusy || !!workError || stoppingWork}
+										onclick={() => queueAct('skip')}
+										>{activeWork.length
+											? manyFiles
+												? 'Cancel all'
+												: 'Cancel'
+											: manyFiles
+												? 'Skip all'
+												: 'Skip'}</button
+									>
+								{/if}
+								{#if admin && pause}
+									<button
+										onclick={release}
+										disabled={!!pauseBusy || workBusy || !!workError}
+										class={`${cell} ${button}`}
+									>
+										{pauseBusy === 'resume' ? 'Resuming…' : 'Resume'}
+									</button>
+								{:else if admin}
+									{#key opened.id}
+										<PauseMenu
+											label={opened.name}
+											onchoose={keep}
+											disabled={!!pauseBusy || workBusy || !!workError}
+											hint={involved
+												? 'Stops this title’s current work. A later sweep can process it after the pause ends.'
+												: 'A later sweep can process this title after the pause ends.'}
+											class={`${cell} ${button}`}
+										/>
+									{/key}
+								{/if}
+							</div>
+						{/if}
 					{/if}
-
-					{#if involved && manyFiles}<p class="mt-2 text-[12px] text-dim">
-							Queue actions apply to all this title’s files. Individual controls are below.
-						</p>{/if}
-					{#if queueNotice}<p role="status" class="mt-2 text-[12px] text-dim">
-							{queueNotice}
-							{#if queueUndo}<button
-									class="min-h-8 underline"
-									disabled={workBusy || !!workError}
-									onclick={() => queueAct('undo')}>Undo</button
-								>{/if}
-						</p>{/if}
 
 					<!-- What stands, and what came of the last press. A pause is a state,
 					     so it shows alongside; the rest is one line, the loudest first. -->
-					{#if pause || alarm || runner?.starting || (runner?.run?.dry_run && involved) || runner?.done}
+					{#if pause || alarm}
 						<div class={`flex flex-col gap-1 text-[12px] ${acting ? 'mt-2.5' : ''}`}>
 							{#if pause}
 								<!-- Not who placed it: on a library one household runs, the name is
@@ -670,13 +689,6 @@
 							{/if}
 							{#if alarm}
 								<p role="alert" class="text-danger">{alarm}</p>
-							{:else if (runner?.starting && !runner.run) || (runner?.run?.dry_run && involved)}
-								<p role="status" class="text-dim">
-									{runner?.busy === 'apply' ? 'Processing…' : 'Planning…'}
-								</p>
-							{:else if runner?.done}
-								<!-- What the last run came to, kept until the next starts. -->
-								<p role="status" class="text-dim">{runner.done}</p>
 							{/if}
 						</div>
 					{/if}
@@ -687,10 +699,12 @@
 				<p class="mt-5 text-sm text-danger">{failure}</p>
 			{:else if loading || !detail}
 				<!-- Blocks the size of the rows about to arrive, so the bottom-anchored
-				     sheet rises once rather than jumping when they land. -->
+				     sheet rises once rather than jumping when they land. A film's card, a
+			     name, a line and three tracks: short of a heavy one rather than past
+			     it, since the sheet grows into its slide better than it falls back. -->
 				<ul class="mt-5 flex flex-col gap-4" aria-hidden="true">
 					{#each { length: waiting }, at (at)}
-						<li class="h-[7rem] rounded-xl border border-line bg-sunken"></li>
+						<li class="h-56 rounded-xl border border-line bg-sunken"></li>
 					{/each}
 				</ul>
 				<p class="sr-only">Reading the verdicts…</p>
@@ -733,9 +747,6 @@
 	{@const logo = mark(server.server)}
 	{#if logo}<ServiceIcon name={logo} box={20} size={14} />{/if}
 	<span class="sr-only">Open in </span>{server.label}
-	<!-- Last on the line rather than trailing the name, so the column ends on one
-	     edge as it starts on one. -->
-	<span class="flex-none sm:ml-auto"><Glyph name="open" /></span>
 {/snippet}
 
 <!-- A line the title's own read has still to fill in, held at its height so the
