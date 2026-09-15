@@ -22,7 +22,6 @@ dev/
 # The Playwright review harness: installed per machine against a pinned browser.
 tools/uireview/
 
-# Machine-specific Claude Code config: the redeploy hook points at
-# /opt/stacks/arrs on this host.
+# Machine-specific Claude Code config: local hooks point outside the repo.
 .claude/settings.local.json
 .claude/hooks/

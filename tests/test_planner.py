@@ -1512,6 +1512,28 @@ def test_why_names_the_changes_and_the_rules_behind_them():
     assert "skip" not in told
 
 
+def test_why_files_every_change_under_the_rule_that_ordered_it():
+    """The flat lists lose the pairing, which is what a sheet's chips open on."""
+    told = why(plan_for(video(), audio(1, 6), audio(2, 2, lang="dan")))
+    under = {change["rule"] for change in told["changes"]}
+    assert under == set(told["rules"])
+    assert [change["text"] for change in told["changes"]] == told["reasons"]
+    assert any(
+        change["rule"] == "languages" and change["text"].startswith("drop audio 2")
+        for change in told["changes"]
+    )
+
+
+def test_why_files_a_ride_along_under_its_own_rule():
+    """The second pass is the one that records them, and a file it decides not
+    to rewrite still reports what they would have done."""
+    set_rules(release_tags="alongside")
+    told = why(plan_for(video(), audio(1, 2, title="Surround 5.1 REMUX")))
+    assert told["incidental_rules"] == ["release_tags"]
+    assert [change["rule"] for change in told["changes"]] == ["release_tags"]
+    assert [change["text"] for change in told["changes"]] == told["incidental"]
+
+
 def test_why_leads_with_the_skip_when_there_is_one():
     """A skipped file's reasons are what the rules wanted, not what happens,
     so the view has to be able to say the skip first."""

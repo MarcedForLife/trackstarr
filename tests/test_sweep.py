@@ -504,7 +504,7 @@ def test_a_paused_service_holds_the_walk_where_it_stands(monkeypatch, tmp_path, 
     def judge(job, dry_run, source="webhook", policy=None, cancel=None, observation=None):
         judged.append(job.path)
         if len(judged) == 2:
-            lifecycle.pause("marc")
+            lifecycle.pause("operator")
         return ProcessResult(Status.CONFORM)
 
     monkeypatch.setattr("trackstarr.sweep.process", judge)
@@ -516,7 +516,7 @@ def test_a_paused_service_holds_the_walk_where_it_stands(monkeypatch, tmp_path, 
     # Held, not finished: the pool's thread is asleep on the gate mid-library.
     assert not done.wait(0.5)
     assert len(judged) == 2
-    lifecycle.resume("marc")
+    lifecycle.resume("operator")
     assert done.wait(10)
     assert len(judged) == 5
 
@@ -524,7 +524,7 @@ def test_a_paused_service_holds_the_walk_where_it_stands(monkeypatch, tmp_path, 
 def test_the_scheduler_gives_up_its_slot_while_paused(monkeypatch, caplog, clean_registry):
     """Starting the walk anyway would leave the pool asleep on the gate with
     the library held open all night."""
-    lifecycle.pause("marc")
+    lifecycle.pause("operator")
     monkeypatch.setattr("trackstarr.sweep.sweep", lambda **kwargs: pytest.fail("swept"))
     with caplog.at_level(logging.INFO):
         sweep_mod.run_scheduled()
@@ -972,7 +972,7 @@ def test_an_applying_sweep_leaves_a_paused_title_where_the_walk_found_it(monkeyp
     rewrite would latch to report anyway, having spent a slot and a second
     probe getting there."""
     _library(tmp_path, 3)
-    pauses.place(str(tmp_path / "library"), by="marc", reason="watching one of them")
+    pauses.place(str(tmp_path / "library"), by="operator", reason="watching one of them")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="sweep", policy=None, cancel=None, observation=None: (
@@ -985,7 +985,7 @@ def test_an_applying_sweep_leaves_a_paused_title_where_the_walk_found_it(monkeyp
     # The reason on every row, including the ones a warm cache answered, which
     # never pass through process() to say it themselves.
     rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
-    assert all("paused by marc" in row for row in rows)
+    assert all("paused by operator" in row for row in rows)
     assert all("watching one of them" in row for row in rows)
 
 

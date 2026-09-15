@@ -104,7 +104,7 @@ def test_report_mode_bottoms_out_in_process(monkeypatch):
 def test_a_paused_file_is_planned_and_reported_but_never_rewritten(monkeypatch):
     """The whole point: a title somebody is watching goes on being judged, so
     the library still shows the work, and nothing touches the file."""
-    pauses.place("/data/media/movies/Dune (2024)", by="marc", reason="watching it")
+    pauses.place("/data/media/movies/Dune (2024)", by="operator", reason="watching it")
     set_config(MEDIA_DIRS=["/data/media/movies"])
     plan = needed_plan()
     monkeypatch.setattr(processing, "build_plan", lambda path, lang, policy=None: plan)
@@ -115,13 +115,13 @@ def test_a_paused_file_is_planned_and_reported_but_never_rewritten(monkeypatch):
     assert result.status is Status.PENDING
     # The row and pending.tsv say why this one is not being rewritten, since
     # the plan's own reasons would read as work about to happen.
-    assert "paused by marc" in result.detail
+    assert "paused by operator" in result.detail
     assert "watching it" in result.detail
 
 
 def test_a_pause_on_one_title_leaves_the_rest_alone(stub_rewrite):
     """A hold is not a pause; everything else goes on being rewritten."""
-    pauses.place("/data/media/movies/Dune (2024)", by="marc")
+    pauses.place("/data/media/movies/Dune (2024)", by="operator")
     stub_rewrite(needed_plan(path="/data/media/movies/Arrival (2016)/Arrival (2016).mkv"))
     result = process(Job("/data/media/movies/Arrival (2016)/Arrival (2016).mkv"), dry_run=False)
     assert result.status is Status.MODIFIED

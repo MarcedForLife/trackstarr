@@ -78,6 +78,9 @@ def _queue_status(workload: tuple[int, int] | None = None) -> dict:
         "working": working,
         # Encodes in flight, as distinct from probes: what a stop would waste.
         "rewrites": runs.rewrites(),
+        # What caps them, so the page can say the ceiling is configured rather
+        # than ours.
+        "slots": config.current().MAX_CONCURRENT_REWRITES,
         "parked": jobs.parked_count(),
         "may_rewrite": not effective_dry_run(False),
         "next_sweep": sweep.next_scheduled(),
@@ -249,8 +252,9 @@ def _activity_snapshot() -> dict:
     working = [item["path"] for run in snapshot["runs"] for item in run["active"]]
     shown = [*queued, *working, *(pause["path"] for pause in snapshot["pauses"])]
     snapshot["covers"] = library.covers_for_paths(shown)
-    # A row keeps its plan from the queue until release. A paused file draws none.
-    snapshot["plans"], snapshot["plans_current"] = library.plans_for_paths([*queued, *working])
+    # A row keeps its plan from the queue until release, a paused one until it
+    # resumes. A pause on a title folder has none: nothing judges a folder.
+    snapshot["plans"], snapshot["plans_current"] = library.plans_for_paths(shown)
     return snapshot
 
 

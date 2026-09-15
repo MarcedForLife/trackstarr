@@ -39,7 +39,7 @@ def store_path() -> str:
 def test_a_pause_on_a_folder_covers_the_files_under_it():
     """Somebody pauses a title, not a path: the sheet knows the folder and the
     pipeline judges files."""
-    pauses.place(DUNE, by="marc")
+    pauses.place(DUNE, by="operator")
     assert pauses.paused(DUNE_FILE) is not None
     assert pauses.paused(DUNE) is not None
     assert pauses.paused(ARRIVAL_FILE) is None
@@ -56,8 +56,8 @@ def test_a_pause_lapses_on_its_own():
 def test_a_lapsed_inner_pause_does_not_hide_a_standing_outer_one():
     """The innermost match wins, so a two-hour pause on one episode must not
     answer for the series paused until further notice."""
-    pauses.place(f"{MOVIES}", by="marc")
-    pauses.place(DUNE, seconds=3600, by="marc")
+    pauses.place(f"{MOVIES}", by="operator")
+    pauses.place(DUNE, seconds=3600, by="operator")
     later = _after(2 * 3600)
     assert pauses.paused(DUNE_FILE, now=later) is not None
     assert pauses.paused(DUNE_FILE, now=later).path == MOVIES
@@ -90,7 +90,7 @@ def test_pausing_the_same_thing_again_extends_it():
 
 def test_resuming_says_whether_there_was_anything_to_resume():
     pauses.place(DUNE)
-    assert pauses.resume(DUNE, by="marc") is not None
+    assert pauses.resume(DUNE, by="operator") is not None
     assert pauses.paused(DUNE_FILE) is None
     assert pauses.resume(DUNE) is None
 
@@ -98,11 +98,11 @@ def test_resuming_says_whether_there_was_anything_to_resume():
 def test_a_pause_survives_a_restart():
     """An evening's pause must not lapse because the container was updated in
     the middle of it."""
-    pauses.place(DUNE, seconds=3600, by="marc", reason="watching it")
+    pauses.place(DUNE, seconds=3600, by="operator", reason="watching it")
     pauses.forget()
     found = pauses.paused(DUNE_FILE)
     assert found is not None
-    assert (found.by, found.reason) == ("marc", "watching it")
+    assert (found.by, found.reason) == ("operator", "watching it")
 
 
 def test_a_pause_cannot_outlive_the_ceiling():
@@ -134,10 +134,10 @@ def test_an_unreadable_store_holds_nothing():
 def test_pausing_and_resuming_are_both_in_the_history():
     """Two people share an install; "why did this not get rewritten" has to be
     answerable."""
-    pauses.place(DUNE, seconds=3600, by="marc", reason="watching it")
-    pauses.resume(DUNE, by="marc")
+    pauses.place(DUNE, seconds=3600, by="operator", reason="watching it")
+    pauses.resume(DUNE, by="operator")
     kinds = [(entry["event"], entry.get("by")) for entry in read_events()]
-    assert kinds == [("item_paused", "marc"), ("item_resumed", "marc")]
+    assert kinds == [("item_paused", "operator"), ("item_resumed", "operator")]
 
 
 def test_nothing_is_paused_by_default():
@@ -151,7 +151,7 @@ def _after(seconds: float) -> float:
 
 
 def test_existing_hold_store_migrates_without_losing_a_pause():
-    pauses.place(DUNE, 3600, by="marc")
+    pauses.place(DUNE, 3600, by="operator")
     current = Path(config.STATE_DIR) / pauses.PAUSES_FILE
     legacy = current.with_name("holds.json")
     current.rename(legacy)
@@ -159,7 +159,7 @@ def test_existing_hold_store_migrates_without_losing_a_pause():
 
     found = pauses.paused(DUNE_FILE)
     assert found is not None
-    assert found.by == "marc"
+    assert found.by == "operator"
     assert current.exists()
     assert not legacy.exists()
     pauses.resume(DUNE)
@@ -219,9 +219,9 @@ def test_a_pause_placed_by_another_spelling_covers_the_file(spelling):
 
 
 def test_either_spelling_reads_and_resumes_the_one_pause():
-    pauses.place(f"{MOVIES}/./Dune (2024)", by="marc")
+    pauses.place(f"{MOVIES}/./Dune (2024)", by="operator")
     pauses.forget()  # As a restart reads it.
-    assert pauses.paused(f"{DUNE}//Dune (2024).mkv").by == "marc"
+    assert pauses.paused(f"{DUNE}//Dune (2024).mkv").by == "operator"
     assert pauses.resume(f"{MOVIES}/Dune (2024)/") is not None
     pauses.forget()
     assert pauses.current() == []

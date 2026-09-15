@@ -898,7 +898,7 @@ def test_a_paused_service_will_not_be_talked_into_a_sweep(
 ):
     """It would only walk the library and park every thread on the gate."""
     users.add("admin", "right password", "admin")
-    lifecycle.pause("marc")
+    lifecycle.pause("operator")
     status, answer, _ = api(
         listener, "POST", "/api/runs/start", {}, cookie=sign_in(listener, "admin")
     )
@@ -1479,7 +1479,7 @@ def test_a_paused_service_will_not_be_talked_into_a_recheck(
     listener, fast_scrypt, clean_registry, one_title
 ):
     users.add("admin", "right password", "admin")
-    lifecycle.pause("marc")
+    lifecycle.pause("operator")
     status, answer, _ = api(
         listener,
         "POST",

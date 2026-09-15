@@ -38,7 +38,7 @@ def test_pausing_holds_every_thread_that_asks_to_start():
         if lifecycle.hold():
             allowed.set()
 
-    lifecycle.pause("marc")
+    lifecycle.pause("operator")
     thread = threading.Thread(target=work, daemon=True)
     thread.start()
     assert started.wait(2)
@@ -46,13 +46,13 @@ def test_pausing_holds_every_thread_that_asks_to_start():
     # sweep thread waits on it.
     assert not allowed.wait(0.2)
 
-    lifecycle.resume("marc")
+    lifecycle.resume("operator")
     assert allowed.wait(2)
     thread.join(timeout=2)
 
 
 def test_a_pause_survives_a_restart():
-    lifecycle.pause("marc")
+    lifecycle.pause("operator")
     with open(flag_path()) as flag:
         assert json.load(flag)["paused"] is True
 
@@ -60,12 +60,12 @@ def test_a_pause_survives_a_restart():
     lifecycle.reset_paused()
     lifecycle.load_paused()
     assert lifecycle.paused()
-    assert lifecycle.snapshot()["paused_by"] == "marc"
+    assert lifecycle.snapshot()["paused_by"] == "operator"
 
 
 def test_resuming_clears_the_flag_a_restart_would_read():
-    lifecycle.pause("marc")
-    lifecycle.resume("marc")
+    lifecycle.pause("operator")
+    lifecycle.resume("operator")
     lifecycle.reset_paused()
     lifecycle.load_paused()
     assert not lifecycle.paused()
@@ -84,17 +84,17 @@ def test_a_flag_that_says_nothing_useful_reads_as_running(content):
 
 
 def test_pausing_twice_changes_nothing_and_says_so():
-    assert lifecycle.pause("marc") is True
-    assert lifecycle.pause("marc") is False
-    assert lifecycle.resume("marc") is True
-    assert lifecycle.resume("marc") is False
+    assert lifecycle.pause("operator") is True
+    assert lifecycle.pause("operator") is False
+    assert lifecycle.resume("operator") is True
+    assert lifecycle.resume("operator") is False
 
 
 def test_the_history_records_who_paused_and_resumed():
-    lifecycle.pause("marc")
-    lifecycle.resume("marc")
+    lifecycle.pause("operator")
+    lifecycle.resume("operator")
     kinds = [(entry["event"], entry.get("by")) for entry in read_events()]
-    assert kinds == [("paused", "marc"), ("resumed", "marc")]
+    assert kinds == [("paused", "operator"), ("resumed", "operator")]
 
 
 def test_a_stopped_run_tells_its_threads_to_give_up():
@@ -139,7 +139,7 @@ def test_a_pause_that_cannot_be_written_still_pauses(monkeypatch, caplog):
         raise OSError("read-only file system")
 
     monkeypatch.setattr(lifecycle, "write_json", refuse)
-    assert lifecycle.pause("marc") is True
+    assert lifecycle.pause("operator") is True
     assert lifecycle.paused()
     assert "could not persist" in caplog.text
 
@@ -478,7 +478,7 @@ def test_retirement_notifications_run_after_unlock(monkeypatch):
 def test_startup_restores_the_pause_before_dispatch_can_claim(monkeypatch):
     """Order is the whole point: a worker that claims a file between the two
     would rewrite it despite the pause the last process left behind."""
-    lifecycle.pause("marc")
+    lifecycle.pause("operator")
     lifecycle.reset_paused()
     claimed = []
     original_start = work.scheduler.start
@@ -610,7 +610,7 @@ def test_reset_quiesces_before_handing_back_fresh_state():
     the next one's registry."""
     lifecycle.open_run("sweep", runs.SWEEP)
     work.scheduler.submit("sweep", "/one.mkv", "work", lambda: None)
-    lifecycle.pause("marc")
+    lifecycle.pause("operator")
     stale = work.scheduler
 
     with pytest.raises(RuntimeError, match="cannot reset"):

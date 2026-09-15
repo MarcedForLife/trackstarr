@@ -178,9 +178,9 @@ def test_a_stop_is_published_at_once(subscription, clean_registry):
 
 def test_a_pause_and_a_resume_are_published(subscription, clean_registry):
     try:
-        assert lifecycle.pause("marc")
+        assert lifecycle.pause("operator")
         assert subscription.take(0) == {notify.RUNS}
-        assert lifecycle.resume("marc")
+        assert lifecycle.resume("operator")
         assert subscription.take(0) == {notify.RUNS}
     finally:
         runs.reset()

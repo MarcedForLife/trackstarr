@@ -23,6 +23,9 @@ export type Track = {
 	src?: number;
 };
 
+/** One change in prose, under the rule that ordered it. */
+export type Change = { rule: string; text: string };
+
 // Why a file is what it is: the lists a "modified" event records, plus the skip.
 export type Why = {
 	skip?: string;
@@ -32,6 +35,10 @@ export type Why = {
 	incidental?: string[];
 	rules?: string[];
 	incidental_rules?: string[];
+	// The prose above again, paired with its rule, which the flat lists lose.
+	// Absent on a file judged before the planner recorded the pairing, whose
+	// chips stay plain labels until the next sweep.
+	changes?: Change[];
 };
 
 // What a rewrite did, kept on the file it left behind. `at` is when, as the
@@ -662,25 +669,33 @@ export function verdictHint(state: Verdict): string {
 	return VOCABULARY[state].hint;
 }
 
-/** The layouts a rewrite would add and rebuild, badged as a poster badges them:
- * green for a gain, accent for a rebuild, since a rebuild is one change and not
- * a gain plus a drop. A card's rollup and one file's plan carry the same three
- * fields, so the grid and the queue read alike. */
 // One chip, wherever a change is drawn. The plain tone is for what a rewrite
 // takes away or costs, which has no colour of its own.
 export const CHIP = 'rounded px-1 py-px font-mono text-[10px] leading-tight';
 export const PLAIN_TONE = 'border border-line-strong text-dim';
 export const PLAIN_CHIP = `${CHIP} ${PLAIN_TONE}`;
 
+/** What a rewrite would do, counted rather than named: one chip for adds, one
+ * for rebuilds, the layouts in each label. A card's rollup and a file's plan
+ * share the fields, so the grid and the queue read alike. */
 export function changed(plan: {
 	adds?: string[];
 	rebuilds?: string[];
-}): { chip: string; tone: string }[] {
-	return [
-		...(plan.adds ?? []).map((layout) => ({ chip: `+${layout}`, tone: 'bg-ok/90 text-on-ok' })),
-		...(plan.rebuilds ?? []).map((layout) => ({
-			chip: layout,
-			tone: 'bg-accent-fill/90 text-on-accent'
-		}))
-	];
+}): { chip: string; tone: string; label: string }[] {
+	const chips = [];
+	if (plan.adds?.length) {
+		chips.push({
+			chip: `+${plan.adds.length}`,
+			tone: 'bg-ok/90 text-on-ok',
+			label: `Adds ${plan.adds.length}: ${plan.adds.join(', ')}`
+		});
+	}
+	if (plan.rebuilds?.length) {
+		chips.push({
+			chip: `~${plan.rebuilds.length}`,
+			tone: 'bg-accent-fill/90 text-on-accent',
+			label: `Rebuilds ${plan.rebuilds.length}: ${plan.rebuilds.join(', ')}`
+		});
+	}
+	return chips;
 }

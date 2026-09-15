@@ -1,8 +1,6 @@
 # Local demo deployment
 
-The local `tsd` command offers to build/update the demo on port 5121 after deploying the main service. Use `tsd --demo` to include it or `tsd --no-demo` to skip it. Unattended runs skip it by default. The demo builds the local working tree, even with `--release`.
-
-To deploy the demo by itself, run from the repository root:
+To deploy the demo, run from the repository root:
 
 ```sh
 docker build --target demo --build-arg WEB_MODE=demo -t trackstarr:demo .

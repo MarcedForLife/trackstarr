@@ -48,6 +48,12 @@
 				],
 				"rules": [
 					"downmix"
+				],
+				"changes": [
+					{
+						"rule": "downmix",
+						"text": "add 2.0 downmix (from track 1)"
+					}
 				]
 			}
 		},

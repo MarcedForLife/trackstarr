@@ -95,10 +95,11 @@ def test_a_setting_outside_the_rules_still_leaves_a_line(settings_state):
     file's fate, so a schedule or an address changed nothing in it and the
     history had nothing to say about the save at all."""
     started()
-    assert settings.update({"REWRITE_MODE": "all", "SWEEP_AT": "0 4 * * *"}, by="marc") == []
+    saved = {"REWRITE_MODE": "all", "SWEEP_AT": "0 4 * * *"}
+    assert settings.update(saved, by="operator") == []
     _, entry = read_events()
     assert entry["event"] == "settings"
-    assert entry["by"] == "marc"
+    assert entry["by"] == "operator"
     assert entry["changed"] == {
         "REWRITE_MODE": {"from": "imports", "to": "all"},
         "SWEEP_AT": {"from": "", "to": "0 4 * * *"},
