@@ -21,6 +21,7 @@ Once prepared, reuse the current build:
 
 ```sh
 node probes/processing.mjs    # overview states, failure links and offline progress
+node probes/file-account.mjs  # legacy plan explanations and unchecked files
 ENGINES=firefox node probes/focus.mjs
 HEADED=1 node probes/focus.mjs
 TITLES=1200 ENGINES=firefox node probes/sweep.mjs

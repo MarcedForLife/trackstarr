@@ -84,16 +84,48 @@ try {
 		.first();
 	const controls = sheet.getByRole('group', { name: 'Title controls', exact: true });
 	assert.equal(await row.getByRole('button', { name: /Actions for/ }).count(), 0);
-	await sheet.getByText('Queue position 24', { exact: true }).waitFor();
-	await page.getByRole('button', { name: 'Move to top', exact: true }).click();
-	await sheet.getByText('Queue position 1', { exact: true }).waitFor();
+	// The header names the file's place; the notice is what the reorder and its
+	// undo show, since the place comes back to where it was.
+	await sheet.getByText('Pending (#24)', { exact: true }).waitFor();
+	// One file, so the header carries the verdict and the row does not repeat it.
+	// "Failed:" leading the reason below is a different string.
+	assert.equal(await row.getByText('Failed', { exact: true }).count(), 0);
+	await page.getByRole('button', { name: 'Prioritise', exact: true }).click();
+	await controls.getByText(/^Moved to top\./).waitFor();
+	assert.equal(work.queued[0].position, 1);
 	await controls.getByRole('button', { name: 'Undo', exact: true }).click();
-	await sheet.getByText('Queue position 24', { exact: true }).waitFor();
+	await controls.getByText('Queue order restored.', { exact: true }).waitFor();
+	assert.equal(work.queued[0].position, 24);
+	// A rule chip opens on the lines that rule ordered. Escape answers the
+	// popover before the sheet it stands in.
+	const line = 'add 2.0 downmix (from track 1)';
+	// In the DOM all along; the popover is what makes it visible.
+	assert.equal(await page.getByText(line, { exact: true }).isVisible(), false);
+	await row.getByRole('button', { name: 'downmix', exact: true }).click();
+	await page.getByText(line, { exact: true }).waitFor();
+	await page.keyboard.press('Escape');
+	await page.getByText(line, { exact: true }).waitFor({ state: 'hidden' });
+	await sheet.waitFor({ state: 'visible' });
+	// A track row is somewhere to tap the popover away, so only the pencil at its
+	// end opens the editor.
+	const pencil = row.getByRole('button', { name: /^Edit tags on / }).first();
+	await row.getByRole('button', { name: 'downmix', exact: true }).click();
+	await page.getByText(line, { exact: true }).waitFor();
+	await sheet.getByText('EAC3 · 5.1 · eng', { exact: true }).click();
+	await page.getByText(line, { exact: true }).waitFor({ state: 'hidden' });
+	assert.equal(await sheet.getByRole('button', { name: 'Cancel', exact: true }).count(), 0);
+	await pencil.click();
+	await sheet.getByRole('button', { name: 'Cancel', exact: true }).waitFor();
+	await page.keyboard.press('Escape');
+	await sheet.getByRole('button', { name: 'Cancel', exact: true }).waitFor({ state: 'detached' });
+	await sheet.waitFor({ state: 'visible' });
 	await page.getByRole('button', { name: 'Skip', exact: true }).click();
 	await controls.getByRole('button', { name: /^Pause / }).waitFor();
 	await controls.getByRole('button', { name: /^Pause / }).click();
 	await page.getByRole('button', { name: '1 hour', exact: true }).click();
 	await sheet.getByText('Paused', { exact: true }).waitFor();
+	// A press answers with its own line, so the skip's went as this one started.
+	assert.equal(await controls.getByText('Skipped.', { exact: true }).count(), 0);
 	await controls.getByRole('button', { name: 'Resume', exact: true }).click();
 	await controls.getByRole('button', { name: /^Pause / }).waitFor();
 	assert.equal(await sheet.evaluate((el) => el.scrollWidth > el.clientWidth), false);
@@ -116,9 +148,18 @@ try {
 		.getByRole('button', { name: new RegExp(`^${title.name}`) })
 		.first()
 		.click();
-	await sheet.getByText('1 processing · 2 queued · next at position 12', { exact: true }).waitFor();
+	await sheet.getByText('1 processing · Pending (2 files)', { exact: true }).waitFor();
 	await row.getByRole('button', { name: /Actions for/ }).waitFor();
-	await controls.getByRole('button', { name: 'Move queued to top', exact: true }).click();
+	// Equal shares at every width, as the idle row has. These fell back to
+	// natural widths from sm up, so the check has to leave the phone.
+	await page.setViewportSize({ width: 800, height: 900 });
+	const shares = await controls
+		.getByRole('button')
+		.evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().width)));
+	assert.equal(shares.length, 3);
+	assert.equal(new Set(shares).size, 1, `title controls share the row: ${shares}`);
+	await page.setViewportSize({ width: 390, height: 844 });
+	await controls.getByRole('button', { name: 'Prioritise all', exact: true }).click();
 	assert.deepEqual(
 		mutations.at(-1).items.map((item) => item.path),
 		[second.path, hidden]
@@ -137,12 +178,12 @@ try {
 		.getByRole('button', { name: new RegExp(`^${title.name}`) })
 		.first()
 		.click();
-	await sheet.getByText('Queue position 12', { exact: true }).waitFor();
+	await sheet.getByText('Pending (#12)', { exact: true }).waitFor();
 	assert.equal(await row.getByRole('button', { name: /Actions for/ }).count(), 0);
 	assert.equal(await controls.getByRole('button').count(), 0);
 	assert.deepEqual(errors, []);
 	console.log(
-		'chromium: title-level movie actions, series aggregate status and scoped actions, pause/resume, mobile and viewer access passed'
+		'chromium: title-level movie actions, rule chip popovers, series aggregate status and scoped actions, pause/resume, mobile and viewer access passed'
 	);
 } finally {
 	await browser.close();
