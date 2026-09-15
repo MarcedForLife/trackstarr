@@ -13,7 +13,8 @@
 		allCount,
 		label,
 		labelledBy,
-		describedBy
+		describedBy,
+		panel = false
 	}: {
 		// Which verdicts are held. Empty is All, which is not itself a value.
 		chosen: Verdict[];
@@ -27,11 +28,15 @@
 		label?: string;
 		labelledBy?: string;
 		describedBy?: string;
+		// A two-column panel in the library; settings keeps the wrapping row.
+		panel?: boolean;
 	} = $props();
 
 	// Against a shelf, only the chips something is under. Without one, all of
 	// them, or a setting that holds Failed until something fails is unfindable.
-	const states = $derived(counts ? FILTERS.filter((state) => counts[state]) : FILTERS);
+	const states = $derived(
+		counts ? FILTERS.filter((state) => counts[state] || chosen.includes(state)) : FILTERS
+	);
 
 	const on = (state: Verdict) => chosen.includes(state);
 
@@ -41,16 +46,17 @@
 	}
 
 	// A group of toggles, not a radio.
-	const chip = `flex ${control} items-center gap-2 rounded-full border px-3.5 text-[13px] transition-colors sm:px-3`;
+	const chip = $derived(
+		`flex ${control} items-center gap-2 ${panel ? 'rounded-lg px-2.5' : 'rounded-full px-3.5'} border text-[13px] transition-colors sm:px-3`
+	);
 </script>
 
-<!-- A wrapping row, not tabs: nine chips will not fit a phone. -->
 <div
 	role="group"
 	aria-label={label}
 	aria-labelledby={labelledBy}
 	aria-describedby={describedBy}
-	class="flex flex-wrap gap-2"
+	class={panel ? 'grid grid-cols-2 gap-2' : 'flex flex-wrap gap-2'}
 >
 	<button
 		type="button"
@@ -66,7 +72,9 @@
 		<!-- All carries no dot, or it would read as one more verdict. -->
 		All
 		{#if allCount !== undefined}
-			<span class={`tabular-nums ${chosen.length ? 'text-faint' : 'text-dim'}`}>
+			<span
+				class={`${panel ? 'ml-auto' : ''} tabular-nums ${chosen.length ? 'text-faint' : 'text-dim'}`}
+			>
 				{allCount.toLocaleString()}
 			</span>
 		{/if}
@@ -85,8 +93,10 @@
 			<span class={`h-1.5 w-1.5 flex-none rounded-full ${pip[state]}`}></span>
 			{verdictLabel(state)}
 			{#if counts}
-				<span class={`tabular-nums ${on(state) ? 'text-dim' : 'text-faint'}`}>
-					{counts[state].toLocaleString()}
+				<span
+					class={`${panel ? 'ml-auto' : ''} tabular-nums ${on(state) ? 'text-dim' : 'text-faint'}`}
+				>
+					{(counts[state] ?? 0).toLocaleString()}
 				</span>
 			{/if}
 		</button>

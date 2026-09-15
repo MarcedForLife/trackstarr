@@ -16,7 +16,8 @@
 		| 'sliders'
 		| 'pencil'
 		| 'list'
-		| 'log';
+		| 'log'
+		| 'calendar';
 </script>
 
 <script lang="ts">
@@ -154,6 +155,17 @@
 		<g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
 			<path d="M3.4 4.4 7 8l-3.6 3.6" stroke-linejoin="round"></path>
 			<path d="M8.8 11.6h3.8"></path>
+		</g>
+	{:else if name === 'calendar'}
+		<g
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.5"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
+			<path d="M5 2v3M11 2v3M2.5 7h11" />
 		</g>
 	{:else if name === 'cross'}
 		<!-- Half the box, centred: six pixels of stroke at 12px. -->

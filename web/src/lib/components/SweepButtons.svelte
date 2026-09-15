@@ -121,7 +121,7 @@
 			popover="manual"
 			role="dialog"
 			aria-label={choice.label}
-			class="fixed m-0 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong bg-raised p-3.5 text-fg shadow-lg"
+			class="fixed m-0 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong bg-raised/85 p-3.5 text-fg shadow-lg backdrop-blur-md"
 		>
 			<p class="text-[13px] font-semibold">{choice.label} the whole library</p>
 			{#if choice.mode === 'apply' && !mayRewrite}

@@ -3,11 +3,12 @@
 	import EventRow from '$lib/components/EventRow.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
 	import Page from '$lib/components/Page.svelte';
-	import Segmented from '$lib/components/Segmented.svelte';
+	import Select from '$lib/components/Select.svelte';
+	import ToolbarMenu from '$lib/components/ToolbarMenu.svelte';
 	import TitleSheet from '$lib/components/TitleSheet.svelte';
 	import { Snapshot } from '$lib/activity.svelte';
 	import { count, CUSTOM, key, said, searchable, SPANS, type Event } from '$lib/events';
-	import { button, control, glyph, quiet, radius } from '$lib/controls';
+	import { button, control, quiet, radius } from '$lib/controls';
 	import { History } from '$lib/history.svelte';
 	import type { Card } from '$lib/library';
 	import { Recheck } from '$lib/recheck.svelte';
@@ -81,6 +82,18 @@
 			kinds: ['sweep', 'recheck', 'webhook', 'config', 'settings', 'paused', 'resumed']
 		}
 	];
+
+	const periods = [
+		...SPANS.map((span) => ({
+			value: span.value,
+			label: span.value === 'all' ? 'All time' : span.said.replace('the last', 'Last')
+		})),
+		{ value: CUSTOM, label: 'Custom range' }
+	];
+	const typeLabel = $derived(FILTERS.find((option) => option.value === filter)?.label ?? 'All');
+	const periodLabel = $derived(
+		periods.find((option) => option.value === history.span)?.label ?? 'All time'
+	);
 
 	const kinds = $derived(FILTERS.find((option) => option.value === filter)?.kinds ?? []);
 
@@ -168,121 +181,94 @@
 
 <!-- wide: release names and paths wrapped onto a third line at 42rem. -->
 <Page wide lead="Every sweep, import and rewrite, newest first.">
-	<!-- Two questions, a row each: what happened, and how far back. Each row is a
-	     track and one button, so both rows start and end on one edge on a phone.
-	     Refresh rides with the kinds rather than at the page's right edge, where
-	     a wide screen left it stranded a screen away from what it reloads. -->
-	<div class="mt-6 flex flex-col gap-3">
-		<div class="flex items-center gap-2">
-			<div class="min-w-0 flex-1 sm:flex-none">
-				<Segmented options={FILTERS} value={filter} onchange={choose} />
-			</div>
-			<button
-				onclick={() => history.refresh()}
-				disabled={history.busy}
-				aria-label="Refresh"
-				title="Read the history again"
-				class={`flex-none ${glyph}`}
-			>
-				<Glyph name="refresh" />
-				<!-- The word from sm up, where the row has room for it. -->
-				<span class="hidden sm:inline">{history.busy ? 'Reading…' : 'Refresh'}</span>
-			</button>
-		</div>
-
-		<!-- Nine segments is more than a phone fits, and a hand-picked range is a
-		     different kind of answer (between when and when), so it stands outside
-		     the track as the toggle it is: the app's pressed chip with a chevron
-		     that turns, not a sixth segment. With it held Segmented hides its
-		     thumb on -1. -->
-		<div class="flex min-w-0 items-center gap-2">
-			<div class="min-w-0 flex-1 sm:flex-none">
-				<Segmented
-					options={SPANS}
-					value={history.span}
-					tight
-					label="How far back"
-					onchange={(chosen) => history.look(chosen)}
-				/>
-			</div>
-			<button
-				aria-pressed={history.span === CUSTOM}
-				aria-expanded={history.span === CUSTOM}
-				aria-label="A range you pick"
-				onclick={() => history.look(history.span === CUSTOM ? 'all' : CUSTOM)}
-				class={`${control} ${radius} flex flex-none items-center gap-1.5 border px-3 text-[13px] whitespace-nowrap transition-colors ${
-					history.span === CUSTOM
-						? 'border-line-strong bg-raised font-semibold text-fg'
-						: 'border-line font-medium text-dim hover:text-fg'
-				}`}
-			>
-				Range
-				<span
-					class={`text-faint transition-transform duration-200 ${
-						history.span === CUSTOM ? 'rotate-90' : ''
-					}`}
-				>
-					<Glyph name="chevron" size={11} />
-				</span>
-			</button>
-		</div>
-
-		{#if history.span === CUSTOM}
-			<!-- A panel of its own, so two fields and a way to empty them read as
-			     what the button opened rather than as controls loose in the page.
-			     Native pickers: the platform's wheel beats anything drawn here, and
-			     the value is local wall-clock. -->
-			<!-- Hugs its fields from sm up, or Clear ended up a screen away from the
-			     end it clears on a wide one. -->
-			<div class="rounded-xl border border-line bg-sunken p-3 sm:self-start">
-				<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-					{#each [{ id: 'from', label: 'From' }, { id: 'to', label: 'To' }] as end (end.id)}
-						<label class="flex min-w-0 items-center gap-2.5 sm:flex-none">
-							<span class="w-9 flex-none text-[12.5px] font-medium text-dim sm:w-auto">
-								{end.label}
-							</span>
-							<input
-								type="datetime-local"
-								value={end.id === 'from' ? history.from : history.to}
-								onchange={(picked) => {
-									const value = picked.currentTarget.value;
-									if (end.id === 'from') history.from = value;
-									else history.to = value;
-									history.refresh();
-								}}
-								class={`${control} ${radius} min-w-0 flex-1 border border-line-strong bg-field px-3 text-base sm:flex-none sm:text-[13px]`}
-							/>
-						</label>
-					{/each}
-					<!-- Both ends at once: an empty end is an open one, which the row
-					     cannot otherwise reach, and Android's picker has no clear.
-					     Last in the row, and last on its own line on a phone. -->
-					<button
-						onclick={() => {
-							history.from = '';
-							history.to = '';
-							history.refresh();
-						}}
-						disabled={!history.from && !history.to}
-						class={`${quiet} self-end sm:self-auto`}
-					>
-						Clear
-					</button>
-				</div>
-			</div>
-		{/if}
-
-		<!-- Last, since the kinds and the window say which lines the page holds and
-		     this says which of them to read. Capped from sm up, or the box invites a
-		     sentence. -->
+	<!-- The same hierarchy as the library: search, two focused menus, then the
+	     loaded results and the action that refreshes them. -->
+	<div class="mt-6 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
 		<input
 			bind:value={search}
 			oninput={fromTheTop}
 			type="search"
 			placeholder="Find a file, rule or run"
 			aria-label="Find in these events"
-			class={`${control} ${radius} min-w-0 border border-line-strong bg-field px-3 text-base placeholder:text-faint sm:max-w-72 sm:text-[13px]`}
+			class={`${control} ${radius} min-w-0 border border-line-strong bg-field px-3 text-base placeholder:text-faint sm:w-52 sm:flex-1 sm:text-[13px]`}
 		/>
+		<div class="flex min-w-0 items-center gap-2 sm:gap-3">
+			<ToolbarMenu label="Event type" icon="sliders" detail={typeLabel} active={filter !== 'all'}>
+				<div class="grid grid-cols-2 gap-2" role="group" aria-label="Filter event types">
+					{#each FILTERS as option (option.value)}
+						<button
+							type="button"
+							aria-pressed={filter === option.value}
+							onclick={() => choose(option.value)}
+							class={`${control} rounded-lg border px-3 text-left text-[13px] ${filter === option.value ? 'border-line-control bg-sunken font-semibold text-fg' : 'border-line text-dim hover:bg-sunken'}`}
+						>
+							{option.label}
+						</button>
+					{/each}
+				</div>
+			</ToolbarMenu>
+			<ToolbarMenu label="Time range" icon="calendar" detail={periodLabel} active={history.bounded}>
+				<div class="flex">
+					<Select
+						grow
+						label="Time range"
+						options={periods}
+						value={history.span}
+						onchange={(value) => history.look(value)}
+					/>
+				</div>
+				{#if history.span === CUSTOM}
+					<div class="mt-3 space-y-3">
+						{#each [{ id: 'from', label: 'From' }, { id: 'to', label: 'To' }] as end (end.id)}
+							<label class="block min-w-0">
+								<span class="mb-1.5 block text-[12px] font-medium text-dim">{end.label}</span>
+								<input
+									type="datetime-local"
+									value={end.id === 'from' ? history.from : history.to}
+									onchange={(picked) => {
+										const value = picked.currentTarget.value;
+										if (end.id === 'from') history.from = value;
+										else history.to = value;
+										history.refresh();
+									}}
+									class={`${control} ${radius} w-full min-w-0 border border-line-strong bg-field px-2 text-base sm:text-[13px]`}
+								/>
+							</label>
+						{/each}
+						<button
+							type="button"
+							onclick={() => {
+								history.from = '';
+								history.to = '';
+								history.refresh();
+							}}
+							disabled={!history.from && !history.to}
+							class={quiet}>Clear dates</button
+						>
+					</div>
+				{/if}
+			</ToolbarMenu>
+		</div>
+	</div>
+	<div class="mt-2 flex min-h-11 min-w-0 items-center gap-2 text-[12px] text-dim sm:min-h-10">
+		<p class="min-w-0 flex-1">
+			<span class="tabular-nums">{count(rows.length, 'event')}</span>{cutting
+				? ' matched'
+				: ' loaded'}
+			{#if filter !== 'all'}
+				{` · ${typeLabel}`}{/if}
+			{#if history.bounded}
+				{` · ${periodLabel}`}{/if}
+		</p>
+		<button
+			type="button"
+			onclick={() => history.refresh()}
+			disabled={history.busy}
+			class={`-mr-2.5 flex ${control} ${radius} flex-none items-center gap-1.5 px-2.5 text-[13px] font-medium hover:bg-raised hover:text-fg disabled:opacity-(--disabled)`}
+		>
+			<Glyph name="refresh" />
+			{history.busy ? 'Reading…' : 'Refresh'}
+		</button>
 	</div>
 
 	{#if history.failure}
@@ -307,7 +293,7 @@
 	{:else}
 		<ol
 			aria-label="Events"
-			class="mt-6 divide-y divide-line overflow-hidden rounded-xl border border-line bg-raised"
+			class="mt-3 divide-y divide-line overflow-hidden rounded-xl border border-line bg-raised"
 		>
 			{#each shown as { entry, at, id } (id)}
 				<!-- Rows off screen are skipped whole. 6rem is the guess for an unseen

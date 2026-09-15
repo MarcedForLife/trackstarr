@@ -9,8 +9,17 @@
 		// What is being picked, for the tooltip a phone reads instead of the word.
 		what,
 		onclick,
-		disabled = false
-	}: { picking: boolean; what: string; onclick: () => void; disabled?: boolean } = $props();
+		disabled = false,
+		showLabel = false,
+		quiet = false
+	}: {
+		picking: boolean;
+		what: string;
+		onclick: () => void;
+		disabled?: boolean;
+		showLabel?: boolean;
+		quiet?: boolean;
+	} = $props();
 </script>
 
 <button
@@ -22,7 +31,9 @@
 	class={`flex ${control} ${radius} flex-none items-center gap-1.5 border px-2.5 text-[13px] font-medium transition-colors disabled:opacity-(--disabled) sm:px-3 ${
 		picking
 			? 'border-accent-fill/50 bg-accent-fill/12 text-fg'
-			: 'border-line-strong bg-field text-dim'
+			: quiet
+				? 'border-transparent text-dim hover:bg-raised hover:text-fg'
+				: 'border-line-strong bg-field text-dim'
 	}`}
 >
 	<svg
@@ -39,5 +50,5 @@
 	>
 		<path d="M2 7.4 5.2 10.6 12 3.6" />
 	</svg>
-	<span class="hidden sm:inline">{picking ? 'Cancel' : 'Select'}</span>
+	<span class={showLabel ? '' : 'hidden sm:inline'}>{picking ? 'Cancel' : 'Select'}</span>
 </button>

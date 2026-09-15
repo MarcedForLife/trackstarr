@@ -67,7 +67,7 @@
 	popover="manual"
 	role="group"
 	aria-label={`Pause ${label} for`}
-	class="fixed m-0 w-64 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong bg-raised p-1 text-fg shadow-lg"
+	class="fixed m-0 w-64 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong bg-raised/85 p-1 text-fg shadow-lg backdrop-blur-md"
 >
 	<p class="px-2.5 pt-2 pb-1.5 text-[11px] text-faint">Pause for</p>
 	{#each SPANS as span (span.seconds)}

@@ -52,7 +52,7 @@
 	// Sized for the longest line one carries, a cleared release title, without
 	// running to the window edge on a phone.
 	const PANEL =
-		'fixed m-0 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong bg-raised p-2.5 text-fg shadow-lg';
+		'fixed m-0 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong bg-raised/85 p-2.5 text-fg shadow-lg backdrop-blur-md';
 	const CHIP = 'rounded border border-line px-1.5 py-1 font-mono text-[10.5px]';
 	const ACTING = `${CHIP} bg-accent-soft text-accent`;
 	const RIDES = `${CHIP} text-faint`;

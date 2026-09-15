@@ -14,6 +14,7 @@
 	import SelectButton from '$lib/components/SelectButton.svelte';
 	import SelectionBar from '$lib/components/SelectionBar.svelte';
 	import TitleSheet from '$lib/components/TitleSheet.svelte';
+	import ToolbarMenu from '$lib/components/ToolbarMenu.svelte';
 	import VerdictChips from '$lib/components/VerdictChips.svelte';
 	import { control, noteBox, primary, radius } from '$lib/controls';
 	import { display, setScale, type Scale } from '$lib/display.svelte';
@@ -128,11 +129,11 @@
 	const hint =
 		'rounded-full border border-line px-2.5 py-0.5 font-medium text-fg transition-colors hover:bg-raised';
 
-	// Single letters, beside the search box; the group carries the word.
+	// Full names in the View panel, where the choices have room.
 	const SIZES = [
-		{ value: 'small', label: 'S' },
-		{ value: 'medium', label: 'M' },
-		{ value: 'large', label: 'L' }
+		{ value: 'small', label: 'Small' },
+		{ value: 'medium', label: 'Medium' },
+		{ value: 'large', label: 'Large' }
 	];
 
 	const shown = $derived(sift(shelf.titles, view));
@@ -307,10 +308,7 @@
 	}
 </script>
 
-<Page
-	wide
-	lead="Every title Radarr and Sonarr know about, with the last sweep's verdict on its files."
->
+<Page wide lead="Your titles and their latest verdicts.">
 	{#if !shelf.current}
 		<p class={`mt-5 ${noteBox} text-dim`}>
 			The rules have changed since these verdicts, so the next sweep will redo them.
@@ -350,90 +348,110 @@
 		{/if}
 	{/if}
 
-	<!-- The verdicts first: this page's own navigation. The same row Appearance
-	     offers for the default. -->
-	<div class="mt-6">
-		<VerdictChips
-			label="Filter the library"
-			chosen={filters}
-			{counts}
-			{allHint}
-			{allCount}
-			onchange={filter}
+	<!-- Search stays within reach. Filtering, presentation and bulk actions each
+	     have one place, on a phone as well as a wide screen. -->
+	<div class="mt-6 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+		<input
+			bind:value={search}
+			oninput={fromTheTop}
+			type="search"
+			placeholder="Find a title"
+			aria-label="Find a title"
+			class={`${control} ${radius} min-w-0 border border-line-strong bg-field px-3 text-base placeholder:text-faint sm:w-52 sm:flex-1 sm:text-[13px]`}
 		/>
-	</div>
-
-	<!-- How the grid is shown: what the reader is looking for on one line, how it
-	     is laid out on the other. The two sit side by side once there is room and
-	     wrap back apart rather than squeezing the search past its placeholder. -->
-	<div
-		class="mt-2.5 flex min-w-0 flex-col gap-2 sm:mt-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3"
-	>
-		<!-- The box keeps room for its placeholder, so a shelf with folders in it as
-		     well drops the types to their own line rather than crushing the search. -->
-		<div class="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-			<input
-				bind:value={search}
-				oninput={fromTheTop}
-				type="search"
-				placeholder="Find a title"
-				aria-label="Find a title"
-				class={`${control} ${radius} min-w-36 flex-1 border border-line-strong bg-field px-3 text-base placeholder:text-faint sm:max-w-52 sm:text-[13px]`}
-			/>
-			{#if kinds.length > 1}
-				<!-- Beside the search, not among the verdict chips: the two of them are
-				     what the reader is after, where a verdict is what state it is in. -->
-				<div class="flex-none">
+		<div class="flex min-w-0 items-center gap-2 sm:gap-3">
+			<ToolbarMenu
+				label="Filters"
+				icon="sliders"
+				active={!!filters.length || !!kind}
+				detail={[kind ? kindLabel(kind) : '', ...filters.map(verdictLabel)]
+					.filter(Boolean)
+					.join(', ') || 'All titles'}
+			>
+				{#if kinds.length > 1}
+					<p class="mb-2 text-[12px] font-medium text-dim">Type</p>
 					<Segmented
+						fill
 						label="Filter by type"
 						options={kindOptions}
 						value={kind}
 						onchange={(next) => pickKind(next as Kind)}
 					/>
+				{/if}
+				<p class="mt-4 mb-2 text-[12px] font-medium text-dim">Verdict</p>
+				<VerdictChips
+					panel
+					label="Filter the library"
+					chosen={filters}
+					{counts}
+					{allHint}
+					{allCount}
+					onchange={filter}
+				/>
+			</ToolbarMenu>
+			<ToolbarMenu label="View" icon="list">
+				<p class="mb-2 text-[12px] font-medium text-dim">Sort by</p>
+				<div class="flex items-center gap-2">
+					<Select
+						grow
+						label="Order"
+						options={SORTS}
+						value={sort}
+						onchange={(next) => reorder(next as Sort)}
+					/>
+					<button
+						type="button"
+						onclick={turn}
+						aria-label={flow === 'desc' ? 'Sort ascending' : 'Sort descending'}
+						title={flow === 'desc' ? 'Sort ascending' : 'Sort descending'}
+						class={`flex ${control} ${radius} flex-none items-center justify-center border border-line-strong bg-field px-3 text-dim hover:text-fg`}
+					>
+						<span class={flow === 'desc' ? 'rotate-90' : '-rotate-90'}><Glyph name="arrow" /></span>
+					</button>
 				</div>
-			{/if}
-		</div>
-		<div class="flex min-w-0 items-center gap-2 sm:gap-3">
-			<!-- The menu takes whatever the fixed controls leave, so the row ends
-			     at the screen's edge. -->
-			<Select
-				grow
-				label="Order"
-				options={SORTS}
-				value={sort}
-				onchange={(next) => reorder(next as Sort)}
-			/>
-			<!-- The arrow is the state; the label is what pressing does. -->
-			<button
-				type="button"
-				onclick={turn}
-				aria-label={flow === 'desc' ? 'Sort ascending' : 'Sort descending'}
-				title={flow === 'desc' ? 'Sort ascending' : 'Sort descending'}
-				class={`flex ${control} ${radius} flex-none items-center justify-center border border-line-strong bg-field px-2.5 text-dim transition-colors hover:text-fg`}
-			>
-				<span
-					class={`flex transition-transform duration-200 ${flow === 'desc' ? 'rotate-90' : '-rotate-90'}`}
-				>
-					<Glyph name="arrow" />
-				</span>
-			</button>
-			<div class="flex-none">
+				<p class="mt-4 mb-2 text-[12px] font-medium text-dim">Poster size</p>
 				<Segmented
+					fill
 					label="Poster size"
 					options={SIZES}
 					value={display.scale}
-					tight
 					onchange={(value) => setScale(value as Scale)}
 				/>
-			</div>
-			{#if admin}
+			</ToolbarMenu>
+		</div>
+	</div>
+	<div class="mt-2 flex min-h-11 min-w-0 items-center gap-2 text-[12px] text-dim sm:min-h-10">
+		<span class="flex-none tabular-nums"
+			>{shown.length.toLocaleString()} {shown.length === 1 ? 'title' : 'titles'}</span
+		>
+		{#if filters.length || kind}
+			<span aria-hidden="true">·</span>
+			<span class="min-w-0 truncate"
+				>{[kind ? kindLabel(kind) : '', ...filters.map(verdictLabel)]
+					.filter(Boolean)
+					.join(', ')}</span
+			>
+			<button
+				type="button"
+				onclick={() => {
+					pickKind('');
+					filter([]);
+				}}
+				class="-my-3 ml-auto min-h-11 flex-none rounded-lg px-2 font-medium text-fg hover:bg-raised"
+				>Clear filters</button
+			>
+		{/if}
+		{#if admin}
+			<div class="-mr-2.5 ml-auto flex-none sm:-mr-3">
 				<SelectButton
+					showLabel
+					quiet
 					picking={selection.picking}
 					what="titles"
 					onclick={() => (selection.picking ? bar.dismiss() : selection.enter())}
 				/>
-			{/if}
-		</div>
+			</div>
+		{/if}
 	</div>
 
 	{#if !shelf.titles.length}
@@ -470,7 +488,7 @@
 				lights: () => display.lights
 			}}
 			style={`--scale: ${display.tile}`}
-			class="shelf mt-6 grid gap-x-3 gap-y-5"
+			class="shelf mt-3 grid gap-x-3 gap-y-5"
 		>
 			{#each grid as card (card.id)}
 				<li class="tile" animate:flip={slide}>
