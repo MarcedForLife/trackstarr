@@ -367,7 +367,9 @@ describe('the sheet', () => {
 				ids: [title.spec.id],
 				mode
 			});
-			advance(5);
+			// Long enough for the probe: a re-check opens its files rather than
+			// judging them where it lists them.
+			advance(10);
 			expect(here.runs.some((run) => run.kind === 'sweep')).toBe(true);
 			expect(here.runs.some((run) => run.id === started.run)).toBe(false);
 			const page = await get<EventPage>('/api/events?limit=20');
