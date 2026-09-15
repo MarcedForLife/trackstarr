@@ -92,7 +92,13 @@
 			height = now;
 			if (!open || dragging || reduced()) filling = true;
 			else if (filling) filling = false;
-			else if (Math.abs(grew) >= 1) growth = carry(box, grew, GROWTH, CURVE);
+			else if (Math.abs(grew) >= 1) {
+				// Taken over, not stacked on. A block animating its own height grows
+				// a few pixels a frame.
+				const was = growth;
+				growth = carry(box, grew, GROWTH, CURVE);
+				was?.cancel();
+			}
 		});
 		watch.observe(box);
 		return () => watch.disconnect();

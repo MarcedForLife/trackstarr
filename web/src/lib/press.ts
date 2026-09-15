@@ -24,11 +24,14 @@ export type PressOptions = {
 	onhold?: () => void;
 	/** Whether a long press means anything now. Read when the pointer lands. */
 	canHold?: () => boolean;
-	/** Whether a point is still on the pressed thing. The caller's, since a
-	 * poster is measured on the turned card, not the button around it. */
-	within: (x: number, y: number) => boolean;
+	/** Whether a point is still on the pressed thing, where that is not the
+	 * node's own box: a poster is measured on the turned card. */
+	within?: (x: number, y: number) => boolean;
 	/** The press made and ended. What it raises is the caller's business. */
 	onpress?: (on: boolean) => void;
+	/** Whether the raise is carried to whatever the pointer is over. The grid's
+	 * is the field's to place, a row drops its own at its edge. */
+	carries?: boolean;
 	/** Whether lifting now would mean the long press. Goes off again if the
 	 * pointer wanders away. */
 	onarm?: (on: boolean) => void;
@@ -37,8 +40,19 @@ export type PressOptions = {
 export function pressGesture(node: HTMLElement, opts: PressOptions) {
 	let options = opts;
 
-	// Whether the press has been made.
+	// Where the press still counts. Hit tested rather than measured: a row whose
+	// press covers its card does that with `::after`, which its box does not know
+	// about, and anything over it is not this element's press.
+	const on = (x: number, y: number) => {
+		if (options.within) return options.within(x, y);
+		const at = document.elementFromPoint(x, y);
+		return !!at && node.contains(at);
+	};
+
+	// Whether the press has been made, and whether it shows: a row's own raise
+	// goes off at its edge and back on.
 	let pressed = false;
+	let lifted = false;
 	// Where the gesture began, and whether it can still become a tap.
 	let startX = 0;
 	let startY = 0;
@@ -59,6 +73,7 @@ export function pressGesture(node: HTMLElement, opts: PressOptions) {
 
 	// What kind of pointer began the gesture.
 	let lastType = 'mouse';
+	let pointer: number | null = null;
 
 	function disarm() {
 		if (arming !== null) {
@@ -73,10 +88,18 @@ export function pressGesture(node: HTMLElement, opts: PressOptions) {
 	function raise() {
 		if (pressed) return;
 		pressed = true;
-		options.onpress?.(true);
+		lift(true);
+	}
+
+	function lift(on: boolean) {
+		if (lifted === on) return;
+		lifted = on;
+		options.onpress?.(on);
 	}
 
 	function start(event: PointerEvent) {
+		if (event.button !== 0 || pointer !== null) return;
+		pointer = event.pointerId;
 		lastType = event.pointerType;
 		startX = event.clientX;
 		startY = event.clientY;
@@ -93,26 +116,25 @@ export function pressGesture(node: HTMLElement, opts: PressOptions) {
 		} catch {
 			// The pointer ended between the press and here.
 		}
-		// A caller with nothing to raise makes no press: the gesture is a tap or
-		// the scroller's.
-		if (options.onpress) {
-			// A finger waits out HOLD, since it may be the start of a scroll; a
-			// mouse button is not ambiguous.
-			if (event.pointerType !== 'mouse') {
+		const holds = options.canHold?.() ?? !!options.onhold;
+		// A finger waits out HOLD before the touch is this element's, since it may
+		// be the start of a scroll. A long press needs that as much as a raise, or
+		// Chrome scrolls on the first eight pixels and cancels the pointer.
+		if (event.pointerType !== 'mouse') {
+			if (options.onpress || holds)
 				held = setTimeout(() => {
 					held = null;
 					grab();
-					raise();
+					if (options.onpress) raise();
 				}, HOLD);
-			} else raise();
-		}
+		} else if (options.onpress) raise();
 		// Both pointers on the same timer, not ctrl-click: the select button is
 		// at the top of a long page either way.
-		if (options.canHold?.() ?? !!options.onhold) {
+		if (holds) {
 			arming = setTimeout(() => {
 				arming = null;
 				// Wandered off while the timer ran.
-				if (!options.within(atX, atY)) return;
+				if (!on(atX, atY)) return;
 				landed = true;
 				// The tick says the press changed meaning; on a desk it is the
 				// whole feedback.
@@ -122,17 +144,25 @@ export function pressGesture(node: HTMLElement, opts: PressOptions) {
 	}
 
 	function move(event: PointerEvent) {
+		if (event.pointerId !== pointer) return;
 		atX = event.clientX;
 		atY = event.clientY;
-		// The mark follows the pointer off and back on, as the release reads it.
-		if (landed) options.onarm?.(options.within(atX, atY));
+		// The mark and the raise follow the pointer off the node and back on.
+		const own = pressed && !options.carries;
+		if (landed || own) {
+			const here = on(atX, atY);
+			if (landed) options.onarm?.(here);
+			if (own) lift(here);
+		}
 		if (Math.abs(event.clientX - startX) <= SLOP && Math.abs(event.clientY - startY) <= SLOP) {
 			return;
 		}
 		// Too far to be a tap, or a long drag would open what it ended on.
 		tappable = false;
+		// Once raised the gesture is this element's and a shifting finger changes
+		// nothing, so a long press rides on the raise. Moving before that is the
+		// scroller taking the touch.
 		if (pressed) return;
-		// Moved before the press was made: the page is scrolling under it.
 		drop();
 		disarm();
 	}
@@ -163,36 +193,39 @@ export function pressGesture(node: HTMLElement, opts: PressOptions) {
 
 	// The gesture over, however it ended.
 	function flatten() {
+		pointer = null;
 		drop();
 		disarm();
 		ungrab();
 		tappable = false;
 		if (!pressed) return;
 		pressed = false;
-		options.onpress?.(false);
+		lift(false);
 	}
 
 	// Tidy-up for a gesture that never started or a pointer the browser would
 	// not hand over; a captured pointer hears the release wherever it happens.
 	function leave(event: PointerEvent) {
+		if (event.pointerId !== pointer) return;
 		if (node.hasPointerCapture(event.pointerId)) return;
 		flatten();
 	}
 
 	function release(event: PointerEvent) {
+		if (event.pointerId !== pointer || event.button !== 0) return;
 		// A finger acts on the release, not the click that may follow: Chromium
 		// swallows the click for half a second after a touch drag, and waiting
 		// would cost the double-tap delay. The click that does arrive lands on
 		// whatever the tap opened, which is why Sheet ignores one briefly.
 		const touch = event.pointerType !== 'mouse';
-		const home = options.within(event.clientX, event.clientY);
+		const home = on(event.clientX, event.clientY);
 		// Lifted where held is the long press; lifted elsewhere abandons it. Read
 		// before flatten(), which disarms.
 		const pick = landed && home;
-		const tap = tappable && touch && !landed;
+		const tap = tappable && touch && !landed && home;
 		// A mouse's click is still coming and will tap, which is wrong for a pick
 		// (twice) or a cursor carried off (abandoned).
-		if (!touch) spent = pick || !home;
+		if (!touch) spent = landed || !home || !tappable;
 		flatten();
 		if (pick) options.onhold?.();
 		else if (tap) options.ontap();
@@ -216,14 +249,18 @@ export function pressGesture(node: HTMLElement, opts: PressOptions) {
 		if (event.detail === 0 || lastType === 'mouse') options.ontap();
 	}
 
+	function cancel(event: PointerEvent) {
+		if (event.pointerId === pointer) flatten();
+	}
+
 	node.addEventListener('click', click);
 	node.addEventListener('contextmenu', menu);
 	node.addEventListener('pointerdown', start);
 	node.addEventListener('pointermove', move);
 	node.addEventListener('pointerup', release);
 	node.addEventListener('pointerleave', leave);
-	node.addEventListener('pointercancel', flatten);
-	node.addEventListener('lostpointercapture', flatten);
+	node.addEventListener('pointercancel', cancel);
+	node.addEventListener('lostpointercapture', cancel);
 
 	return {
 		update(next: PressOptions) {
@@ -238,8 +275,8 @@ export function pressGesture(node: HTMLElement, opts: PressOptions) {
 			node.removeEventListener('pointermove', move);
 			node.removeEventListener('pointerup', release);
 			node.removeEventListener('pointerleave', leave);
-			node.removeEventListener('pointercancel', flatten);
-			node.removeEventListener('lostpointercapture', flatten);
+			node.removeEventListener('pointercancel', cancel);
+			node.removeEventListener('lostpointercapture', cancel);
 		}
 	};
 }
