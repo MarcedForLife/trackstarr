@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import { fileReadout, fileRows, fileStatus, progressed, progressLabel, remaining } from '$lib/runs';
+import {
+	fileReadout,
+	fileRows,
+	fileStatus,
+	fileWorking,
+	progressed,
+	progressLabel,
+	remaining
+} from '$lib/runs';
 import type { ActiveFile, Run } from '$lib/runs';
 
 function run(over: Partial<Run> = {}): Run {
@@ -101,6 +109,15 @@ describe('remaining', () => {
 
 	test('says nothing for a run whose count has caught its total', () => {
 		expect(remaining(run({ total: 100, done: 100, seconds: 60 }))).toBe('');
+	});
+});
+
+describe('fileWorking', () => {
+	// The one that draws a crossing segment rather than a bar or nothing.
+	test('tells work with nothing to measure from a wait and an encode', () => {
+		expect(fileWorking(file({ stage: 'working' }))).toBe(true);
+		expect(fileWorking(file({ stage: 'waiting' }))).toBe(false);
+		expect(fileWorking(file({ duration: 3600, done: 900, speed: 2 }))).toBe(false);
 	});
 });
 

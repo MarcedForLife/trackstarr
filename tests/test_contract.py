@@ -262,7 +262,11 @@ def seed_library(monkeypatch, clock: Clock) -> None:
             "add 2.0 downmix",
             tracks=DUNE_TRACKS,
             planned=DUNE_PLANNED,
-            why={"reasons": ["add 2.0 downmix (from track 1)"], "rules": ["downmix"]},
+            why={
+                "reasons": ["add 2.0 downmix (from track 1)"],
+                "rules": ["downmix"],
+                "changes": [{"rule": "downmix", "text": "add 2.0 downmix (from track 1)"}],
+            },
             duration=9330.0,
         ),
     )
@@ -301,6 +305,7 @@ def seed_library(monkeypatch, clock: Clock) -> None:
                 "failed": "ffmpeg exited 1: Conversion failed!",
                 "reasons": ["add 2.0 downmix (from track 1)"],
                 "rules": ["downmix"],
+                "changes": [{"rule": "downmix", "text": "add 2.0 downmix (from track 1)"}],
             },
             duration=3305.0,
             failures=2,

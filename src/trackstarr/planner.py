@@ -97,6 +97,15 @@ class OutStream:
     src_bitrate: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class Change:
+    """One change, in prose, under the rule that ordered it."""
+
+    rule: str
+    text: str
+    rides: bool
+
+
 @dataclass
 class Plan:
     path: str
@@ -117,6 +126,9 @@ class Plan:
     #: gets reworded. Written through :func:`_record`.
     rules: set[str] = field(default_factory=set)
     incidental_rules: set[str] = field(default_factory=set)
+    #: The same changes paired with their rule, which the four lists above lose.
+    #: The sheet reads it to file each line under the chip that caused it.
+    changes: list[Change] = field(default_factory=list)
     original_lang: str | None = None
     #: policy.languages with ORIGINAL substituted for this title.
     langs: tuple[Lang, ...] = ()
@@ -294,14 +306,22 @@ def why(plan: Plan) -> dict:
         "incidental": plan.incidental,
         "rules": sorted(plan.rules),
         "incidental_rules": sorted(plan.incidental_rules),
+        # The prose above again, each line under its rule. The four lists stay
+        # for the history feed, whose older entries have nothing else.
+        "changes": [{"rule": item.rule, "text": item.text} for item in plan.changes],
     }
     return {name: value for name, value in told.items() if value}
 
 
 def _record(plan: Plan, rule: str, reason: str) -> None:
     """Record a change under its rule: ``incidental`` for a ride-along,
-    ``reasons`` otherwise. ``rule`` is from :data:`trackstarr.policy.RULE_NAMES`."""
-    if rule in plan.alongside:
+    ``reasons`` otherwise. ``rule`` is from :data:`trackstarr.policy.RULE_NAMES`.
+
+    The one writer of all five stores, so they cannot disagree.
+    """
+    rides = rule in plan.alongside
+    plan.changes.append(Change(rule, reason, rides))
+    if rides:
         plan.incidental.append(reason)
         plan.incidental_rules.add(rule)
     else:
@@ -363,6 +383,7 @@ def plan_from_probe(plan: Plan, info: dict) -> Plan:
     # reported, so a title carrying release tags reads as that rather than as conforming.
     deciding.incidental = whole.incidental
     deciding.incidental_rules = whole.incidental_rules
+    deciding.changes = [change for change in whole.changes if change.rides]
     return deciding
 
 

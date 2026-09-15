@@ -104,6 +104,9 @@ export type Activity = {
 	working: number;
 	// Of those, the ones encoding: what an abort would waste.
 	rewrites: number;
+	// How many may encode at once. A setting rather than our own ceiling, which
+	// is why the panel names it. Absent from older builds.
+	slots?: number;
 	// Files a download client still hard-links, waiting for it to let go.
 	parked: number;
 	// Titles and files nobody wants rewritten yet. Small and set by hand, so it
@@ -382,6 +385,13 @@ export function fileBar(file: ActiveFile): boolean {
 	return file.stage === 'encoding' && file.duration > 0;
 }
 
+/** Whether a thread is on this file with nothing to measure: the probe that
+ * plans it, or the verify after an encode. Not a wait for a slot, where
+ * nothing is happening. */
+export function fileWorking(file: ActiveFile): boolean {
+	return file.stage === 'working';
+}
+
 // Past ten times realtime the decimal is noise, and a remux runs at hundreds.
 function rate(speed: number): string {
 	return `${speed >= 10 ? Math.round(speed) : speed.toFixed(1)}×`;
@@ -409,13 +419,9 @@ export function fileStatus(file: ActiveFile, age = 0): string {
 	return [far, speed, left].filter(Boolean).join(' · ');
 }
 
-// Only the head of the queue is drawn, and past it a position says less than
-// the estimate beside it.
-const PLACES = ['Next up', '2nd in line', '3rd in line'];
-
-/** Where a queued file sits, 1 being the file that starts next. */
+/** Where a queued file sits, numbered as the queue screen numbers it. */
 export function queuePlace(place: number): string {
-	return PLACES[place - 1] ?? '';
+	return place ? `#${place}` : '';
 }
 
 // Reading order: what changed, what needs a look, then the untouched majority.

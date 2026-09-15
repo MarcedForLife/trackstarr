@@ -114,3 +114,43 @@ export type TitleWork = {
 export function getTitleWork(id: string): Promise<TitleWork> {
 	return request(`/api/library/work?${new URLSearchParams({ id })}`);
 }
+
+/** What a title's work says about one of its files: the rows that name it, and
+ * the word the row leads with in place of its verdict. */
+export type FileState = {
+	waiting: QueueItem[];
+	running: TitleWork['active'];
+	/** The pause on the file itself, or the one on the title above it. */
+	paused: Pause | undefined;
+	/** A worker has it, rather than holding a slot for it. */
+	active: boolean;
+	stopping: boolean;
+	/** Empty where the file's own verdict is still the thing to say. A queued
+	 * file leads with its place, since that is what a reorder moves. */
+	label: string;
+};
+
+export function fileState(work: TitleWork | undefined, path: string): FileState {
+	const waiting = work?.queued.filter((item) => item.path === path) ?? [];
+	const running = work?.active.filter((item) => item.path === path) ?? [];
+	const paused =
+		work?.pauses.find((pause) => pause.path === path) ??
+		work?.pauses.find((pause) => path.startsWith(`${pause.path}/`));
+	const active = running.some((item) => item.stage !== 'waiting');
+	const stopping = running.some((item) => item.stopping || item.skipped);
+	const runs = waiting.length > 1 ? ` · ${waiting.length} runs` : '';
+	const label = stopping
+		? 'Stopping…'
+		: running.length
+			? active
+				? 'Processing now'
+				: 'Waiting for a worker'
+			: paused
+				? paused.path === path
+					? 'Paused'
+					: 'Title paused'
+				: waiting.length
+					? `Pending (#${Math.min(...waiting.map((item) => item.position))})${runs}`
+					: '';
+	return { waiting, running, paused, active, stopping, label };
+}

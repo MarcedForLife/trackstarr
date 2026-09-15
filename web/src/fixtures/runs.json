@@ -118,6 +118,7 @@
 		}
 	],
 	"rewrites": 0,
+	"slots": 1,
 	"parked": 0,
 	"may_rewrite": true,
 	"next_sweep": "2026-03-02T03:00:00+13:00",
