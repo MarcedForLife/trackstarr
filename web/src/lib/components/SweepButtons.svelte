@@ -121,8 +121,6 @@
 			popover="manual"
 			role="dialog"
 			aria-label={choice.label}
-			style:left={asking === choice.mode ? `${question.left}px` : undefined}
-			style:top={asking === choice.mode ? `${question.top}px` : undefined}
 			class="fixed m-0 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong bg-raised p-3.5 text-fg shadow-lg"
 		>
 			<p class="text-[13px] font-semibold">{choice.label} the whole library</p>

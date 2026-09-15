@@ -206,8 +206,13 @@
 	   it. */
 	--tabbar: 3.5rem;
 
-	/* Shared by both halves of the reveal below, which must agree to cancel. */
-	--reveal: 180ms cubic-bezier(0.33, 0, 0.2, 1);
+	/* Shared by both halves of the reveal below, which must agree to cancel, by
+	   the close in $lib/shift and by the chevron that turns with it. Ease-out,
+	   the same curve the bars and menus use: the old ease-in-out spent a third
+	   of the time on the last tenth of the travel and read as a hesitation. */
+	--reveal-span: 220ms;
+	--reveal-ease: cubic-bezier(0.33, 1, 0.68, 1);
+	--reveal: var(--reveal-span) var(--reveal-ease);
 }
 
 /* From lg the rail is the nav and there is no bar to clear. */
@@ -697,16 +702,28 @@ main {
 	}
 }
 
-/* A menu arriving from under the button that raised it. Global, not scoped: the
-   pause and file-action popovers both wear it, and a scoped rule reaches only
-   its own component's element. */
-.menu {
-	animation: menu-in 150ms cubic-bezier(0.33, 1, 0.68, 1);
-	transform-origin: top right;
+/* A panel arriving from under the button that raised it. On [popover], since
+   every one comes up through $lib/popover, which sets the origin. A transition
+   rather than keyframes, so a second press interrupts it. */
+[popover] {
+	opacity: 0;
+	transform: translateY(-6px) scale(0.97);
+	transition:
+		opacity 150ms var(--reveal-ease),
+		transform 150ms var(--reveal-ease),
+		overlay 150ms allow-discrete,
+		display 150ms allow-discrete;
 }
 
-@keyframes menu-in {
-	from {
+[popover]:popover-open {
+	opacity: 1;
+	transform: none;
+}
+
+/* Without it a popover is shown and opaque in one frame, with nothing to
+   travel from. */
+@starting-style {
+	[popover]:popover-open {
 		opacity: 0;
 		transform: translateY(-6px) scale(0.97);
 	}

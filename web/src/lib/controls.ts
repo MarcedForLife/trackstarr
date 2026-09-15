@@ -46,29 +46,92 @@ export const removeButton =
 export const noteBox = 'rounded-lg border border-line bg-sunken px-3 py-2 text-[12.5px]';
 
 const rowShape =
-	'rounded-lg border px-2.5 shadow-[0_1px_2px_rgb(0_0_0/0.1),0_3px_8px_rgb(0_0_0/0.08)] sm:px-3.5';
+	'rounded-lg border px-2.5 transition-[translate,box-shadow] duration-150 ease-out sm:px-3.5';
+
+// One whole shadow each rather than a raise stacked on the rest: two arbitrary
+// shadows are the same utility, and the stylesheet's order decides which wins.
+const rowRest = 'shadow-[0_1px_2px_rgb(0_0_0/0.1),0_3px_8px_rgb(0_0_0/0.08)]';
+const rowHeld =
+	'relative z-10 -translate-y-0.5 shadow-[0_3px_6px_rgb(0_0_0/0.16),0_14px_28px_rgb(0_0_0/0.22)]';
 
 /** One file lifted off the sunken tray its list sits in, so a row reads as an
- * object rather than a table rule. Picked tints over the fill instead of
- * replacing it: a translucent accent on the tray would read as sinking. */
-export const fileRow = (picked = false) =>
-	picked
-		? `${rowShape} border-accent-fill/55 bg-raised bg-[linear-gradient(var(--accent-soft),var(--accent-soft))]`
-		: `${rowShape} border-line bg-raised`;
+ * object rather than a table rule. Picked tints over the fill rather than
+ * replacing it, held comes up off the tray with its edge, since a dark shadow
+ * on a dark tray says nothing, and armed takes the grid's accent edge. */
+export const fileRow = ({ picked = false, held = false, armed = false } = {}) =>
+	`${rowShape} ${held ? rowHeld : rowRest} bg-raised ` +
+	(armed
+		? 'border-accent-fill'
+		: picked
+			? 'border-accent-fill/55'
+			: held
+				? 'border-line-strong'
+				: 'border-line') +
+	(picked ? ' bg-[linear-gradient(var(--accent-soft),var(--accent-soft))]' : '');
 
-const shape = `${control} ${radius} inline-flex items-center justify-center gap-2 px-3.5 text-[13px] whitespace-nowrap transition-colors disabled:opacity-(--disabled)`;
+// A control at a file row's corner, its target off `after`: tall, and wide
+// enough to meet its neighbour's without overlapping it. Hovers to a tint,
+// since the tray's colour read as a hole punched in the card. The top pull
+// lines every one of them up with the row's first line.
+const rowControl =
+	`relative -mt-2 inline-flex h-9 w-9 flex-none items-center justify-center rounded-full ` +
+	`text-dim transition-colors after:absolute after:-inset-x-0.5 after:-inset-y-1.5 ` +
+	`after:content-[''] hover:bg-accent-soft hover:text-fg disabled:opacity-(--disabled)`;
+
+/** The menu that ends the row, pulled the same distance on both axes so it sits
+ * square in the corner. */
+export const rowMenu = `${rowControl} -mr-1.5 sm:-mr-2.5`;
+
+/** One in from that corner, so it keeps the gap to whatever ends the row. */
+export const rowGlyph = rowControl;
+
+/** A mark among them: the same box and target, so it answers the press it
+ * looks like it should, without the hover of a control in its own right. */
+export const rowMark =
+	`relative -mt-2 inline-flex h-9 w-9 flex-none items-center justify-center ` +
+	`after:absolute after:-inset-x-0.5 after:-inset-y-1.5 after:content-['']`;
+
+/** A word at that corner rather than a glyph, as Resume is. The same box, so
+ * the two line up wherever a list holds both. */
+export const rowWord =
+	`relative -mt-2 -mr-1.5 inline-flex h-9 flex-none items-center justify-center rounded-full ` +
+	`px-2.5 text-[12px] font-medium text-accent transition-colors after:absolute after:-inset-1 ` +
+	`after:content-[''] hover:bg-accent-soft disabled:opacity-(--disabled) sm:-mr-2.5`;
+
+// The box every inline button shares, bar its height, which the weights below
+// take from `control` unless they say otherwise.
+const pill = `${radius} inline-flex items-center justify-center gap-2 px-3.5 text-[13px] whitespace-nowrap transition-colors disabled:opacity-(--disabled)`;
+const shape = `${control} ${pill}`;
 
 // Three weights, one shape: plain for a reversible switch, accent for what a
-// panel is for, danger for what throws work away.
-export const button = `${shape} border border-line-strong bg-raised font-medium active:bg-sunken`;
+// panel is for, danger for what throws work away. Each hovers a step short of
+// where its press lands. The plain one hovers on its edge, since no ground
+// token sits between raised and sunken in both themes.
+export const button = `${shape} border border-line-strong bg-raised font-medium hover:border-line-control active:bg-sunken`;
 // The ink tone, not the fill: on a light page the fill is mid-toned, and a
 // near-black label on it reads washed. Dark sets the two the same, so it is
 // the amber it always was.
-export const primary = `${shape} bg-accent font-semibold text-surface active:brightness-90`;
-export const danger = `${shape} border border-danger/45 bg-danger/10 font-semibold text-danger active:bg-danger/20`;
+export const primary = `${shape} bg-accent font-semibold text-surface hover:brightness-95 active:brightness-90`;
+const dangerTone =
+	'border border-danger/45 bg-danger/10 font-semibold text-danger hover:bg-danger/15 active:bg-danger/20';
+export const danger = `${shape} ${dangerTone}`;
+// The same weight beside a line of text rather than in a row of its own, at the
+// height `subtle` uses.
+export const dangerInline = `${pill} h-8 ${dangerTone}`;
+
+// A fourth weight, for going somewhere rather than doing something. No box at
+// all until it is under the pointer, or a row of these reads as the decision
+// the buttons under it are, and shorter than one: the height it saves comes
+// back as width wherever a row of them shares a line with something.
+export const subtle = `${pill} h-8 font-medium text-dim hover:bg-raised hover:text-fg active:bg-sunken`;
 
 // A button that is only its word: Discard next to Save.
 export const quiet = `${shape} font-medium text-dim hover:text-fg`;
+
+// The same word inside another row, as the pair beside a selection count is.
+// Tighter than `quiet`, which takes a row of its own.
+export const quietInline =
+	'rounded-md px-2 py-1 text-[12px] font-medium text-dim transition-colors hover:text-fg disabled:opacity-(--disabled)';
 
 // A button inside a panel rather than on the page: borderless, and 44px tall at
 // every width, unlike `control`. Shape only, since the tone has to read on

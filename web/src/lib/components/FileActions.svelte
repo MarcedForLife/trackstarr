@@ -102,9 +102,7 @@
 	popover="manual"
 	role="group"
 	aria-label={`Actions for ${label}`}
-	style:left={`${chooser.left}px`}
-	style:top={`${chooser.top}px`}
-	class="menu fixed m-0 max-h-[calc(100dvh-1.5rem)] w-64 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-line-strong bg-raised p-1 text-fg shadow-lg"
+	class="pointer-events-auto fixed m-0 max-h-[calc(100dvh-1.5rem)] w-64 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border border-line-strong bg-raised p-1 text-fg shadow-lg"
 >
 	{#if choosingPause}
 		<!-- No way back: the spans are the whole pane, and a dismissed menu reopens
@@ -124,7 +122,7 @@
 				onclick={() => act(ontop!)}
 				disabled={busy !== null || disabled}
 				class="min-h-11 w-full rounded-lg px-2.5 text-left text-[13px] font-medium hover:bg-sunken"
-				>Move to top</button
+				>Prioritise</button
 			>{/if}
 		<button
 			onclick={showSpans}

@@ -2,10 +2,13 @@
 	import { since, ticking } from '$lib/clock.svelte';
 	import Bar from '$lib/components/Bar.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
+	import { dangerInline } from '$lib/controls';
+	import { reduced } from '$lib/motion.svelte';
 	import {
 		fileBar,
 		fileFraction,
 		fileStatus,
+		fileWorking,
 		fraction,
 		measured,
 		percent,
@@ -42,23 +45,25 @@
 	// The longest-held file, which is the whole readout for a run of one.
 	const file = $derived(run.active[0]);
 	const status = $derived(file ? fileStatus(file, age) : '');
+	// Planning is too fast to measure, so the bar's place says it is happening.
+	const crossing = $derived(!!file && fileWorking(file) && !reduced());
 </script>
 
-<div class="flex items-baseline gap-2.5">
+<div class="flex items-center gap-2.5">
 	<p class="min-w-0 flex-1 truncate text-[13px] font-medium">
 		{run.dry_run ? 'Planning' : 'Processing'}
 		{run.label || noun}
 	</p>
 	{#if onstop}
+		<!-- The pressed area runs past the box, which is short to sit level with
+		     the line beside it. -->
 		<button
 			onclick={onstop}
 			disabled={stopping || run.stopping}
-			class="relative -my-1 flex-none rounded-md border border-line-strong px-2 py-1 text-[11.5px] leading-none font-medium text-dim transition-colors after:absolute after:-inset-2.5 after:content-[''] hover:border-danger/45 hover:text-danger active:bg-danger/10 disabled:opacity-(--disabled)"
+			class={`${dangerInline} relative flex-none !px-2.5 after:absolute after:-inset-2 after:content-[''] disabled:opacity-(--disabled)`}
 		>
-			<span class="inline-flex items-center gap-1.5">
-				<Glyph name="stop" size={9} />
-				{run.stopping ? 'Stopping' : 'Stop'}
-			</span>
+			<Glyph name="stop" size={9} />
+			{run.stopping ? 'Stopping' : 'Stop'}
 		</button>
 	{/if}
 </div>
@@ -75,7 +80,7 @@
 
 <!-- The file, only while there is something to say. Keyed on the path, so a
      new file gets a fresh bar rather than a glide from the old fraction. -->
-{#if file && !run.stopping && (fileBar(file) || status)}
+{#if file && !run.stopping && (fileBar(file) || crossing || status)}
 	{#key file.path}
 		<div class="mt-2.5">
 			<!-- Whole, unlike a file list's rows: one file with the width to say it. -->
@@ -89,8 +94,12 @@
 						max={100}
 						text={`${titled(file.path)}: ${status}`}
 					/>
+				{:else if crossing}
+					<Bar file indeterminate text={`${titled(file.path)}: working`} />
 				{/if}
-				<span class="flex-none text-[11px] text-faint tabular-nums">{status}</span>
+				<!-- Left out rather than left empty, which would still cost the gap
+				     beside it. -->
+				{#if status}<span class="flex-none text-[11px] text-faint tabular-nums">{status}</span>{/if}
 			</div>
 		</div>
 	{/key}

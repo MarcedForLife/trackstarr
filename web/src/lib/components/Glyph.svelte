@@ -14,7 +14,9 @@
 		| 'more'
 		| 'refresh'
 		| 'sliders'
-		| 'pencil';
+		| 'pencil'
+		| 'list'
+		| 'log';
 </script>
 
 <script lang="ts">
@@ -25,7 +27,9 @@
 	// row that opens. `refresh` is an arc left open where its tick goes, since a
 	// closed ring with an arrowhead on it is a blot this small. `sliders` says
 	// settings without a gear, whose teeth are mud at 12px. `pencil` marks a
-	// row whose tags open for editing.
+	// row whose tags open for editing. `list` is a queue, its last line short
+	// for the files still to come. `log` is a prompt and the line it wrote,
+	// since a page of text is `doc` already.
 	let { name, size = 12 }: { name: GlyphName; size?: number } = $props();
 </script>
 
@@ -138,6 +142,18 @@
 		>
 			<path d="M3.4 12.6l.9-3.1 6.4-6.4 2.2 2.2-6.4 6.4z"></path>
 			<path d="M9.4 4.4l2.2 2.2"></path>
+		</g>
+	{:else if name === 'list'}
+		<g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+			<path d="M2.4 3.7h11.2"></path>
+			<path d="M2.4 8h11.2"></path>
+			<path d="M2.4 12.3h6.4"></path>
+		</g>
+	{:else if name === 'log'}
+		<!-- Both end on one baseline, or the chevron reads as the row mark. -->
+		<g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+			<path d="M3.4 4.4 7 8l-3.6 3.6" stroke-linejoin="round"></path>
+			<path d="M8.8 11.6h3.8"></path>
 		</g>
 	{:else if name === 'cross'}
 		<!-- Half the box, centred: six pixels of stroke at 12px. -->

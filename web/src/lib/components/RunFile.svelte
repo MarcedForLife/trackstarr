@@ -1,14 +1,16 @@
 <script lang="ts">
 	import FilePlan from './FilePlan.svelte';
 	import FilePoster from './FilePoster.svelte';
+	import Glyph from './Glyph.svelte';
 	import PlanLine from './PlanLine.svelte';
 	import RunLog from './RunLog.svelte';
 	import type { FileChanges, FileCover } from '$lib/queue';
 	import Bar from '$lib/components/Bar.svelte';
 	import FileActions from '$lib/components/FileActions.svelte';
 	import Disclosure from '$lib/components/Disclosure.svelte';
-	import { fileRow } from '$lib/controls';
+	import { fileRow, rowMenu } from '$lib/controls';
 	import { verdictHint, verdictLabel } from '$lib/library';
+	import { reduced } from '$lib/motion.svelte';
 	import { warm } from '$lib/plans.svelte';
 	import {
 		duration,
@@ -16,6 +18,7 @@
 		fileFraction,
 		fileReadout,
 		fileStatus,
+		fileWorking,
 		getRunLog,
 		named,
 		queuePlace,
@@ -84,6 +87,11 @@
 	const status = $derived(live && row.live ? fileStatus(row.live, age) : '');
 	const bar = $derived(live && !!row.live && fileBar(row.live));
 	const readout = $derived(bar && row.live ? fileReadout(row.live, age) : null);
+	// The bar's place, saying the work is under way. Not on a skipped row, where
+	// movement would read as progress.
+	const crossing = $derived(
+		live && !row.skipped && !!row.live && fileWorking(row.live) && !reduced()
+	);
 
 	// A live row's clock runs; a finished one's is how long the worker had it. A
 	// waiting row has none, and shows what its rewrite is expected to take.
@@ -101,6 +109,15 @@
 		if (row.live?.stage === 'waiting') return 'Waiting for slot';
 		return bar ? '' : 'Working';
 	});
+	// A queue number is set as the queue screen sets it, so the same file reads
+	// the same in both places.
+	const standingClass = $derived(
+		row.verdict === 'failed'
+			? 'font-medium text-danger'
+			: waiting
+				? 'font-mono text-[11px] text-faint tabular-nums'
+				: ''
+	);
 	// What a queued rewrite is expected to take, or how long the file has been
 	// held. Nothing under a bar, which says where the encode is in better numbers.
 	const clock = $derived.by(() => {
@@ -159,7 +176,8 @@
 
 {#snippet poster()}<FilePoster {cover} name={shown.name} prominent={active} {onopen} />{/snippet}
 
-<li class={`${fileRow()} ${active ? 'py-3.5' : 'py-3'} text-[12px]`}>
+<!-- The `<li>` is the caller's, which is where the list animates it from. -->
+<div class={`${fileRow()} py-3 text-[12px]`}>
 	<Disclosure
 		{id}
 		{open}
@@ -168,6 +186,7 @@
 		turn="half"
 		class="group block min-h-11 w-full text-left"
 		panelClass="mt-2"
+		align="start"
 		beside={poster}
 	>
 		{#snippet summary(chevron)}
@@ -181,17 +200,18 @@
 						<span class="truncate" title={shown.name}>{shown.name}</span>
 						{#if shown.episode}<span class="flex-none text-dim">{shown.episode}</span>{/if}
 					</span>
-					<span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-dim">
+					<!-- One line: the release words truncate rather than wrap. -->
+					<span class="mt-1 flex items-center gap-x-2 overflow-hidden text-[11.5px] text-dim">
 						<!-- Left out rather than left empty: an empty flex item still
 						     indents the line by a gap. -->
 						{#if standing}<span
 								title={row.verdict ? verdictHint(row.verdict) : undefined}
-								class={row.verdict === 'failed' ? 'font-medium text-danger' : ''}>{standing}</span
+								class={`flex-none ${standingClass}`}>{standing}</span
 							>{/if}
-						{#if origin}<span class="text-faint">{origin}</span>{/if}
-						{#if clock}<span class="text-faint tabular-nums">{clock}</span>{/if}
-						<!-- Last, so the line it wraps onto is the one it needs. -->
-						{#if shown.detail}<span class="text-faint">{shown.detail}</span>{/if}
+						{#if origin}<span class="flex-none text-faint">{origin}</span>{/if}
+						{#if clock}<span class="flex-none text-faint tabular-nums">{clock}</span>{/if}
+						<!-- Last, so it is the part that gives way. -->
+						{#if shown.detail}<span class="min-w-0 truncate text-faint">{shown.detail}</span>{/if}
 					</span>
 					<!-- The plan keeps its line once a worker picks the file up. The
 					     cover runs the height of whatever that leaves. -->
@@ -213,14 +233,14 @@
 					hint={active
 						? 'Stops this attempt. A later sweep can restart it after the pause ends.'
 						: 'A later sweep can process this file after the pause ends.'}
-					class="inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-[12px] font-medium text-dim hover:bg-sunken disabled:opacity-(--disabled)"
+					class={rowMenu}
 				/>
 			{/if}
 		{/snippet}
 
-		<!-- The bar for a rewrite, or a probe being over inside a second. -->
+		<!-- The bar for a rewrite, or the segment for work with nothing to measure. -->
 		{#snippet aside()}
-			{#if bar || said}
+			{#if bar || crossing || said}
 				<div
 					class={`flex flex-wrap items-center gap-x-2.5 gap-y-1.5 ${active ? 'mt-3' : 'mt-1.5'}`}
 				>
@@ -232,6 +252,13 @@
 							now={Math.floor(fileFraction(row.live, age) * 100)}
 							max={100}
 							text={`${titled(row.path)}: ${status}`}
+						/>
+					{:else if crossing}
+						<Bar
+							file
+							indeterminate
+							class={active ? '!h-1 basis-full' : ''}
+							text={`${titled(row.path)}: working`}
 						/>
 					{/if}
 					{#if readout}
@@ -258,24 +285,29 @@
 
 		{#snippet panel()}
 			<div class="rounded-lg border border-line bg-sunken px-2.5 py-2">
-				<p class="font-mono text-[11px] wrap-anywhere text-faint">{row.path}</p>
+				<div class="flex items-start gap-2">
+					<p class="min-w-0 flex-1 font-mono text-[11px] wrap-anywhere text-faint">{row.path}</p>
+					<!-- Nothing has touched a file still waiting, so it has no log to ask
+					     for. -->
+					{#if !waiting}
+						<button
+							type="button"
+							onclick={() => (logging = true)}
+							aria-haspopup="dialog"
+							aria-label="Show worker log"
+							class="relative -my-1.5 -mr-1 inline-flex h-7 flex-none items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-dim transition-colors after:absolute after:-inset-2 after:content-[''] hover:bg-accent-soft hover:text-fg"
+						>
+							<!-- The overhang is the target, so the path keeps its line height. -->
+							<Glyph name="log" />
+							Log
+						</button>
+					{/if}
+				</div>
 				<div class="mt-2 border-t border-line pt-2"><FilePlan path={row.path} /></div>
-				<!-- Nothing has touched a file still waiting, so it has no log to ask
-				     for. -->
-				{#if !waiting}
-					<button
-						type="button"
-						onclick={() => (logging = true)}
-						aria-haspopup="dialog"
-						class="inline-flex min-h-11 items-center text-[11.5px] font-medium text-dim underline underline-offset-2 hover:text-fg"
-					>
-						Show worker log
-					</button>
-				{/if}
 			</div>
 		{/snippet}
 	</Disclosure>
 	{#if logging}
 		<RunLog path={row.path} {lines} {failure} onclose={() => (logging = false)} />
 	{/if}
-</li>
+</div>

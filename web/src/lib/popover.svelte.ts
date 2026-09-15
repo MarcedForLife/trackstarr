@@ -19,8 +19,6 @@ type Options = {
 
 export type Popover = {
 	readonly open: boolean;
-	readonly left: number;
-	readonly top: number;
 	/** Whether this panel is the one up, for a caller with several. */
 	holds: (candidate: HTMLElement | undefined) => boolean;
 	raise: (trigger: HTMLElement, panel: HTMLElement) => Promise<void>;
@@ -34,8 +32,6 @@ export type Popover = {
 
 export function popover({ edge = 'right', onclose }: Options = {}): Popover {
 	let open = $state(false);
-	let left = $state(0);
-	let top = $state(0);
 	let trigger = $state<HTMLElement | null>(null);
 	let panel = $state<HTMLElement | null>(null);
 
@@ -54,8 +50,20 @@ export function popover({ edge = 'right', onclose }: Options = {}): Popover {
 		if (!trigger || !panel) return;
 		const rect = trigger.getBoundingClientRect();
 		const from = edge === 'right' ? rect.right - panel.offsetWidth : rect.left;
-		left = Math.max(MARGIN, Math.min(from, innerWidth - panel.offsetWidth - MARGIN));
-		top = Math.max(MARGIN, Math.min(rect.bottom + GAP, innerHeight - panel.offsetHeight - MARGIN));
+		const left = Math.max(MARGIN, Math.min(from, innerWidth - panel.offsetWidth - MARGIN));
+		const top = Math.max(
+			MARGIN,
+			Math.min(rect.bottom + GAP, innerHeight - panel.offsetHeight - MARGIN)
+		);
+		// Set here, not bound by the caller. A binding lands a frame late, and a
+		// caller that drops it on close threw the panel to the corner mid-fade.
+		panel.style.left = `${left}px`;
+		panel.style.top = `${top}px`;
+		// Grows out of the button, wherever the clamp put the panel.
+		const middle = (rect.left + rect.right) / 2 - left;
+		panel.style.transformOrigin = `${Math.round(
+			Math.max(0, Math.min(middle, panel.offsetWidth))
+		)}px ${top < rect.top ? 'bottom' : 'top'}`;
 	}
 
 	async function raise(nextTrigger: HTMLElement, nextPanel: HTMLElement) {
@@ -82,12 +90,6 @@ export function popover({ edge = 'right', onclose }: Options = {}): Popover {
 	return {
 		get open() {
 			return open;
-		},
-		get left() {
-			return left;
-		},
-		get top() {
-			return top;
 		},
 		holds: (candidate) => open && !!candidate && panel === candidate,
 		raise,

@@ -1,35 +1,37 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { refusalText } from '$lib/api';
 	import { rowButton } from '$lib/controls';
 	import { named } from '$lib/format';
 	import { resume, place } from '$lib/pauses';
-	import { queueAction, type TitleWork } from '$lib/queue';
+	import { queueAction, type FileState } from '$lib/queue';
 	import { skipFile } from '$lib/runs';
 	import FileActions from './FileActions.svelte';
 
+	// The queue controls for one file, at the corner of the card handed in. What
+	// the queue makes of it is the caller's line; see fileState.
+
 	let {
 		path,
-		work,
+		standing,
+		ready = false,
 		admin = false,
 		unavailable = false,
 		busy = $bindable(false),
-		onchanged
+		onchanged,
+		children
 	}: {
 		path: string;
-		work?: TitleWork;
+		standing: FileState;
+		/** The title's work has been read, so the controls know what to offer. */
+		ready?: boolean;
 		admin?: boolean;
 		unavailable?: boolean;
 		busy?: boolean;
 		onchanged: () => Promise<void>;
+		children: Snippet;
 	} = $props();
-	const waiting = $derived(work?.queued.filter((item) => item.path === path) ?? []);
-	const running = $derived(work?.active.filter((item) => item.path === path) ?? []);
-	const paused = $derived(
-		work?.pauses.find((pause) => pause.path === path) ??
-			work?.pauses.find((pause) => path.startsWith(`${pause.path}/`))
-	);
-	const active = $derived(running.some((item) => item.stage !== 'waiting'));
-	const stopping = $derived(running.some((item) => item.stopping || item.skipped));
+
 	const title = $derived(named(path));
 	const label = $derived(`${title.name}${title.episode ? ` ${title.episode}` : ''}`);
 	let notice = $state('');
@@ -44,7 +46,7 @@
 		notice = '';
 		try {
 			if (action === 'top' || action === 'undo') {
-				const answer = await queueAction(action, waiting, { token: undo ?? undefined });
+				const answer = await queueAction(action, standing.waiting, { token: undo ?? undefined });
 				undo = answer.undo ?? null;
 				notice =
 					action === 'undo'
@@ -57,13 +59,13 @@
 				notice = 'Resumed. A later sweep can process this file.';
 			} else {
 				if (action === 'pause') await place({ paths: [path] }, seconds ?? 0);
-				if (waiting.length) await queueAction('skip', waiting);
-				for (const item of running) await skipFile(item.run, path);
+				if (standing.waiting.length) await queueAction('skip', standing.waiting);
+				for (const item of standing.running) await skipFile(item.run, path);
 				undo = null;
 				notice =
 					action === 'pause'
 						? 'File paused.'
-						: running.length
+						: standing.running.length
 							? 'Cancellation requested.'
 							: 'Skipped.';
 			}
@@ -77,39 +79,31 @@
 	}
 </script>
 
-<div class="mt-1 text-[12px]">
-	<div class="flex flex-wrap items-center justify-between gap-x-2">
-		<p class="text-dim">
-			{#if !work}Reading queue status…
-			{:else if stopping}Stopping…
-			{:else if running.length}{active ? 'Processing now' : 'Waiting for a worker'}
-			{:else if paused}{paused.path === path ? 'Paused' : 'Title paused'}
-			{:else if waiting.length}Queue position {Math.min(
-					...waiting.map((item) => item.position)
-				)}{waiting.length > 1 ? ` · ${waiting.length} runs` : ''}
-			{:else}Not queued{/if}
-		</p>
-		{#if admin && work}
-			{#if waiting.length || running.length}
+<!-- Pulled into the card's padding, since a 44px target wants the edge. -->
+<div class="flex items-start gap-2">
+	{@render children()}
+	{#if admin && ready}
+		<span class="-mt-2 -mr-2 flex-none">
+			{#if standing.waiting.length || standing.running.length}
 				<FileActions
 					{label}
-					{active}
-					disabled={busy || unavailable || stopping}
-					ontop={!running.length ? () => act('top') : undefined}
+					active={standing.active}
+					disabled={busy || unavailable || standing.stopping}
+					ontop={!standing.running.length ? () => act('top') : undefined}
 					onskip={() => act('skip')}
 					onchoose={(seconds) => act('pause', seconds)}
-					hint={active
+					hint={standing.active
 						? 'Stops this attempt. A later sweep can restart it after the pause ends.'
 						: 'A later sweep can process this file after the pause ends.'}
 					class={control}
 				/>
-			{:else if paused?.path === path}
+			{:else if standing.paused?.path === path}
 				<button
 					class={control}
 					disabled={busy || unavailable}
 					onclick={() => void act('resume').catch(() => {})}>Resume</button
 				>
-			{:else if !paused}
+			{:else if !standing.paused}
 				<FileActions
 					{label}
 					disabled={busy || unavailable}
@@ -117,14 +111,14 @@
 					class={control}
 				/>
 			{/if}
-		{/if}
-	</div>
-	{#if notice}<p role="status" class="pb-1 text-dim">
-			{notice}{#if undo}<button
-					class="ml-2 min-h-8 underline"
-					disabled={busy || unavailable}
-					onclick={() => void act('undo').catch(() => {})}>Undo</button
-				>{/if}
-		</p>{/if}
-	{#if error}<p role="alert" class="pb-1 text-danger">{error}</p>{/if}
+		</span>
+	{/if}
 </div>
+{#if notice}<p role="status" class="text-[12px] text-dim">
+		{notice}{#if undo}<button
+				class="ml-2 min-h-8 underline"
+				disabled={busy || unavailable}
+				onclick={() => void act('undo').catch(() => {})}>Undo</button
+			>{/if}
+	</p>{/if}
+{#if error}<p role="alert" class="text-[12px] text-danger">{error}</p>{/if}

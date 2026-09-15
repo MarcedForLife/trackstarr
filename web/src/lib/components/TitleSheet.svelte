@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import TitleFile, { type Editing } from './TitleFile.svelte';
+	import TitleFile from './TitleFile.svelte';
+	import { type Editing } from './FileAccount.svelte';
 	import { poll } from '$lib/poll';
 	import { getTitleWork, queueAction, type TitleWork } from '$lib/queue';
 	import PauseMenu from '$lib/components/PauseMenu.svelte';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Disclosure from '$lib/components/Disclosure.svelte';
-	import Glyph from '$lib/components/Glyph.svelte';
 	import RunButtons from '$lib/components/RunButtons.svelte';
 	import RunProgress from '$lib/components/RunProgress.svelte';
 	import ServiceIcon from '$lib/components/ServiceIcon.svelte';
@@ -15,7 +15,8 @@
 	import { refusalText } from '$lib/api';
 	import { MARKS, type MarkName } from '$lib/connections';
 	import { arrival, coverShow, type Arrival } from '$lib/covers';
-	import { button } from '$lib/controls';
+	import { button, subtle } from '$lib/controls';
+	import { count } from '$lib/events';
 	import { duration } from '$lib/format';
 	import {
 		forTitle,
@@ -199,6 +200,10 @@
 	const queuePosition = $derived(
 		queued.length ? Math.min(...queued.map((item) => item.position)) : 0
 	);
+	// A count for a series, since its files are spread down the queue; one file's
+	// own place for a film, which is what a reorder moves. The count keeps its
+	// noun so the two are never read for each other, and the rows below say the
+	// place the same way this does.
 	const workStatus = $derived(
 		stoppingWork
 			? 'Stopping…'
@@ -206,7 +211,7 @@
 				? [
 						processing ? `${processing} processing` : '',
 						workerWaiting ? `${workerWaiting} waiting for a worker` : '',
-						queueCount ? `${queueCount} queued · next at position ${queuePosition}` : ''
+						queueCount ? `Pending (${count(queueCount, 'file')})` : ''
 					]
 						.filter(Boolean)
 						.join(' · ')
@@ -215,7 +220,7 @@
 					: workerWaiting
 						? 'Waiting for a worker'
 						: queueCount
-							? `Queue position ${queuePosition}`
+							? `Pending (#${queuePosition})`
 							: ''
 	);
 
@@ -343,15 +348,22 @@
 		}
 	}
 
+	// A press answers with its own line, so whatever the last one said goes as
+	// this one starts. Not from queueAct, which chains its undo token through.
+	function clearSaid() {
+		queueNotice = '';
+		queueUndo = null;
+		pauseError = '';
+	}
+
 	async function keep(seconds: number) {
 		if (!opened) return;
 		pauseBusy = String(seconds);
 		workBusy = true;
-		pauseError = '';
+		clearSaid();
 		try {
 			pauses = await placePause({ ids: [opened.id] }, seconds);
 			await cancelWork();
-			queueUndo = null;
 		} finally {
 			pauseBusy = '';
 			workBusy = false;
@@ -363,7 +375,7 @@
 		if (!opened) return;
 		pauseBusy = 'resume';
 		workBusy = true;
-		pauseError = '';
+		clearSaid();
 		try {
 			pauses = await resumePause(
 				pause && !pause.title ? { paths: [pause.path] } : { ids: [opened.id] }
@@ -383,29 +395,20 @@
 		return MARKS.find((known) => known === name) ?? null;
 	}
 
-	// A share of the line below sm, natural width from sm up, as RunButtons does.
-	const spread = 'flex-1 sm:flex-none';
-
-	// One button to open the title elsewhere: centred in the row a phone gives it,
-	// left-aligned in the column from sm up so the marks line up down its edge.
-	const link = `${button} ${spread} sm:justify-start`;
+	// One link to open the title elsewhere, at its own width and never squeezed:
+	// the row pans where they do not fit. The padding is the hover ground only,
+	// so the row pulls it back off the left; see the block.
+	const link = `${subtle} !px-2 flex-none`;
 
 	// The services the header offers, whether they have been asked yet or not.
 	const offered = $derived(links ?? detail?.servers ?? []);
 
-	// From sm up the cover stands as tall as the buttons beside it and their
-	// gaps: 40px each and 8px between, so three make 136 and four make 184.
-	// Never shorter than three, so a title with two links keeps the poster a
-	// title with three gets, and four is the most the service can offer one
-	// title. Written out, since Tailwind reads its classes from the source.
-	const poster = $derived(offered.length > 3 ? 'sm:h-46' : 'sm:h-34');
-
-	// Equal shares on mobile, including queue actions and a lone Pause. Longer
-	// series labels can wrap within their share; desktop uses natural widths.
+	// Equal shares at every width, as the idle row has. Longer series labels wrap
+	// within their share rather than taking it from the others.
 	const cell = $derived(
 		runner && !involved
 			? 'w-full'
-			: 'min-w-0 w-full !px-2 leading-tight !whitespace-normal sm:w-auto sm:!px-3.5 sm:!whitespace-nowrap'
+			: 'min-w-0 w-full !px-2 leading-tight !whitespace-normal sm:!px-3.5'
 	);
 
 	// Every close goes through the entry, or the next back would raise the sheet
@@ -497,14 +500,18 @@
 
 <Sheet open={up} onclose={close} label={opened?.name ?? 'Title'}>
 	{#if opened}
-		<div class="px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] sm:px-6">
-			<div class="flex flex-wrap gap-4">
-				<!-- As tall as the links beside it; see `poster`. Width follows the
-				     height at a poster's 2:3. The tile holds the shape and the border
-				     while the cover fades in over it, so the header does not shift or
-				     flash as the picture lands. -->
+		<div class="px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+			<!-- Two columns, so the links take a second row of the right-hand one from
+			     sm up and the whole width under both on a phone. -->
+			<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3">
+				<!-- Stands the height of the name, the path and the links beside it, its
+				     width following at a poster's 2:3, so the two columns end on one line.
+				     The links pan rather than wrap, or a second row of them would make
+				     this taller, which would make it wider, which would wrap a third. The tile holds the shape
+				     and the border while the cover fades in over it, so the header does
+				     not shift or flash as the picture lands. -->
 				<span
-					class={`relative block aspect-[2/3] h-[7.5rem] w-auto flex-none overflow-hidden rounded-lg border border-line bg-sunken ${poster}`}
+					class="relative row-span-2 block aspect-[2/3] min-h-[7.5rem] w-auto flex-none self-stretch overflow-hidden rounded-lg border border-line bg-sunken sm:min-h-34"
 				>
 					<img
 						src={art}
@@ -513,7 +520,7 @@
 						class={`absolute inset-0 h-full w-full object-cover ${showing}`}
 					/>
 				</span>
-				<div class="min-w-0 flex-1">
+				<div class="min-w-0">
 					<h2 class="text-[17px] font-semibold tracking-tight">{opened.name}</h2>
 					<p class="mt-0.5 text-[12.5px] text-dim">
 						{#if kind}
@@ -541,14 +548,15 @@
 					</p>
 				</div>
 
-				<!-- Where to watch it and where it is managed. A row under the cover on
-				     a phone, a column beside the title from sm up, where the header has
-				     room to spare and a row of its own cost a line. A server still being
-				     asked holds its place greyed, so a late answer does not shove
-				     everything up under the thumb. The mark leads on its dark tile, and
-				     the label drops to the name; "Open in" stays for a screen reader. -->
+				<!-- Where to watch it and where it is managed. A row under the path at
+				     every width, beside the cover, rather than a column whose height the
+				     cover had to answer to. Pulled left by the first mark's own padding, so the marks
+				     start where the name and the path do. A server still being asked holds its place greyed, so a
+				     late answer does not shove everything up under the thumb. The mark
+				     leads on its dark tile, and the label drops to the name; "Open in"
+				     stays for a screen reader. -->
 				{#if offered.length}
-					<div class="flex w-full flex-wrap gap-2 sm:w-auto sm:flex-col sm:flex-nowrap">
+					<div class="col-start-2 -ml-2 flex gap-2 overflow-x-auto">
 						{#each offered as server (server.server)}
 							{@const found = server.url ?? ''}
 							{#if found}
@@ -585,13 +593,12 @@
 						/>
 					{:else if acting}
 						<!-- One row at every width; stacked, the panel pushed the rows below
-						     the fold. Three equal columns, since the three are one decision
-						     and a narrower Pause read as the lesser of them. Nothing to run:
-						     Pause alone, at its own width rather than a third of the row. -->
+						     the fold. Equal columns, since the buttons are one decision and
+						     a narrower Pause read as the lesser of them. -->
 						<div
 							class={runner && !involved
 								? 'grid grid-cols-3 items-center gap-3'
-								: 'grid auto-cols-fr grid-flow-col items-center gap-2 sm:flex sm:flex-wrap'}
+								: 'grid auto-cols-fr grid-flow-col items-center gap-2 sm:gap-3'}
 						>
 							{#if runner && !involved}
 								<RunButtons
@@ -608,7 +615,7 @@
 										class={`${cell} ${button}`}
 										disabled={workBusy || !!workError || stoppingWork}
 										onclick={() => queueAct('top')}
-										>{manyFiles ? 'Move queued to top' : 'Move to top'}</button
+										>{manyFiles ? 'Prioritise all' : 'Prioritise'}</button
 									>{/if}
 								<button
 									class={`${cell} ${button} text-danger`}
@@ -619,7 +626,7 @@
 											? 'Cancel all'
 											: 'Cancel'
 										: manyFiles
-											? 'Skip queued'
+											? 'Skip all'
 											: 'Skip'}</button
 								>
 							{/if}
@@ -647,9 +654,6 @@
 						</div>
 					{/if}
 
-					{#if involved && manyFiles}<p class="mt-2 text-[12px] text-dim">
-							Queue actions apply to all this title’s files. Individual controls are below.
-						</p>{/if}
 					{#if queueNotice}<p role="status" class="mt-2 text-[12px] text-dim">
 							{queueNotice}
 							{#if queueUndo}<button
@@ -733,9 +737,6 @@
 	{@const logo = mark(server.server)}
 	{#if logo}<ServiceIcon name={logo} box={20} size={14} />{/if}
 	<span class="sr-only">Open in </span>{server.label}
-	<!-- Last on the line rather than trailing the name, so the column ends on one
-	     edge as it starts on one. -->
-	<span class="flex-none sm:ml-auto"><Glyph name="open" /></span>
 {/snippet}
 
 <!-- A line the title's own read has still to fill in, held at its height so the
