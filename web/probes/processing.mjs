@@ -74,7 +74,8 @@ try {
 			);
 			const eta = page.getByLabel('Estimated time remaining', { exact: true });
 			assert.match(await eta.innerText(), /^~.* left$/);
-			assert.match(await eta.locator('..').innerText(), /left\s*·\s*99%/);
+			// The percentage is a Count, whose one text copy innerText sets apart.
+			assert.match(await eta.locator('..').innerText(), /left\s*·\s*99\s*%/);
 
 			const processing = page.locator('section[aria-labelledby="now"]');
 			// Cold activity keeps usable file rows; a later refresh adds their identity.
@@ -100,7 +101,7 @@ try {
 				/Not checked yet/
 			);
 			// A waiting row is numbered as the queue screen numbers it.
-			assert.match(await queued.innerText(), /#1/);
+			assert.match(await queued.innerText(), /place\s*1\b/);
 			assert.doesNotMatch(await processing.innerText(), /Next up|in line/);
 
 			// A paused file reads as the rows above it do: what it is, how long is

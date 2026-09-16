@@ -1,6 +1,7 @@
 <script lang="ts">
 	import FileAccount, { type Editing } from './FileAccount.svelte';
 	import FileWork from './FileWork.svelte';
+	import QueuePlace from './QueuePlace.svelte';
 	import { ago } from '$lib/events';
 	import { size, verdictLabel, verdictText, type LibraryFile } from '$lib/library';
 	import { fileState, type TitleWork } from '$lib/queue';
@@ -40,12 +41,13 @@
 	// neither; see `manyFiles` below.
 	const standing = $derived(fileState(work, file.path));
 	const led = $derived(standing.label || verdictLabel(file.status));
-	// Accent for work under way. A pause is a state, not a thing happening.
+	// Accent for work under way. Queued and paused are states, not things
+	// happening; a place at the head lights itself.
 	const tone = $derived(
 		standing.label
-			? standing.paused
-				? 'text-dim'
-				: 'text-accent'
+			? standing.running.length
+				? 'text-accent'
+				: 'text-dim'
 			: (verdictText[file.status] ?? 'text-dim')
 	);
 
@@ -87,6 +89,13 @@
 		<p class="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[11.5px] text-faint">
 			{#if manyFiles}
 				<span class={`font-semibold ${tone}`}>{led}</span>
+				{#if standing.place}
+					<QueuePlace place={standing.place} />
+					{#if standing.waiting.length > 1}
+						<span aria-hidden="true">·</span>
+						<span>{standing.waiting.length} runs</span>
+					{/if}
+				{/if}
 				<span aria-hidden="true">·</span>
 			{/if}
 			<span>{size(file.bytes)}</span>

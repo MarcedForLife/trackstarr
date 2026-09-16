@@ -8,6 +8,7 @@
 	import Disclosure from './Disclosure.svelte';
 	import FileActions from './FileActions.svelte';
 	import FilePoster from './FilePoster.svelte';
+	import QueuePlace from './QueuePlace.svelte';
 	import Tick from './Tick.svelte';
 
 	let {
@@ -105,9 +106,7 @@
 					<span class="mt-1 flex items-baseline gap-x-2 overflow-hidden">
 						<!-- Where it sits in the whole queue, which is not its place in
 						     this page once a search has cut one. -->
-						<span class="flex-none font-mono text-[11px] text-faint tabular-nums"
-							>#{item.position}</span
-						>
+						<QueuePlace place={item.position} class="flex-none text-[11px]" />
 						{#if title.episode}<span class="flex-none font-mono text-[12px] font-medium text-dim"
 								>{title.episode}</span
 							>{/if}

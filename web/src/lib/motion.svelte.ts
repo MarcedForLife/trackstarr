@@ -62,3 +62,24 @@ export function tickPop(): { duration: number; easing: (t: number) => number; st
 export function blockSlide(): { duration: number; easing: (t: number) => number } {
 	return { duration: still ? 0 : 240, easing: cubicOut };
 }
+
+// A digit travels its whole height, on small dim text at the edge of the eye:
+// shorter and the turn was missed.
+const DIGIT_ROLL = 280;
+
+/** The turn of one digit of a count changing: the old digit leaves the way
+ * the number went and the new one follows it in, like a counter wheel. The
+ * caller draws the movement, since only it knows the direction. */
+export function digitRoll(): { duration: number; easing: (t: number) => number } {
+	return { duration: still ? 0 : DIGIT_ROLL, easing: cubicOut };
+}
+
+// Long enough to read as counting; short of the Bar's 500ms, so the number
+// lands and the bar catches it up rather than the other way round.
+const COUNT_THROUGH = 400;
+
+/** The tween for a count that jumped: it counts through the values between,
+ * where rolling every digit at once would say nothing about how far it went. */
+export function countThrough(): { duration: number; easing: (t: number) => number } {
+	return { duration: still ? 0 : COUNT_THROUGH, easing: cubicOut };
+}

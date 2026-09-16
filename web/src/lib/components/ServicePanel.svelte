@@ -7,6 +7,7 @@
 	import { fade } from 'svelte/transition';
 	import { resolve } from '$app/paths';
 	import { since, ticking } from '$lib/clock.svelte';
+	import Count from '$lib/components/Count.svelte';
 	import Bar from '$lib/components/Bar.svelte';
 	import Disclosure from '$lib/components/Disclosure.svelte';
 	import PausedFile from '$lib/components/PausedFile.svelte';
@@ -419,11 +420,11 @@
 		<div aria-label="Overall processing progress">
 			{#if totalCount}
 				<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-					<span class="text-[28px] leading-none font-semibold tracking-tight tabular-nums"
-						>{completedCount.toLocaleString()}</span
+					<span class="text-[28px] leading-none font-semibold tracking-tight"
+						><Count value={completedCount} /></span
 					>
 					<span class="text-[12px] text-dim"
-						>of {totalCount.toLocaleString()} {totalCount === 1 ? 'file' : 'files'} processed</span
+						>of <Count value={totalCount} /> {totalCount === 1 ? 'file' : 'files'} processed</span
 					>
 					<span
 						class="ml-auto inline-flex items-baseline gap-2 text-[12px] whitespace-nowrap tabular-nums"
@@ -433,7 +434,9 @@
 							>{/if}
 						{#if !listing}
 							{#if estimates.length === 1}<span aria-hidden="true" class="text-faint">·</span>{/if}
-							<span class="font-medium text-accent">{Math.floor(completion * 100)}%</span>
+							<span class="font-medium text-accent"
+								><Count value={Math.floor(completion * 100)} />%</span
+							>
 						{/if}
 					</span>
 				</div>

@@ -144,7 +144,7 @@ try {
 			await overview
 				.getByRole('listitem')
 				.filter({ hasText: 'Queue Movie 002' })
-				.getByText('#1', { exact: true })
+				.getByText('place 1', { exact: true })
 				.waitFor();
 			assert.equal(items[0].path, '/media/Queue Movie 002.mkv');
 			assert.equal(await overview.getByRole('button', { name: 'Undo', exact: true }).count(), 0);

@@ -229,10 +229,11 @@ export function progressed(run: Run, age = 0): number {
 // Under this many files the count says it all; a percentage adds nothing.
 const WORTH_A_PERCENTAGE = 100;
 
-/** How far along as a number, since a 1px bar cannot be read. */
-export function percent(run: Run): string {
-	if (run.total < WORTH_A_PERCENTAGE) return '';
-	return `${Math.floor(fraction(run) * 100)}%`;
+/** How far along in whole percent, since a 1px bar cannot be read. Nothing
+ * under a hundred files, where the count says it all. */
+export function percent(run: Run): number | undefined {
+	if (run.total < WORTH_A_PERCENTAGE) return undefined;
+	return Math.floor(fraction(run) * 100);
 }
 
 // Before this much of a run there is no rate worth extrapolating: the first
@@ -417,11 +418,6 @@ export function fileStatus(file: ActiveFile, age = 0): string {
 	if (file.stage === 'waiting') return 'Waiting for a free rewrite slot';
 	const { speed, far, left } = fileReadout(file, age);
 	return [far, speed, left].filter(Boolean).join(' · ');
-}
-
-/** Where a queued file sits, numbered as the queue screen numbers it. */
-export function queuePlace(place: number): string {
-	return place ? `#${place}` : '';
 }
 
 // Reading order: what changed, what needs a look, then the untouched majority.

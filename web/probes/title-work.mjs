@@ -86,12 +86,12 @@ try {
 	assert.equal(await row.getByRole('button', { name: /Actions for/ }).count(), 0);
 	// The header names the file's place, and a reorder answers with the new one.
 	const status = sheet.locator('h2 ~ p').nth(1);
-	await status.filter({ hasText: /^Queued \(#24\)$/ }).waitFor();
+	await status.filter({ hasText: /^Queued place 24$/ }).waitFor();
 	// One file, so the header carries the verdict and the row does not repeat it.
 	// "Failed:" leading the reason below is a different string.
 	assert.equal(await row.getByText('Failed', { exact: true }).count(), 0);
 	await page.getByRole('button', { name: 'Prioritise', exact: true }).click();
-	await status.filter({ hasText: /^Queued \(#1\)$/ }).waitFor();
+	await status.filter({ hasText: /^Queued place 1$/ }).waitFor();
 	assert.equal(work.queued[0].position, 1);
 	assert.equal(await controls.getByRole('button', { name: 'Undo', exact: true }).count(), 0);
 	// A rule chip opens on the lines that rule ordered. Escape answers the
@@ -146,7 +146,7 @@ try {
 		.getByRole('button', { name: new RegExp(`^${title.name}`) })
 		.first()
 		.click();
-	await status.filter({ hasText: /^1 processing · Queued \(2 files\)$/ }).waitFor();
+	await status.filter({ hasText: /^1 processing · Queued place 12 · 2 files$/ }).waitFor();
 	await row.getByRole('button', { name: /Actions for/ }).waitFor();
 	// Equal shares at every width, as the idle row has. These fell back to
 	// natural widths from sm up, so the check has to leave the phone.
@@ -177,8 +177,8 @@ try {
 		.getByRole('button', { name: new RegExp(`^${title.name}`) })
 		.first()
 		.click();
-	// Still the series, so the header counts rather than places.
-	await status.filter({ hasText: /^Queued \(1 file\)$/ }).waitFor();
+	// Still the series, so the header counts as well as places.
+	await status.filter({ hasText: /^Queued place 12 · 1 file$/ }).waitFor();
 	assert.equal(await row.getByRole('button', { name: /Actions for/ }).count(), 0);
 	assert.equal(await controls.getByRole('button').count(), 0);
 	assert.deepEqual(errors, []);

@@ -135,8 +135,9 @@ export type FileState = {
 	/** A worker has it, rather than holding a slot for it. */
 	active: boolean;
 	stopping: boolean;
-	/** Empty where the file's own verdict is still the thing to say. A queued
-	 * file leads with its place, since that is what a reorder moves. */
+	/** The nearest of the file's places in the queue, or zero off it. */
+	place: number;
+	/** Empty where the file's own verdict is still the thing to say. */
 	label: string;
 };
 
@@ -149,7 +150,7 @@ export function fileState(work: TitleWork | undefined, path: string): FileState 
 	const active = running.some((item) => item.stage !== 'waiting');
 	// The file's own skip. A run winding up leaves the encode it is on running.
 	const stopping = running.some((item) => item.skipped);
-	const runs = waiting.length > 1 ? ` · ${waiting.length} runs` : '';
+	const place = waiting.length ? Math.min(...waiting.map((item) => item.position)) : 0;
 	const label = stopping
 		? 'Stopping…'
 		: running.length
@@ -160,8 +161,8 @@ export function fileState(work: TitleWork | undefined, path: string): FileState 
 				? paused.path === path
 					? 'Paused'
 					: 'Title paused'
-				: waiting.length
-					? `Queued (#${Math.min(...waiting.map((item) => item.position))})${runs}`
+				: place
+					? 'Queued'
 					: '';
-	return { waiting, running, paused, active, stopping, label };
+	return { waiting, running, paused, active, stopping, place, label };
 }

@@ -2,6 +2,7 @@
 	import { onDestroy, onMount, tick } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { fade } from 'svelte/transition';
+	import Count from '$lib/components/Count.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
 	import PosterCard from '$lib/components/PosterCard.svelte';
 	import { display } from '$lib/display.svelte';
@@ -135,11 +136,11 @@
 		<div class="mt-2.5 rounded-xl border border-line bg-raised p-4">
 			<div class="flex items-baseline gap-2.5">
 				<p class="min-w-0 flex-1 text-[13.5px] font-medium">
-					{library.titles.toLocaleString()}
+					<Count value={library.titles} />
 					{library.titles === 1 ? 'title' : 'titles'}
 				</p>
 				<p class={`flex-none text-[12px] font-medium ${pending ? 'text-accent' : 'text-faint'}`}>
-					{pending ? `${pending.toLocaleString()} pending` : 'nothing pending'}
+					{#if pending}<Count value={pending} /> pending{:else}nothing pending{/if}
 				</p>
 			</div>
 

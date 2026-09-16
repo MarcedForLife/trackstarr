@@ -6,6 +6,7 @@
 	import { flip } from 'svelte/animate';
 	import { fade } from 'svelte/transition';
 	import Sheet, { SLIDE } from './Sheet.svelte';
+	import Count from '$lib/components/Count.svelte';
 	import { refusalText } from '$lib/api';
 	import { rowFade, rowSlide } from '$lib/motion.svelte';
 	import { overlay } from '$lib/overlay';
@@ -57,13 +58,6 @@
 	let scrolled = $state(false);
 	const choices = $derived(Object.values(selected));
 
-	// The whole queue, or the part a search or a half-read page narrowed it to.
-	const counted = $derived.by(() => {
-		if (!data.matched) return search ? 'no matches' : '0 waiting';
-		if (data.items.length < data.matched)
-			return `1–${data.items.length} of ${data.matched}${search ? ' matching' : ''}`;
-		return search ? `${data.matched} matching` : `${data.total} waiting`;
-	});
 	const sheet = overlay({
 		name: 'queue',
 		close: () => {
@@ -192,7 +186,19 @@
 					<h2 id="queue-title" class="flex items-center gap-2 text-lg font-semibold tracking-tight">
 						<span class="flex text-dim"><Glyph name="list" size={18} /></span>
 						<span
-							>Queue <span class="ml-1 text-sm font-normal text-faint tabular-nums">{counted}</span
+							>Queue
+							<!-- The whole queue, or the part a search or a half-read page
+							     narrowed it to. -->
+							<span class="ml-1 text-sm font-normal text-faint tabular-nums"
+								>{#if !data.matched}{search
+										? 'no matches'
+										: '0 waiting'}{:else if data.items.length < data.matched}1–<Count
+										value={data.items.length}
+									/> of <Count value={data.matched} />{search
+										? ' matching'
+										: ''}{:else if search}<Count value={data.matched} /> matching{:else}<Count
+										value={data.total}
+									/> waiting{/if}</span
 							></span
 						>
 					</h2>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { since, ticking } from '$lib/clock.svelte';
 	import Bar from '$lib/components/Bar.svelte';
+	import Count from '$lib/components/Count.svelte';
 	import FileProgress from '$lib/components/FileProgress.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
 	import { button } from '$lib/controls';
@@ -25,11 +26,15 @@
 	$effect(ticking);
 	const age = $derived(since(run.seen));
 
+	const far = $derived(percent(run));
 	const progress = $derived.by(() => {
 		if (run.stopping) return 'Stopping after the current file…';
-		const far = percent(run);
-		return far ? `${far} · ${progressLabel(run)}` : progressLabel(run);
+		const label = progressLabel(run);
+		return far === undefined ? label : `${far}% · ${label}`;
 	});
+	// The line with numbers in it, which are set as their own elements so a
+	// change rolls. The string above still tells the bar's screen reader.
+	const counted = $derived(!run.stopping && measured(run));
 
 	// The longest-held file, which is the whole readout for a run of one.
 	const file = $derived(run.active[0]);
@@ -54,7 +59,12 @@
 
 <!-- A one-file run counts nothing worth a line; the file below carries it. -->
 {#if progress}
-	<p class="mt-1 text-[12.5px] text-dim">{progress}</p>
+	<p class="mt-1 text-[12.5px] text-dim">
+		{#if counted}
+			{#if far !== undefined}<Count value={far} />% ·{/if}
+			<Count value={run.done} /> of <Count value={run.total} /> files
+		{:else}{progress}{/if}
+	</p>
 {/if}
 
 <!-- No bar until there is a total worth measuring against. -->

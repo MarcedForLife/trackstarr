@@ -30,7 +30,9 @@
 	import { poll } from '$lib/poll';
 	import { atFront, getTitleWork, queueAction, type TitleWork } from '$lib/queue';
 	import { mark as now, since, ticking } from '$lib/clock.svelte';
+	import Count from '$lib/components/Count.svelte';
 	import PauseMenu from '$lib/components/PauseMenu.svelte';
+	import QueuePlace from '$lib/components/QueuePlace.svelte';
 	import { page } from '$app/state';
 	import { SvelteSet } from 'svelte/reactivity';
 	import Disclosure from '$lib/components/Disclosure.svelte';
@@ -42,7 +44,6 @@
 	import { MARKS, type MarkName } from '$lib/connections';
 	import { arrival, coverShow, type Arrival } from '$lib/covers';
 	import { button, control, radius, subtle } from '$lib/controls';
-	import { count } from '$lib/events';
 	import { duration, named, titled } from '$lib/format';
 	import {
 		forTitle,
@@ -214,29 +215,51 @@
 	);
 	// Already at the head, where Prioritise would move nothing.
 	const front = $derived(atFront(queued));
-	// A count for a series, since its files are spread down the queue; one file's
-	// own place for a film, which is what a reorder moves. The count keeps its
-	// noun so the two are never read for each other, and the rows below say the
-	// place the same way this does.
-	const workStatus = $derived(
-		stoppingWork
-			? 'Stopping…'
-			: manyFiles
-				? [
-						processing ? `${processing} processing` : '',
-						workerWaiting ? `${workerWaiting} waiting for a worker` : '',
-						queueCount ? `Queued (${count(queueCount, 'file')})` : ''
-					]
-						.filter(Boolean)
-						.join(' · ')
-				: processing
-					? 'Processing'
-					: workerWaiting
-						? 'Waiting for a worker'
-						: queueCount
-							? `Queued (#${queuePosition})`
-							: ''
-	);
+	// The nearest file's place for a series as for a film: how soon anything
+	// here goes, which is what a reorder moves. A series adds how many files
+	// are spread down the queue, with its noun, so the two are never read for
+	// each other. Each number is a figure of its own, keyed, so a change rolls
+	// rather than redraws the line. Brass for work under way; queued is a
+	// state, and its place lights itself at the head.
+	type Part = {
+		key: string;
+		before?: string;
+		value?: number;
+		place?: number;
+		after?: string;
+		tone: string;
+	};
+	const live = 'text-accent';
+	const workStatus = $derived.by((): Part[] => {
+		if (stoppingWork) return [{ key: 'stopping', before: 'Stopping…', tone: live }];
+		const parts: Part[] = [];
+		if (manyFiles) {
+			if (processing)
+				parts.push({ key: 'processing', value: processing, after: ' processing', tone: live });
+			if (workerWaiting) {
+				parts.push({
+					key: 'worker',
+					value: workerWaiting,
+					after: ' waiting for a worker',
+					tone: live
+				});
+			}
+		} else if (processing) {
+			return [{ key: 'processing', before: 'Processing', tone: live }];
+		} else if (workerWaiting) {
+			return [{ key: 'worker', before: 'Waiting for a worker', tone: live }];
+		}
+		if (queueCount) {
+			parts.push({ key: 'place', before: 'Queued ', place: queuePosition, tone: 'text-dim' });
+			if (manyFiles) {
+				const noun = queueCount === 1 ? ' file' : ' files';
+				parts.push({ key: 'count', value: queueCount, after: noun, tone: 'text-dim' });
+			}
+		}
+		// The separators ride on the parts: a template drops a space at a
+		// block's edge.
+		return parts.map((part, i) => (i ? { ...part, before: ` · ${part.before ?? ''}` } : part));
+	});
 
 	async function queueAct(action: 'top' | 'skip') {
 		workBusy = true;
@@ -546,11 +569,20 @@
 								.join(' · ')}
 						{:else}{@render holding('w-40')}{/if}
 					</p>
-					<p
-						class={`mt-2 text-[13px] font-medium ${involved ? 'text-accent' : ((verdict && verdictText[verdict]) ?? 'text-dim')}`}
-					>
-						{#if known && (workStatus || pause || verdict)}
-							{workStatus || (pause ? 'Paused' : verdictLabel(verdict!))}
+					<p class="mt-2 text-[13px] font-medium">
+						{#if known && (workStatus.length || pause || verdict)}
+							{#if workStatus.length}
+								{#each workStatus as part (part.key)}<span class={part.tone}
+										>{part.before}{#if part.place}<QueuePlace
+												place={part.place}
+												size={12}
+											/>{:else if part.value !== undefined}<Count
+												value={part.value}
+											/>{/if}{part.after}</span
+									>{/each}
+							{:else}<span class={pause ? 'text-dim' : (verdictText[verdict!] ?? 'text-dim')}
+									>{pause ? 'Paused' : verdictLabel(verdict!)}</span
+								>{/if}
 						{:else}{@render holding('w-24')}{/if}
 					</p>
 					<p class="mt-0.5 font-mono text-[11px] break-all text-faint">

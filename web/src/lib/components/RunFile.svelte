@@ -3,6 +3,7 @@
 	import FilePoster from './FilePoster.svelte';
 	import Glyph from './Glyph.svelte';
 	import PlanLine from './PlanLine.svelte';
+	import QueuePlace from './QueuePlace.svelte';
 	import RunLog from './RunLog.svelte';
 	import type { FileChanges, FileCover } from '$lib/queue';
 	import Bar from '$lib/components/Bar.svelte';
@@ -21,7 +22,6 @@
 		fileWorking,
 		getRunLog,
 		named,
-		queuePlace,
 		titled,
 		type FileRow
 	} from '$lib/runs';
@@ -100,25 +100,16 @@
 	const expected = $derived(row.waiting?.expected ?? 0);
 
 	// The word on the right, in the library's words where there is a verdict.
-	// Nothing where the list's heading and the bar already say it.
+	// Nothing where the list's heading and the bar already say it, or where a
+	// waiting row's place says it instead.
 	const standing = $derived.by(() => {
 		if (row.skipped) return live ? 'Stopping…' : 'Skipped';
 		if (row.verdict) return verdictLabel(row.verdict);
 		if (ended) return row.waiting ? 'Not processed' : 'Ended';
-		if (waiting) return queuePlace(place);
-		if (!live) return '';
+		if (!live || waiting) return '';
 		if (row.live?.stage === 'waiting') return 'Waiting for a worker';
 		return bar ? '' : 'Processing';
 	});
-	// A queue number is set as the queue screen sets it, so the same file reads
-	// the same in both places.
-	const standingClass = $derived(
-		row.verdict === 'failed'
-			? 'font-medium text-danger'
-			: waiting
-				? 'font-mono text-[11px] text-faint tabular-nums'
-				: ''
-	);
 	// What a queued rewrite is expected to take, or how long the file has been
 	// held. Nothing under a bar, which says where the encode is in better numbers.
 	const clock = $derived.by(() => {
@@ -205,9 +196,11 @@
 					<span class="mt-1 flex items-center gap-x-2 overflow-hidden text-[11.5px] text-dim">
 						<!-- Left out rather than left empty: an empty flex item still
 						     indents the line by a gap. -->
+						{#if waiting && place}<QueuePlace {place} class="flex-none" />{/if}
 						{#if standing}<span
 								title={row.verdict ? verdictHint(row.verdict) : undefined}
-								class={`flex-none ${standingClass}`}>{standing}</span
+								class={`flex-none ${row.verdict === 'failed' ? 'font-medium text-danger' : ''}`}
+								>{standing}</span
 							>{/if}
 						{#if origin}<span class="flex-none text-faint">{origin}</span>{/if}
 						{#if clock}<span class="flex-none text-faint tabular-nums">{clock}</span>{/if}
