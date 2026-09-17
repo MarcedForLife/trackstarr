@@ -41,7 +41,6 @@ new bundle using the same engine and settings. A regression check should fail
 on the affected baseline and pass after the fix.
 
 Frame timings are diagnostic, not a portable performance score. Compare like
-for like and check the result on a real phone. For recordings against the live
-service, use the [UI review harness](../../tools/uireview/README.md).
+for like and check the result on a real phone.
 
 Run `node probes/queue.mjs` after building to check the full queue in Chromium and Firefox: search across 125 files, paging, selection across pages, plans left behind by a rule change, reorder and undo, bulk pause/skip, read-only access, connection recovery, mobile layout, and focus/back behaviour.

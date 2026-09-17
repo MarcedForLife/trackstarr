@@ -27,9 +27,7 @@ npm run probe:sweep     # build and measure library interaction frame times
 
 Tests live beside the modules they cover and run in Node, without a DOM.
 `src/palette.test.ts` checks palette tokens across CSS and the initial HTML.
-For browser-only behaviour, see [probes](probes/README.md). For screenshots,
-gesture checks and recordings against a running service, see the
-[UI review harness](../tools/uireview/README.md).
+For browser-only behaviour, see [probes](probes/README.md).
 
 ## Standalone demo
 

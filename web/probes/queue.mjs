@@ -233,9 +233,6 @@ try {
 				);
 				assert.equal(await current.evaluate((el) => el.scrollWidth > el.clientWidth), false);
 			}
-			await page.screenshot({
-				path: new URL('../../dev/uireview/queue-mobile.png', import.meta.url).pathname
-			});
 			await page.keyboard.press('Escape');
 			await current.waitFor({ state: 'hidden' });
 			assert.match(await page.locator(':focus').innerText(), /View queue/);

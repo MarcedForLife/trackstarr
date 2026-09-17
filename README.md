@@ -362,8 +362,8 @@ stream dictionaries; integration tests generate real media with ffmpeg. Tag-edit
 tests skip if `mkvpropedit` is unavailable. `cryptography` is the only Python runtime
 dependency. After dependency changes, update and commit `uv.lock`.
 
-See [web development](web/README.md), [browser probes](web/probes/README.md) and
-[UI review tools](tools/uireview/README.md) for frontend commands and conventions.
+See [web development](web/README.md) and [browser probes](web/probes/README.md)
+for frontend commands and conventions.
 
 ## Licence
 

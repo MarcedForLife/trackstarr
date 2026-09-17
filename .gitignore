@@ -19,6 +19,9 @@ pending.tsv
 !.env.example
 dev/
 
+# The Playwright review harness: installed per machine against a pinned browser.
+tools/uireview/
+
 # Machine-specific Claude Code config: the redeploy hook points at
 # /opt/stacks/arrs on this host.
 .claude/settings.local.json
