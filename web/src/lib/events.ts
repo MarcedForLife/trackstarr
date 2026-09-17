@@ -6,7 +6,7 @@ import type { GlyphName } from '$lib/components/Glyph.svelte';
 import { basename, duration, named, size, titled } from '$lib/format';
 // The library's verdict vocabulary, so the history and the library agree on
 // words and colours.
-import { isVerdict, judged, pip, verdictLabel, type Card } from '$lib/library';
+import { isVerdict, judged, pip, verdictLabel, verdictText, type Card } from '$lib/library';
 import { phrase, tally } from '$lib/runs';
 import { words } from '$lib/search';
 
@@ -68,6 +68,9 @@ export type Event = {
 	// Why a title was paused. `seconds` is how long the pause was placed for, and
 	// is absent on one with no end.
 	reason?: string;
+	// Where a skipped file was: `active` with a worker, `waiting` in line.
+	// Absent on older lines.
+	where?: string;
 };
 
 // `next` is the cursor for the next page, null once the oldest event is handed
@@ -240,7 +243,7 @@ export function headline(entry: Event, title = ''): string {
 		case 'item_resumed':
 			return `Resumed ${title || release()}`;
 		case 'skipped':
-			return `Skipped ${release()}`;
+			return `${outcome(entry).word}: ${title || release()}`;
 		case 'retagged':
 			return `Edited tags: ${title || release()}`;
 		case 'webhook': {
@@ -346,9 +349,8 @@ export function detail(entry: Event): string {
 				.filter(Boolean)
 				.join(' · ');
 		case 'skipped':
-			// The run it was taken off is in the opened row; a skip lasts no
-			// longer than that run.
-			return 'Skipped for this run';
+			// Older lines have no words for where the file was.
+			return entry.detail ?? 'skipped for this run';
 		case 'retagged':
 			return [stream(entry), ...retagged(entry)].join(' · ');
 		case 'webhook': {
@@ -441,9 +443,11 @@ export function details(entry: Event, before?: Event): Detail[] {
 		case 'pending':
 		case 'failed':
 		case 'deferred':
+		case 'skipped':
 			add('File', [entry.path], true);
 			add('Replaced', [entry.from_path], true);
-			add('Problem', [entry.detail]);
+			// A skip's words say where the file was, not what went wrong.
+			add(entry.event === 'skipped' ? outcome(entry).word : 'Problem', [entry.detail]);
 			add('Reasons', entry.reasons ?? []);
 			add('Additional changes', entry.incidental ?? []);
 			add('Rules', [[...(entry.rules ?? []), ...(entry.incidental_rules ?? [])].join(', ')]);
@@ -453,6 +457,7 @@ export function details(entry: Event, before?: Event): Detail[] {
 			if (entry.bytes_before !== undefined && entry.bytes_after !== undefined) {
 				add('Size', [`${size(entry.bytes_before)} to ${size(entry.bytes_after)}`], true);
 			}
+			add('By', [entry.by]);
 			break;
 		case 'webhook':
 			// A delivery recorded before the names were.
@@ -496,9 +501,8 @@ export function details(entry: Event, before?: Event): Detail[] {
 		case 'item_paused':
 		case 'lifted':
 		case 'item_resumed':
-		case 'skipped':
-			// A pause on a whole title is on its folder, and a skip is on one file.
-			add(entry.event === 'skipped' ? 'File' : 'Path', [entry.path], true);
+			// A pause on a whole title is on its folder.
+			add('Path', [entry.path], true);
 			add('Reason', [entry.reason]);
 			add('By', [entry.by]);
 			break;
@@ -540,6 +544,19 @@ export function searchable(entry: Event, title = ''): string {
 // The verdict's colour from the library's pips; everything else is background.
 export function dot(entry: Event): string {
 	return isVerdict(entry.event) ? pip[entry.event] : 'bg-faint';
+}
+
+/** The word a line about one file ends on, in its colour. */
+export type Outcome = { word: string; text: string };
+
+/**
+ * The verdict, or what a person did to the file: Cancelled where a worker had
+ * it, Skipped where none had, as the buttons say. Not verdicts, so no colour.
+ */
+export function outcome(entry: Event): Outcome {
+	if (isVerdict(entry.event))
+		return { word: verdictLabel(entry.event), text: verdictText[entry.event] };
+	return { word: entry.where === 'active' ? 'Cancelled' : 'Skipped', text: 'text-faint' };
 }
 
 /**

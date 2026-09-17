@@ -13,11 +13,12 @@
 		marker,
 		measures,
 		notes,
+		outcome,
 		release,
 		type Event
 	} from '$lib/events';
 	import { named, stamp } from '$lib/format';
-	import { changed, isVerdict, verdictLabel, verdictText, CHIP, PLAIN_TONE } from '$lib/library';
+	import { changed, CHIP, PLAIN_TONE } from '$lib/library';
 	import type { Card } from '$lib/library';
 
 	// One line of history, opening to the full record. On the events page's list,
@@ -49,7 +50,7 @@
 
 	// Lines about one file, which name it the way a queue row does, and of those
 	// the ones whose plan the chips carry.
-	const FILES = new Set(['modified', 'pending', 'failed', 'deferred']);
+	const FILES = new Set(['modified', 'pending', 'failed', 'deferred', 'skipped']);
 	const REWRITES = new Set(['modified', 'pending']);
 
 	// Both or neither: a thumb with nowhere to go swallows a tap.
@@ -59,8 +60,8 @@
 	// mark, so the list can be read down the column.
 	const mark = $derived(poster ? '' : badge(entry));
 
-	// File outcomes are named beside the chips.
-	const verdict = $derived(isVerdict(entry.event) ? entry.event : undefined);
+	// What became of the file is named beside the chips.
+	const ending = $derived(FILES.has(entry.event) ? outcome(entry) : undefined);
 
 	// The chips say what the rewrite changed, the layouts it wrote in the
 	// library's colour and what it cost in the plain one.
@@ -173,14 +174,14 @@
 				{#if line}
 					<span class={lineClass} title={line}>{line}</span>
 				{/if}
-				{#if marks.length || verdict}
+				{#if marks.length || ending}
 					<span class="mt-2 flex flex-wrap items-center gap-1.5">
-						{#if verdict}
+						{#if ending}
 							<span
-								class={`mr-1 inline-flex items-center gap-1.5 text-[11px] font-medium ${verdictText[verdict]}`}
+								class={`mr-1 inline-flex items-center gap-1.5 text-[11px] font-medium ${ending.text}`}
 							>
 								<span aria-hidden="true" class={`h-1.5 w-1.5 rounded-full ${dot(entry)}`}></span>
-								{verdictLabel(verdict)}
+								{ending.word}
 							</span>
 						{/if}
 						{#each marks as change (change.chip)}

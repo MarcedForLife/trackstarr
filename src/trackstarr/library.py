@@ -990,6 +990,26 @@ def plans_for_paths(paths: Iterable[str]) -> tuple[dict[str, dict], bool]:
     return plans, stored.current
 
 
+def plan_fields(path: str) -> dict:
+    """What a rewrite of the path would do, in the fields a history line
+    carries. Empty where nothing is stored."""
+    entry = _read_cache().files.get(path)
+    if entry is None:
+        return {}
+    why = entry.get("why") or {}
+    tally = _changes(entry)
+    told = {
+        "reasons": why.get("reasons"),
+        "incidental": why.get("incidental"),
+        "rules": why.get("rules"),
+        "incidental_rules": why.get("incidental_rules"),
+        "adds": tally.adds,
+        "rebuilds": tally.rebuilds,
+        "drops": tally.drops,
+    }
+    return {name: value for name, value in told.items() if value}
+
+
 def cards_for_paths(paths: Iterable[str]) -> tuple[dict[str, str], dict[str, dict]]:
     """Which title holds each path, and a card per title found.
 

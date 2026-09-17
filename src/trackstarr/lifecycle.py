@@ -17,7 +17,19 @@ from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 
-from . import config, events, notify, paths, pauses, queue_view, runlog, runs, sweep_cache, work
+from . import (
+    config,
+    events,
+    library,
+    notify,
+    paths,
+    pauses,
+    queue_view,
+    runlog,
+    runs,
+    sweep_cache,
+    work,
+)
 from .executor import Cancel
 from .state import write_json
 from .status import Status
@@ -194,11 +206,40 @@ def pause_selection(keys: set[tuple[str, str]], seconds: float, by: str = "") ->
     return Outcome(len(selected))
 
 
+def _stopped_where(where: str, held: runs.Active | None) -> str:
+    """Where the file was when it was taken off, in the line's words."""
+    if where != "active":
+        return "taken off the run before a worker reached it"
+    if held is not None and held.stage == runs.WAITING:
+        return "stopped while it waited for a rewrite slot"
+    if held is not None and held.stage == runs.ENCODING and held.total:
+        percent = round(100 * held.done / held.total)
+        return f"stopped {percent}% into the rewrite, nothing written"
+    return "stopped while it was being checked"
+
+
+def _record_skipped(
+    run_id: str, path: str, by: str, where: str, held: runs.Active | None = None
+) -> None:
+    """The one line a skip leaves; the worker writes none for a file it gave
+    up on request."""
+    events.record(
+        "skipped",
+        run=run_id,
+        path=path,
+        by=by or None,
+        where=where,
+        detail=_stopped_where(where, held),
+        seconds=round(time.time() - held.since, 1) if held else None,
+        **library.plan_fields(path),
+    )
+
+
 def _announce_skipped(selected: Sequence[tuple[str, str]], by: str) -> None:
     """Publish and audit once the scheduler has committed the skips."""
     notify.publish(notify.RUNS)
     for run_id, path in selected:
-        events.record("skipped", run=run_id, path=path, by=by)
+        _record_skipped(run_id, path, by, "waiting")
 
 
 def skip(keys: set[tuple[str, str]], by: str = "") -> Outcome:
@@ -237,12 +278,14 @@ def skip_file(run_id: str, path: str, by: str = "") -> tuple[str, int]:
         where, cancel = work.scheduler.skip_file(run_id, path)
     if cancel is None:
         return "", 0
+    # Read before the signal: once told, the worker lets the file go.
+    held = runs.holding(run_id, path) if where == "active" else None
     # Published before the kill, so a page refetching mid-kill is already told
     # why the file stopped.
     notify.publish(notify.RUNS)
     # By phase, not by name: this file can already be claimed again elsewhere.
     killed = runs.abort_phase(cancel) if where == "active" else 0
-    events.record("skipped", run=run_id, path=path, by=by)
+    _record_skipped(run_id, path, by, where, held)
     log.info("%s skipped on run %s%s", path, run_id, f" by {by}" if by else "")
     return where, killed
 

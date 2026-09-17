@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { detail, details, headline, searchable, type Event } from '$lib/events';
+import { detail, details, headline, outcome, searchable, type Event } from '$lib/events';
 
 function entry(over: Partial<Event> = {}): Event {
 	return {
@@ -42,6 +42,43 @@ describe('the headline of a hold', () => {
 		expect(labels(entry({ event: 'skipped', path: '/data/media/tv/S01E01.mkv' }))).toContain(
 			'File'
 		);
+	});
+});
+
+describe('a file taken off its run', () => {
+	const path = '/data/media/movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv';
+	const cancelled = entry({
+		event: 'skipped',
+		path,
+		by: 'admin',
+		where: 'active',
+		detail: 'stopped 43% into the rewrite, nothing written',
+		seconds: 41.7,
+		reasons: ['add 2.0 downmix'],
+		rules: ['downmix'],
+		adds: ['2.0']
+	});
+
+	test('is named for the button that did it', () => {
+		expect(outcome(cancelled).word).toBe('Cancelled');
+		expect(outcome(entry({ event: 'skipped', path, where: 'waiting' })).word).toBe('Skipped');
+		// Older lines, from before the two were told apart.
+		expect(outcome(entry({ event: 'skipped', path })).word).toBe('Skipped');
+		expect(headline(cancelled, 'Arrival')).toBe('Cancelled: Arrival');
+	});
+
+	test("says where the file was, in the service's words", () => {
+		expect(detail(cancelled)).toBe('stopped 43% into the rewrite, nothing written');
+		expect(detail(entry({ event: 'skipped', path }))).toBe('skipped for this run');
+	});
+
+	test('opens to the plan the rewrite had, and who stopped it', () => {
+		const rows = Object.fromEntries(details(cancelled).map((row) => [row.label, row.values]));
+		expect(rows.Cancelled).toEqual(['stopped 43% into the rewrite, nothing written']);
+		expect(rows.Reasons).toEqual(['add 2.0 downmix']);
+		expect(rows.Added).toEqual(['2.0']);
+		expect(rows.By).toEqual(['admin']);
+		expect(rows.Problem).toBeUndefined();
 	});
 });
 

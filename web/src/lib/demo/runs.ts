@@ -1111,16 +1111,68 @@ export function skip(
 	if (!active && !queued)
 		return { status: 404, body: { status: 'that run is not going to reach that file' } };
 	const file = state.byPath.get(path)!;
-	record(state, { event: 'skipped', run: run.id, path, by, title: file.title.spec.id });
 	let rewrites = 0;
-	if (active && isActive(active)) {
+	if (active) {
 		rewrites = active.stage === 'encoding' ? 1 : 0;
-		const changed: Changed = { runs: true, progress: false, library: false, events: true };
-		defer(state, run, active, file, 'skipped for this run', now, changed);
+		const seconds = isActive(active) ? Math.round(((now - active.since) / 1000) * 10) / 10 : 0;
+		skipLine(state, run, file, by, 'active', stoppedWhere(active), seconds);
+		if (isActive(active)) {
+			// On the run's tally, as the service books it, with no verdict line.
+			run.counts.deferred = (run.counts.deferred ?? 0) + 1;
+			run.done += 1;
+			run.recent.unshift({ path, status: 'deferred', seconds, detail: 'skipped for this run' });
+			log(state, run.id, path, `deferred ${path}: skipped for this run`);
+			remove(run, active);
+		}
 	} else if (queued) {
 		queued.skipped = true;
+		skipLine(state, run, file, by, 'waiting', 'taken off the run before a worker reached it');
 	}
 	publish('runs');
 	publish('events');
 	return { status: 'skipped', where: active ? 'active' : 'queued', rewrites };
+}
+
+/** Where the worker was with the file, in the service's words. */
+function stoppedWhere(active: ActiveFile): string {
+	if (active.stage === 'waiting') return 'stopped while it waited for a rewrite slot';
+	if (active.stage === 'encoding' && active.duration) {
+		const percent = Math.round((100 * active.done) / active.duration);
+		return `stopped ${percent}% into the rewrite, nothing written`;
+	}
+	return 'stopped while it was being checked';
+}
+
+/** The one line a skip leaves. Empty plan fields are left off, as the service
+ * leaves them. */
+function skipLine(
+	state: State,
+	run: SimRun,
+	file: File,
+	by: string,
+	where: string,
+	detail: string,
+	seconds?: number
+): void {
+	const plan: Record<string, unknown> = {
+		reasons: file.why.reasons,
+		incidental: file.why.incidental,
+		rules: file.why.rules,
+		incidental_rules: file.why.incidental_rules,
+		...changesOf(file.planned, file.tracks)
+	};
+	const told = Object.fromEntries(
+		Object.entries(plan).filter(([, value]) => (Array.isArray(value) ? value.length : value))
+	);
+	record(state, {
+		event: 'skipped',
+		run: run.id,
+		path: file.path,
+		by,
+		where,
+		detail,
+		...(seconds ? { seconds } : {}),
+		...told,
+		title: file.title.spec.id
+	});
 }

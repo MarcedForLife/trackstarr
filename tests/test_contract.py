@@ -430,7 +430,19 @@ def seed_history() -> None:
         name="Severance",
     )
     pauses.resume(SEVERANCE, by="admin")
-    events.record("skipped", run=LAST_SWEEP, path=EPISODE_TWO, by="admin")
+    # Taken off the run mid-encode; the worker writes nothing for it.
+    events.record(
+        "skipped",
+        run=LAST_SWEEP,
+        path=EPISODE_TWO,
+        by="admin",
+        where="active",
+        detail="stopped 43% into the rewrite, nothing written",
+        seconds=41.7,
+        reasons=["add 2.0 downmix (from track 1)"],
+        rules=["downmix"],
+        adds=["2.0"],
+    )
     # A track edited in place: the stream, and both sides of each tag moved.
     events.record(
         "retagged",

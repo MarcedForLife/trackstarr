@@ -338,6 +338,15 @@ def finish(run_id: str | None, path: str, *, continuing: bool = False) -> None:
     _moved(run_id)
 
 
+def holding(run_id: str, path: str) -> Active | None:
+    """A copy of the worker's progress on a file it still holds; None once
+    released."""
+    with _lock:
+        run = _runs.get(run_id)
+        active = run.active.get(path) if run else None
+        return replace(active) if active else None
+
+
 def tally(
     run_id: str,
     status: str,

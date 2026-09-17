@@ -8,7 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from conftest import claim, publish_verdict, read_events, registered, run_task, set_config, step
+from conftest import (
+    cache,
+    claim,
+    pending,
+    publish_verdict,
+    read_events,
+    registered,
+    run_task,
+    set_config,
+    step,
+)
 from trackstarr import config, lifecycle, notify, runs, sweep_cache, work
 
 # Bound here, since conftest replaces the module's own attribute with a no-op
@@ -692,6 +702,47 @@ def test_skipping_an_active_file_marks_that_phase_and_nothing_else():
     # nothing to signal and nothing to mark.
     assert lifecycle.skip_file("walk", "/media/two.mkv") == ("waiting", 0)
     assert not waiting.cancel.asked.is_set()
+
+
+def test_a_skip_leaves_one_line_saying_where_the_file_was_and_what_it_would_have_done():
+    """The worker gives the file up without a word, so this line carries the lot."""
+    # Two rewrite slots, so a second file can be claimed and left waiting on
+    # the lock the first one holds.
+    set_config(MAX_CONCURRENT_REWRITES=2)
+    cache(
+        ("/media/one.mkv", pending()),
+        ("/media/held.mkv", pending()),
+        ("/media/two.mkv", pending()),
+    )
+    lifecycle.open_run("walk", runs.SWEEP)
+    work.scheduler.submit("walk", "/media/one.mkv", "work", lambda: None)
+    work.scheduler.submit("walk", "/media/held.mkv", "work", lambda: None)
+    work.scheduler.submit("walk", "/media/two.mkv", "work", lambda: None)
+    claim(work.scheduler)
+    claim(work.scheduler)
+    runs.begin("walk", "/media/one.mkv")
+    runs.stage("walk", "/media/one.mkv", runs.ENCODING, 200.0)
+    runs.progress("walk", "/media/one.mkv", 86.0, 4.0)
+    runs.begin("walk", "/media/held.mkv")
+    runs.stage("walk", "/media/held.mkv", runs.WAITING)
+
+    assert lifecycle.skip_file("walk", "/media/one.mkv", by="admin") == ("active", 0)
+    assert lifecycle.skip_file("walk", "/media/held.mkv", by="admin") == ("active", 0)
+    assert lifecycle.skip({("walk", "/media/two.mkv")}, by="admin").changed == 1
+
+    mid_encode, for_a_slot, waiting = read_events()
+    assert mid_encode["event"] == for_a_slot["event"] == waiting["event"] == "skipped"
+    assert (mid_encode["where"], mid_encode["by"]) == ("active", "admin")
+    assert mid_encode["detail"] == "stopped 43% into the rewrite, nothing written"
+    assert mid_encode["seconds"] >= 0
+    assert mid_encode["reasons"] == ["add 2.0 downmix from stream 1 (6ch eng)"]
+    assert (mid_encode["rules"], mid_encode["adds"]) == (["downmix"], ["2.0"])
+    assert for_a_slot["where"] == "active"
+    assert for_a_slot["detail"] == "stopped while it waited for a rewrite slot"
+    assert waiting["where"] == "waiting"
+    assert waiting["detail"] == "taken off the run before a worker reached it"
+    assert "seconds" not in waiting
+    assert waiting["adds"] == ["2.0"]
 
 
 def test_activity_captures_reporting_under_scheduler_lock_and_formats_after_release(

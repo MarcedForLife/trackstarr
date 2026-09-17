@@ -75,6 +75,18 @@
 			"run": "2026-02-28T03:00:00+13:00#9f8e",
 			"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
 			"by": "admin",
+			"where": "active",
+			"detail": "stopped 43% into the rewrite, nothing written",
+			"seconds": 41.7,
+			"reasons": [
+				"add 2.0 downmix (from track 1)"
+			],
+			"rules": [
+				"downmix"
+			],
+			"adds": [
+				"2.0"
+			],
 			"title": "arr:sonarr:12"
 		},
 		{

@@ -456,8 +456,10 @@ const VOCABULARY: Record<Verdict, Words> = {
 	deferred: {
 		label: 'Waiting',
 		hint: 'Nothing was written: the file changed mid-rewrite, the run stopped, or a download client still hard-links it. The next sweep tries again.',
-		pip: 'bg-danger/50',
-		text: 'text-danger/70'
+		// Half the accent, as Untagged: the rewrite is still owed, put off
+		// rather than broken.
+		pip: 'bg-accent-fill/50',
+		text: 'text-accent'
 	},
 	skip: {
 		label: 'Skipped',
