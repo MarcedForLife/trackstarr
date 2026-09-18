@@ -171,7 +171,7 @@
 		style:--fx={display.strength}
 		class="frame relative block aspect-[2/3] w-full"
 	>
-		<!-- The cover is this element's bottom background layer and the sheen is
+		<!-- The cover is this element's bottom background layer; shade and sheen are
 		     blended on top at paint time. A blended element over the artwork made
 		     the card a render surface, which a per-frame transform stretches from
 		     one texture: jagged corners and a hard shadow edge while turning. A
@@ -186,7 +186,10 @@
 			} ${selected || armed ? 'border-accent-fill' : 'border-line'}`}
 		>
 			{#if missing || display.art === 'hide'}
-				<span class={TILE}>{mark}</span>
+				<span class={`${TILE} relative`}>
+					{mark}
+					<span class="scrim pointer-events-none absolute inset-x-0 bottom-0 block h-1/2"></span>
+				</span>
 			{:else}
 				<!-- The same cover, never seen: a background image cannot say it
 				     failed or landed, so this hidden element fetches it, reports
@@ -219,11 +222,11 @@
 						}`}
 					>
 						{mark}
+						<span class="scrim pointer-events-none absolute inset-x-0 bottom-0 block h-1/2"></span>
 					</span>
 				{/if}
 			{/if}
 
-			<span class="scrim pointer-events-none absolute inset-x-0 bottom-0 block h-1/2"></span>
 			{#if verdict}
 				<!-- The chips ride above the word rather than under it, so the word
 				     lands on one line whatever a card has to say. -->
@@ -301,8 +304,12 @@
 	   Chrome re-dithers a gradient each time a card gains or loses its
 	   composited layer, which read as a twitch across the bottom of every card
 	   the pointer had passed. A picture comes back identical on both sides. */
+	.art {
+		--scrim: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAEACAYAAAByPhyYAAABf0lEQVR42j3E03IYABRAwaZ2aiO1baa2bdu2bdu2bdvG37T7cs/M2YQU/0twkBKpgtRIg7RBOqQPMiAjMgWZkSXIisQgG7IHOZATuYLcyBPkRT7kDwqgYFAIhYMiKIqkoBiKByVQMiiF0igTlEW5oDwqBBVRKaiMKqgaVEP1oAZqolZQG3WCuqgX1EeDoCEaoXGQjCZBUzRD86AFWgat0Dpog7ZoF7RHh6AjOgWd0QVdg27oHvRAz6AXegd90Bf90B8DMBCDMBhDMBTDMBwjMBKjMBpjMBbjMB4TMBGTMBlTMBXTMB0zMBOzMBtzMBfzMB8LsBCLsBhLsBTLsBwrsBKrsBprsBbrsB4bsBGbsBlbsBXbsB07sBO7sBt7sBf7sB8HcBCHcBhHcBTHcBwncBKncBpncBbncB4XcBGXcBlXcBXXcB03cBO3cBt3cBf3cB8P8BCP8BhP8BTP8Bwv8BKv8Bpv8Bbv8B4f8BGf8Blf8BXf8B0/8BO/8Bt/8Pcfnulj/I+bvvUAAAAASUVORK5CYII=');
+	}
+
 	.scrim {
-		background-image: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAEACAYAAAByPhyYAAABf0lEQVR42j3E03IYABRAwaZ2aiO1baa2bdu2bdu2bdvG37T7cs/M2YQU/0twkBKpgtRIg7RBOqQPMiAjMgWZkSXIisQgG7IHOZATuYLcyBPkRT7kDwqgYFAIhYMiKIqkoBiKByVQMiiF0igTlEW5oDwqBBVRKaiMKqgaVEP1oAZqolZQG3WCuqgX1EeDoCEaoXGQjCZBUzRD86AFWgat0Dpog7ZoF7RHh6AjOgWd0QVdg27oHvRAz6AXegd90Bf90B8DMBCDMBhDMBTDMBwjMBKjMBpjMBbjMB4TMBGTMBlTMBXTMB0zMBOzMBtzMBfzMB8LsBCLsBhLsBTLsBwrsBKrsBprsBbrsB4bsBGbsBlbsBXbsB07sBO7sBt7sBf7sB8HcBCHcBhHcBTHcBwncBKncBpncBbncB4XcBGXcBlXcBXXcB03cBO3cBt3cBf3cB8P8BCP8BhP8BTP8Bwv8BKv8Bpv8Bbv8B4f8BGf8Blf8BXf8B0/8BO/8Bt/8Pcfnulj/I+bvvUAAAAASUVORK5CYII=');
+		background-image: var(--scrim);
 		background-size: 100% 100%;
 	}
 
