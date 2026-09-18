@@ -10,7 +10,9 @@
 //
 // One piece of geometry drives three things: how far a card leans, the light
 // across it, and, while a pointer is held anywhere, which card is raised. The
-// raise follows the pointer, not the card the press began on.
+// raise follows the pointer, not the card the press began on. The lean and
+// the raise are the tilt setting's; at Off only the light follows the pointer.
+// How bright it paints is the stylesheet's, so the field writes it plain.
 
 // The classes and properties written below. Imported here so both halves of
 // the mechanism are read together.
@@ -37,6 +39,10 @@ const SPEED_GAIN = 0.02;
 // How much of the gap to its target light a card closes each frame: about a
 // third of a second to settle.
 const CATCH = 0.14;
+
+// A finger may stop scrolling without lifting. Resume the light after a brief
+// quiet period; waiting for release leaves it frozen for the rest of the touch.
+const SCROLL_SETTLE = 120;
 
 // How far past a card's box the pointer may be and still raise it, as a
 // fraction of its half-size, so a thumb crossing a gutter does not drop it.
@@ -74,6 +80,7 @@ type Near = {
 	hw: number;
 	hh: number;
 	// Whether the card is leaning, so a flat card is not rewritten every frame.
+	// Only the lean: a card at tilt Off may be lit and not on.
 	on: boolean;
 	// The light it carries now, chasing the light it should have.
 	lit: number;
@@ -102,13 +109,18 @@ export function tiltField(
 	node: HTMLElement,
 	opts: {
 		active: () => boolean;
+		// How far a card's lean reaches, in card widths from its centre.
 		reach?: () => number;
 		strength?: () => number;
 		lights?: () => boolean;
+		// How far past a card's box the pointer may be and still move it, in
+		// card widths. A grid leaves it off so neighbours lean together; a card
+		// on its own sets it, so a pointer elsewhere on the page leaves it still.
+		margin?: number;
 		drive?: (driver: Driver) => void;
 	}
 ) {
-	const { active, reach: chosen, strength, lights, drive } = opts;
+	const { active, reach: chosen, strength, lights, margin, drive } = opts;
 	const cards = new Map<Element, Near>();
 	// The pointer in viewport coordinates, and whether there is one to follow.
 	let px = 0;
@@ -124,9 +136,22 @@ export function tiltField(
 	let touching = false;
 	let held = false;
 	let frame = 0;
-	// Whether this press has scrolled anything. Set by the first scroll it
-	// causes, cleared when the pointer lifts.
+	// Whether this press is actively scrolling. Each scroll extends the pause;
+	// a stationary finger must be able to catch the light again.
 	let dragging = false;
+	let scrollPause: ReturnType<typeof setTimeout> | undefined;
+	// The pointer in the field's coordinates, held while a drag scrolls the
+	// content: the finger and the scroll it drives arrive as separate samples,
+	// and a frame with one ahead of the other twitched every card near it.
+	let gripX = 0;
+	let gripY = 0;
+	let gripped = false;
+
+	function clearScrollPause() {
+		clearTimeout(scrollPause);
+		scrollPause = undefined;
+		dragging = false;
+	}
 
 	// Re-measure a card in place, keeping the angle and light it carries. `field`
 	// is the node's box, read once by the caller for every card it places.
@@ -184,15 +209,37 @@ export function tiltField(
 		{ rootMargin: '150px' }
 	);
 
-	function rest(near: Near | undefined) {
-		if (!near?.on) return;
+	// Turn a card toward the pointer, each axis as a fraction of MAX_TILT.
+	function lean(near: Near, x: number, y: number) {
+		if (!near.on) {
+			near.on = true;
+			// No transition while the pointer drives it, or the card trails the
+			// cursor.
+			near.tilt.classList.add('is-turning', 'is-near');
+			near.tilt.style.setProperty('--depth', `${near.hw * 2 * DEPTH}px`);
+		}
+		near.tilt.style.setProperty('--ry', `${x * MAX_TILT}deg`);
+		near.tilt.style.setProperty('--rx', `${y * MAX_TILT}deg`);
+	}
+
+	// Ease a leaning card home flat; the light is catchUp()'s.
+	function settle(near: Near) {
+		if (!near.on) return;
 		near.on = false;
 		// Removing the class restores the transition, which eases the card home.
 		near.tilt.classList.remove('is-near');
 		near.tilt.style.setProperty('--rx', '0deg');
 		near.tilt.style.setProperty('--ry', '0deg');
-		near.art.style.setProperty('--sheen', '0');
 		// `is-turning` stays. See forget().
+	}
+
+	// Flat and unlit at once, for a card leaving the field or the field put down.
+	function rest(near: Near | undefined) {
+		if (!near) return;
+		settle(near);
+		if (near.lit === 0) return;
+		near.lit = 0;
+		near.art.style.setProperty('--sheen', '0');
 	}
 
 	/**
@@ -253,6 +300,12 @@ export function tiltField(
 		const field = node.getBoundingClientRect();
 		const left = field.left - node.scrollLeft;
 		const top = field.top;
+		// A drag that began before this pointer's first frame still needs a grip.
+		if (live && (!dragging || !gripped)) {
+			gripX = px - left;
+			gripY = py - top;
+			gripped = true;
+		}
 		const spread = chosen?.() ?? REACH;
 		// Read every frame so the Appearance slider takes effect as it moves.
 		// Zero never gets here; the field is inactive at that stop.
@@ -268,15 +321,16 @@ export function tiltField(
 		let fading = false;
 		for (const near of cards.values()) {
 			if (!live) {
-				rest(near);
+				settle(near);
 				fading = catchUp(near, 0) || fading;
 				continue;
 			}
-			const dx = px - (near.cx + left);
-			const dy = py - (near.cy + top);
+			const dx = gripX - near.cx;
+			const dy = gripY - near.cy;
 			// Judged by the card's box, not the field: a card at the edge of a
 			// narrow spread barely leans but a press on it should still raise it.
-			if (holds) {
+			// The raise is part of the tilt, so none at Off.
+			if (holds && gain > 0) {
 				const bite = Math.max(Math.abs(dx) / near.hw, Math.abs(dy) / near.hh);
 				if (bite <= SPILL && bite < nearest) {
 					nearest = bite;
@@ -284,25 +338,22 @@ export function tiltField(
 				}
 			}
 			const reach = near.hw * 2 * spread;
-			const pull = falloff(Math.hypot(dx, dy) / reach);
+			let pull = falloff(Math.hypot(dx, dy) / reach);
+			if (margin !== undefined) {
+				const over = Math.max(Math.abs(dx) - near.hw, Math.abs(dy) - near.hh, 0);
+				pull *= falloff(over / (near.hw * 2 * margin));
+			}
 			if (pull <= 0) {
-				rest(near);
+				settle(near);
 				fading = catchUp(near, 0) || fading;
 				continue;
-			}
-			if (!near.on) {
-				near.on = true;
-				// No transition while the pointer drives it, or the card trails
-				// the cursor.
-				near.tilt.classList.add('is-turning', 'is-near');
-				near.tilt.style.setProperty('--depth', `${near.hw * 2 * DEPTH}px`);
 			}
 			// The pointer's position over the card in half-widths, clamped to its
 			// edge, so inside a card the field changes nothing.
 			const overX = clamp(dx / near.hw);
 			const overY = clamp(dy / near.hh);
-			near.tilt.style.setProperty('--ry', `${overX * MAX_TILT * gain * pull}deg`);
-			near.tilt.style.setProperty('--rx', `${-overY * MAX_TILT * gain * pull}deg`);
+			if (gain > 0) lean(near, overX * gain * pull, -overY * gain * pull);
+			else settle(near);
 			if (!glossy) {
 				fading = catchUp(near, 0) || fading;
 				continue;
@@ -315,13 +366,11 @@ export function tiltField(
 			// The highlight sits under the pointer and stops at the card's edge.
 			near.art.style.setProperty('--mx', `${(1 + overX) * 50}%`);
 			near.art.style.setProperty('--my', `${(1 + overY) * 50}%`);
-			// The hue follows the lean's direction: cool one way, warm the other.
-			near.art.style.setProperty('--hue', `${180 + overX * 110 + overY * 45}`);
-			// How far from flat the card is, 0 at rest and 1 at a corner, plus what
-			// is left of the movement. From the pivot, or a card the falloff has
-			// flattened would go on catching the light.
+			// How far off centre the pointer is, 0 over the middle and 1 at a
+			// corner, plus what is left of the movement. Through the pull, or a
+			// card the falloff has flattened would go on catching the light.
 			const pivot = Math.min(1, Math.hypot(overX, overY) * pull);
-			fading = catchUp(near, Math.min(1, (pivot * 0.45 + speed * pull) * gain)) || fading;
+			fading = catchUp(near, Math.min(1, pivot * 0.45 + speed * pull)) || fading;
 		}
 		raise(under);
 		// Keep going while the flash has anything left to show or any light is
@@ -337,6 +386,7 @@ export function tiltField(
 	function sleep() {
 		live = false;
 		speed = 0;
+		gripped = false;
 		request();
 	}
 
@@ -360,7 +410,7 @@ export function tiltField(
 		if (event.pointerType === 'touch') return;
 		held = event.buttons > 0;
 		// The release ends the drag; its frame catches the light up.
-		if (!held) dragging = false;
+		if (!held) clearScrollPause();
 		aim(event.clientX, event.clientY);
 	}
 
@@ -372,7 +422,7 @@ export function tiltField(
 
 	function away() {
 		touching = false;
-		dragging = false;
+		clearScrollPause();
 		sleep();
 	}
 
@@ -396,6 +446,11 @@ export function tiltField(
 	function onScroll() {
 		if (touching || held) {
 			dragging = true;
+			clearTimeout(scrollPause);
+			scrollPause = setTimeout(() => {
+				clearScrollPause();
+				request();
+			}, SCROLL_SETTLE);
 			request();
 			return;
 		}
@@ -417,7 +472,6 @@ export function tiltField(
 		lower();
 		for (const near of cards.values()) {
 			rest(near);
-			near.lit = 0;
 			forget(near);
 		}
 		remeasure();
@@ -501,6 +555,7 @@ export function tiltField(
 
 	return {
 		destroy() {
+			clearScrollPause();
 			covered.disconnect();
 			seen.disconnect();
 			reshaped.disconnect();

@@ -30,7 +30,7 @@
 	initial-value: 1;
 }
 
-/* The light a card catches: how much, where, and what colour. Registered so
+/* The light a card catches: how much and where. Registered so
    they are values before anything writes one, or the sheen's gradients and
    the cover under them would be invalid. `inherits: false` as above. A
    write to any of them rebuilds the artwork's background-image, which is
@@ -39,6 +39,18 @@
 	syntax: '<number>';
 	inherits: false;
 	initial-value: 0;
+}
+/* Derived in poster.css from --sheen and the Sheen stop; registered so they
+   stay on the one element too. */
+@property --lit {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 0;
+}
+@property --vivid {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 1;
 }
 @property --mx {
 	syntax: '<percentage>';
@@ -49,11 +61,6 @@
 	syntax: '<percentage>';
 	inherits: false;
 	initial-value: 50%;
-}
-@property --hue {
-	syntax: '<number>';
-	inherits: false;
-	initial-value: 200;
 }
 
 /* Registered as <color> so the theme swap animates: a registered property

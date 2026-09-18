@@ -54,6 +54,15 @@
 }
 
 [data-sheen] {
+	--poster-hue: 0;
+	--poster-saturation: 0%;
+	--poster-accent-hue: 0;
+	--poster-accent-saturation: 0%;
+	/* --sheen is how lit the card is, from the field; --glow is the Sheen stop,
+	   written on the card with --fx. Past 1 the stop deepens the colour too,
+	   so Rare is more colour rather than full alpha. */
+	--lit: calc(var(--sheen) * var(--glow, 1));
+	--vivid: max(1, var(--glow, 1));
 	box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
 	/* Matched to the lift, so the shadow does not trail the card. */
 	transition: box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -91,7 +100,7 @@
 		var(--scrim),
 		radial-gradient(
 			circle at var(--mx) var(--my),
-			rgb(255 255 255 / calc(0.45 * var(--sheen))),
+			rgb(255 255 255 / calc(0.45 * var(--lit))),
 			transparent 45%
 		),
 		var(--cover);
@@ -106,72 +115,179 @@
 		cover;
 }
 
-/* One band of colour angled with the lean. A gradient: nothing to download. */
-[data-sheen].is-foil {
+/* Original finishes inspired by the layered lighting in
+   https://github.com/simeydotme/pokemon-cards-css. Blended with the cover at
+   paint time, without extra DOM surfaces. Every stop fades with --lit;
+   the scrim and verdict stay above the finish. Fixed grain belongs to the
+   card; oversized reflections travel opposite the pointer. */
+
+/* A soft, untextured coating. A broad falloff and soft-light blending
+   tint the artwork gently without adding a bright pool under the pointer. */
+[data-sheen].is-pearl {
 	background-image:
 		var(--scrim),
-		linear-gradient(
-			calc(var(--hue) * 1deg),
-			transparent 30%,
-			hsl(var(--hue) 95% 62% / calc(0.3 * var(--sheen))) 45%,
-			hsl(calc(var(--hue) + 70) 95% 66% / calc(0.28 * var(--sheen))) 55%,
-			transparent 70%
-		),
 		radial-gradient(
-			circle at var(--mx) var(--my),
-			rgb(255 255 255 / calc(0.45 * var(--sheen))),
-			transparent 45%
+			ellipse 110% 90% at var(--mx) var(--my),
+			hsl(
+				var(--poster-hue) calc(var(--poster-saturation) * 0.4 * var(--vivid)) 94% /
+					calc(0.32 * var(--lit))
+			),
+			hsl(
+					var(--poster-accent-hue) calc(var(--poster-accent-saturation) * 0.5 * var(--vivid)) 82% /
+						calc(0.18 * var(--lit))
+				)
+				38%,
+			transparent 78%
 		),
 		var(--cover);
-	background-blend-mode: normal, color-dodge, soft-light, normal;
+	background-blend-mode: normal, soft-light, normal;
 	background-position:
 		center bottom -1px,
-		center,
 		center,
 		center;
 	background-size:
 		100% calc(50% + 2px),
-		cover,
-		cover,
+		100% 100%,
 		cover;
 }
 
-/* Three bands round most of the wheel. The same layer and blend; the extra
-   stops are settled at paint. */
+/* Brushed metal with a directional light/dark reflection. No round glare:
+   the moving band defines the finish, with a restrained peak to retain detail. */
+[data-sheen].is-foil {
+	background-image:
+		var(--scrim),
+		repeating-linear-gradient(
+			112deg,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 88% /
+						calc(0.12 * var(--lit))
+				)
+				0 1px,
+			transparent 1px 4px
+		),
+		linear-gradient(
+			112deg,
+			transparent 15%,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 18% /
+						calc(0.38 * var(--lit))
+				)
+				32%,
+			hsl(
+					calc(var(--poster-hue) + 18) calc(var(--poster-saturation) * var(--vivid)) 72% /
+						calc(0.24 * var(--lit))
+				)
+				42%,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 82% /
+						calc(0.3 * var(--lit))
+				)
+				49%,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 78% /
+						calc(0.26 * var(--lit))
+				)
+				54%,
+			hsl(
+					calc(var(--poster-hue) - 18) calc(var(--poster-saturation) * var(--vivid)) 66% /
+						calc(0.24 * var(--lit))
+				)
+				62%,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 18% /
+						calc(0.3 * var(--lit))
+				)
+				70%,
+			transparent 86%
+		),
+		var(--cover);
+	background-blend-mode: normal, soft-light, hard-light, normal;
+	background-position:
+		center bottom -1px,
+		center,
+		var(--mx) var(--my),
+		center;
+	background-size:
+		100% calc(50% + 2px),
+		100% 100%,
+		200% 170%,
+		cover;
+}
+
+/* Directional diffraction, not a light shining onto the poster. Angled
+   colour bands sweep against the pointer with fine fixed facets underneath.
+   The second sampled hue gives the spectrum an artwork-specific accent;
+   transparent troughs leave room for the original colours between bands. */
 [data-sheen].is-holo {
 	background-image:
 		var(--scrim),
-		linear-gradient(
-			calc(var(--hue) * 1deg),
-			transparent 4%,
-			hsl(var(--hue) 95% 62% / calc(0.31 * var(--sheen))) 18%,
-			hsl(calc(var(--hue) + 60) 95% 64% / calc(0.28 * var(--sheen))) 30%,
-			transparent 44%,
-			hsl(calc(var(--hue) + 140) 95% 62% / calc(0.26 * var(--sheen))) 58%,
-			hsl(calc(var(--hue) + 210) 95% 66% / calc(0.28 * var(--sheen))) 72%,
-			transparent 88%
+		repeating-linear-gradient(
+			35deg,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 90% /
+						calc(0.16 * var(--lit))
+				)
+				0 1px,
+			transparent 1px 7px
 		),
-		radial-gradient(
-			circle at var(--mx) var(--my),
-			rgb(255 255 255 / calc(0.45 * var(--sheen))),
-			transparent 45%
+		repeating-linear-gradient(
+			145deg,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 18% /
+						calc(0.13 * var(--lit))
+				)
+				0 1px,
+			transparent 1px 7px
+		),
+		repeating-linear-gradient(
+			118deg,
+			transparent 0%,
+			hsl(
+					calc(var(--poster-hue) - 45) calc(var(--poster-saturation) * var(--vivid)) 70% /
+						calc(0.5 * var(--lit))
+				)
+				10%,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 72% /
+						calc(0.6 * var(--lit))
+				)
+				22%,
+			hsl(
+					calc(var(--poster-hue) + 35) calc(var(--poster-saturation) * var(--vivid)) 70% /
+						calc(0.55 * var(--lit))
+				)
+				34%,
+			hsl(
+					var(--poster-accent-hue) calc(var(--poster-accent-saturation) * var(--vivid)) 72% /
+						calc(0.55 * var(--lit))
+				)
+				46%,
+			transparent 60%
 		),
 		var(--cover);
-	background-blend-mode: normal, color-dodge, soft-light, normal;
+	background-blend-mode: normal, soft-light, overlay, color-dodge, normal;
 	background-position:
 		center bottom -1px,
 		center,
 		center,
+		var(--mx) var(--my),
 		center;
 	background-size:
 		100% calc(50% + 2px),
-		cover,
-		cover,
+		100% 100%,
+		100% 100%,
+		240% 200%,
 		cover;
 }
 
 /* Reduced motion: no turn, and so no sheen either. */
 @media (prefers-reduced-motion: reduce) {
+	/* A preference change can arrive with the pointer parked and no new field
+	   frame. Override its last inline light value immediately. */
+	[data-sheen] {
+		--sheen: 0 !important;
+	}
+
 	[data-tilt],
 	[data-tilt].is-turning,
 	[data-tilt].is-raised {

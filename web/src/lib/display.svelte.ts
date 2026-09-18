@@ -5,22 +5,25 @@
 import { FILTERS, MISSING, UNSUPPORTED, type Verdict } from '$lib/library';
 import { keep, keepAll, stored, storedAll } from '$lib/prefs';
 
-// How loud the poster effects are. One axis rather than a switch: "steadier on
-// an old phone" and "as much as it will give" are the same question.
-export type Effects = 'off' | 'subtle' | 'balanced' | 'lively' | 'balatro';
+// How far a poster leans and lifts. One axis rather than a switch: "steadier
+// on an old phone" and "as much as it will give" are the same question.
+export type Tilt = 'off' | 'subtle' | 'balanced' | 'lively' | 'balatro';
+// How much light a poster catches, apart from how far it turns: a quiet lean
+// under a loud holo is a choice. Off is plain artwork.
+export type Lustre = 'off' | 'subtle' | 'balanced' | 'bright' | 'rare';
 export type Art = 'show' | 'hide';
 // Whether a verdict is held back from the default view. Its own chip still
 // reaches it, so nothing is hidden for good.
 export type Shown = 'show' | 'hide';
 export type Spread = 'narrow' | 'medium' | 'wide';
 export type Scale = 'small' | 'medium' | 'large';
-// What a turning card catches, in cost order: each step up to `foil` is another
-// blended layer, and a blend mode is a composited layer. `holo` is `foil` with a
-// busier gradient.
-export type Sheen = 'none' | 'gloss' | 'foil' | 'holo';
+// The finish the light plays on, from a plain highlight to brushed foil and
+// rainbow diffraction. Extra gradients blend with the cover at paint time; see
+// poster.css. Off is the sheen slider's.
+export type Sheen = 'gloss' | 'pearl' | 'foil' | 'holo';
 
-// The slider's stops, weakest first; the order is part of the meaning.
-export const EFFECTS: { value: Effects; label: string }[] = [
+// The tilt slider's stops, weakest first; the order is part of the meaning.
+export const TILT: { value: Tilt; label: string }[] = [
 	{ value: 'off', label: 'Off' },
 	{ value: 'subtle', label: 'Subtle' },
 	{ value: 'balanced', label: 'Balanced' },
@@ -29,9 +32,19 @@ export const EFFECTS: { value: Effects; label: string }[] = [
 	{ value: 'balatro', label: 'Balatro' }
 ];
 
-// What each stop multiplies the lean, lift, shadow and sheen by. Balanced is 1,
+// The sheen slider's stops, Off first as the tilt slider has it.
+export const LUSTRE: { value: Lustre; label: string }[] = [
+	{ value: 'off', label: 'Off' },
+	{ value: 'subtle', label: 'Subtle' },
+	{ value: 'balanced', label: 'Balanced' },
+	{ value: 'bright', label: 'Bright' },
+	// The pull of the pack: a collector's card turned under a lamp.
+	{ value: 'rare', label: 'Rare' }
+];
+
+// What each stop multiplies the lean, lift and shadow by. Balanced is 1,
 // where the effect was tuned.
-const STRENGTHS: Record<Effects, number> = {
+const STRENGTHS: Record<Tilt, number> = {
 	off: 0,
 	subtle: 0.5,
 	balanced: 1,
@@ -39,7 +52,19 @@ const STRENGTHS: Record<Effects, number> = {
 	balatro: 2.4
 };
 
-const EFFECTS_KEY = 'poster-effects';
+// What each stop multiplies the finish's light by, and past 1 its colour;
+// see --lit and --vivid in poster.css. Balanced is where each finish was
+// tuned.
+const GLOWS: Record<Lustre, number> = {
+	off: 0,
+	subtle: 0.5,
+	balanced: 1,
+	bright: 1.5,
+	rare: 2.2
+};
+
+const TILT_KEY = 'poster-tilt';
+const LUSTRE_KEY = 'poster-lustre';
 const ART_KEY = 'cover-art';
 const SPREAD_KEY = 'tilt-spread';
 const SCALE_KEY = 'poster-scale';
@@ -64,17 +89,25 @@ const SPREADS: Record<Spread, number> = {
 	wide: 2.4
 };
 
-let effects = $state<Effects>(
+let tilt = $state<Tilt>(
 	stored(
-		EFFECTS_KEY,
-		EFFECTS.map((step) => step.value),
+		TILT_KEY,
+		TILT.map((step) => step.value),
+		'balanced'
+	)
+);
+let lustre = $state<Lustre>(
+	stored(
+		LUSTRE_KEY,
+		LUSTRE.map((step) => step.value),
 		'balanced'
 	)
 );
 let art = $state<Art>(stored(ART_KEY, ['show', 'hide'], 'show'));
 let spread = $state<Spread>(stored(SPREAD_KEY, ['narrow', 'medium', 'wide'], 'medium'));
 let scale = $state<Scale>(stored(SCALE_KEY, ['small', 'medium', 'large'], 'medium'));
-let sheen = $state<Sheen>(stored(SHEEN_KEY, ['none', 'gloss', 'foil', 'holo'], 'gloss'));
+// Pearl by default: a little colour off the artwork without announcing itself.
+let sheen = $state<Sheen>(stored(SHEEN_KEY, ['gloss', 'pearl', 'foil', 'holo'], 'pearl'));
 // Hidden by default: a page led by undownloaded films is a wishlist.
 let missing = $state<Shown>(stored(MISSING_KEY, ['show', 'hide'], 'hide'));
 // Shown by default: real files nobody has seen yet, to hide once they have
@@ -86,13 +119,20 @@ let unsupported = $state<Shown>(stored(UNSUPPORTED_KEY, ['show', 'hide'], 'show'
 let filters = $state<Verdict[]>(storedAll(FILTERS_KEY, FILTERS));
 
 export const display = {
-	get effects() {
-		return effects;
+	get tilt() {
+		return tilt;
 	},
-	// The stop as a multiplier, 0 for a still grid. Every part of the effect
-	// reads this one number.
+	// The tilt stop as a multiplier, 0 for a grid that stays flat. The lean,
+	// lift and shadow read this one number.
 	get strength() {
-		return STRENGTHS[effects];
+		return STRENGTHS[tilt];
+	},
+	get lustre() {
+		return lustre;
+	},
+	// The sheen strength stop as a multiplier on the finish's light.
+	get glow() {
+		return GLOWS[lustre];
 	},
 	get art() {
 		return art;
@@ -131,7 +171,7 @@ export const display = {
 	// Whether a pointed-at card builds its blended layers at all; which ones is
 	// the stylesheet's.
 	get lights() {
-		return sheen !== 'none';
+		return lustre !== 'off';
 	},
 	// The size as a multiplier on the tile width.
 	get tile() {
@@ -139,9 +179,14 @@ export const display = {
 	}
 };
 
-export function setEffects(next: Effects) {
-	effects = next;
-	keep(EFFECTS_KEY, next, next === 'balanced');
+export function setTilt(next: Tilt) {
+	tilt = next;
+	keep(TILT_KEY, next, next === 'balanced');
+}
+
+export function setLustre(next: Lustre) {
+	lustre = next;
+	keep(LUSTRE_KEY, next, next === 'balanced');
 }
 
 export function setArt(next: Art) {
@@ -161,7 +206,7 @@ export function setScale(next: Scale) {
 
 export function setSheen(next: Sheen) {
 	sheen = next;
-	keep(SHEEN_KEY, next, next === 'gloss');
+	keep(SHEEN_KEY, next, next === 'pearl');
 }
 
 export function setMissing(next: Shown) {

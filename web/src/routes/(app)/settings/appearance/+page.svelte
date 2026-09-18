@@ -10,19 +10,22 @@
 	import VerdictChips from '$lib/components/VerdictChips.svelte';
 	import {
 		display,
-		EFFECTS,
+		LUSTRE,
+		TILT,
 		setArt,
-		setEffects,
 		setFilters,
+		setLustre,
 		setMissing,
 		setSheen,
 		setSpread,
+		setTilt,
 		setUnsupported,
 		type Art,
-		type Effects,
+		type Lustre,
 		type Sheen,
 		type Shown,
-		type Spread
+		type Spread,
+		type Tilt
 	} from '$lib/display.svelte';
 	import { FILTERS } from '$lib/library';
 	import {
@@ -49,8 +52,8 @@
 	];
 
 	const sheenOptions = [
-		{ value: 'none', label: 'None' },
 		{ value: 'gloss', label: 'Gloss' },
+		{ value: 'pearl', label: 'Pearl' },
 		{ value: 'foil', label: 'Foil' },
 		{ value: 'holo', label: 'Holo' }
 	];
@@ -84,11 +87,15 @@
 	const themeNote = $derived(
 		`${label(options, theme.preference)} · ${label(PALETTES, theme.palette)}`
 	);
-	// Cover art is named only when off.
+	// The two axes by their stop, and cover art only when off.
 	const posterNote = $derived(
-		display.art === 'hide'
-			? `${label(EFFECTS, display.effects)} · no cover art`
-			: label(EFFECTS, display.effects)
+		[
+			display.tilt === 'off' ? 'No tilt' : `${label(TILT, display.tilt)} tilt`,
+			display.lustre === 'off' ? 'no sheen' : `${label(sheenOptions, display.sheen)} sheen`,
+			display.art === 'hide' ? 'no cover art' : ''
+		]
+			.filter(Boolean)
+			.join(' · ')
 	);
 	// Every chip selected is the same grid as none, which the row calls All.
 	const libraryNote = $derived.by(() => {
@@ -130,19 +137,20 @@
 		<!-- Above the three rows that govern it, belonging to none alone. -->
 		<PosterPreview />
 
-		<!-- A slider: the one setting whose answers are the same thing more of. -->
+		<!-- Two sliders, each governing the row nested under it: the lean and the
+		     light are separate axes. -->
 		<SettingRow
-			label="Poster effects"
-			desc="How far a poster leans, lifts and catches the light under a finger. Off keeps the grid flat, which is steadier on an older phone. Balatro is the most of all three."
+			label="Tilt"
+			desc="How far a poster leans and lifts under a finger. Off keeps the grid flat, which is steadier on an older phone. Balatro is the most of both."
 			stack
 		>
 			{#snippet children({ labelledBy, describedBy })}
 				<Slider
-					options={EFFECTS}
+					options={TILT}
 					{labelledBy}
 					{describedBy}
-					value={display.effects}
-					onchange={(value) => setEffects(value as Effects)}
+					value={display.tilt}
+					onchange={(value) => setTilt(value as Tilt)}
 				/>
 			{/snippet}
 		</SettingRow>
@@ -151,7 +159,7 @@
 			label="Tilt spread"
 			desc="How far the lean spreads to neighbouring posters. Narrow turns the next ones a little. Wide moves the whole row."
 			nested
-			dim={display.effects === 'off'}
+			dim={display.tilt === 'off'}
 			stack
 		>
 			{#snippet children({ labelledBy, describedBy })}
@@ -161,7 +169,7 @@
 					{labelledBy}
 					{describedBy}
 					value={display.spread}
-					disabled={display.effects === 'off'}
+					disabled={display.tilt === 'off'}
 					onchange={(value) => setSpread(value as Spread)}
 				/>
 			{/snippet}
@@ -169,9 +177,26 @@
 
 		<SettingRow
 			label="Sheen"
-			desc="The highlight a poster catches as it turns. Gloss is plain, Foil adds one band of colour and Holo several. Each is a blended layer the compositor must keep, so None is the steadiest."
+			desc="How much light a poster catches under a passing pointer. Off keeps the artwork plain. Rare is a collector's card turned under a lamp."
+			stack
+		>
+			{#snippet children({ labelledBy, describedBy })}
+				<Slider
+					options={LUSTRE}
+					{labelledBy}
+					{describedBy}
+					value={display.lustre}
+					onchange={(value) => setLustre(value as Lustre)}
+				/>
+			{/snippet}
+		</SettingRow>
+
+		<!-- The preview above shows each one; the words do not try to. -->
+		<SettingRow
+			label="Finish"
+			desc="What the light plays on. The coloured ones take their hues from each poster."
 			nested
-			dim={display.effects === 'off'}
+			dim={display.lustre === 'off'}
 			stack
 		>
 			{#snippet children({ labelledBy, describedBy })}
@@ -181,7 +206,7 @@
 					{labelledBy}
 					{describedBy}
 					value={display.sheen}
-					disabled={display.effects === 'off'}
+					disabled={display.lustre === 'off'}
 					onchange={(value) => setSheen(value as Sheen)}
 				/>
 			{/snippet}

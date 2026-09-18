@@ -39,11 +39,13 @@
 	import FileProgress from '$lib/components/FileProgress.svelte';
 	import RunButtons from '$lib/components/RunButtons.svelte';
 	import ServiceIcon from '$lib/components/ServiceIcon.svelte';
+	import PosterArt from '$lib/components/PosterArt.svelte';
 	import Sheet, { SLIDE } from '$lib/components/Sheet.svelte';
 	import { refusalText } from '$lib/api';
 	import { MARKS, type MarkName } from '$lib/connections';
-	import { arrival, coverShow, type Arrival } from '$lib/covers';
 	import { button, control, radius, subtle } from '$lib/controls';
+	import { display } from '$lib/display.svelte';
+	import { tiltField } from '$lib/field';
 	import { duration, named, titled } from '$lib/format';
 	import {
 		forTitle,
@@ -56,6 +58,7 @@
 		coverUrl,
 		getLinks,
 		getTitle,
+		initials,
 		kindName,
 		verdictLabel,
 		verdictText,
@@ -66,6 +69,7 @@
 		type TitleLink,
 		type TitleServer
 	} from '$lib/library';
+	import { moving } from '$lib/motion.svelte';
 	import { overlay } from '$lib/overlay';
 	import { summarise, type Outcome, type Summary } from '$lib/retag';
 	import { whenNear } from '$lib/reveal';
@@ -95,13 +99,12 @@
 	let loading = $state(false);
 	let failure = $state('');
 
-	// How the cover reached the header, so it fades in over the tile rather than
-	// snapping onto it. A cover the grid has already shown arrives without a
-	// fade, which is most of them: the card that was tapped wears one. Reset
-	// per title, since the sheet shows a second without either going.
-	let cover = $state<Arrival>('coming');
-	const showing = $derived(coverShow(cover));
 	const art = $derived(opened ? coverUrl(opened.id) : '');
+
+	// The header's poster is one card in a field of its own, on the grid's
+	// spread, so it leans as it did under the pointer there. Alone, a thumb on
+	// the file list below must not move it: half a width past its box.
+	const HERO_MARGIN = 0.5;
 
 	// Where to watch this title. Null while the media servers are being asked, so
 	// the buttons stand greyed in the row rather than landing under the thumb.
@@ -343,8 +346,6 @@
 		// A change heard while shut is about the last title, or one open() reads.
 		detailPoll.mark();
 		detail = null;
-		// A second title tapped brings a second cover, which has yet to arrive.
-		cover = 'coming';
 		files = FILE_PAGE;
 		unfolded = null;
 		failure = '';
@@ -541,19 +542,30 @@
 				     On phones the width stays at 7rem, while the frame keeps stretching:
 				     long names crop the art rather than widening it and squeezing the text.
 				     The links pan rather than wrap, or a second row of them would make
-				     this taller, which would make it wider, which would wrap a third. The tile holds the shape
-				     and the border while the cover fades in over it, so the header does
-				     not shift or flash as the picture lands. -->
-				<span
-					class="relative row-span-2 block min-h-[7.5rem] w-28 flex-none self-stretch overflow-hidden rounded-lg border border-line bg-sunken sm:aspect-[2/3] sm:min-h-34 sm:w-auto"
+				     this taller, which would make it wider, which would wrap a third.
+				     Keyed on the cover, so a second title brings a fresh card rather
+				     than a swap under a fade. -->
+				<div
+					use:tiltField={{
+						active: moving,
+						reach: () => display.reach,
+						margin: HERO_MARGIN,
+						strength: () => display.strength,
+						lights: () => display.lights
+					}}
+					class="row-span-2 min-h-[7.5rem] w-28 flex-none self-stretch sm:aspect-[2/3] sm:min-h-34 sm:w-auto"
 				>
-					<img
-						src={art}
-						alt=""
-						onload={() => (cover = arrival(art))}
-						class={`absolute inset-0 h-full w-full object-cover ${showing}`}
-					/>
-				</span>
+					{#key art}
+						<span class="block h-full w-full">
+							<PosterArt
+								src={art}
+								mark={initials(opened.name)}
+								box="h-full w-full"
+								rounded="rounded-lg"
+							/>
+						</span>
+					{/key}
+				</div>
 				<div class="min-w-0">
 					<h2 class="text-[17px] font-semibold tracking-tight">{opened.name}</h2>
 					<p class="mt-0.5 text-[12.5px] text-dim">
