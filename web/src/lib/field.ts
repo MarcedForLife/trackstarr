@@ -110,13 +110,20 @@ export function tiltField(
 	node: HTMLElement,
 	opts: {
 		active: () => boolean;
+		// How far a card's lean reaches, in card widths from its centre.
 		reach?: () => number;
 		strength?: () => number;
 		lights?: () => boolean;
+		// How far past a card's box the pointer may be and still move it, in
+		// card widths. A grid leaves it off: the reach alone decides, so
+		// neighbours lean together. A card on its own sets it, so it leans as
+		// it would in the grid under the pointer and not at all for a pointer
+		// elsewhere on the page.
+		margin?: number;
 		drive?: (driver: Driver) => void;
 	}
 ) {
-	const { active, reach: chosen, strength, lights, drive } = opts;
+	const { active, reach: chosen, strength, lights, margin, drive } = opts;
 	const cards = new Map<Element, Near>();
 	// The pointer in viewport coordinates, and whether there is one to follow.
 	let px = 0;
@@ -325,7 +332,11 @@ export function tiltField(
 				}
 			}
 			const reach = near.hw * 2 * spread;
-			const pull = falloff(Math.hypot(dx, dy) / reach);
+			let pull = falloff(Math.hypot(dx, dy) / reach);
+			if (margin !== undefined) {
+				const over = Math.max(Math.abs(dx) - near.hw, Math.abs(dy) - near.hh, 0);
+				pull *= falloff(over / (near.hw * 2 * margin));
+			}
 			if (pull <= 0) {
 				settle(near);
 				fading = catchUp(near, 0) || fading;

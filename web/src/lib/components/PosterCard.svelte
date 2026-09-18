@@ -1,8 +1,5 @@
 <script lang="ts">
-	import { arrival, COVER_FADE, type Arrival } from '$lib/covers';
-	import { display } from '$lib/display.svelte';
 	import { pressing } from '$lib/field';
-	import { coverPalette, NEUTRAL_PALETTE } from '$lib/poster-palette';
 	import {
 		changed,
 		coverUrl,
@@ -12,6 +9,7 @@
 		verdictLabel,
 		type Card
 	} from '$lib/library';
+	import PosterArt from '$lib/components/PosterArt.svelte';
 	import Tick from '$lib/components/Tick.svelte';
 	import { pressGesture } from '$lib/press';
 
@@ -51,17 +49,11 @@
 
 	const picking = $derived(selected !== undefined);
 
-	// The only state Svelte owns. Everything the pointer drives is written onto
-	// the element by the field: hundreds of cards cannot re-render on pointermove.
-	let missing = $state(false);
 	// Whether lifting now would pick the card: the one piece of a press drawn.
+	// The artwork's own state is PosterArt's.
 	let armed = $state(false);
-	// How the cover got here, and whether the tile it fades off is still
-	// mounted.
-	let cover = $state<Arrival>('coming');
-	let palette = $state({ ...NEUTRAL_PALETTE });
-	let tiled = $state(true);
 
+	// The turned element, for the gesture's hit test.
 	let frame: HTMLElement | null = $state(null);
 
 	// Whether a point is on this card, measured on the turned card.
@@ -90,11 +82,6 @@
 
 	// The artwork: a title's own poster, or the one an illustration was handed.
 	const art = $derived(src ?? coverUrl(card.id));
-
-	// The tile a card wears until its cover lands, and keeps instead of one that
-	// never arrives, so a poster that fails to load changes nothing but stays.
-	const TILE =
-		'flex h-full w-full items-center justify-center bg-raised text-lg font-semibold text-faint';
 
 	const written = $derived(changed(card));
 	const changesLabel = $derived(
@@ -159,130 +146,59 @@
 	aria-label={`${card.name}${card.year ? ` (${card.year})` : ''} — ${spread}${verdict && changesLabel ? `, ${changesLabel}` : ''}`}
 	title={verdict && changesLabel ? changesLabel : undefined}
 >
-	<!-- data-tilt is how the field finds the element it turns; `frame` is scoped.
-	     --fx is the tilt multiplier the lift, shadow and keystone read, and
-	     --glow the sheen strength the finish reads, set here because the
-	     properties they feed are `inherits: false`. -->
-	<span
-		bind:this={frame}
-		data-tilt
-		style:--fx={display.strength}
-		style:--glow={display.glow}
-		class="frame relative block aspect-[2/3] w-full"
+	<PosterArt
+		src={art}
+		{mark}
+		border={selected || armed ? 'border-accent-fill' : 'border-line'}
+		bind:frame
 	>
-		<!-- The cover is this element's bottom background layer; shade and sheen are
-		     blended on top at paint time. A blended element over the artwork made
-		     the card a render surface, which a per-frame transform stretches from
-		     one texture: jagged corners and a hard shadow edge while turning. A
-		     background blend is settled at raster, and costs fewer layers.
-		     data-sheen is where the field writes the light; the properties are
-		     `inherits: false`, so the write lands on one element. -->
-		<span
-			data-sheen
-			style:--poster-hue={palette.hue}
-			style:--poster-accent-hue={palette.accentHue}
-			style:--poster-accent-saturation={`${palette.accentSaturation}%`}
-			style:--poster-saturation={`${palette.saturation}%`}
-			style:--cover={missing || display.art === 'hide' ? undefined : `url("${art}")`}
-			class={`art absolute inset-0 block overflow-hidden rounded-xl border bg-sunken ${
-				display.lights ? `is-${display.sheen}` : ''
-			} ${selected || armed ? 'border-accent-fill' : 'border-line'}`}
-		>
-			{#if missing || display.art === 'hide'}
-				<span class={`${TILE} relative`}>
-					{mark}
-					<span class="scrim pointer-events-none absolute inset-x-0 bottom-0 block h-1/2"></span>
-				</span>
-			{:else}
-				<!-- The same cover, never seen: a background image cannot say it
-				     failed or landed, so this hidden element fetches it, reports
-				     both, and carries the lazy load. data-cover lets $lib/covers
-				     call it off on navigation. -->
-				<img
-					data-cover
-					src={art}
-					alt=""
-					width="500"
-					height="750"
-					loading="lazy"
-					decoding="async"
-					draggable="false"
-					onload={(event) => {
-						palette = coverPalette(event.currentTarget as HTMLImageElement);
-						cover = arrival(art);
-					}}
-					onerror={() => (missing = true)}
-					class="invisible h-full w-full object-cover"
-				/>
-				{#if tiled && cover !== 'seen'}
-					<!-- A background layer cannot fade, so the tile over it fades off
-					     instead. Under the scrim and the badges, which say what the
-					     title is and how it fared while the artwork is still coming.
-					     Dropped once faded, or every card in the grid would keep a
-					     spare layer for a fade that is over. -->
-					<span
-						aria-hidden="true"
-						ontransitionend={() => (tiled = false)}
-						class={`${TILE} ${COVER_FADE} absolute inset-0 ${
-							cover === 'fading' ? 'opacity-0' : ''
-						}`}
-					>
-						{mark}
-						<span class="scrim pointer-events-none absolute inset-x-0 bottom-0 block h-1/2"></span>
+		{#if verdict}
+			<!-- The chips ride above the word rather than under it, so the word
+		     lands on one line whatever a card has to say. -->
+			<span class="pointer-events-none absolute inset-x-2 bottom-2 block">
+				{#if written.length || card.drops}
+					<span class="mb-1 flex flex-wrap gap-1">
+						{#each written as change (change.chip)}
+							<span class={`rounded px-1 py-px font-mono text-[10px] leading-tight ${change.tone}`}>
+								{change.chip}
+							</span>
+						{/each}
+						{#if card.drops}
+							<span
+								class="rounded bg-black/60 px-1 py-px font-mono text-[10px] leading-tight text-white/80"
+							>
+								−{card.drops}
+							</span>
+						{/if}
 					</span>
 				{/if}
-			{/if}
-
-			{#if verdict}
-				<!-- The chips ride above the word rather than under it, so the word
-				     lands on one line whatever a card has to say. -->
-				<span class="pointer-events-none absolute inset-x-2 bottom-2 block">
-					{#if written.length || card.drops}
-						<span class="mb-1 flex flex-wrap gap-1">
-							{#each written as change (change.chip)}
-								<span
-									class={`rounded px-1 py-px font-mono text-[10px] leading-tight ${change.tone}`}
-								>
-									{change.chip}
-								</span>
-							{/each}
-							{#if card.drops}
-								<span
-									class="rounded bg-black/60 px-1 py-px font-mono text-[10px] leading-tight text-white/80"
-								>
-									−{card.drops}
-								</span>
-							{/if}
-						</span>
-					{/if}
-					<span class="flex items-center gap-1.5" title={spread}>
-						<!-- Half the gap between the dots that sits between them and the
-						     word, so a run of them reads as one mark. -->
-						<span class="flex flex-none items-center gap-0.5">
-							{#each dots as state (state)}
-								<span class={`h-1.5 w-1.5 rounded-full ${dot(state)}`}></span>
-							{/each}
-						</span>
-						<span class="truncate text-[11px] font-medium text-white/70">
-							{verdictLabel(card.state)}
-						</span>
+				<span class="flex items-center gap-1.5" title={spread}>
+					<!-- Half the gap between the dots that sits between them and the
+				     word, so a run of them reads as one mark. -->
+					<span class="flex flex-none items-center gap-0.5">
+						{#each dots as state (state)}
+							<span class={`h-1.5 w-1.5 rounded-full ${dot(state)}`}></span>
+						{/each}
+					</span>
+					<span class="truncate text-[11px] font-medium text-white/70">
+						{verdictLabel(card.state)}
 					</span>
 				</span>
-			{/if}
+			</span>
+		{/if}
 
-			<!-- The tick and the ring where it would land, only while selecting. Top
-			     right, clear of the verdict and a poster's own title; a dark disc
-			     so a white ring shows on a pale poster. Armed wears it filled too,
-			     so the release reads as finishing the gesture. -->
-			{#if picking || armed}
-				<Tick
-					on={selected || armed}
-					off="border-white/75 bg-black/45"
-					class="pointer-events-none absolute top-2 right-2"
-				/>
-			{/if}
-		</span>
-	</span>
+		<!-- The tick and the ring where it would land, only while selecting. Top
+	     right, clear of the verdict and a poster's own title; a dark disc
+	     so a white ring shows on a pale poster. Armed wears it filled too,
+	     so the release reads as finishing the gesture. -->
+		{#if picking || armed}
+			<Tick
+				on={selected || armed}
+				off="border-white/75 bg-black/45"
+				class="pointer-events-none absolute top-2 right-2"
+			/>
+		{/if}
+	</PosterArt>
 
 	<span class="mt-1.5 block truncate text-[12px] font-medium">{card.name}</span>
 	<span class="block text-[11px] text-faint">{sub}</span>
@@ -305,23 +221,9 @@
 		touch-action: pan-x pan-y;
 	}
 
-	/* The dark ramp the verdict and badges print on: 85% black at the bottom
-	   to nothing at the top. A 1x256 PNG rather than a CSS gradient, because
-	   Chrome re-dithers a gradient each time a card gains or loses its
-	   composited layer, which read as a twitch across the bottom of every card
-	   the pointer had passed. A picture comes back identical on both sides. */
-	.art {
-		--scrim: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAEACAYAAAByPhyYAAABf0lEQVR42j3E03IYABRAwaZ2aiO1baa2bdu2bdu2bdvG37T7cs/M2YQU/0twkBKpgtRIg7RBOqQPMiAjMgWZkSXIisQgG7IHOZATuYLcyBPkRT7kDwqgYFAIhYMiKIqkoBiKByVQMiiF0igTlEW5oDwqBBVRKaiMKqgaVEP1oAZqolZQG3WCuqgX1EeDoCEaoXGQjCZBUzRD86AFWgat0Dpog7ZoF7RHh6AjOgWd0QVdg27oHvRAz6AXegd90Bf90B8DMBCDMBhDMBTDMBwjMBKjMBpjMBbjMB4TMBGTMBlTMBXTMB0zMBOzMBtzMBfzMB8LsBCLsBhLsBTLsBwrsBKrsBprsBbrsB4bsBGbsBlbsBXbsB07sBO7sBt7sBf7sB8HcBCHcBhHcBTHcBwncBKncBpncBbncB4XcBGXcBlXcBXXcB03cBO3cBt3cBf3cB8P8BCP8BhP8BTP8Bwv8BKv8Bpv8Bbv8B4f8BGf8Blf8BXf8B0/8BO/8Bt/8Pcfnulj/I+bvvUAAAAASUVORK5CYII=');
-	}
-
-	.scrim {
-		background-image: var(--scrim);
-		background-size: 100% 100%;
-	}
-
 	/* Flat and 2D: a keyboard points at nothing, so no angle and no layer. The
-	   rest of .frame is in $lib/poster.css beside the field that drives it. */
-	.poster:focus-visible .frame {
+	   rest of the frame is in $lib/poster.css beside the field that drives it. */
+	.poster:focus-visible :global([data-tilt]) {
 		transform: scale(1.04);
 	}
 </style>
