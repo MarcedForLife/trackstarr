@@ -629,13 +629,14 @@ body {
 	-webkit-tap-highlight-color: transparent;
 }
 
-/* Both scrollers, since anchoring is for a thread being read and every list
+/* Every scroll container, since anchoring is for a thread being read and every list
    here is a set that grows and re-sorts under the reader. It took a tapped row
    off the top of the screen as its panel opened, and carried the grid to
    wherever a re-sorted tile landed. A panel moves what follows it itself, see
-   $lib/shift. */
-html,
-main {
+   $lib/shift. This includes body and nested overflow boxes (even clipped text):
+   opting out only html and main still lets live row updates carry the mobile
+   document down in Chromium and Firefox. */
+* {
 	overflow-anchor: none;
 }
 
