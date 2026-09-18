@@ -534,17 +534,18 @@
 <Sheet open={up} onclose={close} label={opened?.name ?? 'Title'}>
 	{#if opened}
 		<div class="px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
-			<!-- Two columns, so the links take a second row of the right-hand one from
-			     sm up and the whole width under both on a phone. -->
+			<!-- Two columns, with the links below the text beside the poster. -->
 			<div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3">
 				<!-- Stands the height of the name, the path and the links beside it, its
 				     width following at a poster's 2:3, so the two columns end on one line.
+				     On phones the width stays at 7rem, while the frame keeps stretching:
+				     long names crop the art rather than widening it and squeezing the text.
 				     The links pan rather than wrap, or a second row of them would make
 				     this taller, which would make it wider, which would wrap a third. The tile holds the shape
 				     and the border while the cover fades in over it, so the header does
 				     not shift or flash as the picture lands. -->
 				<span
-					class="relative row-span-2 block aspect-[2/3] min-h-[7.5rem] w-auto flex-none self-stretch overflow-hidden rounded-lg border border-line bg-sunken sm:min-h-34"
+					class="relative row-span-2 block min-h-[7.5rem] w-28 flex-none self-stretch overflow-hidden rounded-lg border border-line bg-sunken sm:aspect-[2/3] sm:min-h-34 sm:w-auto"
 				>
 					<img
 						src={art}
