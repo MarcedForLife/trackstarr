@@ -21,6 +21,7 @@ Once prepared, reuse the current build:
 
 ```sh
 node probes/processing.mjs    # overview states, failure links and offline progress
+node probes/replan-scroll.mjs # mobile and desktop scroll during queue updates and library re-sorting
 node probes/file-account.mjs  # legacy plan explanations and unchecked files
 ENGINES=firefox node probes/focus.mjs
 HEADED=1 node probes/focus.mjs
