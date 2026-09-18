@@ -38,6 +38,10 @@ const SPEED_GAIN = 0.02;
 // third of a second to settle.
 const CATCH = 0.14;
 
+// A finger may stop scrolling without lifting. Resume the light after a brief
+// quiet period; waiting for release leaves it frozen for the rest of the touch.
+const SCROLL_SETTLE = 120;
+
 // How far past a card's box the pointer may be and still raise it, as a
 // fraction of its half-size, so a thumb crossing a gutter does not drop it.
 const SPILL = 1.08;
@@ -124,9 +128,16 @@ export function tiltField(
 	let touching = false;
 	let held = false;
 	let frame = 0;
-	// Whether this press has scrolled anything. Set by the first scroll it
-	// causes, cleared when the pointer lifts.
+	// Whether this press is actively scrolling. Each scroll extends the pause;
+	// a stationary finger must be able to catch the light again.
 	let dragging = false;
+	let scrollPause: ReturnType<typeof setTimeout> | undefined;
+
+	function clearScrollPause() {
+		clearTimeout(scrollPause);
+		scrollPause = undefined;
+		dragging = false;
+	}
 
 	// Re-measure a card in place, keeping the angle and light it carries. `field`
 	// is the node's box, read once by the caller for every card it places.
@@ -358,7 +369,7 @@ export function tiltField(
 		if (event.pointerType === 'touch') return;
 		held = event.buttons > 0;
 		// The release ends the drag; its frame catches the light up.
-		if (!held) dragging = false;
+		if (!held) clearScrollPause();
 		aim(event.clientX, event.clientY);
 	}
 
@@ -370,7 +381,7 @@ export function tiltField(
 
 	function away() {
 		touching = false;
-		dragging = false;
+		clearScrollPause();
 		sleep();
 	}
 
@@ -394,6 +405,11 @@ export function tiltField(
 	function onScroll() {
 		if (touching || held) {
 			dragging = true;
+			clearTimeout(scrollPause);
+			scrollPause = setTimeout(() => {
+				clearScrollPause();
+				request();
+			}, SCROLL_SETTLE);
 			request();
 			return;
 		}
@@ -499,6 +515,7 @@ export function tiltField(
 
 	return {
 		destroy() {
+			clearScrollPause();
 			covered.disconnect();
 			seen.disconnect();
 			reshaped.disconnect();
