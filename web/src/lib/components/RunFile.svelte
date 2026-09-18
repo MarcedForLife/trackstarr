@@ -169,7 +169,7 @@
 {#snippet poster()}<FilePoster {cover} name={shown.name} prominent={active} {onopen} />{/snippet}
 
 <!-- The `<li>` is the caller's, which is where the list animates it from. -->
-<div class={`${fileRow()} py-3 text-[12px]`}>
+<div class={`overview-row ${fileRow()} py-3 text-[12px]`}>
 	<Disclosure
 		{id}
 		{open}
@@ -300,3 +300,25 @@
 		<RunLog path={row.path} {lines} {failure} onclose={() => (logging = false)} />
 	{/if}
 </div>
+
+<style>
+	/* The overview previews work: lift on hover to invite opening its details.
+	   Queue management keeps its press gesture for selecting files. */
+	@media (hover: hover) and (pointer: fine) {
+		.overview-row:hover {
+			position: relative;
+			z-index: 10;
+			translate: 0 -2px;
+			box-shadow:
+				0 3px 6px rgb(0 0 0 / 0.16),
+				0 14px 28px rgb(0 0 0 / 0.22);
+			border-color: var(--line-strong);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.overview-row:hover {
+			translate: none;
+		}
+	}
+</style>

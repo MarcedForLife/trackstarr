@@ -7,7 +7,7 @@
 
 	// A row that opens to show what it had no room for: a button with the aria, a
 	// chevron that turns, and a panel unmounted while shut that opens on
-	// `.reveal` in layout.css. What the row says arrives as snippets.
+	// `$lib/shift`. What the row says arrives as snippets.
 	let {
 		// Ties the button to the panel it opens; unique within the page.
 		id,
@@ -151,9 +151,8 @@
 	{@render row()}
 {/if}
 
-<!-- Unmounted while shut, so a long list carries no hidden panels. Opens on
-     `.reveal` in layout.css and shuts on `fold`; `shift` moves what follows
-     and owns the clip both ways. -->
+<!-- Unmounted while shut, so a long list carries no hidden panels. `shift` animates its height
+     and clip together; `fold` keeps it mounted through closing. -->
 {#if open && panel}
 	<!-- Positioned, so a row whose press covers the card does not cover this. -->
 	<div
@@ -163,9 +162,6 @@
 		use:shift={(duration) => (openingDuration = duration)}
 		out:fold
 	>
-		<!-- The window, then one box holding whatever the snippet renders: the
-		     slide back is `translateY(100%)`, so two boxes each slide their own
-		     height and only one of them can match the window. -->
 		<div><div>{@render panel()}</div></div>
 	</div>
 {/if}

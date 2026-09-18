@@ -244,6 +244,10 @@ export function tiltField(
 
 	function draw() {
 		frame = 0;
+		if (node.closest('[inert]')) {
+			live = false;
+			speed = 0;
+		}
 		// Where the field's content sits on screen this frame: its box, less its
 		// own scroll, which is zero for a grid.
 		const field = node.getBoundingClientRect();
@@ -337,7 +341,7 @@ export function tiltField(
 	}
 
 	function aim(x: number, y: number) {
-		if (!active()) {
+		if (!active() || node.closest('[inert]')) {
 			if (live) sleep();
 			return;
 		}
@@ -370,6 +374,18 @@ export function tiltField(
 		touching = false;
 		dragging = false;
 		sleep();
+	}
+
+	// Window-level pointer events still arrive over a sheet. Watch the field's
+	// ancestors so an opening overlay also settles a parked pointer's tilt;
+	// closing leaves it asleep until the next real movement.
+	const covered = new MutationObserver(() => {
+		if (!node.closest('[inert]')) return;
+		held = false;
+		away();
+	});
+	for (let parent: HTMLElement | null = node; parent; parent = parent.parentElement) {
+		covered.observe(parent, { attributes: true, attributeFilter: ['inert'] });
 	}
 
 	// A scroll moves the cards past a still pointer. A finger or a held button
@@ -485,6 +501,7 @@ export function tiltField(
 
 	return {
 		destroy() {
+			covered.disconnect();
 			seen.disconnect();
 			reshaped.disconnect();
 			restocked.disconnect();

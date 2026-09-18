@@ -206,13 +206,11 @@
 	   it. */
 	--tabbar: 3.5rem;
 
-	/* Shared by both halves of the reveal below, which must agree to cancel, by
-	   the close in $lib/shift and by the chevron that turns with it. Ease-out,
+	/* Shared by the disclosure height in $lib/shift and its chevron. Ease-out,
 	   the same curve the bars and menus use: the old ease-in-out spent a third
 	   of the time on the last tenth of the travel and read as a hesitation. */
 	--reveal-span: 220ms;
 	--reveal-ease: cubic-bezier(0.33, 1, 0.68, 1);
-	--reveal: var(--reveal-span) var(--reveal-ease);
 }
 
 /* From lg the rail is the nav and there is no bar to clear. */
@@ -632,8 +630,8 @@ body {
 /* Every scroll container, since anchoring is for a thread being read and every list
    here is a set that grows and re-sorts under the reader. It took a tapped row
    off the top of the screen as its panel opened, and carried the grid to
-   wherever a re-sorted tile landed. A panel moves what follows it itself, see
-   $lib/shift. This includes body and nested overflow boxes (even clipped text):
+   wherever a re-sorted tile landed. A panel animates its space through $lib/shift.
+   This includes body and nested overflow boxes (even clipped text):
    opting out only html and main still lets live row updates carry the mobile
    document down in Chromium and Firefox. */
 * {
@@ -689,39 +687,15 @@ body {
 	}
 }
 
-/* A panel opening, shared by every disclosure. No layout, which a phone will
-   not animate smoothly: two transforms cancel instead, the window sliding
-   down and clipping while the panel slides up by as much, so only the
-   window's edge travels, like a blind. Both share `--reveal`. The box is its
-   full height from the first frame; `$lib/shift` moves what follows to
-   match. */
+/* The disclosure's height is animated by $lib/shift. Its clip and the
+   surrounding row share that one layout edge in both directions. */
 .reveal {
 	overflow: hidden;
 }
 
-/* The window's clip is the animation; without it the transforms cancel to
-   an instant open. */
+/* Keep child margins inside the measured content box. */
 .reveal > * {
-	overflow: hidden;
-	animation: reveal-window var(--reveal) both;
-}
-
-/* One box, the window's own height: `100%` is each box's height, so a second
-   one here would slide at its own rate and cross the first. */
-.reveal > * > * {
-	animation: reveal-panel var(--reveal) both;
-}
-
-@keyframes reveal-window {
-	from {
-		transform: translateY(-100%);
-	}
-}
-
-@keyframes reveal-panel {
-	from {
-		transform: translateY(100%);
-	}
+	display: flow-root;
 }
 
 /* A panel arriving from under the button that raised it. On [popover], since
