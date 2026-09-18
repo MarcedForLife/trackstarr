@@ -1,8 +1,9 @@
-"""The connections page's model: is it there, and does it hold our webhook.
+"""The connections page's model: is it there, and will it call us back.
 
 Faked HTTP throughout. No network.
 """
 
+import io
 import json
 import types
 import urllib.error
@@ -10,8 +11,11 @@ import urllib.error
 import pytest
 
 from conftest import set_config
-from trackstarr import connections
-from trackstarr.arr import WEBHOOK_NAME
+from trackstarr import auth, connections
+from trackstarr.arr import AUTH_HEADER, WEBHOOK_NAME, webhook_url
+
+#: The endpoint that makes the *arr call our webhook now.
+TEST_PATH = "/api/v3/notification/test"
 
 ARR_STATUS = {"appName": "Radarr", "instanceName": "Films", "version": "5.14.0"}
 JELLYFIN_INFO = {"ServerName": "Attic", "Version": "10.9.11"}
@@ -30,6 +34,13 @@ def http_error(code: int) -> urllib.error.HTTPError:
     error = urllib.error.HTTPError("http://x", code, "no", {}, None)
     error.close()
     return error
+
+
+def refused(code: int, said: dict) -> urllib.error.HTTPError:
+    """A failing response carrying the words the service put in its body."""
+    return urllib.error.HTTPError(
+        "http://x", code, "no", {}, io.BytesIO(json.dumps(said).encode())
+    )
 
 
 @pytest.fixture
@@ -184,6 +195,48 @@ def test_an_arr_that_cannot_be_asked_about_its_webhook_says_unknown(answers):
     # The service is there; only the connections list could not be read.
     assert result.ok
     assert result.webhook == "unknown"
+
+
+def held_webhook() -> list[dict]:
+    """The notification list with a connection the listener would accept."""
+    return [
+        {
+            "id": 1,
+            "name": WEBHOOK_NAME,
+            "onDownload": True,
+            "onUpgrade": True,
+            "fields": [
+                {"name": "url", "value": webhook_url()},
+                {"name": "method", "value": 1},
+                {
+                    "name": "headers",
+                    "value": [{"key": AUTH_HEADER, "value": auth.mint("radarr")}],
+                },
+            ],
+        }
+    ]
+
+
+def test_connected_means_the_arrs_call_arrived(answers):
+    answers.canned["/api/v3/notification"] = held_webhook()
+    answers.canned["/api/v3/notification/test"] = {}
+    result = connections.check("radarr", "http://radarr:7878", "key")
+    assert result.webhook == "connected"
+    assert f"http://radarr:7878{TEST_PATH}" in answers.urls
+
+
+def test_an_arr_that_cannot_reach_us_says_so_in_its_own_words(answers):
+    """The failure the page was blind to. The connection is exactly what we
+    would save, and every call it makes lands nowhere."""
+    answers.canned["/api/v3/notification"] = held_webhook()
+    answers.canned["/api/v3/notification/test"] = refused(
+        500, {"message": "Name does not resolve (trackstarr:5120)"}
+    )
+    result = connections.check("radarr", "http://radarr:7878", "key")
+    # Radarr itself answers fine, which is the whole trap.
+    assert result.ok
+    assert result.webhook == "unreachable"
+    assert result.webhook_detail == "Name does not resolve (trackstarr:5120)"
 
 
 def test_a_media_server_is_never_asked_about_a_webhook(answers, library):

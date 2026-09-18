@@ -1,9 +1,11 @@
 """Whether the services trackstarr talks to are reachable and answering.
 
-Each check is one read-only call to the service's status endpoint, never
-cached. It takes the address and key to use, so the page can test an edit
-before saving, and answers with one line a reader can act on: "it refused the
-API key" is a different job from "nothing is listening there".
+Each check calls the service's status endpoint, never cached. An *arr is also
+asked to call our webhook, since a connection saved inside it proves nothing
+about whether that address resolves where it runs. It takes the address and key
+to use, so the page can test an edit before saving, and answers with one line a
+reader can act on. "It refused the API key" is a different job from "nothing is
+listening there".
 """
 
 import json
@@ -12,7 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 from . import config
-from .arr import radarr, sonarr, webhook_url
+from .arr import WebhookState, radarr, sonarr, webhook_url
 from .client import API_ERRORS, request
 from .media_server import PLEX_SECTIONS, map_path, path_within, plex_sections
 
@@ -146,9 +148,11 @@ class Result:
     detail: str
     #: Something to do about it, when there is.
     hint: str = ""
-    #: For an *arr: connected, stale, missing, or unknown when it could not be
-    #: asked. Empty for the rest.
+    #: For an *arr: connected, unreachable, stale, missing, or unknown when it
+    #: could not be asked. Empty for the rest.
     webhook: str = ""
+    #: What the *arr said when it could not call us. Only for unreachable.
+    webhook_detail: str = ""
 
 
 def _headers(header: str, key: str) -> dict:
@@ -206,14 +210,14 @@ def _path_hint(service: Service, locations: list[str]) -> str:
     )
 
 
-def _webhook_state(name: str, url: str, key: str) -> str:
-    """Whether the *arr at these values holds our connection."""
+def _webhook_state(name: str, url: str, key: str) -> WebhookState:
+    """Whether the *arr at these values will call us."""
     arr = replace(_ARR_FACTORIES[name](), url=url, key=key)
     try:
         return arr.webhook_status(webhook_url())
     except API_ERRORS as err:
-        log.debug("%s: could not read the connections list (%s)", name, err)
-        return "unknown"
+        log.debug("%s: could not ask about the webhook connection (%s)", name, err)
+        return WebhookState("unknown")
 
 
 def check(name: str, url: str = "", key: str = "") -> Result:
@@ -235,5 +239,5 @@ def check(name: str, url: str = "", key: str = "") -> Result:
     except API_ERRORS as err:
         return Result(False, _explain(err))
     hint = _path_hint(service, service.locations(answer, url, key)) if service.map_name else ""
-    webhook = _webhook_state(name, url, key) if name in _ARR_FACTORIES else ""
-    return Result(True, service.describe(answer), hint, webhook)
+    webhook = _webhook_state(name, url, key) if name in _ARR_FACTORIES else WebhookState("")
+    return Result(True, service.describe(answer), hint, webhook.state, webhook.detail)

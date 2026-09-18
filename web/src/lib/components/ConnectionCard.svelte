@@ -64,7 +64,13 @@
 			if (!gone) result = answer;
 		} catch {
 			if (!gone) {
-				result = { ok: false, detail: 'Could not reach the service.', hint: '', webhook: '' };
+				result = {
+					ok: false,
+					detail: 'Could not reach the service.',
+					hint: '',
+					webhook: '',
+					webhook_detail: ''
+				};
 			}
 		} finally {
 			if (!gone) checking = false;
@@ -95,22 +101,34 @@
 		if (checking) return { label: 'Checking', class: 'text-faint' };
 		if (!configured) return { label: 'Not set', class: 'text-faint' };
 		if (!result) return { label: 'Configured', class: 'text-dim' };
-		return result.ok
-			? { label: 'Connected', class: 'text-ok' }
-			: { label: 'No answer', class: 'text-danger' };
+		if (!result.ok) return { label: 'No answer', class: 'text-danger' };
+		// A green Connected on an *arr that cannot call back is the lie this
+		// check exists to catch.
+		if (result.webhook === 'unreachable') return { label: 'No webhook', class: 'text-danger' };
+		return { label: 'Connected', class: 'text-ok' };
 	});
 
 	// What an *arr holding the wrong connection, or none, means for the reader.
 	const WEBHOOK_STATE: Record<string, string> = {
 		connected: 'Webhook connected',
+		unreachable: 'Its webhook call never arrives',
 		missing: 'No webhook connection yet',
 		stale: 'Its webhook points somewhere else',
 		unknown: 'Could not read its connections list'
 	};
 
+	// Unreachable is a fault, not a step before a save.
+	function webhookTone(state: string): string {
+		if (state === 'connected') return 'text-ok';
+		return state === 'unreachable' ? 'text-danger' : 'text-dim';
+	}
+
 	function webhookNote(answer: ConnectionResult): string {
 		const state = WEBHOOK_STATE[answer.webhook] ?? '';
 		if (!state || answer.webhook === 'connected') return state;
+		// Saving would only rewrite what it already holds. The *arr's own words
+		// below say what to change instead.
+		if (answer.webhook === 'unreachable') return state;
 		return `${state}. Trackstarr registers it on save.`;
 	}
 
@@ -119,7 +137,11 @@
 	const line = $derived.by(() => {
 		if (result && !result.ok) return { text: result.detail, class: 'text-danger', mono: false };
 		if (result?.ok && result.webhook && result.webhook !== 'connected') {
-			return { text: WEBHOOK_STATE[result.webhook] ?? '', class: 'text-accent', mono: false };
+			return {
+				text: WEBHOOK_STATE[result.webhook] ?? '',
+				class: result.webhook === 'unreachable' ? 'text-danger' : 'text-accent',
+				mono: false
+			};
 		}
 		const address = (draft[service.url] as string) ?? '';
 		if (address) return { text: address, class: 'text-dim', mono: true };
@@ -183,9 +205,10 @@
 					<div class={`mb-3 ${noteBox} ${result.ok ? 'text-dim' : 'text-danger'}`}>
 						<p>{result.detail}</p>
 						{#if result.ok && webhookNote(result)}
-							<p class={`mt-1 ${result.webhook === 'connected' ? 'text-ok' : 'text-dim'}`}>
-								{webhookNote(result)}
-							</p>
+							<p class={`mt-1 ${webhookTone(result.webhook)}`}>{webhookNote(result)}</p>
+						{/if}
+						{#if result.webhook_detail}
+							<p class="mt-1 text-faint">{service.label} said: {result.webhook_detail}</p>
 						{/if}
 						{#if result.hint}
 							<p class="mt-1 text-faint">{result.hint}</p>

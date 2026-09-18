@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from . import auth, config
-from .client import API_ERRORS, request
+from .client import API_ERRORS, refusal, request
 from .langs import ARR_NON_LANGUAGES, from_name
 
 log = logging.getLogger(__name__)
@@ -23,6 +23,20 @@ AUTH_HEADER = "X-Api-Key"
 #: The one path webhook POSTs are accepted on, so the rest of the namespace
 #: stays free for the API. Here because it is part of the saved connection.
 WEBHOOK_PATH = "/webhook"
+
+#: The *arr opens a connection back to us inside this one, giving its own
+#: webhook client about ten seconds of it.
+_TEST_TIMEOUT = 20
+
+
+@dataclass(frozen=True)
+class WebhookState:
+    """Whether an *arr will call us, and what stopped it when it will not."""
+
+    #: connected, unreachable, stale, missing, or unknown when it could not be asked.
+    state: str
+    #: The *arr's own words, for unreachable.
+    detail: str = ""
 
 
 def webhook_url() -> str:
@@ -86,14 +100,37 @@ class Arr:
             self.name, _sent_secret(ours)
         )
 
-    def webhook_status(self, url: str) -> str:
-        """Whether this *arr will call us: connected, stale or missing. For
-        the connections page, so it works with unsaved values. Raises
-        API_ERRORS."""
+    def _delivery_failure(self, ours: dict) -> str:
+        """Why the *arr's test call did not arrive, or "" when it did.
+
+        Sent back as the *arr reported it, since without the id its
+        name-uniqueness check refuses the body before anything is called.
+        Raises API_ERRORS when the *arr cannot be asked.
+        """
+        try:
+            self._call("/api/v3/notification/test", ours, timeout=_TEST_TIMEOUT)
+        except API_ERRORS as err:
+            # An answered error is the *arr reporting the call it made. Anything
+            # else means we could not ask, which is the caller's to handle.
+            if (code := getattr(err, "code", None)) is None:
+                raise
+            return refusal(err) or f"It answered {code}."
+        return ""
+
+    def webhook_status(self, url: str) -> WebhookState:
+        """Whether this *arr will call us. For the connections page, so it
+        works with unsaved values. Raises API_ERRORS.
+
+        A current-looking connection is not taken on trust. Only the *arr
+        calling us proves the address resolves where it runs.
+        """
         ours = self._connection()
         if ours is None:
-            return "missing"
-        return "connected" if self._connection_current(ours, url) else "stale"
+            return WebhookState("missing")
+        if not self._connection_current(ours, url):
+            return WebhookState("stale")
+        failure = self._delivery_failure(ours)
+        return WebhookState("unreachable", failure) if failure else WebhookState("connected")
 
     def register_webhook(self, url: str) -> bool:
         """Create or update this *arr's webhook connection back to us.
@@ -110,6 +147,7 @@ class Arr:
             log.warning("%s: webhook registration failed (%s), will retry", self.name, err)
             return False
         if ours and self._connection_current(ours, url):
+            self._warn_if_undeliverable(ours)
             return True
         try:
             secret = auth.mint(self.name)
@@ -136,6 +174,18 @@ class Arr:
         # *arr is not returning the header as saved.
         log.info("%s: webhook connection registered with a fresh secret -> %s", self.name, url)
         return True
+
+    def _warn_if_undeliverable(self, ours: dict) -> None:
+        """Log a held connection that cannot reach us. Not a failure to retry,
+        since it is already what we would save, but nothing else notices until
+        a reader presses Test."""
+        try:
+            failure = self._delivery_failure(ours)
+        except API_ERRORS as err:
+            log.debug("%s: could not test the webhook connection (%s)", self.name, err)
+            return
+        if failure:
+            log.warning("%s holds our webhook but cannot call it: %s", self.name, failure)
 
     def rescan(self, item_id: int) -> None:
         """Re-read the file, so the *arr's size and media info stay true."""

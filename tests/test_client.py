@@ -3,11 +3,12 @@ rest of the suite replaces them wholesale."""
 
 import json
 import threading
+import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from trackstarr.client import API_ERRORS, fetch, request, stream
+from trackstarr.client import API_ERRORS, fetch, refusal, request, stream
 
 
 @pytest.fixture
@@ -157,6 +158,21 @@ def test_stream_failures_land_in_the_same_place_as_the_rest(server):
     with pytest.raises(API_ERRORS) as caught, stream(f"{url}/title.ratings.tsv.gz"):
         pass  # pragma: no cover, urlopen raises before the body exists
     caught.value.close()
+
+
+def test_refusal_quotes_the_words_the_service_answered(server):
+    """What a *arr says went wrong with a webhook test it ran for us."""
+    url, state = server
+    state["response"] = (500, json.dumps({"message": "Name does not resolve"}).encode())
+    with pytest.raises(API_ERRORS) as caught:
+        request(f"{url}/api/v3/notification/test", payload={"id": 1})
+    assert refusal(caught.value) == "Name does not resolve"
+    # Read and closed here, so no caught.value.close() as elsewhere in this file.
+
+
+def test_refusal_is_empty_when_the_failure_never_reached_the_service():
+    """A transport failure has no body to quote and no response to close."""
+    assert refusal(urllib.error.URLError("no route to host")) == ""
 
 
 def test_fetch_failures_land_in_the_same_place_as_the_json_ones(server):

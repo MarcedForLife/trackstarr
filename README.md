@@ -57,7 +57,8 @@ services:
 container. The example maps `/srv/media/movies` to `/data/movies`;
 change the mount or `MEDIA_DIRS` to match your library. Missing sweep directories
 produce warnings, so check the startup log. Set `WEBHOOK_URL` if the *arrs cannot
-reach `http://trackstarr:5120`.
+reach `http://trackstarr:5120`. **Test** on a connection card makes the *arr call
+back, which is what proves the address resolves where it runs.
 
 The default `REWRITE_MODE=imports` rewrites new imports but only reports changes
 for library sweeps. Use `report` to preview all processing first; use `all` to

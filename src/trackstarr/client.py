@@ -27,6 +27,24 @@ def fetch(url: str, headers: dict | None = None, timeout: int = 30) -> tuple[byt
         return response.read(), response.headers.get_content_type()
 
 
+def refusal(err: Exception) -> str:
+    """The service's own words for an error it answered. All three APIs put
+    them in a JSON ``message``."""
+    body = getattr(err, "read", None)
+    if body is None:
+        return ""
+    try:
+        said = json.loads(body() or b"{}")
+    # An already-read body raises ValueError, a dead connection OSError.
+    except ValueError, OSError:
+        return ""
+    finally:
+        # An HTTPError holds an open response until somebody closes it.
+        with contextlib.suppress(OSError):
+            err.close()  # type: ignore[attr-defined]
+    return str(said.get("message") or "") if isinstance(said, dict) else ""
+
+
 def request(
     url: str,
     headers: dict | None = None,
