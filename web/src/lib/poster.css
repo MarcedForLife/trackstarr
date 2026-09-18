@@ -59,11 +59,17 @@
 	transition: box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
 	/* The cover. Unset on a card showing initials, which takes the layers below
 	   out with it. */
-	background-image: var(--cover);
+	/* Paint shade and cover together, with a small bleed below the image
+	   boundary so perspective rasterization cannot expose a bright seam. */
+	background-image: var(--scrim), var(--cover, none);
 	background-clip: padding-box;
 	background-origin: padding-box;
-	background-position: center;
-	background-size: cover;
+	background-position:
+		center bottom -1px,
+		center;
+	background-size:
+		100% calc(50% + 2px),
+		cover;
 	background-repeat: no-repeat;
 }
 
@@ -82,18 +88,28 @@
 
 [data-sheen].is-gloss {
 	background-image:
+		var(--scrim),
 		radial-gradient(
 			circle at var(--mx) var(--my),
 			rgb(255 255 255 / calc(0.45 * var(--sheen))),
 			transparent 45%
 		),
 		var(--cover);
-	background-blend-mode: soft-light, normal;
+	background-blend-mode: normal, soft-light, normal;
+	background-position:
+		center bottom -1px,
+		center,
+		center;
+	background-size:
+		100% calc(50% + 2px),
+		cover,
+		cover;
 }
 
 /* One band of colour angled with the lean. A gradient: nothing to download. */
 [data-sheen].is-foil {
 	background-image:
+		var(--scrim),
 		linear-gradient(
 			calc(var(--hue) * 1deg),
 			transparent 30%,
@@ -107,13 +123,24 @@
 			transparent 45%
 		),
 		var(--cover);
-	background-blend-mode: color-dodge, soft-light, normal;
+	background-blend-mode: normal, color-dodge, soft-light, normal;
+	background-position:
+		center bottom -1px,
+		center,
+		center,
+		center;
+	background-size:
+		100% calc(50% + 2px),
+		cover,
+		cover,
+		cover;
 }
 
 /* Three bands round most of the wheel. The same layer and blend; the extra
    stops are settled at paint. */
 [data-sheen].is-holo {
 	background-image:
+		var(--scrim),
 		linear-gradient(
 			calc(var(--hue) * 1deg),
 			transparent 4%,
@@ -130,7 +157,17 @@
 			transparent 45%
 		),
 		var(--cover);
-	background-blend-mode: color-dodge, soft-light, normal;
+	background-blend-mode: normal, color-dodge, soft-light, normal;
+	background-position:
+		center bottom -1px,
+		center,
+		center,
+		center;
+	background-size:
+		100% calc(50% + 2px),
+		cover,
+		cover,
+		cover;
 }
 
 /* Reduced motion: no turn, and so no sheen either. */
