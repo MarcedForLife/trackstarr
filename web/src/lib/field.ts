@@ -11,9 +11,8 @@
 // One piece of geometry drives three things: how far a card leans, the light
 // across it, and, while a pointer is held anywhere, which card is raised. The
 // raise follows the pointer, not the card the press began on. The lean and
-// the raise are the tilt setting's; at Off the cards stay flat and only the
-// light follows the pointer. How bright the light paints is the stylesheet's,
-// from the Sheen strength stop, so the field writes it plain.
+// the raise are the tilt setting's; at Off only the light follows the pointer.
+// How bright it paints is the stylesheet's, so the field writes it plain.
 
 // The classes and properties written below. Imported here so both halves of
 // the mechanism are read together.
@@ -115,10 +114,8 @@ export function tiltField(
 		strength?: () => number;
 		lights?: () => boolean;
 		// How far past a card's box the pointer may be and still move it, in
-		// card widths. A grid leaves it off: the reach alone decides, so
-		// neighbours lean together. A card on its own sets it, so it leans as
-		// it would in the grid under the pointer and not at all for a pointer
-		// elsewhere on the page.
+		// card widths. A grid leaves it off so neighbours lean together; a card
+		// on its own sets it, so a pointer elsewhere on the page leaves it still.
 		margin?: number;
 		drive?: (driver: Driver) => void;
 	}
@@ -143,6 +140,12 @@ export function tiltField(
 	// a stationary finger must be able to catch the light again.
 	let dragging = false;
 	let scrollPause: ReturnType<typeof setTimeout> | undefined;
+	// The pointer in the field's coordinates, held while a drag scrolls the
+	// content: the finger and the scroll it drives arrive as separate samples,
+	// and a frame with one ahead of the other twitched every card near it.
+	let gripX = 0;
+	let gripY = 0;
+	let gripped = false;
 
 	function clearScrollPause() {
 		clearTimeout(scrollPause);
@@ -219,8 +222,7 @@ export function tiltField(
 		near.tilt.style.setProperty('--rx', `${y * MAX_TILT}deg`);
 	}
 
-	// Ease a leaning card home flat. The light is the caller's, through
-	// catchUp(), so a card at tilt Off keeps the light it has.
+	// Ease a leaning card home flat; the light is catchUp()'s.
 	function settle(near: Near) {
 		if (!near.on) return;
 		near.on = false;
@@ -231,9 +233,7 @@ export function tiltField(
 		// `is-turning` stays. See forget().
 	}
 
-	// Flat and unlit at once, for a card leaving the field or the field being
-	// put down. In the loop the two happen by degrees, through settle() and
-	// catchUp().
+	// Flat and unlit at once, for a card leaving the field or the field put down.
 	function rest(near: Near | undefined) {
 		if (!near) return;
 		settle(near);
@@ -300,6 +300,12 @@ export function tiltField(
 		const field = node.getBoundingClientRect();
 		const left = field.left - node.scrollLeft;
 		const top = field.top;
+		// A drag that began before this pointer's first frame still needs a grip.
+		if (live && (!dragging || !gripped)) {
+			gripX = px - left;
+			gripY = py - top;
+			gripped = true;
+		}
 		const spread = chosen?.() ?? REACH;
 		// Read every frame so the Appearance slider takes effect as it moves.
 		// Zero never gets here; the field is inactive at that stop.
@@ -319,8 +325,8 @@ export function tiltField(
 				fading = catchUp(near, 0) || fading;
 				continue;
 			}
-			const dx = px - (near.cx + left);
-			const dy = py - (near.cy + top);
+			const dx = gripX - near.cx;
+			const dy = gripY - near.cy;
 			// Judged by the card's box, not the field: a card at the edge of a
 			// narrow spread barely leans but a press on it should still raise it.
 			// The raise is part of the tilt, so none at Off.
@@ -380,6 +386,7 @@ export function tiltField(
 	function sleep() {
 		live = false;
 		speed = 0;
+		gripped = false;
 		request();
 	}
 

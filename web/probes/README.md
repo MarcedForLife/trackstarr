@@ -21,6 +21,7 @@ Once prepared, reuse the current build:
 
 ```sh
 node probes/poster-touch.mjs # sheen resumes after scrolling pauses without lifting the finger
+node probes/strip-drag.mjs    # a finger dragging the overview strip keeps the lean steady
 node probes/disclosure.mjs    # synchronized row expansion, late content, reversal and reduced motion
 node probes/processing.mjs    # overview states, failure links and offline progress
 node probes/replan-scroll.mjs # mobile and desktop scroll during queue updates and library re-sorting
