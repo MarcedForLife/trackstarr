@@ -10,7 +10,10 @@
 //
 // One piece of geometry drives three things: how far a card leans, the light
 // across it, and, while a pointer is held anywhere, which card is raised. The
-// raise follows the pointer, not the card the press began on.
+// raise follows the pointer, not the card the press began on. The lean and
+// the raise are the tilt setting's; at Off the cards stay flat and only the
+// light follows the pointer. How bright the light paints is the stylesheet's,
+// from the Sheen strength stop, so the field writes it plain.
 
 // The classes and properties written below. Imported here so both halves of
 // the mechanism are read together.
@@ -78,6 +81,7 @@ type Near = {
 	hw: number;
 	hh: number;
 	// Whether the card is leaning, so a flat card is not rewritten every frame.
+	// Only the lean: a card at tilt Off may be lit and not on.
 	on: boolean;
 	// The light it carries now, chasing the light it should have.
 	lit: number;
@@ -195,15 +199,40 @@ export function tiltField(
 		{ rootMargin: '150px' }
 	);
 
-	function rest(near: Near | undefined) {
-		if (!near?.on) return;
+	// Turn a card toward the pointer, each axis as a fraction of MAX_TILT.
+	function lean(near: Near, x: number, y: number) {
+		if (!near.on) {
+			near.on = true;
+			// No transition while the pointer drives it, or the card trails the
+			// cursor.
+			near.tilt.classList.add('is-turning', 'is-near');
+			near.tilt.style.setProperty('--depth', `${near.hw * 2 * DEPTH}px`);
+		}
+		near.tilt.style.setProperty('--ry', `${x * MAX_TILT}deg`);
+		near.tilt.style.setProperty('--rx', `${y * MAX_TILT}deg`);
+	}
+
+	// Ease a leaning card home flat. The light is the caller's, through
+	// catchUp(), so a card at tilt Off keeps the light it has.
+	function settle(near: Near) {
+		if (!near.on) return;
 		near.on = false;
 		// Removing the class restores the transition, which eases the card home.
 		near.tilt.classList.remove('is-near');
 		near.tilt.style.setProperty('--rx', '0deg');
 		near.tilt.style.setProperty('--ry', '0deg');
-		near.art.style.setProperty('--sheen', '0');
 		// `is-turning` stays. See forget().
+	}
+
+	// Flat and unlit at once, for a card leaving the field or the field being
+	// put down. In the loop the two happen by degrees, through settle() and
+	// catchUp().
+	function rest(near: Near | undefined) {
+		if (!near) return;
+		settle(near);
+		if (near.lit === 0) return;
+		near.lit = 0;
+		near.art.style.setProperty('--sheen', '0');
 	}
 
 	/**
@@ -279,7 +308,7 @@ export function tiltField(
 		let fading = false;
 		for (const near of cards.values()) {
 			if (!live) {
-				rest(near);
+				settle(near);
 				fading = catchUp(near, 0) || fading;
 				continue;
 			}
@@ -287,7 +316,8 @@ export function tiltField(
 			const dy = py - (near.cy + top);
 			// Judged by the card's box, not the field: a card at the edge of a
 			// narrow spread barely leans but a press on it should still raise it.
-			if (holds) {
+			// The raise is part of the tilt, so none at Off.
+			if (holds && gain > 0) {
 				const bite = Math.max(Math.abs(dx) / near.hw, Math.abs(dy) / near.hh);
 				if (bite <= SPILL && bite < nearest) {
 					nearest = bite;
@@ -297,23 +327,16 @@ export function tiltField(
 			const reach = near.hw * 2 * spread;
 			const pull = falloff(Math.hypot(dx, dy) / reach);
 			if (pull <= 0) {
-				rest(near);
+				settle(near);
 				fading = catchUp(near, 0) || fading;
 				continue;
-			}
-			if (!near.on) {
-				near.on = true;
-				// No transition while the pointer drives it, or the card trails
-				// the cursor.
-				near.tilt.classList.add('is-turning', 'is-near');
-				near.tilt.style.setProperty('--depth', `${near.hw * 2 * DEPTH}px`);
 			}
 			// The pointer's position over the card in half-widths, clamped to its
 			// edge, so inside a card the field changes nothing.
 			const overX = clamp(dx / near.hw);
 			const overY = clamp(dy / near.hh);
-			near.tilt.style.setProperty('--ry', `${overX * MAX_TILT * gain * pull}deg`);
-			near.tilt.style.setProperty('--rx', `${-overY * MAX_TILT * gain * pull}deg`);
+			if (gain > 0) lean(near, overX * gain * pull, -overY * gain * pull);
+			else settle(near);
 			if (!glossy) {
 				fading = catchUp(near, 0) || fading;
 				continue;
@@ -326,11 +349,11 @@ export function tiltField(
 			// The highlight sits under the pointer and stops at the card's edge.
 			near.art.style.setProperty('--mx', `${(1 + overX) * 50}%`);
 			near.art.style.setProperty('--my', `${(1 + overY) * 50}%`);
-			// How far from flat the card is, 0 at rest and 1 at a corner, plus what
-			// is left of the movement. From the pivot, or a card the falloff has
-			// flattened would go on catching the light.
+			// How far off centre the pointer is, 0 over the middle and 1 at a
+			// corner, plus what is left of the movement. Through the pull, or a
+			// card the falloff has flattened would go on catching the light.
 			const pivot = Math.min(1, Math.hypot(overX, overY) * pull);
-			fading = catchUp(near, Math.min(1, (pivot * 0.45 + speed * pull) * gain)) || fading;
+			fading = catchUp(near, Math.min(1, pivot * 0.45 + speed * pull)) || fading;
 		}
 		raise(under);
 		// Keep going while the flash has anything left to show or any light is
@@ -431,7 +454,6 @@ export function tiltField(
 		lower();
 		for (const near of cards.values()) {
 			rest(near);
-			near.lit = 0;
 			forget(near);
 		}
 		remeasure();

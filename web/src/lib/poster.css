@@ -58,6 +58,12 @@
 	--poster-saturation: 0%;
 	--poster-accent-hue: 0;
 	--poster-accent-saturation: 0%;
+	/* What the finishes below paint with. --sheen is how lit the card is now,
+	   0 to 1 from the field; --glow is the Sheen strength stop, written on the
+	   card with --fx. Past 1 the stop also deepens the colour, so Rare is more
+	   colour rather than the same colour at full alpha. */
+	--lit: calc(var(--sheen) * var(--glow, 1));
+	--vivid: max(1, var(--glow, 1));
 	box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
 	/* Matched to the lift, so the shadow does not trail the card. */
 	transition: box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -95,7 +101,7 @@
 		var(--scrim),
 		radial-gradient(
 			circle at var(--mx) var(--my),
-			rgb(255 255 255 / calc(0.45 * var(--sheen))),
+			rgb(255 255 255 / calc(0.45 * var(--lit))),
 			transparent 45%
 		),
 		var(--cover);
@@ -112,7 +118,7 @@
 
 /* Original finishes inspired by the layered lighting in
    https://github.com/simeydotme/pokemon-cards-css. Blended with the cover at
-   paint time, without extra DOM surfaces. Every stop fades with --sheen;
+   paint time, without extra DOM surfaces. Every stop fades with --lit;
    the scrim and verdict stay above the finish. Fixed grain belongs to the
    card; oversized reflections travel opposite the pointer. */
 
@@ -123,10 +129,13 @@
 		var(--scrim),
 		radial-gradient(
 			ellipse 110% 90% at var(--mx) var(--my),
-			hsl(var(--poster-hue) calc(var(--poster-saturation) * 0.4) 94% / calc(0.32 * var(--sheen))),
 			hsl(
-					var(--poster-accent-hue) calc(var(--poster-accent-saturation) * 0.5) 82% /
-						calc(0.18 * var(--sheen))
+				var(--poster-hue) calc(var(--poster-saturation) * 0.4 * var(--vivid)) 94% /
+					calc(0.32 * var(--lit))
+			),
+			hsl(
+					var(--poster-accent-hue) calc(var(--poster-accent-saturation) * 0.5 * var(--vivid)) 82% /
+						calc(0.18 * var(--lit))
 				)
 				38%,
 			transparent 78%
@@ -150,18 +159,46 @@
 		var(--scrim),
 		repeating-linear-gradient(
 			112deg,
-			hsl(var(--poster-hue) var(--poster-saturation) 88% / calc(0.12 * var(--sheen))) 0 1px,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 88% /
+						calc(0.12 * var(--lit))
+				)
+				0 1px,
 			transparent 1px 4px
 		),
 		linear-gradient(
 			112deg,
 			transparent 15%,
-			hsl(var(--poster-hue) var(--poster-saturation) 18% / calc(0.38 * var(--sheen))) 32%,
-			hsl(calc(var(--poster-hue) + 18) var(--poster-saturation) 72% / calc(0.24 * var(--sheen))) 42%,
-			hsl(var(--poster-hue) var(--poster-saturation) 82% / calc(0.3 * var(--sheen))) 49%,
-			hsl(var(--poster-hue) var(--poster-saturation) 78% / calc(0.26 * var(--sheen))) 54%,
-			hsl(calc(var(--poster-hue) - 18) var(--poster-saturation) 66% / calc(0.24 * var(--sheen))) 62%,
-			hsl(var(--poster-hue) var(--poster-saturation) 18% / calc(0.3 * var(--sheen))) 70%,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 18% /
+						calc(0.38 * var(--lit))
+				)
+				32%,
+			hsl(
+					calc(var(--poster-hue) + 18) calc(var(--poster-saturation) * var(--vivid)) 72% /
+						calc(0.24 * var(--lit))
+				)
+				42%,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 82% /
+						calc(0.3 * var(--lit))
+				)
+				49%,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 78% /
+						calc(0.26 * var(--lit))
+				)
+				54%,
+			hsl(
+					calc(var(--poster-hue) - 18) calc(var(--poster-saturation) * var(--vivid)) 66% /
+						calc(0.24 * var(--lit))
+				)
+				62%,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 18% /
+						calc(0.3 * var(--lit))
+				)
+				70%,
 			transparent 86%
 		),
 		var(--cover);
@@ -187,21 +224,44 @@
 		var(--scrim),
 		repeating-linear-gradient(
 			35deg,
-			hsl(var(--poster-hue) var(--poster-saturation) 90% / calc(0.16 * var(--sheen))) 0 1px,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 90% /
+						calc(0.16 * var(--lit))
+				)
+				0 1px,
 			transparent 1px 7px
 		),
 		repeating-linear-gradient(
 			145deg,
-			hsl(var(--poster-hue) var(--poster-saturation) 18% / calc(0.13 * var(--sheen))) 0 1px,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 18% /
+						calc(0.13 * var(--lit))
+				)
+				0 1px,
 			transparent 1px 7px
 		),
 		repeating-linear-gradient(
 			118deg,
 			transparent 0%,
-			hsl(calc(var(--poster-hue) - 45) var(--poster-saturation) 70% / calc(0.5 * var(--sheen))) 10%,
-			hsl(var(--poster-hue) var(--poster-saturation) 72% / calc(0.6 * var(--sheen))) 22%,
-			hsl(calc(var(--poster-hue) + 35) var(--poster-saturation) 70% / calc(0.55 * var(--sheen))) 34%,
-			hsl(var(--poster-accent-hue) var(--poster-accent-saturation) 72% / calc(0.55 * var(--sheen)))
+			hsl(
+					calc(var(--poster-hue) - 45) calc(var(--poster-saturation) * var(--vivid)) 70% /
+						calc(0.5 * var(--lit))
+				)
+				10%,
+			hsl(
+					var(--poster-hue) calc(var(--poster-saturation) * var(--vivid)) 72% /
+						calc(0.6 * var(--lit))
+				)
+				22%,
+			hsl(
+					calc(var(--poster-hue) + 35) calc(var(--poster-saturation) * var(--vivid)) 70% /
+						calc(0.55 * var(--lit))
+				)
+				34%,
+			hsl(
+					var(--poster-accent-hue) calc(var(--poster-accent-saturation) * var(--vivid)) 72% /
+						calc(0.55 * var(--lit))
+				)
 				46%,
 			transparent 60%
 		),

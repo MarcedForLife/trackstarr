@@ -64,10 +64,6 @@
 
 	let frame: HTMLElement | null = $state(null);
 
-	// The effects slider at Off. Reduced motion is answered by the field and the
-	// stylesheet.
-	const flat = $derived(display.strength === 0);
-
 	// Whether a point is on this card, measured on the turned card.
 	function within(x: number, y: number) {
 		const box = frame?.getBoundingClientRect();
@@ -157,7 +153,6 @@
 	type="button"
 	tabindex={tabbable ? undefined : -1}
 	use:pressGesture={gesture}
-	class:is-flat={flat}
 	class:pans-both={pan === 'both'}
 	class="poster group block w-full text-left"
 	aria-pressed={picking ? selected : undefined}
@@ -165,12 +160,14 @@
 	title={verdict && changesLabel ? changesLabel : undefined}
 >
 	<!-- data-tilt is how the field finds the element it turns; `frame` is scoped.
-	     --fx is the effects multiplier the lift, shadow and keystone read, set
-	     here because the properties it feeds are `inherits: false`. -->
+	     --fx is the tilt multiplier the lift, shadow and keystone read, and
+	     --glow the sheen strength the finish reads, set here because the
+	     properties they feed are `inherits: false`. -->
 	<span
 		bind:this={frame}
 		data-tilt
 		style:--fx={display.strength}
+		style:--glow={display.glow}
 		class="frame relative block aspect-[2/3] w-full"
 	>
 		<!-- The cover is this element's bottom background layer; shade and sheen are
@@ -188,7 +185,7 @@
 			style:--poster-saturation={`${palette.saturation}%`}
 			style:--cover={missing || display.art === 'hide' ? undefined : `url("${art}")`}
 			class={`art absolute inset-0 block overflow-hidden rounded-xl border bg-sunken ${
-				flat || !display.lights ? '' : `is-${display.sheen}`
+				display.lights ? `is-${display.sheen}` : ''
 			} ${selected || armed ? 'border-accent-fill' : 'border-line'}`}
 		>
 			{#if missing || display.art === 'hide'}

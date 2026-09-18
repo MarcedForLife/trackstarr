@@ -259,10 +259,10 @@
 	// not restart it.
 	let showing = '';
 
-	// On mount and whenever one of the three motion settings changes. Not the art
+	// On mount and whenever one of the four motion settings changes. Not the art
 	// setting, which shows standing still.
 	$effect(() => {
-		const next = `${display.effects}/${display.spread}/${display.sheen}`;
+		const next = `${display.tilt}/${display.spread}/${display.sheen}/${display.lustre}`;
 		if (next !== showing) {
 			showing = next;
 			// The pass on screen demonstrates the old setting. The ghost goes too,
@@ -306,13 +306,19 @@
 		</ul>
 		<span bind:this={ghost} class="ghost"></span>
 	</div>
+	<!-- What this pass shows, by which of the two axes is on. -->
 	<p class="mt-3 text-[12px] leading-snug text-pretty text-dim">
 		{#if !tilting()}
 			Posters stay flat.
-		{:else}
+		{:else if display.strength === 0}
+			Posters stay flat and catch the light as a pointer passes over them.
+		{:else if display.lights}
 			A poster leans toward a passing pointer and catches the light as it turns. Its neighbours lean
 			with it as far as the spread reaches. Holding one lifts it out of the row, which takes a real
 			finger.
+		{:else}
+			A poster leans toward a passing pointer. Its neighbours lean with it as far as the spread
+			reaches. Holding one lifts it out of the row, which takes a real finger.
 		{/if}
 	</p>
 </div>

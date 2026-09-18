@@ -1,5 +1,5 @@
 // Whether anything on the page may move of its own accord: the system's
-// reduced-motion setting, and the effects slider for the poster field. One
+// reduced-motion setting, and the poster settings for the poster field. One
 // query and one listener for the tab; `reduced()` is reactive, so a change
 // under an open page takes effect.
 
@@ -21,10 +21,11 @@ export function reduced(): boolean {
 	return still;
 }
 
-/** Whether the poster effects may run: the Appearance choice, under the system
- * setting. Asked by the grid, the strip and the preview alike. */
+/** Whether the poster effects may run: a tilt or a finish chosen on
+ * Appearance, under the system setting. Asked by the grid, the strip and the
+ * preview alike. */
 export function moving(): boolean {
-	return display.strength > 0 && !still;
+	return (display.strength > 0 || display.lights) && !still;
 }
 
 // Short, since a row travels one row's height and the queue moves under

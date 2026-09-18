@@ -40,6 +40,19 @@
 	inherits: false;
 	initial-value: 0;
 }
+/* The light as the finish paints it, --sheen times the Sheen strength
+   stop, and the stop's excess as a saturation multiplier. Derived in
+   poster.css; registered so they stay on the one element too. */
+@property --lit {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 0;
+}
+@property --vivid {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 1;
+}
 @property --mx {
 	syntax: '<percentage>';
 	inherits: false;
