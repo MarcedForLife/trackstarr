@@ -315,8 +315,6 @@ export function tiltField(
 			// The highlight sits under the pointer and stops at the card's edge.
 			near.art.style.setProperty('--mx', `${(1 + overX) * 50}%`);
 			near.art.style.setProperty('--my', `${(1 + overY) * 50}%`);
-			// The hue follows the lean's direction: cool one way, warm the other.
-			near.art.style.setProperty('--hue', `${180 + overX * 110 + overY * 45}`);
 			// How far from flat the card is, 0 at rest and 1 at a corner, plus what
 			// is left of the movement. From the pivot, or a card the falloff has
 			// flattened would go on catching the light.

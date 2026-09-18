@@ -14,10 +14,9 @@ export type Art = 'show' | 'hide';
 export type Shown = 'show' | 'hide';
 export type Spread = 'narrow' | 'medium' | 'wide';
 export type Scale = 'small' | 'medium' | 'large';
-// What a turning card catches, in cost order: each step up to `foil` is another
-// blended layer, and a blend mode is a composited layer. `holo` is `foil` with a
-// busier gradient.
-export type Sheen = 'none' | 'gloss' | 'foil' | 'holo';
+// Surface finishes, from a plain highlight to brushed foil and rainbow diffraction.
+// Extra gradients blend with the cover at paint time; see poster.css.
+export type Sheen = 'none' | 'gloss' | 'pearl' | 'foil' | 'holo';
 
 // The slider's stops, weakest first; the order is part of the meaning.
 export const EFFECTS: { value: Effects; label: string }[] = [
@@ -74,7 +73,7 @@ let effects = $state<Effects>(
 let art = $state<Art>(stored(ART_KEY, ['show', 'hide'], 'show'));
 let spread = $state<Spread>(stored(SPREAD_KEY, ['narrow', 'medium', 'wide'], 'medium'));
 let scale = $state<Scale>(stored(SCALE_KEY, ['small', 'medium', 'large'], 'medium'));
-let sheen = $state<Sheen>(stored(SHEEN_KEY, ['none', 'gloss', 'foil', 'holo'], 'gloss'));
+let sheen = $state<Sheen>(stored(SHEEN_KEY, ['none', 'gloss', 'pearl', 'foil', 'holo'], 'gloss'));
 // Hidden by default: a page led by undownloaded films is a wishlist.
 let missing = $state<Shown>(stored(MISSING_KEY, ['show', 'hide'], 'hide'));
 // Shown by default: real files nobody has seen yet, to hide once they have

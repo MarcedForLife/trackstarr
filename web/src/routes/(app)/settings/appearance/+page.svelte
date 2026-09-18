@@ -51,6 +51,7 @@
 	const sheenOptions = [
 		{ value: 'none', label: 'None' },
 		{ value: 'gloss', label: 'Gloss' },
+		{ value: 'pearl', label: 'Pearlescent' },
 		{ value: 'foil', label: 'Foil' },
 		{ value: 'holo', label: 'Holo' }
 	];
@@ -169,14 +170,13 @@
 
 		<SettingRow
 			label="Sheen"
-			desc="The highlight a poster catches as it turns. Gloss is plain, Foil adds one band of colour and Holo several. Each is a blended layer the compositor must keep, so None is the steadiest."
+			desc="The finish a poster catches as it turns. Gloss adds a soft highlight, Pearlescent a gentle colour shift, Foil a brushed metallic reflection, and Holo shifting iridescent bands with fine etched facets. The coloured finishes pick up hues from each poster. None keeps the artwork plain."
 			nested
 			dim={display.effects === 'off'}
 			stack
 		>
 			{#snippet children({ labelledBy, describedBy })}
-				<Segmented
-					fill
+				<Select
 					options={sheenOptions}
 					{labelledBy}
 					{describedBy}

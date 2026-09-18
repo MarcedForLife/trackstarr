@@ -2,6 +2,7 @@
 	import { arrival, COVER_FADE, type Arrival } from '$lib/covers';
 	import { display } from '$lib/display.svelte';
 	import { pressing } from '$lib/field';
+	import { coverPalette, NEUTRAL_PALETTE } from '$lib/poster-palette';
 	import {
 		changed,
 		coverUrl,
@@ -58,6 +59,7 @@
 	// How the cover got here, and whether the tile it fades off is still
 	// mounted.
 	let cover = $state<Arrival>('coming');
+	let palette = $state({ ...NEUTRAL_PALETTE });
 	let tiled = $state(true);
 
 	let frame: HTMLElement | null = $state(null);
@@ -180,6 +182,10 @@
 		     `inherits: false`, so the write lands on one element. -->
 		<span
 			data-sheen
+			style:--poster-hue={palette.hue}
+			style:--poster-accent-hue={palette.accentHue}
+			style:--poster-accent-saturation={`${palette.accentSaturation}%`}
+			style:--poster-saturation={`${palette.saturation}%`}
 			style:--cover={missing || display.art === 'hide' ? undefined : `url("${art}")`}
 			class={`art absolute inset-0 block overflow-hidden rounded-xl border bg-sunken ${
 				flat || !display.lights ? '' : `is-${display.sheen}`
@@ -204,7 +210,10 @@
 					loading="lazy"
 					decoding="async"
 					draggable="false"
-					onload={() => (cover = arrival(art))}
+					onload={(event) => {
+						palette = coverPalette(event.currentTarget as HTMLImageElement);
+						cover = arrival(art);
+					}}
 					onerror={() => (missing = true)}
 					class="invisible h-full w-full object-cover"
 				/>
