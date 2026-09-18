@@ -50,9 +50,14 @@
 	// An answer arriving after the card has gone is dropped.
 	let gone = false;
 
-	/** Ask the service whether it is there, if there is enough to ask with. */
-	export async function test() {
+	/** Ask the service whether it is there, if there is enough to ask with.
+	 * `minimumMs` holds the busy cue open that long, so a fast answer still
+	 * reads as work. The floor runs alongside the request, not after it. */
+	export async function test(minimumMs = 0) {
 		if (!configured) return;
+		const feedback = minimumMs
+			? new Promise<void>((resolve) => setTimeout(resolve, minimumMs))
+			: undefined;
 		checking = true;
 		try {
 			const answer = await testConnection(
@@ -73,6 +78,7 @@
 				};
 			}
 		} finally {
+			await feedback;
 			if (!gone) checking = false;
 		}
 	}
@@ -192,23 +198,34 @@
 			<div class="border-t border-line px-3 pb-1">
 				<div class="flex items-start justify-between gap-3 py-3">
 					<p class="text-[13px] leading-snug text-pretty text-dim">{service.lead}</p>
+					<!-- Held wide, so Checking does not shift it. -->
 					<button
-						onclick={test}
+						type="button"
+						onclick={() => test(600)}
 						disabled={readOnly || !configured || checking}
-						class={`flex-none ${button}`}
+						aria-label={checking ? `Checking ${service.label}` : `Test ${service.label}`}
+						aria-busy={checking}
+						class={`min-w-28 flex-none ${button}`}
 					>
-						Test
+						<span class="flex" class:turning={checking}><Glyph name="refresh" /></span>
+						<span role="status">{checking ? 'Checking…' : 'Test'}</span>
 					</button>
 				</div>
 
 				{#if result}
-					<div class={`mb-3 ${noteBox} ${result.ok ? 'text-dim' : 'text-danger'}`}>
+					<!-- Dimmed while a fresh answer is on its way, so a repeat press
+					     landing on the same words still reads as having run. -->
+					<div
+						class={`mb-3 ${noteBox} transition-opacity duration-150 ${result.ok ? 'text-dim' : 'text-danger'} ${checking ? 'opacity-(--disabled)' : ''}`}
+					>
 						<p>{result.detail}</p>
 						{#if result.ok && webhookNote(result)}
 							<p class={`mt-1 ${webhookTone(result.webhook)}`}>{webhookNote(result)}</p>
 						{/if}
+						<!-- Unattributed: it follows the line it explains, and the *arr
+						     does not always give words to quote. -->
 						{#if result.webhook_detail}
-							<p class="mt-1 text-faint">{service.label} said: {result.webhook_detail}</p>
+							<p class="mt-1 text-faint">{result.webhook_detail}</p>
 						{/if}
 						{#if result.hint}
 							<p class="mt-1 text-faint">{result.hint}</p>
@@ -294,7 +311,7 @@
 					<SettingRow
 						{name}
 						label="Public address"
-						desc={`Where a title's "Open in ${service.label}" link points. Only needed when a browser cannot reach the address above.`}
+						desc={`Optional address to use for ${service.label} links, instead of the service address.`}
 						stack
 					>
 						{#snippet children({ describedBy })}

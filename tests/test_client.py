@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from trackstarr.client import API_ERRORS, fetch, refusal, request, stream
+from trackstarr.client import API_ERRORS, fetch, refusal, refused_reason, request, stream
 
 
 @pytest.fixture
@@ -173,6 +173,62 @@ def test_refusal_quotes_the_words_the_service_answered(server):
 def test_refusal_is_empty_when_the_failure_never_reached_the_service():
     """A transport failure has no body to quote and no response to close."""
     assert refusal(urllib.error.URLError("no route to host")) == ""
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        # Sonarr and Radarr.
+        (b'{"message": "Name does not resolve"}', "Name does not resolve"),
+        # Jellyfin, which answers ASP.NET problem details.
+        (b'{"title": "Unauthorized", "status": 401}', "Unauthorized"),
+        (b'{"error": "bad request"}', "bad request"),
+        # message wins where a body carries both.
+        (b'{"title": "Bad Request", "message": "no such series"}', "no such series"),
+        # Nothing worth showing.
+        (b'{"status": 500}', ""),
+        (b'{"message": ""}', ""),
+        (b"[1, 2]", ""),
+        (b"<html>plex</html>", ""),
+        (b"", ""),
+    ],
+)
+def test_refusal_finds_the_reason_wherever_the_api_puts_it(server, body, expected):
+    url, state = server
+    state["response"] = (500, body)
+    with pytest.raises(API_ERRORS) as caught:
+        request(f"{url}/api/v3/movie")
+    assert refusal(caught.value) == expected
+
+
+@pytest.mark.parametrize(
+    ("code", "body", "expected"),
+    [
+        (500, b"", "The service responded with an internal error (500)."),
+        (503, b"<html>nope</html>", "The service responded with an internal error (503)."),
+        (
+            500,
+            b'{"message": "Database is locked"}',
+            (
+                "The service responded with an internal error (500) "
+                'and reported "Database is locked".'
+            ),
+        ),
+        (400, b"", "The service rejected the request (400)."),
+        (
+            400,
+            b'{"message": "no such series"}',
+            'The service rejected the request (400) and reported "no such series".',
+        ),
+    ],
+)
+def test_refused_reason_blames_the_right_side(server, code, body, expected):
+    """5xx is the service's own trouble, 4xx is what we sent it."""
+    url, state = server
+    state["response"] = (code, body)
+    with pytest.raises(API_ERRORS) as caught:
+        request(f"{url}/api/v3/movie")
+    assert refused_reason(caught.value, code) == expected
 
 
 def test_fetch_failures_land_in_the_same_place_as_the_json_ones(server):

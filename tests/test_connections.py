@@ -43,6 +43,11 @@ def refused(code: int, said: dict) -> urllib.error.HTTPError:
     )
 
 
+def refused_html(code: int) -> urllib.error.HTTPError:
+    """A failing response with nothing quotable, as Plex answers."""
+    return urllib.error.HTTPError("http://x", code, "no", {}, io.BytesIO(b"<html>nope</html>"))
+
+
 @pytest.fixture
 def answers(monkeypatch):
     """Serve a canned answer per endpoint, recording every request. An
@@ -120,12 +125,12 @@ def test_the_saved_values_stand_in_for_what_the_page_left_out(answers):
 @pytest.mark.parametrize(
     ("error", "expected"),
     [
-        (http_error(401), "refused the API key"),
-        (http_error(403), "refused the API key"),
-        (http_error(404), "not this service's API"),
-        (http_error(500), "answered 500"),
-        (urllib.error.URLError("Connection refused"), "Could not reach it"),
-        (json.JSONDecodeError("no", "", 0), "not with JSON"),
+        (http_error(401), "forbidden response (API key)"),
+        (http_error(403), "forbidden response (API key)"),
+        (http_error(404), "not found response"),
+        (http_error(500), "internal error (500)"),
+        (urllib.error.URLError("Connection refused"), "Could not reach the service"),
+        (json.JSONDecodeError("no", "", 0), "unexpected response"),
     ],
 )
 def test_every_failure_says_which_one_it_was(answers, error, expected):
@@ -133,6 +138,23 @@ def test_every_failure_says_which_one_it_was(answers, error, expected):
     result = connections.check("sonarr", "http://sonarr:8989", "key")
     assert not result.ok
     assert expected in result.detail
+
+
+def test_a_service_that_explains_its_own_failure_is_quoted(answers):
+    """A bare code leaves a reader nowhere to go, and the *arrs say more."""
+    answers.canned["/api/v3/system/status"] = refused(500, {"message": "Database is locked"})
+    result = connections.check("sonarr", "http://sonarr:8989", "key")
+    assert not result.ok
+    assert result.detail == (
+        'The service responded with an internal error (500) and reported "Database is locked".'
+    )
+
+
+def test_a_service_that_says_nothing_useful_still_reports_the_code(answers):
+    """Plex refuses in HTML, so the code is all there is."""
+    answers.canned["/library/sections"] = refused_html(500)
+    detail = connections.check("plex", "http://plex:32400", "token").detail
+    assert detail == "The service responded with an internal error (500)."
 
 
 def test_plex_counts_its_libraries_and_names_the_server(answers, library):

@@ -114,7 +114,7 @@ class Arr:
             # else means we could not ask, which is the caller's to handle.
             if (code := getattr(err, "code", None)) is None:
                 raise
-            return refusal(err) or f"It answered {code}."
+            return refusal(err) or f"No reason given ({code})."
         return ""
 
     def webhook_status(self, url: str) -> WebhookState:

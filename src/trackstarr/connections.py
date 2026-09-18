@@ -4,8 +4,8 @@ Each check calls the service's status endpoint, never cached. An *arr is also
 asked to call our webhook, since a connection saved inside it proves nothing
 about whether that address resolves where it runs. It takes the address and key
 to use, so the page can test an edit before saving, and answers with one line a
-reader can act on. "It refused the API key" is a different job from "nothing is
-listening there".
+reader can act on. A refused API key is a different job from nothing listening
+there.
 """
 
 import json
@@ -15,7 +15,7 @@ from dataclasses import dataclass, replace
 
 from . import config
 from .arr import WebhookState, radarr, sonarr, webhook_url
-from .client import API_ERRORS, request
+from .client import API_ERRORS, refused_reason, request
 from .media_server import PLEX_SECTIONS, map_path, path_within, plex_sections
 
 log = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class Service:
 def _arr_version(answer: dict | None) -> str:
     """Radarr and Sonarr both answer /system/status with their own name."""
     data = answer or {}
-    name = data.get("instanceName") or data.get("appName") or "It"
+    name = data.get("instanceName") or data.get("appName") or "The service"
     return f"{name} {data.get('version') or 'answered'}".strip()
 
 
@@ -173,17 +173,19 @@ def _explain(err: Exception) -> str:
     """Whatever urllib raised, as one line a reader can act on."""
     code = getattr(err, "code", None)
     if code in (401, 403):
-        return "It answered, but refused the API key."
+        return "Received a forbidden response (API key)."
     if code == 404:
         return (
-            "Something answered, but not this service's API. Check the address is its base "
-            "URL, path prefix included."
+            "Received a not found response. Check the address is the service's base URL, "
+            "path prefix included."
         )
     if code:
-        return f"It answered {code}."
+        return refused_reason(err, code)
     if isinstance(err, json.JSONDecodeError):
-        return "Something answered, but not with JSON. Check the address points at the service."
-    return f"Could not reach it: {getattr(err, 'reason', None) or err}."
+        return (
+            "The service returned an unexpected response. Check the address points at its API."
+        )
+    return f"Could not reach the service, {getattr(err, 'reason', None) or err}."
 
 
 def _path_hint(service: Service, locations: list[str]) -> str:

@@ -27,9 +27,15 @@ def fetch(url: str, headers: dict | None = None, timeout: int = 30) -> tuple[byt
         return response.read(), response.headers.get_content_type()
 
 
+#: Where a refused request's reason lives, best first. The *arrs use
+#: ``message``; Jellyfin answers ASP.NET problem details, which use ``title``.
+#: Plex is not here: it refuses in HTML.
+_REFUSAL_KEYS = ("message", "title", "error")
+
+
 def refusal(err: Exception) -> str:
-    """The service's own words for an error it answered. All three APIs put
-    them in a JSON ``message``."""
+    """The service's own words for an error it answered, or "" when it gave
+    none worth showing."""
     body = getattr(err, "read", None)
     if body is None:
         return ""
@@ -42,7 +48,21 @@ def refusal(err: Exception) -> str:
         # An HTTPError holds an open response until somebody closes it.
         with contextlib.suppress(OSError):
             err.close()  # type: ignore[attr-defined]
-    return str(said.get("message") or "") if isinstance(said, dict) else ""
+    if not isinstance(said, dict):
+        return ""
+    return next((str(said[key]) for key in _REFUSAL_KEYS if said.get(key)), "")
+
+
+def refused_reason(err: Exception, code: int) -> str:
+    """An error status as one line, carrying the service's own words where it
+    gave any. 5xx is the service's own trouble, 4xx is the request's."""
+    trouble = (
+        f"The service responded with an internal error ({code})"
+        if code >= 500
+        else f"The service rejected the request ({code})"
+    )
+    said = refusal(err)
+    return f'{trouble} and reported "{said}".' if said else f"{trouble}."
 
 
 def request(

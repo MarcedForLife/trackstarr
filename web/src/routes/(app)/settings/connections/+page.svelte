@@ -2,6 +2,7 @@
 	import { SERVICES } from '$lib/connections';
 	import { button, field } from '$lib/controls';
 	import ConnectionCard from '$lib/components/ConnectionCard.svelte';
+	import Glyph from '$lib/components/Glyph.svelte';
 	import NumberField from '$lib/components/NumberField.svelte';
 	import Page from '$lib/components/Page.svelte';
 	import SaveBar from '$lib/components/SaveBar.svelte';
@@ -44,9 +45,19 @@
 
 	// Test all is a press passed on to each card.
 	const cards: Record<string, ConnectionCard | undefined> = $state({});
+	let testingAll = $state(false);
 
-	function testAll() {
-		for (const service of SERVICES) cards[service.name]?.test();
+	/** Every card at once, held busy until the slowest answers. The floor is its
+	 * own, since a page where nothing is configured has nothing to wait for. */
+	async function testAll() {
+		const feedback = new Promise<void>((resolve) => setTimeout(resolve, 600));
+		testingAll = true;
+		try {
+			await Promise.all(SERVICES.map((service) => cards[service.name]?.test(600)));
+		} finally {
+			await feedback;
+			testingAll = false;
+		}
 	}
 
 	function text(name: string): string {
@@ -88,7 +99,18 @@
 					save.
 				</p>
 			</div>
-			<button onclick={testAll} disabled={readOnly} class={`flex-none ${button}`}>Test all</button>
+			<!-- Held wide, so Checking does not shift it. -->
+			<button
+				type="button"
+				onclick={testAll}
+				disabled={readOnly || testingAll}
+				aria-label={testingAll ? 'Checking every connection' : 'Test every connection'}
+				aria-busy={testingAll}
+				class={`min-w-30 flex-none ${button}`}
+			>
+				<span class="flex" class:turning={testingAll}><Glyph name="refresh" /></span>
+				<span role="status">{testingAll ? 'Checking…' : 'Test all'}</span>
+			</button>
 		</div>
 		<div class="mt-3 flex flex-col gap-2">
 			{#each SOURCES as service (service.name)}

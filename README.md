@@ -281,7 +281,7 @@ through the environment and require a restart.
 | `PLEX_URL` / `PLEX_TOKEN`                                                          | Unset                    | Plex refreshes and title links.                                           |
 | `JELLYFIN_URL` / `JELLYFIN_API_KEY`                                                | Unset                    | Jellyfin or Emby refreshes and title links.                               |
 | `PLEX_PATH_MAP` / `JELLYFIN_PATH_MAP`                                              | Unset                    | Comma-separated `LOCAL=REMOTE` path prefixes.                             |
-| `RADARR_PUBLIC_URL`, `SONARR_PUBLIC_URL`, `PLEX_PUBLIC_URL`, `JELLYFIN_PUBLIC_URL` | Service URL              | Browser-accessible addresses for title links.                             |
+| `RADARR_PUBLIC_URL`, `SONARR_PUBLIC_URL`, `PLEX_PUBLIC_URL`, `JELLYFIN_PUBLIC_URL` | Service URL              | Addresses to use for title links.                                         |
 | `WEBHOOK_URL`                                                                      | `http://trackstarr:5120` | Address the *arrs use to reach Trackstarr; default follows `LISTEN_PORT`. |
 
 ### Processing

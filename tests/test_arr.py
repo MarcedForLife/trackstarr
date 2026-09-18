@@ -261,7 +261,7 @@ def test_an_arr_that_refuses_the_test_without_words_still_says_what_it_answered(
             raise urllib.error.HTTPError(path, 503, "no", {}, io.BytesIO(b"maintenance"))
         return [registration(secret=auth.mint("radarr"))]
 
-    assert make_arr(call=call).webhook_status(URL).detail == "It answered 503."
+    assert make_arr(call=call).webhook_status(URL).detail == "No reason given (503)."
 
 
 def test_an_arr_we_cannot_ask_at_all_is_not_reported_as_unreachable():
