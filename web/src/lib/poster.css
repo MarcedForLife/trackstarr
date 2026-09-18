@@ -58,10 +58,9 @@
 	--poster-saturation: 0%;
 	--poster-accent-hue: 0;
 	--poster-accent-saturation: 0%;
-	/* What the finishes below paint with. --sheen is how lit the card is now,
-	   0 to 1 from the field; --glow is the Sheen strength stop, written on the
-	   card with --fx. Past 1 the stop also deepens the colour, so Rare is more
-	   colour rather than the same colour at full alpha. */
+	/* --sheen is how lit the card is, from the field; --glow is the Sheen stop,
+	   written on the card with --fx. Past 1 the stop deepens the colour too,
+	   so Rare is more colour rather than full alpha. */
 	--lit: calc(var(--sheen) * var(--glow, 1));
 	--vivid: max(1, var(--glow, 1));
 	box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);

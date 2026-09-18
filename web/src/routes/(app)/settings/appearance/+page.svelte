@@ -137,9 +137,8 @@
 		<!-- Above the three rows that govern it, belonging to none alone. -->
 		<PosterPreview />
 
-		<!-- Sliders for the two settings whose answers are the same thing more of,
-		     each governing the row nested under it. The lean and the light are
-		     separate axes: a quiet lean under a loud finish is a choice. -->
+		<!-- Two sliders, each governing the row nested under it: the lean and the
+		     light are separate axes. -->
 		<SettingRow
 			label="Tilt"
 			desc="How far a poster leans and lifts under a finger. Off keeps the grid flat, which is steadier on an older phone. Balatro is the most of both."

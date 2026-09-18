@@ -9,7 +9,7 @@ import { keep, keepAll, stored, storedAll } from '$lib/prefs';
 // on an old phone" and "as much as it will give" are the same question.
 export type Tilt = 'off' | 'subtle' | 'balanced' | 'lively' | 'balatro';
 // How much light a poster catches, apart from how far it turns: a quiet lean
-// under a loud holo is a choice, and so is the reverse. Off is plain artwork.
+// under a loud holo is a choice. Off is plain artwork.
 export type Lustre = 'off' | 'subtle' | 'balanced' | 'bright' | 'rare';
 export type Art = 'show' | 'hide';
 // Whether a verdict is held back from the default view. Its own chip still
@@ -19,7 +19,7 @@ export type Spread = 'narrow' | 'medium' | 'wide';
 export type Scale = 'small' | 'medium' | 'large';
 // The finish the light plays on, from a plain highlight to brushed foil and
 // rainbow diffraction. Extra gradients blend with the cover at paint time; see
-// poster.css. Off is the sheen slider's, so none is needed here.
+// poster.css. Off is the sheen slider's.
 export type Sheen = 'gloss' | 'pearl' | 'foil' | 'holo';
 
 // The tilt slider's stops, weakest first; the order is part of the meaning.

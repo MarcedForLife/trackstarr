@@ -101,12 +101,9 @@
 
 	const art = $derived(opened ? coverUrl(opened.id) : '');
 
-	// The header's poster is one card in a field of its own, so the poster that
-	// was tapped arrives leaning and lit the way it left the grid: the grid's
-	// own spread, so under the pointer it leans exactly as it did there, with
-	// no neighbours. Alone, it should also answer only a pointer on it or just
-	// past it, or a thumb on the file list below would move it: half a card
-	// width beyond its box.
+	// The header's poster is one card in a field of its own, on the grid's
+	// spread, so it leans as it did under the pointer there. Alone, a thumb on
+	// the file list below must not move it: half a width past its box.
 	const HERO_MARGIN = 0.5;
 
 	// Where to watch this title. Null while the media servers are being asked, so
@@ -545,10 +542,9 @@
 				     On phones the width stays at 7rem, while the frame keeps stretching:
 				     long names crop the art rather than widening it and squeezing the text.
 				     The links pan rather than wrap, or a second row of them would make
-				     this taller, which would make it wider, which would wrap a third. The
-				     field's one card is the box inside; the cover fades in over its tile
-				     as a grid card's does. Keyed on the cover, so a second title tapped
-				     brings a fresh card rather than a picture swapped under a fade. -->
+				     this taller, which would make it wider, which would wrap a third.
+				     Keyed on the cover, so a second title brings a fresh card rather
+				     than a swap under a fade. -->
 				<div
 					use:tiltField={{
 						active: moving,

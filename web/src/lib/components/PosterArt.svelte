@@ -4,16 +4,13 @@
 	import { display } from '$lib/display.svelte';
 	import { coverPalette, NEUTRAL_PALETTE } from '$lib/poster-palette';
 
-	// The artwork the tilt field turns and lights: a grid card's, and the
-	// title sheet's header, so the poster that was tapped arrives wearing the
-	// same finish. What a card says about its title, and what a press does, is
-	// PosterCard's; this is the picture.
+	// The artwork the field turns and lights, for a grid card and the sheet's
+	// header. What a card says and what a press does is PosterCard's.
 	let {
 		// The cover, or nothing for a title with none: the initials stand in.
 		src,
 		mark,
-		// The frame's shape. A grid card is a poster's 2:3 at its column's width;
-		// the sheet's header fills the box the header lays out.
+		// The frame's box: a poster's 2:3 in the grid, the header's own in the sheet.
 		box = 'aspect-[2/3] w-full',
 		rounded = 'rounded-xl',
 		border = 'border-line',
