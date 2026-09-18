@@ -152,9 +152,7 @@ try {
 				return still;
 			}, 'section[aria-labelledby="activity-heading"]');
 
-			// A panel opens like a blind, so only the window's edge travels and what
-			// it uncovers stays put. Two boxes in one window each slid their own
-			// height and crossed.
+			// The panel height grows while its contents stay fixed inside the clip.
 			const blind = await feed.evaluate(async (section) => {
 				section.querySelector('li button[aria-expanded="false"]').click();
 				const edges = new Set();
@@ -165,8 +163,10 @@ try {
 					const tick = () => {
 						const clip = section.querySelector('.reveal')?.firstElementChild;
 						if (clip) {
-							edges.add(Math.round(new DOMMatrix(getComputedStyle(clip).transform).m42));
-							const top = clip.firstElementChild.getBoundingClientRect().top;
+							edges.add(Math.round(clip.parentElement.getBoundingClientRect().height));
+							const top =
+								clip.firstElementChild.getBoundingClientRect().top -
+								clip.parentElement.getBoundingClientRect().top;
 							low = Math.min(low, top);
 							high = Math.max(high, top);
 						}

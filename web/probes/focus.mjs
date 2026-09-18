@@ -140,6 +140,57 @@ async function drawerChecks(browser, engine) {
 	await context.close();
 }
 
+// Global pointer listeners must respect the inert background, on both the
+// overview strip and the library grid. Opening by keyboard leaves the pointer
+// parked, so this also catches a tilt that only resets on the next movement.
+async function tiltChecks(browser, engine) {
+	for (const route of ['/', '/library']) {
+		const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+		try {
+			const page = await context.newPage();
+			page.setDefaultTimeout(10000);
+			await page.goto(`${site}${route}`);
+			const poster = page.locator('main button.poster:has([data-tilt])').first();
+			await poster.waitFor();
+			await poster.scrollIntoViewIfNeeded();
+			await page.waitForTimeout(600);
+			const box = await poster.boundingBox();
+			const point = { x: box.x + box.width * 0.75, y: box.y + box.width * 0.4 };
+			await page.mouse.move(point.x, point.y);
+			await page.waitForFunction(() => !!document.querySelector('main [data-tilt].is-near'));
+			await poster.focus();
+			await page.keyboard.press('Enter');
+			await page.waitForFunction(
+				() => !!document.querySelector('main button.poster:has([data-tilt])')?.closest('[inert]')
+			);
+			await page.waitForTimeout(700);
+			const flat = () =>
+				Array.from(document.querySelectorAll('main [data-tilt]')).every(
+					(el) =>
+						!el.classList.contains('is-near') &&
+						!el.classList.contains('is-raised') &&
+						(!el.style.getPropertyValue('--rx') || el.style.getPropertyValue('--rx') === '0deg') &&
+						(!el.style.getPropertyValue('--ry') || el.style.getPropertyValue('--ry') === '0deg')
+				);
+			check(`${engine} ${route}: opening settles parked tilt`, await page.evaluate(flat), true);
+			await page.mouse.move(point.x + 10, point.y + 10);
+			await page.waitForTimeout(200);
+			check(
+				`${engine} ${route}: pointer over overlay leaves covers flat`,
+				await page.evaluate(flat),
+				true
+			);
+			await page.keyboard.press('Escape');
+			await page.waitForTimeout(700);
+			await page.mouse.move(point.x, point.y);
+			await page.waitForFunction(() => !!document.querySelector('main [data-tilt].is-near'));
+			check(`${engine} ${route}: tilt resumes after closing`, true, true);
+		} finally {
+			await context.close();
+		}
+	}
+}
+
 // The live regions, read as a reader hears them: the words in them, and whether
 // the element carrying the words was on the page before they arrived.
 const regions = () => {
@@ -234,6 +285,7 @@ if (process.env.SERVE) await hold(site);
 for (const engine of ENGINES) {
 	const browser = await playwright[engine].launch({ headless: !process.env.HEADED });
 	try {
+		await tiltChecks(browser, engine);
 		await sheetChecks(browser, engine);
 		await drawerChecks(browser, engine);
 		await saveChecks(browser, engine);

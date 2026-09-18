@@ -1,252 +1,120 @@
-// Grow the space a panel opens into without a layout. The reveal in layout.css
-// takes the box's full height in one step, so the panel arrives into a hole
-// already cut for it. Instead everything the panel pushed down starts back
-// where it stood and travels to its new place on the reveal's own curve. All
-// transforms, so it stays on the compositor.
-//
-// The same two transforms uncover whatever the panel gains later, a file's log
-// or its saved plan, so a late answer does not drop the rows below it.
-//
-// `fold` runs the whole thing backwards for the close, so a row shuts the way
-// it opened rather than being cut.
+// One animated height owns both the detail clip and its space in the row.
+// Parent frames and following rows therefore follow the exact same edge,
+// including when content arrives late or an opening is interrupted.
+import { reduced } from '$lib/motion.svelte';
 
-import { carry, offsetOf } from '$lib/carry';
+const panels = new WeakMap<HTMLElement, { shut: () => number; reopen: () => void }>();
 
-// How far past the fold to keep moving things, so the join between moving and
-// still is off screen without a long list paying for every row.
-const SPARE = 400;
-
-/** Milliseconds from a computed CSS time, which is seconds unless it says otherwise. */
+/** Milliseconds from a computed CSS time. */
 function ms(time: string): number {
 	const value = parseFloat(time);
 	return time.trim().endsWith('ms') ? value : value * 1000;
 }
 
-/** The boxes after the panel at every level, as far as a screenful past the fold. */
-function following(node: HTMLElement): HTMLElement[] {
-	const fold = window.innerHeight + SPARE;
-	const found: HTMLElement[] = [];
-
-	for (let at: Element | null = node; at && at !== document.body; at = at.parentElement) {
-		for (let next = at.nextElementSibling; next; next = next.nextElementSibling) {
-			if (!(next instanceof HTMLElement)) continue;
-			const box = next.getBoundingClientRect();
-			if (!box.height) continue;
-			// Where it was laid out, not where a carry in flight is holding it.
-			const top = box.top - offsetOf(getComputedStyle(next).transform);
-			// Document order runs down the page, so the first thing off the bottom
-			// ends the walk.
-			if (top > fold) return found;
-			found.push(next);
-		}
-	}
-	return found;
-}
-
-// What a mounted panel offers its close, since an action has no way to hand
-// one back. Keyed on the node, which `fold` and `unfold` are given.
-const panels = new WeakMap<HTMLElement, { shut: () => number; reopen: () => void }>();
-
 export function shift(node: HTMLElement, onOpeningDuration?: (duration: number) => void) {
-	// The clipping window, where the reveal's animation runs, and the panel
-	// inside it.
-	const opening = node.firstElementChild;
-	const panel = opening?.firstElementChild;
-	if (!(opening instanceof HTMLElement) || !(panel instanceof HTMLElement)) return;
-	// Stated again, since the narrowing above does not reach the closures below.
-	const clip: HTMLElement = opening;
-	const inner: HTMLElement = panel;
+	const content = node.firstElementChild;
+	if (!(content instanceof HTMLElement)) return;
+	const inner: HTMLElement = content;
+	const style = getComputedStyle(node);
+	const closeSpan = ms(style.getPropertyValue('--reveal-span'));
+	const easing = style.getPropertyValue('--reveal-ease').trim();
+	const marginTop = style.marginTop;
+	const marginBottom = style.marginBottom;
+	let height = inner.getBoundingClientRect().height;
+	let closing = false;
+	let motion: Animation | undefined;
 
-	// Kept, the clip cuts off anything a child draws outside its bounds, focus
-	// rings and the palette's selected swatch both being 2px clear. So it goes
-	// once nothing is uncovering.
-	let opened = false;
-	let covering = 0;
-
-	function letGo() {
-		node.style.overflow = 'visible';
-		clip.style.overflow = 'visible';
+	function duration(opening: boolean): number {
+		if (reduced()) return 0;
+		return opening
+			? Math.round(closeSpan + Math.min(60, Math.max(0, height - 120) / 6))
+			: closeSpan;
 	}
 
-	// Reduced motion crushes the duration rather than removing the animation,
-	// so this still fires. A child's own animation bubbles here too.
-	function ran(event: AnimationEvent) {
-		if (event.target !== clip) return;
-		opened = true;
-		if (!covering) letGo();
-	}
-	clip.addEventListener('animationend', ran);
-
-	// Keep the token's short close, but give taller openings more travel time.
-	// 120px or less takes 220ms; 300px takes 250ms; 480px and up takes 280ms.
-	let height = node.getBoundingClientRect().height;
-	const timing = getComputedStyle(clip);
-	const closeSpan = ms(timing.animationDuration);
-	const easing = timing.animationTimingFunction;
-	const span =
-		closeSpan < 1 ? closeSpan : Math.round(closeSpan + Math.min(60, Math.max(0, height - 120) / 6));
-	clip.style.animationDuration = `${span}ms`;
-	inner.style.animationDuration = `${span}ms`;
-	onOpeningDuration?.(span);
-
-	// Anything that would clamp its scroll while the panel is collapsed for a
-	// measurement, and be left there once it is back.
-	const scrollers: HTMLElement[] = [];
-	for (let at = node.parentElement; at; at = at.parentElement) {
-		const spills = getComputedStyle(at).overflowY;
-		if (spills === 'auto' || spills === 'scroll') scrollers.push(at);
-	}
-	if (document.scrollingElement instanceof HTMLElement) scrollers.push(document.scrollingElement);
-
-	/** How far the panel's space has moved each of them, measured with it taking
-	 * none: a grid cell beside a taller one never moved, whatever its place in
-	 * the document says. */
-	function drops(boxes: HTMLElement[]): number[] {
-		const held = scrollers.map((element) => element.scrollTop);
-		const now = boxes.map((element) => element.getBoundingClientRect().top);
-		node.style.height = '0';
-		node.style.marginTop = '0';
-		node.style.marginBottom = '0';
-		const without = boxes.map((element) => element.getBoundingClientRect().top);
-		node.style.height = '';
-		node.style.marginTop = '';
-		node.style.marginBottom = '';
-		scrollers.forEach((element, at) => (element.scrollTop = held[at]));
-		return now.map((top, at) => top - without[at]);
-	}
-
-	// How far each box has been carried for already, so a later gain moves it by
-	// the difference rather than by the panel's whole height, and the run doing
-	// it, since only the box being taken over may be cancelled.
-	const carried = new WeakMap<HTMLElement, number>();
-	const moving = new Map<HTMLElement, Animation>();
-
-	/** Everything the panel moved travels back to where it stood, each taking
-	 * over from where it is so a second move mid-travel carries on. */
-	function follow() {
-		const boxes = following(node);
-		const drop = drops(boxes);
-		boxes.forEach((element, at) => {
-			const by = drop[at] - (carried.get(element) ?? 0);
-			if (Math.abs(by) < 1) return;
-			carried.set(element, drop[at]);
-			const was = moving.get(element);
-			const run = carry(element, -by, span, easing);
-			was?.cancel();
-			moving.set(element, run);
-		});
-	}
-
-	/** Uncover what the panel gained the way the reveal uncovered the rest: the
-	 * window clips it and the panel slides up by as much, so only the clip edge
-	 * travels. */
-	function uncover(by: number) {
+	function move(to: number, span: number, from = node.getBoundingClientRect().height) {
+		// Read the current frame before cancelling, so reversal never snaps.
+		const current = getComputedStyle(node);
+		const start = {
+			height: `${from}px`,
+			marginTop: current.marginTop,
+			marginBottom: current.marginBottom
+		};
+		motion?.cancel();
 		node.style.overflow = 'hidden';
-		clip.style.overflow = 'hidden';
-		covering++;
-		carry(clip, -by, span, easing);
-		carry(inner, by, span, easing)
-			.finished.catch(() => {})
-			.finally(() => {
-				covering--;
-				if (!covering && opened) letGo();
-			});
-	}
-
-	// The close: the box's height, and the fade that goes with it.
-	let closing: Animation[] = [];
-
-	/** The box's own height, which is the one thing a transform cannot take with
-	 * it: the row's card has to shrink round the panel rather than snap shut and
-	 * leave it hanging. Everything under it then moves by layout, so the carries
-	 * above are the open's alone.
-	 *
-	 * The fade is the tail half only, on its own clock. The height is nearly
-	 * home by then, so what dissolves is the last dark bar of the panel, which
-	 * otherwise blinked out. Any earlier and the row is an empty gap closing. */
-	function shut(): number {
-		if (closing.length) return closeSpan;
-		watch.disconnect();
-		const style = getComputedStyle(node);
-		node.style.overflow = 'hidden';
-		closing = [
-			node.animate(
-				[
-					{
-						height: `${node.getBoundingClientRect().height}px`,
-						marginTop: style.marginTop,
-						marginBottom: style.marginBottom
-					},
-					{ height: '0px', marginTop: '0px', marginBottom: '0px' }
-				],
-				{ duration: closeSpan, easing, fill: 'forwards' }
-			),
-			node.animate([{ opacity: 1, offset: 0.5 }, { opacity: 0 }], {
-				duration: closeSpan,
-				easing: 'linear',
-				fill: 'forwards'
+		const end = {
+			height: `${to}px`,
+			marginTop: closing ? '0px' : marginTop,
+			marginBottom: closing ? '0px' : marginBottom
+		};
+		Object.assign(node.style, end);
+		const run = node.animate([start, end], { duration: span, easing, fill: 'both' });
+		motion = run;
+		void run.finished
+			.then(() => {
+				if (motion !== run) return;
+				motion = undefined;
+				run.cancel();
+				if (!closing) {
+					// Natural sizing at rest, and no clipping of focus rings.
+					node.style.height = '';
+					node.style.marginTop = '';
+					node.style.marginBottom = '';
+					node.style.overflow = 'visible';
+				}
 			})
-		];
-		return closeSpan;
+			.catch(() => {});
 	}
 
-	/** Opened again before the close finished. Svelte hands the same node to the
-	 * next open, so the height it was left at has to go, and what the restored
-	 * box shoves back down travels there rather than jumping. */
-	function reopen() {
-		if (!closing.length) return;
-		const boxes = following(node);
-		const was = boxes.map((element) => element.getBoundingClientRect().top);
-		for (const run of closing) run.cancel();
-		closing = [];
-		letGo();
-		boxes.forEach((element, at) => {
-			const by = element.getBoundingClientRect().top - was[at];
-			if (Math.abs(by) < 1) return;
-			const run = moving.get(element);
-			moving.set(element, carry(element, -by, span, easing));
-			run?.cancel();
-		});
-		watch.observe(node);
+	function open(from?: number) {
+		closing = false;
+		height = inner.getBoundingClientRect().height;
+		const span = duration(true);
+		onOpeningDuration?.(span);
+		move(height, span, from);
 	}
-
-	// Nothing to move, either from reduced motion or a panel that opened empty.
-	if (span < 1 || height < 1)
-		return { destroy: () => clip.removeEventListener('animationend', ran) };
-
-	follow();
 
 	const watch = new ResizeObserver(() => {
-		const now = node.getBoundingClientRect().height;
-		const grew = now - height;
+		const now = inner.getBoundingClientRect().height;
+		if (Math.abs(now - height) < 1) return;
+		// At rest, layout has already adopted the new content height. Start
+		// from the previous height; in flight, take over the animated height.
+		const from = motion ? node.getBoundingClientRect().height : height;
 		height = now;
-		if (Math.abs(grew) < 1) return;
-		if (grew > 0) uncover(grew);
-		follow();
+		if (!closing) open(from);
 	});
-	watch.observe(node);
-	panels.set(node, { shut, reopen });
+	watch.observe(inner);
+	panels.set(node, {
+		shut() {
+			if (closing) return duration(false);
+			closing = true;
+			const span = duration(false);
+			move(0, span);
+			return span;
+		},
+		reopen() {
+			if (closing) open();
+		}
+	});
+
+	node.style.marginTop = '0px';
+	node.style.marginBottom = '0px';
+	open(0);
 
 	return {
 		destroy() {
-			clip.removeEventListener('animationend', ran);
-			panels.delete(node);
 			watch.disconnect();
-			// Shut mid-open: the space collapses with the panel.
-			for (const run of moving.values()) run.cancel();
+			motion?.cancel();
+			panels.delete(node);
 		}
 	};
 }
 
-/** A Svelte `out:` for the same node, so the panel leaves the way it arrived
- * instead of being cut. It must sit on its branch's own child, or Svelte skips
- * the outro. */
+/** Keep the panel mounted until its height has closed. */
 export function fold(node: HTMLElement) {
 	return { duration: panels.get(node)?.shut() ?? 0 };
 }
 
-/** Aborts a fold. Svelte reuses the node when a row is opened again mid-close,
- * and nothing else would put it back. */
+/** Svelte reuses the node when a row reopens during its outro. */
 export function unfold(node: HTMLElement) {
 	panels.get(node)?.reopen();
 }
