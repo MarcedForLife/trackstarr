@@ -8,9 +8,11 @@ export type ConnectionResult = {
 	detail: string;
 	// Something to do about it, when there is.
 	hint: string;
-	// For an *arr: connected, stale, missing, or unknown. Empty for the media
-	// servers.
+	// For an *arr: connected, unreachable, stale, missing, or unknown. Empty for
+	// the media servers.
 	webhook: string;
+	// What the *arr said when it could not call us. Only for unreachable.
+	webhook_detail: string;
 };
 
 // Narrowed so a fifth service cannot be added without its icon.

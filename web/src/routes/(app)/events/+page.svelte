@@ -326,7 +326,7 @@
 				disabled={history.busy}
 				class={`flex ${control} ${radius} min-w-28 flex-none items-center justify-center gap-1.5 border border-transparent px-2.5 text-[13px] font-medium hover:bg-raised hover:text-fg disabled:opacity-(--disabled)`}
 			>
-				<span class="flex" class:refreshing={history.refreshing}><Glyph name="refresh" /></span>
+				<span class="flex" class:turning={history.refreshing}><Glyph name="refresh" /></span>
 				<span role="status">{history.refreshing ? 'Refreshing…' : 'Refresh'}</span>
 			</button>
 		</div>
@@ -445,23 +445,6 @@
 	@media (prefers-reduced-motion: reduce) {
 		.event-types.animate-filter button::before {
 			transition-duration: 100ms;
-		}
-	}
-
-	/* A continuous progress cue: one turn matches the manual feedback floor. */
-	.refreshing {
-		animation: refresh-turn 600ms linear infinite;
-	}
-
-	@keyframes refresh-turn {
-		to {
-			transform: rotate(360deg);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.refreshing {
-			animation: none;
 		}
 	}
 </style>

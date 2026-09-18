@@ -57,7 +57,8 @@ services:
 container. The example maps `/srv/media/movies` to `/data/movies`;
 change the mount or `MEDIA_DIRS` to match your library. Missing sweep directories
 produce warnings, so check the startup log. Set `WEBHOOK_URL` if the *arrs cannot
-reach `http://trackstarr:5120`.
+reach `http://trackstarr:5120`. **Test** on a connection card makes the *arr call
+back, which is what proves the address resolves where it runs.
 
 The default `REWRITE_MODE=imports` rewrites new imports but only reports changes
 for library sweeps. Use `report` to preview all processing first; use `all` to
@@ -280,7 +281,7 @@ through the environment and require a restart.
 | `PLEX_URL` / `PLEX_TOKEN`                                                          | Unset                    | Plex refreshes and title links.                                           |
 | `JELLYFIN_URL` / `JELLYFIN_API_KEY`                                                | Unset                    | Jellyfin or Emby refreshes and title links.                               |
 | `PLEX_PATH_MAP` / `JELLYFIN_PATH_MAP`                                              | Unset                    | Comma-separated `LOCAL=REMOTE` path prefixes.                             |
-| `RADARR_PUBLIC_URL`, `SONARR_PUBLIC_URL`, `PLEX_PUBLIC_URL`, `JELLYFIN_PUBLIC_URL` | Service URL              | Browser-accessible addresses for title links.                             |
+| `RADARR_PUBLIC_URL`, `SONARR_PUBLIC_URL`, `PLEX_PUBLIC_URL`, `JELLYFIN_PUBLIC_URL` | Service URL              | Addresses to use for title links.                                         |
 | `WEBHOOK_URL`                                                                      | `http://trackstarr:5120` | Address the *arrs use to reach Trackstarr; default follows `LISTEN_PORT`. |
 
 ### Processing

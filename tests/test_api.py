@@ -456,7 +456,13 @@ def test_a_connection_test_answers_the_check(listener, fast_scrypt, monkeypatch)
         cookie=cookie,
     )
     assert status == 200
-    assert answer == {"ok": True, "detail": "Films 5.14.0", "hint": "", "webhook": "connected"}
+    assert answer == {
+        "ok": True,
+        "detail": "Films 5.14.0",
+        "hint": "",
+        "webhook": "connected",
+        "webhook_detail": "",
+    }
     # The page's own values, passed through rather than read back off disk.
     assert asked == [("radarr", "http://radarr:7878", "typed")]
 

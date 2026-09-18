@@ -50,9 +50,14 @@
 	// An answer arriving after the card has gone is dropped.
 	let gone = false;
 
-	/** Ask the service whether it is there, if there is enough to ask with. */
-	export async function test() {
+	/** Ask the service whether it is there, if there is enough to ask with.
+	 * `minimumMs` holds the busy cue open that long, so a fast answer still
+	 * reads as work. The floor runs alongside the request, not after it. */
+	export async function test(minimumMs = 0) {
 		if (!configured) return;
+		const feedback = minimumMs
+			? new Promise<void>((resolve) => setTimeout(resolve, minimumMs))
+			: undefined;
 		checking = true;
 		try {
 			const answer = await testConnection(
@@ -64,9 +69,16 @@
 			if (!gone) result = answer;
 		} catch {
 			if (!gone) {
-				result = { ok: false, detail: 'Could not reach the service.', hint: '', webhook: '' };
+				result = {
+					ok: false,
+					detail: 'Could not reach the service.',
+					hint: '',
+					webhook: '',
+					webhook_detail: ''
+				};
 			}
 		} finally {
+			await feedback;
 			if (!gone) checking = false;
 		}
 	}
@@ -95,22 +107,34 @@
 		if (checking) return { label: 'Checking', class: 'text-faint' };
 		if (!configured) return { label: 'Not set', class: 'text-faint' };
 		if (!result) return { label: 'Configured', class: 'text-dim' };
-		return result.ok
-			? { label: 'Connected', class: 'text-ok' }
-			: { label: 'No answer', class: 'text-danger' };
+		if (!result.ok) return { label: 'No answer', class: 'text-danger' };
+		// A green Connected on an *arr that cannot call back is the lie this
+		// check exists to catch.
+		if (result.webhook === 'unreachable') return { label: 'No webhook', class: 'text-danger' };
+		return { label: 'Connected', class: 'text-ok' };
 	});
 
 	// What an *arr holding the wrong connection, or none, means for the reader.
 	const WEBHOOK_STATE: Record<string, string> = {
 		connected: 'Webhook connected',
+		unreachable: 'Its webhook call never arrives',
 		missing: 'No webhook connection yet',
 		stale: 'Its webhook points somewhere else',
 		unknown: 'Could not read its connections list'
 	};
 
+	// Unreachable is a fault, not a step before a save.
+	function webhookTone(state: string): string {
+		if (state === 'connected') return 'text-ok';
+		return state === 'unreachable' ? 'text-danger' : 'text-dim';
+	}
+
 	function webhookNote(answer: ConnectionResult): string {
 		const state = WEBHOOK_STATE[answer.webhook] ?? '';
 		if (!state || answer.webhook === 'connected') return state;
+		// Saving would only rewrite what it already holds. The *arr's own words
+		// below say what to change instead.
+		if (answer.webhook === 'unreachable') return state;
 		return `${state}. Trackstarr registers it on save.`;
 	}
 
@@ -119,7 +143,11 @@
 	const line = $derived.by(() => {
 		if (result && !result.ok) return { text: result.detail, class: 'text-danger', mono: false };
 		if (result?.ok && result.webhook && result.webhook !== 'connected') {
-			return { text: WEBHOOK_STATE[result.webhook] ?? '', class: 'text-accent', mono: false };
+			return {
+				text: WEBHOOK_STATE[result.webhook] ?? '',
+				class: result.webhook === 'unreachable' ? 'text-danger' : 'text-accent',
+				mono: false
+			};
 		}
 		const address = (draft[service.url] as string) ?? '';
 		if (address) return { text: address, class: 'text-dim', mono: true };
@@ -170,22 +198,34 @@
 			<div class="border-t border-line px-3 pb-1">
 				<div class="flex items-start justify-between gap-3 py-3">
 					<p class="text-[13px] leading-snug text-pretty text-dim">{service.lead}</p>
+					<!-- Held wide, so Checking does not shift it. -->
 					<button
-						onclick={test}
+						type="button"
+						onclick={() => test(600)}
 						disabled={readOnly || !configured || checking}
-						class={`flex-none ${button}`}
+						aria-label={checking ? `Checking ${service.label}` : `Test ${service.label}`}
+						aria-busy={checking}
+						class={`min-w-28 flex-none ${button}`}
 					>
-						Test
+						<span class="flex" class:turning={checking}><Glyph name="refresh" /></span>
+						<span role="status">{checking ? 'Checking…' : 'Test'}</span>
 					</button>
 				</div>
 
 				{#if result}
-					<div class={`mb-3 ${noteBox} ${result.ok ? 'text-dim' : 'text-danger'}`}>
+					<!-- Dimmed while a fresh answer is on its way, so a repeat press
+					     landing on the same words still reads as having run. -->
+					<div
+						class={`mb-3 ${noteBox} transition-opacity duration-150 ${result.ok ? 'text-dim' : 'text-danger'} ${checking ? 'opacity-(--disabled)' : ''}`}
+					>
 						<p>{result.detail}</p>
 						{#if result.ok && webhookNote(result)}
-							<p class={`mt-1 ${result.webhook === 'connected' ? 'text-ok' : 'text-dim'}`}>
-								{webhookNote(result)}
-							</p>
+							<p class={`mt-1 ${webhookTone(result.webhook)}`}>{webhookNote(result)}</p>
+						{/if}
+						<!-- Unattributed: it follows the line it explains, and the *arr
+						     does not always give words to quote. -->
+						{#if result.webhook_detail}
+							<p class="mt-1 text-faint">{result.webhook_detail}</p>
 						{/if}
 						{#if result.hint}
 							<p class="mt-1 text-faint">{result.hint}</p>
@@ -271,7 +311,7 @@
 					<SettingRow
 						{name}
 						label="Public address"
-						desc={`Where a title's "Open in ${service.label}" link points. Only needed when a browser cannot reach the address above.`}
+						desc={`Optional address to use for ${service.label} links, instead of the service address.`}
 						stack
 					>
 						{#snippet children({ describedBy })}

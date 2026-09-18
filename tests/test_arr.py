@@ -1,5 +1,7 @@
 """Webhook registration against a faked *arr API. No network."""
 
+import io
+import logging
 import urllib.error
 
 import pytest
@@ -71,11 +73,18 @@ def test_creates_the_connection_when_absent():
     assert auth.authorized(_sent_secret(payload))
 
 
+def wrote_nothing(calls: list[tuple]) -> bool:
+    """Whether the notification list was only read. The test endpoint below it
+    makes the *arr call out, it does not change what the *arr holds."""
+    written = [path for _, path, payload in calls if payload is not None]
+    return "/api/v3/notification" not in written
+
+
 def test_leaves_a_current_connection_alone():
     calls: list[tuple] = []
     arr = make_arr([registration(secret=auth.mint("radarr"))], calls)
     assert arr.register_webhook(URL)
-    assert [recorded[0] for recorded in calls] == ["GET"]
+    assert wrote_nothing(calls)
 
 
 def test_registering_twice_rotates_nothing():
@@ -88,7 +97,7 @@ def test_registering_twice_rotates_nothing():
     second_calls: list[tuple] = []
     arr = make_arr([{**saved, "id": 5}], second_calls)
     assert arr.register_webhook(URL)
-    assert [recorded[0] for recorded in second_calls] == ["GET"]
+    assert wrote_nothing(second_calls)
 
 
 def test_updates_a_stale_connection_in_place():
@@ -207,14 +216,90 @@ def test_a_malformed_headers_field_is_not_a_secret(value):
     ],
 )
 def test_webhook_status_reports_what_the_arr_holds(existing, expected):
-    """What the connections page shows. Asked without saving anything, so it
-    must never be the registration call in disguise."""
+    """What the connections page shows. Asked without saving anything, so
+    nothing but the read may reach the notification list itself."""
     calls: list[tuple] = []
     arr = make_arr(existing, calls)
-    assert arr.webhook_status(URL) == expected
-    assert [recorded[0] for recorded in calls] == ["GET"]
+    assert arr.webhook_status(URL).state == expected
+    assert calls == [("GET", "/api/v3/notification", None)]
 
 
 def test_webhook_status_is_connected_only_for_a_secret_we_would_accept():
     arr = make_arr([registration(secret=auth.mint("radarr"))], [])
-    assert arr.webhook_status(URL) == "connected"
+    assert arr.webhook_status(URL).state == "connected"
+
+
+def test_a_connection_that_looks_current_is_still_asked_to_call_us():
+    """The blind spot. A saved connection proves the *arr holds the right
+    address, never that the address resolves there."""
+    calls: list[tuple] = []
+    arr = make_arr([registration(secret=auth.mint("radarr"))], calls)
+    assert arr.webhook_status(URL).state == "connected"
+
+    method, path, payload = calls[-1]
+    assert (method, path) == ("POST", "/api/v3/notification/test")
+    # Without the id the *arr's name-uniqueness check refuses the body.
+    assert payload["id"] == 5
+
+
+def test_a_connection_the_arr_cannot_call_is_unreachable_in_its_own_words():
+    said = b'{"message": "Name does not resolve (trackstarr:5120)"}'
+
+    def call(path, payload=None, timeout=30, method=None):
+        if path.endswith("/test"):
+            raise urllib.error.HTTPError(path, 500, "no", {}, io.BytesIO(said))
+        return [registration(secret=auth.mint("radarr"))]
+
+    status = make_arr(call=call).webhook_status(URL)
+    assert status.state == "unreachable"
+    assert status.detail == "Name does not resolve (trackstarr:5120)"
+
+
+def test_an_arr_that_refuses_the_test_without_words_still_says_what_it_answered():
+    def call(path, payload=None, timeout=30, method=None):
+        if path.endswith("/test"):
+            raise urllib.error.HTTPError(path, 503, "no", {}, io.BytesIO(b"maintenance"))
+        return [registration(secret=auth.mint("radarr"))]
+
+    assert make_arr(call=call).webhook_status(URL).detail == "No reason given (503)."
+
+
+def test_an_arr_we_cannot_ask_at_all_is_not_reported_as_unreachable():
+    """Raised, so the page shows unknown rather than blaming the *arr."""
+
+    def call(path, payload=None, timeout=30, method=None):
+        if path.endswith("/test"):
+            raise urllib.error.URLError("no route to host")
+        return [registration(secret=auth.mint("radarr"))]
+
+    with pytest.raises(urllib.error.URLError):
+        make_arr(call=call).webhook_status(URL)
+
+
+def test_a_held_connection_we_cannot_test_is_not_a_registration_failure(caplog):
+    """The *arr answered the list then went away. Nothing to save and nothing
+    learned, so registration succeeds and stays quiet."""
+
+    def call(path, payload=None, timeout=30, method=None):
+        if path.endswith("/test"):
+            raise urllib.error.URLError("no route to host")
+        return [registration(secret=auth.mint("radarr"))]
+
+    with caplog.at_level(logging.WARNING):
+        assert make_arr(call=call).register_webhook(URL) is True
+    assert caplog.text == ""
+
+
+def test_a_held_connection_that_cannot_call_us_is_logged_at_startup(caplog):
+    """Registration has nothing to save, so only the log can say so."""
+
+    def call(path, payload=None, timeout=30, method=None):
+        if path.endswith("/test"):
+            said = b'{"message": "Name does not resolve (trackstarr:5120)"}'
+            raise urllib.error.HTTPError(path, 500, "no", {}, io.BytesIO(said))
+        return [registration(secret=auth.mint("radarr"))]
+
+    with caplog.at_level(logging.WARNING):
+        assert make_arr(call=call).register_webhook(URL) is True
+    assert "cannot call it" in caplog.text
+    assert "Name does not resolve" in caplog.text

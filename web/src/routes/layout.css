@@ -575,6 +575,9 @@
 @theme inline {
 	--font-sans: 'Instrument Sans Variable', system-ui, sans-serif;
 	--font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+	/* Its code ligatures pull "://" apart, so an address reads as "http: //".
+	   Nothing shown in mono here is code. */
+	--font-mono--font-feature-settings: 'calt' 0;
 	--color-surface: var(--surface);
 	--color-sunken: var(--sunken);
 	--color-raised: var(--raised);
@@ -664,6 +667,24 @@ main {
 	:focus-visible {
 		outline: 2px solid var(--accent-fill);
 		outline-offset: 2px;
+	}
+}
+
+/* A control's glyph turning while it waits. One turn matches the 600ms floor
+   the press holds its busy state open for. */
+.turning {
+	animation: control-turn 600ms linear infinite;
+}
+
+@keyframes control-turn {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.turning {
+		animation: none;
 	}
 }
 

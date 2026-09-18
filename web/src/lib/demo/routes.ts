@@ -167,7 +167,8 @@ function testConnection(here: State, body: Body): ConnectionResult {
 			ok: false,
 			detail: `No ${missing} set, so ${service.label} is switched off.`,
 			hint: '',
-			webhook: ''
+			webhook: '',
+			webhook_detail: ''
 		};
 	}
 	if (!/^https?:\/\//.test(url))
@@ -175,9 +176,16 @@ function testConnection(here: State, body: Body): ConnectionResult {
 			ok: false,
 			detail: 'The address has to start with http:// or https://.',
 			hint: '',
-			webhook: ''
+			webhook: '',
+			webhook_detail: ''
 		};
-	return { ok: true, detail: service.detail, hint: pathHint(here, name), webhook };
+	return {
+		ok: true,
+		detail: service.detail,
+		hint: pathHint(here, name),
+		webhook,
+		webhook_detail: ''
+	};
 }
 
 /** The hint a media server gets when it indexes nothing the sweep would send
