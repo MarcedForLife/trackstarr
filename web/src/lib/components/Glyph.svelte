@@ -17,7 +17,8 @@
 		| 'pencil'
 		| 'list'
 		| 'log'
-		| 'calendar';
+		| 'calendar'
+		| 'plus';
 </script>
 
 <script lang="ts">
@@ -30,7 +31,7 @@
 	// settings without a gear, whose teeth are mud at 12px. `pencil` marks a
 	// row whose tags open for editing. `list` is a queue, its last line short
 	// for the files still to come. `log` is a prompt and the line it wrote,
-	// since a page of text is `doc` already.
+	// since a page of text is `doc` already. `plus` adds a card.
 	let { name, size = 12 }: { name: GlyphName; size?: number } = $props();
 </script>
 
@@ -92,6 +93,14 @@
 			stroke-width="1.6"
 			stroke-linecap="round"
 			stroke-linejoin="round"
+		></path>
+	{:else if name === 'plus'}
+		<path
+			d="M8 3.2v9.6M3.2 8h9.6"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.8"
+			stroke-linecap="round"
 		></path>
 	{:else if name === 'more'}
 		<circle cx="3" cy="8" r="1.35"></circle>

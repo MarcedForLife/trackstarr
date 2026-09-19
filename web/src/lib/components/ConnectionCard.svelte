@@ -1,11 +1,17 @@
 <script lang="ts">
-	import { onDestroy, untrack } from 'svelte';
+	import { onDestroy, onMount, tick, untrack } from 'svelte';
 	import Disclosure from '$lib/components/Disclosure.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
 	import PathMapList from '$lib/components/PathMapList.svelte';
 	import ServiceIcon from '$lib/components/ServiceIcon.svelte';
 	import SettingRow from '$lib/components/SettingRow.svelte';
-	import { testConnection, type ConnectionResult, type Service } from '$lib/connections';
+	import {
+		fallbackLabel,
+		labelProblem,
+		testConnection,
+		type ConnectionResult,
+		type Service
+	} from '$lib/connections';
 	import { button, field, noteBox, removeButton } from '$lib/controls';
 	import type { SettingsDraft } from '$lib/draft.svelte';
 
@@ -17,7 +23,10 @@
 		settings,
 		readOnly,
 		cleared,
-		onclear
+		onclear,
+		opened = false,
+		onname,
+		onremove
 	}: {
 		service: Service;
 		settings: SettingsDraft;
@@ -26,13 +35,21 @@
 		// empty field means "leave it alone" and a clear is the draft sending null.
 		cleared: boolean;
 		onclear: (yes: boolean) => void;
+		// Open on arrival, with the first field focused: the card just added.
+		opened?: boolean;
+		// The name typed. The page's, since a fresh instance's keys follow it.
+		onname?: (text: string) => void;
+		// Absent for a card the environment pins, which has no Remove.
+		onremove?: () => void;
 	} = $props();
 
 	const draft = $derived(settings.draft);
 	const baseline = $derived(settings.baseline);
 
-	// All shut on arrival: the shut row says which services work.
-	let open = $state(false);
+	// Shut on arrival, since the shut row says which services work. The card
+	// just added opens: it has nothing to say yet.
+	// svelte-ignore state_referenced_locally
+	let open = $state(opened);
 	let result = $state<ConnectionResult | null>(null);
 	let checking = $state(false);
 
@@ -42,10 +59,61 @@
 	const configured = $derived(!!(draft[service.url] as string) && (!!draft[service.key] || kept));
 
 	// Edits to a shut card still count towards the save bar, so the row says so.
-	// The two optional names fall back to '', which no setting is called.
+	// The optional names fall back to '', which no setting is called.
 	const edited = $derived(
-		settings.anyChanged([service.url, service.key, service.map ?? '', service.publicUrl ?? ''])
+		settings.anyChanged([
+			service.url,
+			service.key,
+			service.map ?? '',
+			service.publicUrl ?? '',
+			service.labelName ?? ''
+		])
 	);
+
+	// A named instance not yet saved: its keys still follow its name.
+	const fresh = $derived(!!service.kind && !(service.url in baseline));
+	const nameText = $derived(String(draft[service.labelName ?? ''] ?? ''));
+	const nameProblem = $derived(labelProblem(nameText));
+	const nameDesc = $derived(
+		`Optional. Shown instead of ${fallbackLabel(service)}.` +
+			(fresh ? ` Its keys, ${service.prefix}_*, follow it until saved.` : '')
+	);
+
+	// A card just added starts in its address, the one field it cannot do without.
+	let addressInput = $state<HTMLInputElement>();
+	onMount(async () => {
+		if (!opened) return;
+		await tick();
+		addressInput?.focus();
+	});
+
+	// A result belongs to the exact draft and saved callback it tested. Editing
+	// invalidates it without issuing a request on every keystroke.
+	const input = $derived(
+		JSON.stringify([
+			service.name,
+			draft[service.url],
+			draft[service.key],
+			service.map ? draft[service.map] : null,
+			service.map ? baseline[service.map]?.value : null,
+			kept,
+			service.group === 'source' ? draft.WEBHOOK_URL : null,
+			service.group === 'source' ? baseline.WEBHOOK_URL?.value : null
+		])
+	);
+	let testedInput = '';
+	let testTicket = 0;
+	function invalidate() {
+		if (testedInput === input) return;
+		testedInput = input;
+		testTicket++;
+		result = null;
+		checking = false;
+	}
+	$effect(() => {
+		void input;
+		untrack(invalidate);
+	});
 
 	// An answer arriving after the card has gone is dropped.
 	let gone = false;
@@ -54,7 +122,11 @@
 	 * `minimumMs` holds the busy cue open that long, so a fast answer still
 	 * reads as work. The floor runs alongside the request, not after it. */
 	export async function test(minimumMs = 0) {
+		invalidate();
 		if (!configured) return;
+		const ticket = ++testTicket;
+		const asked = input;
+		const current = () => !gone && ticket === testTicket && asked === input;
 		const feedback = minimumMs
 			? new Promise<void>((resolve) => setTimeout(resolve, minimumMs))
 			: undefined;
@@ -66,9 +138,9 @@
 				// Only what was typed: an untouched field sent blank reads as cleared.
 				(draft[service.key] as string) ?? ''
 			);
-			if (!gone) result = answer;
+			if (current()) result = answer;
 		} catch {
-			if (!gone) {
+			if (current()) {
 				result = {
 					ok: false,
 					detail: 'Could not reach the service.',
@@ -79,7 +151,7 @@
 			}
 		} finally {
 			await feedback;
-			if (!gone) checking = false;
+			if (current()) checking = false;
 		}
 	}
 
@@ -99,9 +171,24 @@
 	// svelte-ignore state_referenced_locally
 	onDestroy(
 		settings.onreset((saved) => {
-			if (saved && (service.url in saved || service.key in saved)) test();
+			if (
+				saved &&
+				(service.url in saved ||
+					service.key in saved ||
+					(service.map !== undefined && service.map in saved) ||
+					(service.group === 'source' && 'WEBHOOK_URL' in saved))
+			) {
+				// Even unchanged/redacted values can now refer to a new saved key.
+				testTicket++;
+				result = null;
+				test();
+			}
 		})
 	);
+
+	const mappingEdited = $derived(!!service.map && settings.changed(service.map));
+
+	const callbackEdited = $derived(service.group === 'source' && settings.changed('WEBHOOK_URL'));
 
 	const pill = $derived.by(() => {
 		if (checking) return { label: 'Checking', class: 'text-faint' };
@@ -110,7 +197,10 @@
 		if (!result.ok) return { label: 'No answer', class: 'text-danger' };
 		// A green Connected on an *arr that cannot call back is the lie this
 		// check exists to catch.
+		if (callbackEdited) return { label: 'API connected', class: 'text-accent' };
 		if (result.webhook === 'unreachable') return { label: 'No webhook', class: 'text-danger' };
+		if (service.group === 'source' && result.webhook !== 'connected')
+			return { label: 'API connected', class: 'text-accent' };
 		return { label: 'Connected', class: 'text-ok' };
 	});
 
@@ -130,8 +220,9 @@
 	}
 
 	function webhookNote(answer: ConnectionResult): string {
+		if (callbackEdited) return 'Save the webhook address to test the new callback.';
 		const state = WEBHOOK_STATE[answer.webhook] ?? '';
-		if (!state || answer.webhook === 'connected') return state;
+		if (!state || answer.webhook === 'connected' || answer.webhook === 'unknown') return state;
 		// Saving would only rewrite what it already holds. The *arr's own words
 		// below say what to change instead.
 		if (answer.webhook === 'unreachable') return state;
@@ -175,7 +266,9 @@
 		panelClass=""
 	>
 		{#snippet summary(chevron)}
-			<ServiceIcon name={service.name} />
+			<ServiceIcon
+				name={service.kind ?? (service.name as import('$lib/connections').ServiceName)}
+			/>
 			<span class="min-w-0 flex-1">
 				<span class="flex items-center gap-2">
 					<span class="text-sm font-semibold">{service.label}</span>
@@ -189,6 +282,13 @@
 				>
 					{line.text}
 				</span>
+				{#if result?.paths === 'attention' || result?.paths === 'unknown'}
+					<span class="mt-1 block text-[12px] text-accent">
+						{result.paths === 'attention'
+							? 'Library paths need attention'
+							: 'Library paths could not be checked'}
+					</span>
+				{/if}
 			</span>
 			<span class={`flex-none text-[11px] font-medium ${pill.class}`}>{pill.label}</span>
 			{@render chevron()}
@@ -227,8 +327,13 @@
 						{#if result.webhook_detail}
 							<p class="mt-1 text-faint">{result.webhook_detail}</p>
 						{/if}
+						{#if mappingEdited}
+							<p class="mt-1 text-faint">
+								Path checks use the saved mapping. Save your changes to test the new mapping.
+							</p>
+						{/if}
 						{#if result.hint}
-							<p class="mt-1 text-faint">{result.hint}</p>
+							<p class="mt-1 break-words whitespace-pre-line text-faint">{result.hint}</p>
 						{/if}
 					</div>
 				{/if}
@@ -243,6 +348,7 @@
 					{#snippet children({ describedBy })}
 						<div class={entryRow}>
 							<input
+								bind:this={addressInput}
 								value={(draft[service.url] as string) ?? ''}
 								oninput={(event) => (draft[service.url] = event.currentTarget.value)}
 								placeholder={service.placeholder}
@@ -306,6 +412,34 @@
 					{/snippet}
 				</SettingRow>
 
+				{#if service.labelName}
+					{@const name = service.labelName}
+					<SettingRow {name} label="Name" desc={nameDesc} stack>
+						{#snippet children({ describedBy })}
+							<div class={entryRow}>
+								<input
+									value={nameText}
+									oninput={(event) => onname?.(event.currentTarget.value)}
+									placeholder={fallbackLabel(service)}
+									maxlength="40"
+									autocapitalize="words"
+									autocorrect="off"
+									spellcheck="false"
+									aria-label={`${service.label} name`}
+									aria-describedby={describedBy}
+									aria-invalid={!!nameProblem}
+									disabled={settings.envLocked(name)}
+									class={entry}
+								/>
+								<div class={gutter}></div>
+							</div>
+							{#if nameProblem}<p role="alert" class="mt-1.5 text-[12.5px] text-danger">
+									{nameProblem}
+								</p>{/if}
+						{/snippet}
+					</SettingRow>
+				{/if}
+
 				{#if service.publicUrl}
 					{@const name = service.publicUrl}
 					<SettingRow
@@ -357,6 +491,18 @@
 							/>
 						{/snippet}
 					</SettingRow>
+				{/if}
+
+				{#if onremove}
+					<div class="flex justify-end py-3">
+						<button
+							type="button"
+							class={button}
+							disabled={readOnly}
+							onclick={onremove}
+							aria-label={`Remove ${service.label}`}>Remove</button
+						>
+					</div>
 				{/if}
 			</div>
 		{/snippet}

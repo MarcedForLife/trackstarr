@@ -80,6 +80,9 @@ export type Verdict =
 export type Kind = 'movie' | 'series' | 'folder' | string;
 
 export type Card = {
+	// How the settings name the instance holding it. Only a title a named
+	// instance holds says; the first Radarr or Sonarr is the plain case.
+	source?: string;
 	id: string;
 	name: string;
 	kind: Kind;
@@ -111,9 +114,19 @@ export type Card = {
 	// Those three as the one number the grid and strip sort on. See _weight in
 	// library.py.
 	weight?: number;
+	// How many instances hold the title. Absent for the ordinary one.
+	variants?: number;
 };
 
 export type Shelf = {
+	// Folders more than one instance claims. IDs, and the labels to show.
+	conflicts?: {
+		folder: string;
+		owner: string;
+		owner_label: string;
+		others: string[];
+		other_labels: string[];
+	}[];
 	titles: Card[];
 	// False when an *arr could not be listed, so titles are missing.
 	complete: boolean;
@@ -125,6 +138,9 @@ export type Shelf = {
 export type LibraryFile = {
 	path: string;
 	name: string;
+	// How the settings name the instance whose folder holds the file. Absent
+	// under a folder no *arr claims.
+	source?: string;
 	status: Verdict;
 	bytes: number;
 	// Running time, which is what turns a track's rate into a size. Zero on a
@@ -160,6 +176,9 @@ export type TitleDetail = {
 	files: LibraryFile[];
 	// Every file under the title, which exceeds `files` past the cap.
 	total: number;
+	// Every folder holding the title and whose it is, primary first. An empty
+	// source is a folder no *arr claims.
+	folders: { source: string; folder: string }[];
 	servers: TitleServer[];
 };
 
@@ -215,9 +234,13 @@ export async function getSummary(
 	return summary;
 }
 
-export async function getTitle(id: string, fetcher: typeof fetch = fetch): Promise<TitleDetail> {
+export async function getTitle(
+	id: string,
+	fetcher: typeof fetch = fetch,
+	pages = 1
+): Promise<TitleDetail> {
 	const title = await request<TitleDetail>(
-		`/api/library/title?id=${encodeURIComponent(id)}`,
+		`/api/library/title?id=${encodeURIComponent(id)}${pages > 1 ? `&pages=${pages}` : ''}`,
 		undefined,
 		fetcher
 	);

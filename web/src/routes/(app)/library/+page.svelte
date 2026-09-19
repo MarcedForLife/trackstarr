@@ -311,6 +311,26 @@
 </script>
 
 <Page wide lead="Your titles and their latest verdicts.">
+	{#if shelf.conflicts?.length}
+		<details class={`mt-5 ${noteBox} text-dim`}>
+			<summary class="cursor-pointer text-danger"
+				>{shelf.conflicts.length} shared {shelf.conflicts.length === 1 ? 'folder' : 'folders'} claimed
+				by multiple instances</summary
+			>
+			<p class="mt-2 text-[12px]">
+				Use distinct folders for independent copies. The first configured instance owns each shared
+				folder.
+			</p>
+			<ul class="mt-2 space-y-2 text-[12px]">
+				{#each shelf.conflicts as conflict (conflict.folder)}
+					<li>
+						<span class="font-mono break-all">{conflict.folder}</span><br />Owned by {conflict.owner_label};
+						also claimed by {conflict.other_labels.join(', ')}.
+					</li>
+				{/each}
+			</ul>
+		</details>
+	{/if}
 	{#if !shelf.current}
 		<p class={`mt-5 ${noteBox} text-dim`}>
 			The rules have changed since these verdicts, so the next sweep will redo them.

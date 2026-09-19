@@ -611,6 +611,9 @@ html {
 	/* The canvas past the body. app.html paints it inline until the stylesheet
 	   arrives. */
 	background: var(--surface);
+	/* Stop iOS inflating body text when a phone is turned sideways. */
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
 }
 
 /* From lg up main scrolls and the document does not, yet Safari still bounces
@@ -621,9 +624,6 @@ html {
 	html {
 		overscroll-behavior: none;
 	}
-	/* Stop iOS inflating body text when a phone is turned sideways. */
-	-webkit-text-size-adjust: 100%;
-	text-size-adjust: 100%;
 }
 
 body {

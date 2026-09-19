@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { onDestroy, type Snippet } from 'svelte';
+	import type { FileActionAdapter } from '$lib/title-work.svelte';
 	import { refusalText } from '$lib/api';
 	import { rowButton } from '$lib/controls';
 	import { named } from '$lib/format';
@@ -19,6 +20,7 @@
 		unavailable = false,
 		busy = $bindable(false),
 		onchanged,
+		onaction,
 		children
 	}: {
 		path: string;
@@ -29,6 +31,7 @@
 		unavailable?: boolean;
 		busy?: boolean;
 		onchanged: () => Promise<void>;
+		onaction?: FileActionAdapter;
 		children: Snippet;
 	} = $props();
 
@@ -41,7 +44,30 @@
 	// Hovering to the raised tone: these rows sit on the sunken tray.
 	const control = `${rowButton} gap-1.5 px-2 text-dim hover:bg-raised`;
 
+	let alive = true;
+	onDestroy(() => {
+		alive = false;
+	});
+
 	async function act(action: 'top' | 'skip' | 'pause' | 'resume', seconds?: number) {
+		if (onaction) {
+			const target = path;
+			const operation = onaction(path, standing, action, seconds);
+			const current = () => alive && path === target && operation.current();
+			error = '';
+			notice = '';
+			try {
+				const message = await operation.run();
+				if (current()) notice = message;
+			} catch (failure) {
+				if (current()) {
+					error = refusalText(failure);
+					throw failure;
+				}
+			}
+			return;
+		}
+
 		busy = true;
 		error = '';
 		notice = '';

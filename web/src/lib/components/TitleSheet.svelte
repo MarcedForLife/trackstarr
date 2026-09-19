@@ -25,39 +25,31 @@
 
 <script lang="ts">
 	import { onDestroy } from 'svelte';
+	import PathDetails from './PathDetails.svelte';
+	import FileCopies from './FileCopies.svelte';
+	import { fileGroups } from '$lib/copies';
 	import TitleFile from './TitleFile.svelte';
 	import { type Editing } from './FileAccount.svelte';
-	import { poll } from '$lib/poll';
-	import { atFront, getTitleWork, queueAction, type TitleWork } from '$lib/queue';
-	import { mark as now, since, ticking } from '$lib/clock.svelte';
+	import { atFront } from '$lib/queue';
+	import { since, ticking } from '$lib/clock.svelte';
 	import Count from '$lib/components/Count.svelte';
 	import PauseMenu from '$lib/components/PauseMenu.svelte';
 	import QueuePlace from '$lib/components/QueuePlace.svelte';
 	import { page } from '$app/state';
-	import { SvelteSet } from 'svelte/reactivity';
 	import Disclosure from '$lib/components/Disclosure.svelte';
 	import FileProgress from '$lib/components/FileProgress.svelte';
 	import RunButtons from '$lib/components/RunButtons.svelte';
 	import ServiceIcon from '$lib/components/ServiceIcon.svelte';
 	import PosterArt from '$lib/components/PosterArt.svelte';
 	import Sheet, { SLIDE } from '$lib/components/Sheet.svelte';
-	import { refusalText } from '$lib/api';
 	import { MARKS, type MarkName } from '$lib/connections';
 	import { button, control, radius, subtle } from '$lib/controls';
 	import { display } from '$lib/display.svelte';
 	import { tiltField } from '$lib/field';
 	import { duration, named, titled } from '$lib/format';
-	import {
-		forTitle,
-		getPauses,
-		resume as resumePause,
-		place as placePause,
-		type Pause
-	} from '$lib/pauses';
+	import { forTitle } from '$lib/pauses';
 	import {
 		coverUrl,
-		getLinks,
-		getTitle,
 		initials,
 		kindName,
 		verdictLabel,
@@ -65,39 +57,38 @@
 		type Card,
 		type LibraryFile,
 		type Listed,
-		type TitleDetail,
-		type TitleLink,
 		type TitleServer
 	} from '$lib/library';
 	import { moving } from '$lib/motion.svelte';
 	import { overlay } from '$lib/overlay';
 	import { summarise, type Outcome, type Summary } from '$lib/retag';
 	import { whenNear } from '$lib/reveal';
-	import { seasons, type Season } from '$lib/seasons';
-	import { skipFile } from '$lib/runs';
+	import { type Season } from '$lib/seasons';
+	import { TitleBrowsing, FILE_PAGE, type Opening } from '$lib/title-browsing.svelte';
+	import { TitleWorkController } from '$lib/title-work.svelte';
 	import { getSettings } from '$lib/settings';
 
 	// One title, with what each file is and what a rewrite would leave. Owns
-	// being open: the fetch, the two-phase close, and a second poster tapped
-	// while the first slides out. A caller keeps a `bind:this` and calls open().
-
-	// What the caller had when it opened the sheet. The library pages hand over
-	// the grid's card; a run or queue row knows only which title its file belongs
-	// to, and the rest arrives with the detail.
-	type Opening = Pick<Card, 'id' | 'name'> & Partial<Card>;
+	// presentation and the two-phase close, coordinating browsing and work when
+	// a second poster is tapped. A caller keeps a `bind:this` and calls open().
 
 	// `onshut` lets a caller polling for the sheet stop.
 	let { runner, onshut }: { runner?: Runner; onshut?: () => void } = $props();
 
-	// The open title, as much of it as the caller had.
-	let opened = $state<Opening | null>(null);
-	let detail = $state<TitleDetail | null>(null);
-	// Whether the sheet is up, apart from what it shows: the panel slides down at
-	// once and the title goes when it has finished.
+	const browsing = new TitleBrowsing();
+	const opened = $derived(browsing.opened);
+	const detail = $derived(browsing.detail);
+	const loading = $derived(browsing.loading);
+	const failure = $derived(browsing.failure);
+	const loadingMore = $derived(browsing.loadingMore);
+	const moreError = $derived(browsing.moreError);
+	const refreshError = $derived(browsing.refreshError);
+	// Presentation outlives browsing ownership during the closing slide.
 	let up = $state(false);
 	let emptying: ReturnType<typeof setTimeout> | null = null;
-	let loading = $state(false);
-	let failure = $state('');
+	// Remount menus on every opening; late actions must not update a new session.
+	let sheetSession = $state(0);
+	const actions = new TitleWorkController();
 
 	const art = $derived(opened ? coverUrl(opened.id) : '');
 
@@ -108,15 +99,18 @@
 
 	// Where to watch this title. Null while the media servers are being asked, so
 	// the buttons stand greyed in the row rather than landing under the thumb.
-	let links = $state<TitleLink[] | null>(null);
+	const links = $derived(browsing.links);
+
+	// Held in more than one instance: each file and folder then says whose it is.
+	const sourced = $derived((detail?.folders.length ?? 0) > 1);
 
 	// Whether this title is being left alone for now, and the choices for
 	// putting it that way. Owned here rather than passed in: the sheet opens
 	// from two pages and already fetches for itself.
 	const admin = $derived(page.data.user?.role === 'admin');
-	let pauses = $state<Pause[]>([]);
-	let pauseBusy = $state('');
-	let pauseError = $state('');
+	const pauses = $derived(actions.pauses);
+	const pauseBusy = $derived(actions.pauseBusy);
+	const pauseError = $derived(actions.pauseError);
 	// The detail names the kind too, for a title opened without a card behind
 	// it. Its verdict word beats the card's, which is as old as the tap.
 	const kind = $derived(opened?.kind ?? detail?.kind ?? '');
@@ -153,40 +147,22 @@
 	// next one or the sheet goes.
 	let retagged = $state<({ path: string; stream: number } & Summary) | null>(null);
 
-	// A long series is two hundred files with a track list each.
-	const FILE_PAGE = 12;
-	let files = $state(FILE_PAGE);
-
-	// A series by season, latest first; the page cap then runs inside whichever
-	// are open, since a shut season costs nothing.
-	const grouped = $derived(detail ? seasons(detail.files) : null);
-	const rows = $derived(grouped ? [] : (detail?.files.slice(0, files) ?? []));
-
-	function more() {
-		files = Math.min(files + FILE_PAGE, detail?.files.length ?? 0);
-	}
-
-	// Which seasons are open, or null while the latest one alone is.
-	let unfolded = $state<SvelteSet<string> | null>(null);
-
-	function isOpen(season: Season, at: number): boolean {
-		return unfolded ? unfolded.has(season.label) : at === 0;
-	}
-
-	function fold(season: Season, at: number) {
-		const open = unfolded ?? new SvelteSet(grouped?.length ? [grouped[0].label] : []);
-		if (isOpen(season, at)) open.delete(season.label);
-		else open.add(season.label);
-		unfolded = open;
-	}
+	const files = $derived(browsing.reading.renderedGroups);
+	const grouped = $derived(browsing.grouped);
+	const groups = $derived(browsing.groups);
+	const rows = $derived(grouped ? [] : groups.slice(0, files));
+	const more = () => browsing.more();
+	const loadMore = () => browsing.loadMore();
+	const reload = () => browsing.reload();
+	const isOpen = (season: Season, at: number) => browsing.isOpen(season, at);
+	const fold = (season: Season, at: number) => browsing.fold(season, at);
 
 	// The history entry the sheet stands on. One entry however many posters are
 	// tapped in a row.
 	const held = overlay({ name: 'sheet', close: shut });
-	let work = $state<TitleWork>();
-	let workError = $state('');
-	let workBusy = $state(false);
-	let workTicket = 0;
+	const work = $derived(actions.work);
+	const workError = $derived(actions.workError);
+	const workBusy = $derived(actions.workBusy);
 	const queued = $derived(work?.queued ?? []);
 	const activeWork = $derived(work?.active ?? []);
 	const involved = $derived(queued.length > 0 || activeWork.length > 0);
@@ -196,7 +172,7 @@
 	// A file asked to stop. Not its run winding up, which leaves the encode going.
 	const stoppingWork = $derived(activeWork.some((item) => item.skipped));
 	// When the reading arrived, so the bars glide on from it between polls.
-	let workSeen = $state(0);
+	const workSeen = $derived(actions.workSeen);
 	const workAge = $derived(since(workSeen));
 	$effect(() => (activeWork.length ? ticking() : undefined));
 
@@ -264,73 +240,23 @@
 		return parts.map((part, i) => (i ? { ...part, before: ` · ${part.before ?? ''}` } : part));
 	});
 
-	async function queueAct(action: 'top' | 'skip') {
-		workBusy = true;
-		pauseError = '';
-		try {
-			if (action === 'skip') await cancelWork();
-			else await queueAction('top', queued);
-		} catch (error) {
-			pauseError = refusalText(error);
-		} finally {
-			workBusy = false;
-			await readWork();
-			runner?.onrefresh();
-			workPoll.now();
-		}
-	}
+	const queueAct = (action: 'top' | 'skip') => actions.queueAct(action, runner?.onrefresh);
+	const keep = (seconds: number) => actions.keep(seconds);
+	const release = () => actions.release(pause);
 
-	async function cancelWork() {
-		const running = [...activeWork];
-		if (queued.length) await queueAction('skip', queued);
-		for (const item of running) await skipFile(item.run, item.path);
-	}
-
-	async function readWork() {
-		const id = opened?.id;
-		if (!up || !id || workBusy) return;
-		const ticket = ++workTicket;
-		try {
-			const answer = await getTitleWork(id);
-			// The queue letting go is the verdict changing. Read the new word
-			// first, so the header goes from Processing to it rather than through
-			// the one it had.
-			if (involved && !answer.active.length && !answer.queued.length) await reload();
-			if (up && !workBusy && opened?.id === id && ticket === workTicket) {
-				work = answer;
-				workSeen = now();
-				pauses = answer.pauses;
-				workError = '';
-			}
-		} catch {
-			if (up && opened?.id === id && ticket === workTicket)
-				workError = 'Could not refresh queue status.';
-		}
-	}
-	const workPoll = poll({
-		ask: readWork,
-		ready: () => up && !workBusy,
-		pace: () => (stoppingWork ? 1000 : 5000),
-		gap: 1000,
-		kinds: ['runs', 'progress']
+	onDestroy(() => {
+		up = false;
+		actions.dispose();
+		browsing.dispose();
+		if (emptying !== null) clearTimeout(emptying);
 	});
-	onDestroy(workPoll.stop);
-
-	// A sweep in another process re-judges files too. Only when told: the
-	// verdicts change under nothing else.
-	const detailPoll = poll({
-		ask: reload,
-		ready: () => up && !!detail && !loading,
-		gap: 2000,
-		kinds: ['library']
-	});
-	onDestroy(detailPoll.stop);
 
 	// Placeholder rows while the verdicts load, so the sheet opens at the height
 	// it is about to need.
 	const waiting = $derived(Math.min(opened?.files || 1, FILE_PAGE));
 
 	export async function open(card: Opening) {
+		sheetSession++;
 		// Another poster tapped while the last slides out: the sheet stays up.
 		if (emptying !== null) {
 			clearTimeout(emptying);
@@ -338,89 +264,11 @@
 		}
 		held.raise();
 		up = true;
-		opened = card;
-		work = undefined;
-		workError = '';
-		workTicket++;
-		workPoll.now();
-		// A change heard while shut is about the last title, or one open() reads.
-		detailPoll.mark();
-		detail = null;
-		files = FILE_PAGE;
-		unfolded = null;
-		failure = '';
-		links = null;
-		pauses = [];
+		const loaded = browsing.open(card);
+		actions.open(browsing.session!);
 		editor.lower();
 		retagged = null;
-		pauseError = '';
-		loading = true;
-		// Alongside the verdicts: neither should wait on the other.
-		find(card.id);
-		lookUpPauses();
-		try {
-			const found = await getTitle(card.id);
-			// A second tap while the first was under way.
-			if (opened?.id === card.id) detail = found;
-		} catch {
-			failure = 'Could not read that title.';
-		} finally {
-			loading = false;
-		}
-	}
-
-	// A media server that will not answer is a button not drawn.
-	async function find(id: string) {
-		let found: TitleLink[];
-		try {
-			found = await getLinks(id);
-		} catch {
-			found = [];
-		}
-		if (opened?.id === id) links = found;
-	}
-
-	// Quietly: a title that cannot be read for pauses still shows its files, and
-	// the row is simply not offered.
-	async function lookUpPauses() {
-		try {
-			pauses = await getPauses();
-		} catch {
-			pauses = [];
-		}
-	}
-
-	async function keep(seconds: number) {
-		if (!opened) return;
-		pauseBusy = String(seconds);
-		workBusy = true;
-		pauseError = '';
-		try {
-			pauses = await placePause({ ids: [opened.id] }, seconds);
-			await cancelWork();
-		} finally {
-			pauseBusy = '';
-			workBusy = false;
-			await readWork();
-		}
-	}
-
-	async function release() {
-		if (!opened) return;
-		pauseBusy = 'resume';
-		workBusy = true;
-		pauseError = '';
-		try {
-			pauses = await resumePause(
-				pause && !pause.title ? { paths: [pause.path] } : { ids: [opened.id] }
-			);
-		} catch (error) {
-			pauseError = refusalText(error);
-		} finally {
-			pauseBusy = '';
-			workBusy = false;
-			await readWork();
-		}
+		await loaded;
 	}
 
 	// Narrowing, not a cast: a name with no mark keeps its button and loses its
@@ -432,7 +280,7 @@
 	// One link to open the title elsewhere, at its own width and never squeezed:
 	// the row pans where they do not fit. The padding is the hover ground only,
 	// so the row pulls it back off the left; see the block.
-	const link = `${subtle} !px-2 flex-none`;
+	const link = `${subtle} relative !px-2 flex-none`;
 
 	// The services the header offers, whether they have been asked yet or not.
 	const offered = $derived(links ?? detail?.servers ?? []);
@@ -453,35 +301,27 @@
 
 	function shut() {
 		up = false;
+		actions.close();
+		browsing.close();
 		editor.lower();
 		retagged = null;
-		onshut?.();
 		emptying = setTimeout(() => {
 			emptying = null;
-			opened = null;
-			detail = null;
-			links = null;
+			browsing.clear();
 		}, SLIDE);
+		onshut?.();
 	}
 
 	/** The card behind the header, from a caller that has a fresher one than the
 	 * tap did, or one where the tap had none. */
 	export function fill(card: Card) {
-		if (opened?.id === card.id) opened = card;
+		browsing.fill(card);
 	}
 
-	// Re-read the title after something rewrote its verdicts. Silent, unlike
-	// open(): skeletons would lose the reader's place.
-	async function reload() {
-		const showing = opened;
-		if (!showing) return;
-		try {
-			const found = await getTitle(showing.id);
-			if (opened?.id === showing.id) detail = found;
-		} catch {
-			// The rows on screen are a run out of date, which beats an error.
-		}
-	}
+	$effect(() => {
+		if (editing && detail && !detail.files.some((file) => file.path === editing?.path))
+			editor.lower();
+	});
 
 	// Whether the box has buttons, not just a line saying what stands: a reader
 	// who cannot act still sees a pause.
@@ -505,12 +345,23 @@
 	}
 
 	// Something changed. The editor stays up on its own when nothing did.
-	function retaggedTo(file: LibraryFile, row: Listed, outcomes: Outcome[]) {
-		if (row.stream === null) return;
-		retagged = { path: file.path, stream: row.stream, ...summarise(outcomes) };
-		editor.lower();
-		// The rows around it are a verdict out of date.
-		reload();
+	function completion() {
+		const session = browsing.session;
+		const target = editing;
+		return (file: LibraryFile, row: Listed, outcomes: Outcome[]) => {
+			if (
+				!session?.current() ||
+				!target ||
+				editing !== target ||
+				!detail?.files.some((item) => item.path === target.path) ||
+				row.stream === null
+			)
+				return;
+			retagged = { path: file.path, stream: row.stream, ...summarise(outcomes) };
+			editor.lower();
+			// The rows around it are a verdict out of date.
+			void session.reload();
+		};
 	}
 
 	// What went wrong, whichever button caused it. One line, since only one
@@ -525,7 +376,7 @@
 					told: retagged,
 					languages,
 					open: edit,
-					done: retaggedTo,
+					done: completion(),
 					cancel: () => editor.lower()
 				}
 			: null
@@ -598,9 +449,14 @@
 								>{/if}
 						{:else}{@render holding('w-24')}{/if}
 					</p>
-					<p class="mt-0.5 font-mono text-[11px] break-all text-faint">
-						{#if detail}{detail.folder}{:else}{@render holding('w-52')}{/if}
-					</p>
+					<!-- Locations stay compact; full paths are selectable on expansion. -->
+					<div class="mt-0.5 min-w-0">
+						{#if !detail}{@render holding('w-52')}{:else if sourced}
+							{#each detail.folders as held (held.folder)}
+								<PathDetails path={held.folder} label={held.source} />
+							{/each}
+						{:else}<PathDetails path={detail.folder} />{/if}
+					</div>
 				</div>
 
 				<!-- Where to watch it and where it is managed. A row under the path at
@@ -612,7 +468,7 @@
 				     stays for a screen reader. -->
 				{#if offered.length}
 					<div class="col-start-2 -ml-2 flex gap-2 overflow-x-auto">
-						{#each offered as server (server.server)}
+						{#each offered as server (server.url ?? server.server)}
 							{@const found = server.url ?? ''}
 							{#if found}
 								<!-- Another application on another host, so no resolve(). -->
@@ -707,7 +563,7 @@
 										{pauseBusy === 'resume' ? 'Resuming…' : 'Resume'}
 									</button>
 								{:else if admin}
-									{#key opened.id}
+									{#key sheetSession}
 										<PauseMenu
 											label={opened.name}
 											onchoose={keep}
@@ -721,6 +577,10 @@
 								{/if}
 							</div>
 						{/if}
+					{/if}
+
+					{#if sourced && acting}
+						<p class="mt-2.5 text-[12px] text-dim">Applies to every variant of this title.</p>
 					{/if}
 
 					<!-- What stands, and what came of the last press. A pause is a state,
@@ -740,8 +600,22 @@
 				</div>
 			{/if}
 
+			{#if refreshError}
+				<p role="status" class="mt-4 text-[12px] text-dim">
+					{refreshError}
+					<button type="button" class="min-h-8 underline" onclick={reload}
+						>Retry verdict refresh</button
+					>
+				</p>
+			{/if}
+
 			{#if failure}
-				<p class="mt-5 text-sm text-danger">{failure}</p>
+				<p role="alert" class="mt-5 text-sm text-danger">
+					{failure}
+					<button type="button" class="min-h-8 underline" onclick={() => opened && open(opened)}
+						>Retry loading title</button
+					>
+				</p>
 			{:else if loading || !detail}
 				<!-- Blocks the size of the rows about to arrive, so the bottom-anchored
 				     sheet rises once rather than jumping when they land. A film's card, a
@@ -762,6 +636,15 @@
 					<p class="mt-4 text-[12px] text-faint">
 						Showing {detail.files.length} of {detail.total} files, Failed and Pending first.
 					</p>
+					<button
+						type="button"
+						class={`${button} mt-2`}
+						disabled={loadingMore || workBusy}
+						onclick={loadMore}
+					>
+						{loadingMore ? 'Loading…' : 'Load more files'}
+					</button>
+					{#if moreError}<p role="alert" class="mt-2 text-[12px] text-danger">{moreError}</p>{/if}
 				{/if}
 
 				{#if grouped}
@@ -770,11 +653,17 @@
 					{/each}
 				{:else}
 					<ul class="mt-5 flex flex-col gap-4">
-						{#each rows as file (file.path)}
-							{@render card(file)}
+						{#each rows as group (group.key)}
+							<FileCopies
+								selections={browsing.reading.selectedPaths}
+								{group}
+								disabled={workBusy}
+								onchange={() => editor.lower()}
+								children={card}
+							/>
 						{/each}
 					</ul>
-					{#if files < detail.files.length}
+					{#if files < groups.length}
 						<div use:whenNear={more} class="h-px"></div>
 					{/if}
 				{/if}
@@ -782,7 +671,8 @@
 		</div>
 	{/if}
 	{#if workError}<p role="alert" class="px-4 pb-3 text-[12px] text-danger">
-			{workError} <button class="min-h-8 underline" onclick={() => workPoll.now()}>Retry</button>
+			{workError}
+			<button class="min-h-8 underline" onclick={() => actions.readWork()}>Retry</button>
 		</p>{/if}
 </Sheet>
 
@@ -804,19 +694,24 @@
 
 <!-- One file of the title. The sheet keeps which row has its tags open, since
      Escape and focus are its to handle. -->
-{#snippet card(file: LibraryFile)}
-	<TitleFile
-		{file}
-		{manyFiles}
-		{admin}
-		{work}
-		unavailable={!!workError}
-		bind:busy={workBusy}
-		onchanged={readWork}
-		editing={tagEditing}
-		siblings={detail?.files ?? []}
-		series={kind === 'series'}
-	/>
+{#snippet card(file: LibraryFile, embedded: boolean)}
+	{#key `${sheetSession}:${file.path}`}
+		<TitleFile
+			{embedded}
+			{file}
+			{manyFiles}
+			{sourced}
+			{admin}
+			{work}
+			unavailable={!!workError}
+			busy={workBusy}
+			onchanged={() => actions.readWork()}
+			onaction={actions.fileAction}
+			editing={tagEditing}
+			siblings={detail?.files ?? []}
+			series={kind === 'series'}
+		/>
+	{/key}
 {/snippet}
 
 <!-- One season, shut but for the latest. -->
@@ -843,12 +738,19 @@
 			{/snippet}
 
 			{#snippet panel()}
+				{@const episodeGroups = fileGroups(season.files, kind)}
 				<ul class="flex flex-col gap-4">
-					{#each season.files.slice(0, files) as file (file.path)}
-						{@render card(file)}
+					{#each episodeGroups.slice(0, files) as group (group.key)}
+						<FileCopies
+							selections={browsing.reading.selectedPaths}
+							{group}
+							disabled={workBusy}
+							onchange={() => editor.lower()}
+							children={card}
+						/>
 					{/each}
 				</ul>
-				{#if files < season.files.length}
+				{#if files < episodeGroups.length}
 					<div use:whenNear={more} class="h-px"></div>
 				{/if}
 			{/snippet}
