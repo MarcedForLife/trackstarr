@@ -10,11 +10,12 @@ there.
 
 import json
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 from . import config
-from .arr import WebhookState, radarr, sonarr, webhook_url
+from .arr import WebhookState, radarr, sonarr, source_label, webhook_url
 from .client import API_ERRORS, refused_reason, request
 from .media_server import PLEX_SECTIONS, map_path, path_within, plex_sections
 
@@ -136,6 +137,26 @@ SERVICES: tuple[Service, ...] = (
 
 BY_NAME = {service.name: service for service in SERVICES}
 
+
+def service_for(name: str) -> Service | None:
+    if name in BY_NAME:
+        service = BY_NAME[name]
+        return replace(service, label=source_label(name)) if name in _ARR_FACTORIES else service
+    prefix = name.upper().replace("-", "_")
+    if not config.arr_setting(prefix + "_URL"):
+        return None
+    kind, instance = name.split("-", 1) if "-" in name else ("", "")
+    if kind not in ("radarr", "sonarr") or not instance.isalnum():
+        return None
+    return replace(
+        BY_NAME[kind],
+        name=name,
+        label=source_label(name),
+        url_name=prefix + "_URL",
+        key_name=prefix + "_API_KEY",
+    )
+
+
 #: The *arrs, which are also asked whether they hold our webhook.
 _ARR_FACTORIES = {"radarr": radarr, "sonarr": sonarr}
 
@@ -153,6 +174,8 @@ class Result:
     webhook: str = ""
     #: What the *arr said when it could not call us. Only for unreachable.
     webhook_detail: str = ""
+    #: Root diagnostics: ready, attention, unknown, or empty for media servers.
+    paths: str = ""
 
 
 def _headers(header: str, key: str) -> dict:
@@ -161,7 +184,7 @@ def _headers(header: str, key: str) -> dict:
 
 
 def _value(name: str) -> str:
-    return str(getattr(config.current(), name, "") or "")
+    return config.value(name)
 
 
 def configured(service: Service) -> bool:
@@ -214,7 +237,7 @@ def _path_hint(service: Service, locations: list[str]) -> str:
 
 def _webhook_state(name: str, url: str, key: str) -> WebhookState:
     """Whether the *arr at these values will call us."""
-    arr = replace(_ARR_FACTORIES[name](), url=url, key=key)
+    arr = replace(_ARR_FACTORIES[name.split("-", 1)[0]](), name=name, url=url, key=key)
     try:
         return arr.webhook_status(webhook_url())
     except API_ERRORS as err:
@@ -222,11 +245,67 @@ def _webhook_state(name: str, url: str, key: str) -> WebhookState:
         return WebhookState("unknown")
 
 
+def _arr_path_hint(url: str, key: str) -> tuple[str, str]:
+    """Check every reported root in our filesystem, using this check's credentials."""
+    try:
+        roots = request(f"{url}/api/v3/rootfolder", _headers("X-Api-Key", key), timeout=TIMEOUT)
+    except API_ERRORS:
+        return (
+            (
+                "Library paths could not be checked. "
+                "Retry Test when the root folders API is available."
+            ),
+            "unknown",
+        )
+    if not isinstance(roots, list):
+        return (
+            (
+                "Library paths could not be checked: "
+                "the root folders API returned an unexpected response."
+            ),
+            "unknown",
+        )
+    paths = [root.get("path") for root in roots if isinstance(root, dict) and root.get("path")]
+    if not paths:
+        return "No library root folders are configured in this instance.", "attention"
+    results = []
+    ready = 0
+    for raw in paths:
+        path = str(raw)
+        visible = os.path.isdir(path)
+        covered = os.path.isabs(path) and any(
+            path_within(os.path.normpath(path), os.path.normpath(base).rstrip("/"))
+            for base in config.current().MEDIA_DIRS
+        )
+        visibility = (
+            "visible as a directory to Trackstarr"
+            if visible
+            else (
+                "not visible as a directory to Trackstarr; "
+                "check container mounts and permissions"
+            )
+        )
+        coverage = (
+            "inside MEDIA_DIRS"
+            if covered
+            else "outside MEDIA_DIRS; add this library root to MEDIA_DIRS for sweeps"
+        )
+        ready += visible and covered
+        results.append(f"{path}: {visibility}; {coverage}.")
+    return (
+        f"Library roots: {ready} of {len(paths)} visible and inside MEDIA_DIRS.\n"
+        + "\n".join(results),
+        "ready" if ready == len(paths) else "attention",
+    )
+
+
 def check(name: str, url: str = "", key: str = "") -> Result:
     """Ask one service whether it is there. An empty ``url`` or ``key`` falls
     back to the saved value, which is how an untouched password field
     travels."""
-    service = BY_NAME[name]
+    service = service_for(name)
+    if service is None:
+        raise KeyError(name)
     url = (url or _value(service.url_name)).rstrip("/")
     key = key or _value(service.key_name)
     if not url or not key:
@@ -241,5 +320,12 @@ def check(name: str, url: str = "", key: str = "") -> Result:
     except API_ERRORS as err:
         return Result(False, _explain(err))
     hint = _path_hint(service, service.locations(answer, url, key)) if service.map_name else ""
-    webhook = _webhook_state(name, url, key) if name in _ARR_FACTORIES else WebhookState("")
-    return Result(True, service.describe(answer), hint, webhook.state, webhook.detail)
+    webhook = (
+        _webhook_state(name, url, key)
+        if name.split("-", 1)[0] in _ARR_FACTORIES
+        else WebhookState("")
+    )
+    paths = ""
+    if name.split("-", 1)[0] in _ARR_FACTORIES:
+        hint, paths = _arr_path_hint(url, key)
+    return Result(True, service.describe(answer), hint, webhook.state, webhook.detail, paths)

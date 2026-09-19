@@ -50,6 +50,8 @@ EDITABLE = frozenset(
         "SONARR_URL",
         "SONARR_API_KEY",
         "SONARR_PUBLIC_URL",
+        "RADARR_LABEL",
+        "SONARR_LABEL",
         "PLEX_URL",
         "PLEX_TOKEN",
         "PLEX_PATH_MAP",
@@ -88,7 +90,17 @@ def _settings_path() -> str:
 
 
 def editable(name: str) -> bool:
-    return name in EDITABLE or name.startswith(config.SCANNED_PREFIXES)
+    return (
+        name in EDITABLE or config.arr_setting(name) or name.startswith(config.SCANNED_PREFIXES)
+    )
+
+
+def secret(name: str) -> bool:
+    return name in SECRETS or (config.arr_setting(name) and name.endswith("_API_KEY"))
+
+
+def _secret_names() -> set[str]:
+    return set(SECRETS) | {name for name in config.current().arr_values if secret(name)}
 
 
 def env_pinned(name: str) -> bool:
@@ -99,7 +111,7 @@ def env_pinned(name: str) -> bool:
         # This process writes TZ itself to apply a saved zone, so config keeps
         # the deploy's own word from before that.
         return bool(config.STATED_TZ)
-    forms = (name, f"{name}_FILE", f"FILE__{name}") if name in SECRETS else (name,)
+    forms = (name, f"{name}_FILE", f"FILE__{name}") if secret(name) else (name,)
     return any((os.environ.get(form) or "").strip() for form in forms)
 
 
@@ -150,6 +162,9 @@ def _values() -> dict[str, object]:
     Sorted, or EDITABLE's hash order would reshuffle the answer every run.
     """
     values: dict[str, object] = {name: _held(name) for name in sorted(EDITABLE - SECRETS)}
+    values.update(
+        {name: value for name, value in config.current().arr_values.items() if not secret(name)}
+    )
     # Every rule's effective mode, not only the stated ones.
     for rule, mode in policy.resolved_modes(config.current().RULE_MODES).items():
         values[config.rule_variable(rule)] = mode
@@ -164,12 +179,11 @@ def snapshot() -> dict:
     }
     # Set-or-not in place of the value. Sorted, or a frozenset's iteration
     # order reshuffles the contract fixture on every run.
-    settings = config.current()
-    for name in sorted(SECRETS):
+    for name in sorted(_secret_names()):
         entries[name] = {
             "value": "",
             "env": env_pinned(name),
-            "set": bool(getattr(settings, name)),
+            "set": bool(config.value(name)),
         }
     return {
         # So the page keeps no second copy of the vocabulary.
@@ -204,7 +218,7 @@ def snapshot() -> dict:
             for codec in tracks.CODECS.values()
         ],
         # So the page knows an empty field means "leave it alone".
-        "secrets": sorted(SECRETS),
+        "secrets": sorted(_secret_names()),
         "settings": entries,
     }
 
@@ -281,8 +295,11 @@ def _seal_secrets(merged: dict) -> None:
     """
     plain = [
         name
-        for name in sorted(SECRETS)
-        if (held := merged.get(name)) and isinstance(held, str) and not keystore.sealed(held)
+        for name in sorted(merged)
+        if secret(name)
+        and (held := merged.get(name))
+        and isinstance(held, str)
+        and not keystore.sealed(held)
     ]
     if not plain:
         return
@@ -294,9 +311,8 @@ def _seal_secrets(merged: dict) -> None:
 def _recorded() -> dict[str, object]:
     """Every setting as the history keeps it: credentials as set-or-not."""
     values = _values()
-    settings = config.current()
-    for name in SECRETS:
-        values[name] = "set" if getattr(settings, name) else "unset"
+    for name in _secret_names():
+        values[name] = "set" if config.value(name) else "unset"
     return values
 
 
@@ -309,9 +325,9 @@ def _changes(before: dict, after: dict) -> dict[str, dict]:
     always has two sides.
     """
     return {
-        name: {"from": before[name], "to": after[name]}
-        for name in sorted(before)
-        if before[name] != after[name]
+        name: {"from": before.get(name), "to": after.get(name)}
+        for name in sorted(before.keys() | after.keys())
+        if before.get(name) != after.get(name)
     }
 
 

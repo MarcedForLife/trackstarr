@@ -21,6 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
 from . import config
+from .arr import source_label
 from .client import API_ERRORS, request
 from .media_server import map_path, path_within, plex_locations
 
@@ -348,6 +349,12 @@ class Server:
     #: Whether resolving needs no network call. Known links ride along with the
     #: title; the rest are the second request.
     known: bool = False
+    #: The button's word for one subject, where it depends on the subject: an
+    #: *arr button carries its instance's label, so two Radarrs read apart.
+    labelled: Callable[[Subject], str] | None = None
+
+    def label_for(self, subject: Subject) -> str:
+        return self.labelled(subject) if self.labelled else self.label
 
 
 def _arr_server(name: str, label: str, route: str, address: Callable[[], str]) -> Server:
@@ -355,13 +362,27 @@ def _arr_server(name: str, label: str, route: str, address: Callable[[], str]) -
     only for the titles it claims."""
 
     def link(subject: Subject) -> str:
-        base = address()
-        if not base or subject.arr != name or not subject.slug:
+        if subject.arr.split("-", 1)[0] != name or not subject.slug:
+            return ""
+        prefix = subject.arr.upper().replace("-", "_")
+        base = (
+            config.value(prefix + "_PUBLIC_URL") or config.value(prefix + "_URL")
+            if "-" in subject.arr
+            else address()
+        )
+        if not base:
             return ""
         # One path segment: quote() leaves a slash alone by default.
         return f"{base}{route}{urllib.parse.quote(subject.slug, safe='')}"
 
-    return Server(name, label, lambda: bool(address()), link, known=True)
+    return Server(
+        name,
+        label,
+        lambda: bool(address()),
+        link,
+        known=True,
+        labelled=lambda subject: source_label(subject.arr),
+    )
 
 
 #: What an IMDb id must look like before it goes into an href.
@@ -396,19 +417,27 @@ SERVERS: tuple[Server, ...] = (
 )
 
 
-def offered(subject: Subject) -> list[dict]:
+def _link(server: Server, subject: Subject, url: str) -> dict:
+    return {"server": server.name, "label": server.label_for(subject), "url": url}
+
+
+def offered(*subjects: Subject) -> list[dict]:
     """Every service that could link to this title, with the known links
     filled in.
 
     Read with the title itself, so the button row is there from the first
     frame rather than growing under the reader's thumb. The *arr links need no
-    call, so they are not made to wait behind a Plex search.
+    call, so they are not made to wait behind a Plex search. One subject per
+    folder holding the title: each instance gets its own button, and a link
+    two subjects share (IMDb) is drawn once.
     """
-    found = []
+    found: list[dict] = []
     for server in SERVERS:
         if server.known:
-            if url := server.resolve(subject):
-                found.append({"server": server.name, "label": server.label, "url": url})
+            for subject in subjects:
+                url = server.resolve(subject)
+                if url and not any(link.get("url") == url for link in found):
+                    found.append(_link(server, subject, url))
         elif server.configured():
             found.append({"server": server.name, "label": server.label})
     return found
@@ -448,22 +477,29 @@ def _remembered(server: Server, subject: Subject) -> str:
     return url
 
 
-def for_title(subject: Subject) -> list[dict]:
+def for_title(*subjects: Subject) -> list[dict]:
     """Every service that has this title, as ``server``, ``label`` and ``url``.
 
     Each server's path map is applied on the way out. Known links are rebuilt
     rather than cached, since a cache would be a second place for an address
-    to go stale.
+    to go stale. With a subject per folder, a media server is asked about each
+    until one has the title: one place to watch it is enough, and the next
+    folder is the same film. The known links are drawn per instance.
     """
-    if not subject.folder:
-        return []
-    if not subject.name:
-        subject = replace(subject, name=os.path.basename(subject.folder))
-    links = []
+    named = [
+        replace(subject, name=os.path.basename(subject.folder)) if not subject.name else subject
+        for subject in subjects
+        if subject.folder
+    ]
+    links: list[dict] = []
     for server in SERVERS:
-        if not server.configured():
+        if not server.known and not server.configured():
             continue
-        url = server.resolve(subject) if server.known else _remembered(server, subject)
-        if url:
-            links.append({"server": server.name, "label": server.label, "url": url})
+        for subject in named:
+            url = server.resolve(subject) if server.known else _remembered(server, subject)
+            if not url or any(link["url"] == url for link in links):
+                continue
+            links.append(_link(server, subject, url))
+            if not server.known:
+                break
     return links

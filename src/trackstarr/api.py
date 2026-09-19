@@ -109,7 +109,7 @@ def _pause_targets(body: dict) -> tuple[list[tuple[str, str, str]], tuple[int, s
     if not ids and not files:
         return [], (400, "name the titles or files to pause")
     found = library.pause_targets(ids) if ids else []
-    if len(found) != len(ids):
+    if {target[1] for target in found} != set(ids):
         return [], (404, "no such title")
     for spelling in files:
         path = paths.canonical(spelling)
@@ -119,16 +119,20 @@ def _pause_targets(body: dict) -> tuple[list[tuple[str, str, str]], tuple[int, s
     return found, None
 
 
-def _subject(found: library.Title) -> links.Subject:
-    """The few facts about a title that :mod:`trackstarr.links` needs."""
-    return links.Subject(
-        folder=found.folder,
-        name=found.name,
-        year=found.year,
-        arr=found.arr.name if found.arr else "",
-        slug=found.slug,
-        imdb_id=found.imdb_id,
-    )
+def _subjects(found: library.Title) -> list[links.Subject]:
+    """The few facts about a title that :mod:`trackstarr.links` needs, one per
+    folder holding it, so each instance gets its own button."""
+    return [
+        links.Subject(
+            folder=source.folder,
+            name=found.name,
+            year=found.year,
+            arr=source.arr.name if source.arr else "",
+            slug=source.slug,
+            imdb_id=found.imdb_id,
+        )
+        for source in found.sources
+    ]
 
 
 def _event_files(entry: dict) -> list[str]:
@@ -428,7 +432,7 @@ def _serve_title_work(handler: Handler, query: str) -> None:
         return
     # Resolved before the capture, so reaching the catalogue never holds the
     # scheduler's condition.
-    handler.send_json(lifecycle.title_work(titles[0].folder))
+    handler.send_json(lifecycle.title_work(titles[0].folders))
 
 
 def _serve_file(handler: Handler, query: str) -> None:
@@ -442,16 +446,25 @@ def _serve_file(handler: Handler, query: str) -> None:
 
 def _serve_title(handler: Handler, query: str) -> None:
     """One title's files, with what each is and what each would become."""
-    wanted = urllib.parse.parse_qs(query).get("id", [""])[0]
+    params = urllib.parse.parse_qs(query)
+    wanted = params.get("id", [""])[0]
+    try:
+        pages = int(params.get("pages", ["1"])[0])
+    except ValueError:
+        handler.reply(400, "pages must be a positive whole number")
+        return
+    if pages < 1:
+        handler.reply(400, "pages must be a positive whole number")
+        return
     titles = library.selected([wanted]) if wanted else []
-    found = library.title(wanted) if titles else None
+    found = library.title(wanted, pages=pages) if titles else None
     if found is None:
         handler.reply(404, "no such title")
         return
     # Which services could offer a link is a settings read, so the sheet
     # draws its buttons at once. Resolving them means calling the media
     # servers, which is the second request.
-    handler.send_json({**found, "servers": links.offered(_subject(titles[0]))})
+    handler.send_json({**found, "servers": links.offered(*_subjects(titles[0]))})
 
 
 def _serve_links(handler: Handler, query: str) -> None:
@@ -466,7 +479,7 @@ def _serve_links(handler: Handler, query: str) -> None:
     if not found:
         handler.reply(404, "no such title")
         return
-    handler.send_json({"links": links.for_title(_subject(found[0]))})
+    handler.send_json({"links": links.for_title(*_subjects(found[0]))})
 
 
 def _serve_cover(handler: Handler, query: str) -> None:
@@ -674,7 +687,12 @@ def _recheck_titles(handler: Handler, signed_in: users.Account) -> None:
     )
     if not lifecycle.launch(
         _recheck_thread,
-        args=([title.folder for title in chosen], mode != "apply", run, label),
+        args=(
+            [folder for title in chosen for folder in title.folders],
+            mode != "apply",
+            run,
+            label,
+        ),
         name="recheck",
     ):
         handler.reply(503, "the service is stopping")
@@ -848,7 +866,10 @@ def _update_settings(handler: Handler, signed_in: users.Account) -> None:
     links.forget()
     # An *arr that was unset or unreachable can answer for a poster now.
     covers.forget()
-    if not _ARR_CONNECTION.isdisjoint(body):
+    # A label is only read when an answer is built, so it is left out here.
+    if not _ARR_CONNECTION.isdisjoint(body) or any(
+        config.arr_setting(name) and not name.endswith("_LABEL") for name in body
+    ):
         # Off the request thread: two round trips per *arr.
         threading.Thread(target=reregister_webhooks, daemon=True, name="reregister").start()
     handler.send_json(settings.snapshot())
@@ -865,7 +886,7 @@ def _test_connection(handler: Handler, signed_in: users.Account) -> None:
     if body is None:
         return
     name = str(body.get("service") or "")
-    if name not in connections.BY_NAME:
+    if connections.service_for(name) is None:
         handler.reply(404, "no such service")
         return
     result = connections.check(name, str(body.get("url") or ""), str(body.get("key") or ""))

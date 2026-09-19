@@ -462,6 +462,7 @@ def test_a_connection_test_answers_the_check(listener, fast_scrypt, monkeypatch)
         "hint": "",
         "webhook": "connected",
         "webhook_detail": "",
+        "paths": "",
     }
     # The page's own values, passed through rather than read back off disk.
     assert asked == [("radarr", "http://radarr:7878", "typed")]

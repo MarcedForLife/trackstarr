@@ -42,11 +42,27 @@ _FRESH_CACHE = "private, no-cache"
 _ACTIONABLE_EVENTS = frozenset({"Download", "MovieFileImported"})
 
 
-def jobs_from_hook(body: dict, run: str | None = None) -> list[Job]:
+def jobs_from_hook(body: dict, run: str | None = None, caller: str = "") -> list[Job]:
     """The files a webhook body names, each as a job tagged with ``run``."""
     if body.get("eventType") not in _ACTIONABLE_EVENTS:
         return []
-    for arr in all_arrs():
+    arrs = all_arrs()
+    identified = next((arr for arr in arrs if arr.name == caller), None)
+    if caller.startswith(("radarr-", "sonarr-")) and (
+        identified is None or not identified.enabled
+    ):
+        raise ValueError("this arr instance is no longer enabled")
+    candidates = (
+        [identified]
+        if identified
+        else [arr for arr in arrs if body.get(arr.body_key) is not None]
+    )
+    if not identified and len(candidates) > 1:
+        enabled = [arr for arr in candidates if arr.enabled]
+        if len(enabled) != 1:
+            raise ValueError("ambiguous arr instance; use its registered webhook secret")
+        candidates = enabled
+    for arr in candidates:
         item = body.get(arr.body_key)
         if item is None:
             continue
@@ -250,7 +266,13 @@ class Handler(BaseHTTPRequestHandler):
         """Queue a delivery's files under one run, and answer with the count."""
         queued: list[str] = []
         run = events.run_id()
-        delivered = jobs_from_hook(body, run)
+        secret = self.headers.get(AUTH_HEADER) or ""
+        caller = next((name for name in auth.names() if auth.matches(name, secret)), "")
+        try:
+            delivered = jobs_from_hook(body, run, caller)
+        except ValueError as err:
+            self.reply(400, str(err))
+            return
         if delivered:
             # Opened before the first file and sealed after the last, so a
             # season import is one run rather than one per file.

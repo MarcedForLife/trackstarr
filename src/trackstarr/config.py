@@ -89,6 +89,30 @@ def rule_variable(rule: str) -> str:
 #: The settings API's allow-list asks the same question.
 SCANNED_PREFIXES = (RULE_PREFIX,)
 
+# Named connections keep the existing flat settings/secret-file conventions.
+ARR_SETTING = re.compile(
+    r"(RADARR|SONARR)_((?!PUBLIC_)[A-Z0-9]+)_(URL|API_KEY|PUBLIC_URL|LABEL)"
+)
+ARR_SUFFIXES = ("URL", "API_KEY", "PUBLIC_URL", "LABEL")
+
+#: What a connection's display name may hold. Stored data names a connection by
+#: its ID, so the label is free to change; this keeps it fit for a grid line.
+LABEL_CHARS = re.compile(r"[A-Za-z0-9 _-]{1,40}")
+LABEL_RULE = "may use letters, numbers, spaces, hyphens and underscores, up to 40 characters"
+
+
+def arr_setting(name: str) -> bool:
+    return ARR_SETTING.fullmatch(name) is not None
+
+
+def value(name: str) -> str:
+    """A connection setting, including named instances."""
+    settings = current()
+    return (
+        settings.arr_values.get(name, "") if arr_setting(name) else getattr(settings, name, "")
+    )
+
+
 #: What this install may rewrite, as a ladder. ``report`` rewrites nothing,
 #: even under ``sweep --apply``, so a new install can watch a week first.
 #: ``imports`` rewrites webhook deliveries and leaves the scheduled sweep
@@ -349,13 +373,31 @@ class _Source:
         self.read.add("TZ")
         return STATED_TZ or (self.file.get("TZ") or "").strip()
 
+    def _arr_values(self) -> dict[str, str]:
+        prefixes = set()
+        for name in self.file.keys() | os.environ.keys():
+            plain = name.removeprefix("FILE__").removesuffix("_FILE")
+            if match := ARR_SETTING.fullmatch(plain):
+                prefixes.add(f"{match[1]}_{match[2]}")
+        values = {}
+        for prefix in sorted(prefixes):
+            for suffix in ARR_SUFFIXES:
+                name = f"{prefix}_{suffix}"
+                if suffix == "API_KEY":
+                    values[name] = self._secret(name)
+                elif suffix == "LABEL":
+                    values[name] = self._raw(name, "").strip()
+                else:
+                    values[name] = self._raw(name, "").rstrip("/")
+        return values
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Every setting as one read left them.
 
     Uppercase fields are settings, spelt as the variable and the settings-file
-    key that set them. The four lowercase ones are what reading them turned up.
+    key that set them. Named arr settings live in arr_values.
     """
 
     #: The clock the schedule, log and event stamps use. An IANA name such as
@@ -371,8 +413,13 @@ class Settings:
     #: naming a file to read it from; see _Source._secret.
     RADARR_URL: str
     RADARR_API_KEY: str
+    arr_values: dict[str, str]
     SONARR_URL: str
     SONARR_API_KEY: str
+    #: How the pages name each *arr. Unset means its kind, or for a named
+    #: instance its kind and ID. Stored data keeps the ID either way.
+    RADARR_LABEL: str
+    SONARR_LABEL: str
 
     #: Media servers to refresh after a rewrite, since their watchers see
     #: nothing on a network mount. Jellyfin's settings fit Emby too.
@@ -512,8 +559,11 @@ def load() -> Settings:
         WORK_DIR=source._raw("WORK_DIR", "/data/trackstarr-work"),
         RADARR_URL=source._raw("RADARR_URL", "").rstrip("/"),
         RADARR_API_KEY=source._secret("RADARR_API_KEY"),
+        arr_values=source._arr_values(),
         SONARR_URL=source._raw("SONARR_URL", "").rstrip("/"),
         SONARR_API_KEY=source._secret("SONARR_API_KEY"),
+        RADARR_LABEL=source._raw("RADARR_LABEL", "").strip(),
+        SONARR_LABEL=source._raw("SONARR_LABEL", "").strip(),
         PLEX_URL=source._raw("PLEX_URL", "").rstrip("/"),
         PLEX_TOKEN=source._secret("PLEX_TOKEN"),
         JELLYFIN_URL=source._raw("JELLYFIN_URL", "").rstrip("/"),
@@ -661,6 +711,25 @@ def errors() -> list[str]:
         for name in _URL_SETTINGS
         if (value := getattr(settings, name)) and not value.startswith(("http://", "https://"))
     ]
+    problems += [
+        f"{name} must start with http:// or https://"
+        for name, value in settings.arr_values.items()
+        if name.endswith("_URL") and value and not value.startswith(("http://", "https://"))
+    ]
+    labels = {
+        "RADARR_LABEL": settings.RADARR_LABEL,
+        "SONARR_LABEL": settings.SONARR_LABEL,
+        **{
+            name: value
+            for name, value in settings.arr_values.items()
+            if name.endswith("_LABEL")
+        },
+    }
+    problems += [
+        f"{name}={value!r} {LABEL_RULE}"
+        for name, value in labels.items()
+        if value and not LABEL_CHARS.fullmatch(value)
+    ]
     # Fatal: an unknown zone reads as UTC, so a 04:00 sweep runs at the wrong
     # hour and every stamp agrees with it.
     if settings.TZ and (problem := _tz_error(settings.TZ)):
@@ -723,6 +792,11 @@ def warnings() -> list[str]:
         for set_name, unset_name in [(url_name, key_name), (key_name, url_name)]
         if getattr(settings, set_name) and not getattr(settings, unset_name)
     ]
+    for name, value in settings.arr_values.items():
+        if name.endswith("_API_KEY"):
+            url = name.removesuffix("API_KEY") + "URL"
+            if bool(value) != bool(settings.arr_values[url]):
+                problems.append(f"{url} and {name} must both be set for this instance to run")
     return problems
 
 

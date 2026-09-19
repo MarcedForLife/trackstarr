@@ -326,6 +326,10 @@
 			"value": "4",
 			"env": false
 		},
+		"RADARR_LABEL": {
+			"value": "",
+			"env": false
+		},
 		"RADARR_PUBLIC_URL": {
 			"value": "",
 			"env": false
@@ -360,6 +364,10 @@
 		},
 		"SKIP_HARDLINKS": {
 			"value": true,
+			"env": false
+		},
+		"SONARR_LABEL": {
+			"value": "",
 			"env": false
 		},
 		"SONARR_PUBLIC_URL": {

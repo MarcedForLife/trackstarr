@@ -817,7 +817,7 @@ def test_a_claim_cannot_land_between_the_reads_a_title_page_joins(monkeypatch):
 
     monkeypatch.setattr(runs, "capture", capture)
     with ThreadPoolExecutor(max_workers=2) as pool:
-        answering = pool.submit(lifecycle.title_work, "/media/Film")
+        answering = pool.submit(lifecycle.title_work, ["/media/Film"])
         try:
             assert reading.wait(3)
             claiming = pool.submit(claim, work.scheduler)
@@ -846,7 +846,7 @@ def test_a_title_is_filtered_and_formatted_off_the_dispatch_lock(monkeypatch):
     queue_film("one")
     monkeypatch.setattr(runs.Capture, "active_under", project)
     with ThreadPoolExecutor() as pool:
-        answering = pool.submit(lifecycle.title_work, "/media/Film")
+        answering = pool.submit(lifecycle.title_work, ["/media/Film"])
         assert reached.wait(3)
         task = claim(work.scheduler)
         release.set()
@@ -864,11 +864,11 @@ def test_a_file_between_its_phases_is_on_neither_of_a_titles_lists():
     (phase,) = queue_film("one", lane="probe")
     step(work.scheduler)
 
-    answered = lifecycle.title_work("/media/Film")
+    answered = lifecycle.title_work(["/media/Film"])
     assert (answered["queued"], answered["active"]) == ([], [])
 
     work.scheduler.continue_file(phase.handle, lambda: None, 30.0)
-    assert [row["path"] for row in lifecycle.title_work("/media/Film")["queued"]] == [
+    assert [row["path"] for row in lifecycle.title_work(["/media/Film"])["queued"]] == [
         "/media/Film/one.mkv"
     ]
 
@@ -879,7 +879,7 @@ def test_a_title_names_the_held_files_under_it_and_no_sibling_folder():
     lifecycle.open_run("sweep", runs.SWEEP)
     for path in ("/media/Film/one.mkv", "/media/Film Extra/two.mkv", "/media/Film"):
         runs.begin("sweep", path)
-    assert [row["path"] for row in lifecycle.title_work("/media/Film")["active"]] == [
+    assert [row["path"] for row in lifecycle.title_work(["/media/Film"])["active"]] == [
         "/media/Film/one.mkv",
         "/media/Film",
     ]
@@ -899,26 +899,41 @@ def test_a_stopped_or_skipped_title_keeps_the_file_its_worker_still_holds(comman
         lifecycle.skip_file("sweep", "/media/Film/one.mkv")
         lifecycle.skip({("sweep", "/media/Film/two.mkv")})
 
-    answered = lifecycle.title_work("/media/Film")
+    answered = lifecycle.title_work(["/media/Film"])
     assert answered["queued"] == []
     (held,) = answered["active"]
     assert (held["run"], held["path"]) == ("sweep", "/media/Film/one.mkv")
     assert (held["stopping"], held["skipped"]) == (command == "stop", command == "skip")
 
 
+def test_a_title_held_in_two_folders_reads_as_one_queue():
+    """Rows from both folders merge in the queue's own order, whichever order
+    the folders were named in."""
+    lifecycle.open_run("sweep", runs.SWEEP)
+    for path in ("/media/Film/one.mkv", "/media/Other/x.mkv", "/media4k/Film/one.mkv"):
+        work.scheduler.submit("sweep", path, "work", lambda: None)
+    runs.begin("sweep", "/media4k/Film/two.mkv")
+    answered = lifecycle.title_work(["/media4k/Film", "/media/Film"])
+    assert [(row["path"], row["position"]) for row in answered["queued"]] == [
+        ("/media/Film/one.mkv", 1),
+        ("/media4k/Film/one.mkv", 3),
+    ]
+    assert [row["path"] for row in answered["active"]] == ["/media4k/Film/two.mkv"]
+
+
 def test_an_activity_capture_does_not_follow_later_dispatch():
     lifecycle.open_run("sweep", runs.SWEEP)
     queue_film("one", "two")
     captured = lifecycle.activity()
-    before = captured.for_folder("/media/Film")
+    before = captured.for_folders(["/media/Film"])
 
     step(work.scheduler)
     queue_film("three")
     lifecycle.skip({("sweep", "/media/Film/two.mkv")})
 
-    assert captured.for_folder("/media/Film") == before
+    assert captured.for_folders(["/media/Film"]) == before
     assert captured.overview() == captured.overview()
-    assert [row["path"] for row in lifecycle.title_work("/media/Film")["queued"]] == [
+    assert [row["path"] for row in lifecycle.title_work(["/media/Film"])["queued"]] == [
         "/media/Film/three.mkv"
     ]
 

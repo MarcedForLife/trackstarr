@@ -251,7 +251,7 @@ def test_title_work_reports_global_queue_positions_for_viewers(queued, monkeypat
     monkeypatch.setattr(
         library,
         "selected",
-        lambda ids: [SimpleNamespace(folder="/media")] if ids == ["film"] else [],
+        lambda ids: [SimpleNamespace(folders=["/media"])] if ids == ["film"] else [],
     )
     assert api(listener, "GET", "/api/library/work?id=film")[0] == 401
     assert api(listener, "GET", "/api/library/work?id=unknown", cookie=viewer)[0] == 404

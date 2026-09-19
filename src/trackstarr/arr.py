@@ -5,7 +5,7 @@ import logging
 import os
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from . import auth, config
 from .client import API_ERRORS, refusal, request
@@ -58,6 +58,10 @@ class Arr:
     folder_key: str  # field on that object holding the title's folder
     file_key: str  # webhook body key for a single imported file
     files_key: str  # webhook body key for a batch of them
+
+    @property
+    def kind(self) -> str:
+        return self.name.split("-", 1)[0]
 
     @property
     def enabled(self) -> bool:
@@ -280,8 +284,30 @@ def sonarr() -> Arr:
     )
 
 
+def source_label(name: str) -> str:
+    """How the pages name an *arr: its label setting, else its kind and ID as
+    ``Radarr 4k``. Read as an answer is built, so stored data keeps the ID
+    and a rename costs nothing."""
+    kind, _, instance = name.partition("-")
+    label = config.value(f"{name.upper().replace('-', '_')}_LABEL")
+    if label:
+        return label
+    return f"{kind.title()} {instance}" if instance else kind.title()
+
+
 def all_arrs() -> list[Arr]:
-    return [radarr(), sonarr()]
+    defaults = [radarr(), sonarr()]
+    values = config.current().arr_values
+    return defaults + [
+        replace(
+            defaults[0 if name.startswith("RADARR_") else 1],
+            name=name.removesuffix("_API_KEY").lower().replace("_", "-"),
+            url=values[name.removesuffix("API_KEY") + "URL"],
+            key=key,
+        )
+        for name, key in values.items()
+        if name.endswith("_API_KEY")
+    ]
 
 
 #: Registration retry delays. The containers usually start together, so early
@@ -362,6 +388,13 @@ def path_index(arrs: list[Arr]) -> LibraryIndex:
             # claim every file.
             if base := (item.get("path") or "").rstrip("/"):
                 # First wins.
+                if base in items and items[base].arr.name != arr.name:
+                    log.warning(
+                        "folder conflict at %s: %s owns it; %s also claims it",
+                        base,
+                        items[base].arr.name,
+                        arr.name,
+                    )
                 items.setdefault(base, LibraryItem(original_of(item), item["id"], arr))
     log.info("indexed %d titles from the *arrs", len(items))
     return LibraryIndex(items, complete)
