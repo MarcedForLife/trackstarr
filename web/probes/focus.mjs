@@ -164,14 +164,24 @@ async function tiltChecks(browser, engine) {
 				() => !!document.querySelector('main button.poster:has([data-tilt])')?.closest('[inert]')
 			);
 			await page.waitForTimeout(700);
-			const flat = () =>
-				Array.from(document.querySelectorAll('main [data-tilt]')).every(
-					(el) =>
-						!el.classList.contains('is-near') &&
-						!el.classList.contains('is-raised') &&
-						(!el.style.getPropertyValue('--rx') || el.style.getPropertyValue('--rx') === '0deg') &&
-						(!el.style.getPropertyValue('--ry') || el.style.getPropertyValue('--ry') === '0deg')
+			// The sheet has its own interactive poster inside main. Check only
+			// the inert background, and require posters so this cannot pass empty.
+			const flat = () => {
+				const covers = [...document.querySelectorAll('main [data-tilt]')].filter((el) =>
+					el.closest('[inert]')
 				);
+				return (
+					covers.length > 0 &&
+					covers.every(
+						(el) =>
+							!el.classList.contains('is-near') &&
+							!el.classList.contains('is-raised') &&
+							(!el.style.getPropertyValue('--rx') ||
+								el.style.getPropertyValue('--rx') === '0deg') &&
+							(!el.style.getPropertyValue('--ry') || el.style.getPropertyValue('--ry') === '0deg')
+					)
+				);
+			};
 			check(`${engine} ${route}: opening settles parked tilt`, await page.evaluate(flat), true);
 			await page.mouse.move(point.x + 10, point.y + 10);
 			await page.waitForTimeout(200);

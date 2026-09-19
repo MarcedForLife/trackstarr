@@ -189,17 +189,43 @@ try {
 			const coverButton = dialog
 				.getByRole('button', { name: 'View Queue Movie details', exact: true })
 				.first();
+			// FileTitle unmounts its sheet immediately on close, even with reads pending.
+			let releaseTitle;
+			const heldTitle = new Promise((resolve) => (releaseTitle = resolve));
+			const pendingReads = [];
+			for (const kind of ['title', 'links', 'work']) {
+				pendingReads.push(page.waitForRequest(`**/api/library/${kind}**`));
+				await page.route(`**/api/library/${kind}**`, async (route) => {
+					await heldTitle;
+					await route.fulfill({
+						json:
+							kind === 'title'
+								? shape.title
+								: kind === 'links'
+									? { links: [] }
+									: { queued: [], active: [], pauses: [] }
+					});
+				});
+			}
 			await coverButton.click();
 			const titleSheet = page.getByRole('dialog', {
 				name: shape.library.titles[0].name,
 				exact: true
 			});
 			await titleSheet.waitFor();
+			await Promise.all(pendingReads);
 			await page.keyboard.press('Escape');
 			await titleSheet.waitFor({ state: 'hidden' });
 			await page.waitForFunction(
 				() => document.activeElement?.getAttribute('aria-label') === 'View Queue Movie details'
 			);
+			const lateReads = ['title', 'links', 'work'].map((kind) =>
+				page.waitForResponse(`**/api/library/${kind}**`)
+			);
+			releaseTitle();
+			await Promise.all((await Promise.all(lateReads)).map((response) => response.finished()));
+			for (const kind of ['title', 'links', 'work']) await page.unroute(`**/api/library/${kind}**`);
+			assert.equal(await titleSheet.count(), 0, 'late reads cannot remount a FileTitle sheet');
 			// Held rather than tapped, the same cover starts picking with that file
 			// ticked, which is how the grid is selected.
 			await hold(coverButton);
