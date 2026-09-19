@@ -50,6 +50,13 @@ files. It supports simulated sweeps, rule changes, retagging and rechecks, plus
 three weeks of generated event history. Library and processing changes reset on
 reload; browser appearance preferences persist.
 
+For multiple libraries, open **Debug → Scenarios → Multiple variants** in the demo
+notice. This optional scenario adds named 4K Radarr/Sonarr connections holding
+one film and one series in a second folder each, plus alternate film/episode
+files in the original folder. The feedback names the titles to open. Their
+sheets list both folders and every variant in one selector, each saying which
+instance holds it. **Full board** or a reload restores the default scenario.
+
 `src/lib/demo/posters.json` records image sources and licences.
 `posters:demo` checks licences and downloads assets to the gitignored
 `src/lib/demo/posters/`; the demo credits displayed images. The GitHub Pages

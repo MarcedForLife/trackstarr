@@ -59,6 +59,11 @@ change the mount or `MEDIA_DIRS` to match your library. Missing sweep directorie
 produce warnings, so check the startup log. Set `WEBHOOK_URL` if the *arrs cannot
 reach `http://trackstarr:5120`. **Test** on a connection card makes the *arr call
 back, which is what proves the address resolves where it runs.
+The badge says **API connected** until its webhook test succeeds. The test also
+checks every library root reported by that instance: whether Trackstarr can see
+it as a directory and whether it falls under `MEDIA_DIRS`, with individual results
+and a summary. This does not check every file or write permissions. A path-check failure
+does not mean the arr API is unreachable.
 
 The default `REWRITE_MODE=imports` rewrites new imports but only reports changes
 for library sweeps. Use `report` to preview all processing first; use `all` to
@@ -272,6 +277,57 @@ through the environment and require a restart.
 | `REGENERATE_ABOVE_PERCENT`                                                   | `0`                                       | Oversized-track threshold; 0 disables, otherwise 110–400. |
 | `COMMENTARY_PATTERN`, `SDH_PATTERN`, `FORCED_PATTERN`, `RELEASE_TAG_PATTERN` | See [config.py](src/trackstarr/config.py) | Track-title detection regexes.                            |
 
+### Multiple arr instances and variants
+
+Use **Settings → Connections → New connection** for additional Radarr or Sonarr
+servers, then save the address and API key. A name is optional: it is how the
+pages label the connection and can change any time. The settings keys take the
+name's letters and digits, `RADARR_4K_*` for `4K`, or the next free number
+unnamed, and are fixed on save, since imports, history and variants are stored
+against that ID. Existing single-instance settings keep working.
+
+Environment configuration uses the same keys. The ID is letters and numbers
+(`PUBLIC` is reserved); the label is optional:
+
+```env
+RADARR_4K_URL=http://radarr4k:7878
+RADARR_4K_API_KEY=your-key
+RADARR_4K_PUBLIC_URL=https://radarr4k.example.com
+RADARR_4K_LABEL=UHD shelf
+SONARR_REMOTE_URL=http://sonarr-remote:8989
+SONARR_REMOTE_API_KEY=your-key
+```
+
+`RADARR_LABEL` and `SONARR_LABEL` name the first instance of each the same way.
+
+Named credentials also accept `_FILE` and `FILE__` secret-file forms. Saved keys
+are encrypted and never returned by the settings API. Each instance gets its own
+webhook secret; use the automatically registered connection so imports and
+rescans go to the correct server even when their movie or series IDs overlap.
+
+Mount each library at the same paths its arr instance uses, and include all roots
+in `MEDIA_DIRS`. A title is identified by its provider id (TMDB for films, TVDB
+for series), not its folder: the same film or series in two instances is one
+poster, one sheet and one file list, and its files say which instance holds
+them. Files are tracked by path. A folder no arr claims stays its own title and
+never merges by name. If two instances claim the same folder, the first
+instance owns that folder (defaults first, then named instances alphabetically).
+The Library page flags shared folders and identifies their owner and the other
+instances claiming them; sweeps also log these conflicts.
+
+Title controls (hold, resume, skip, re-check) cover every folder holding the
+title; each file keeps its own. The sheet's header lists each folder with its
+instance, and each instance gets its own Radarr or Sonarr button. Within a
+title, multiple film files or files with the same `SxxExx` episode number share
+a file selector, showing each variant's instance (when there is more than one),
+quality (when named), size and status. A single variant keeps the usual view.
+Audio transfer and syncing between variants are not implemented.
+
+Variant groups show how many files need attention, including alternatives that
+are not selected. Large titles load in pages of 200 complete groups: an episode's
+variants are never split across pages. **Load more files** reveals the remaining
+groups, and refreshes preserve the loaded page depth and selected file.
+
 ### Connections
 
 | Variable                                                                           | Default                  | Purpose                                                                   |
@@ -362,6 +418,9 @@ uv run mypy
 stream dictionaries; integration tests generate real media with ffmpeg. Tag-editing
 tests skip if `mkvpropedit` is unavailable. `cryptography` is the only Python runtime
 dependency. After dependency changes, update and commit `uv.lock`.
+
+For repeatable large-library response measurements, see the
+[title-detail benchmark](tools/benchmarks/README.md).
 
 See [web development](web/README.md) and [browser probes](web/probes/README.md)
 for frontend commands and conventions.
