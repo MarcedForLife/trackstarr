@@ -25,7 +25,7 @@ import type { SettingsSnapshot, SettingValue } from '$lib/settings';
 import { catalogue, type FileSpec, type TitleSpec } from './catalogue';
 import { chronicle } from './history';
 import { added, judge, type Settings } from './judge';
-import { DEFAULTS, ENV_PINNED, problems, RULE_SETTINGS, SECRETS, snapshot } from './settings';
+import { DEFAULTS, ENV_PINNED, problems, RULE_SETTINGS, isSecret, snapshot } from './settings';
 import { publish } from './stream';
 import { DAY_MS, digest, lastAt, MINUTE_MS, slug, stamp, VERSION } from './util';
 
@@ -35,9 +35,11 @@ export type File = LibraryFile & {
 	ext: string;
 	/** Every track the file carries. `tracks` is what has been probed, which is
 	 * nothing for a file no sweep has opened. */
-	source: Track[];
+	contents: Track[];
 	/** The running time, which `seconds` reports once probed. */
 	runtime: number;
+	/** The instance whose folder holds it; none under a folder no *arr claims. */
+	instance?: string;
 	/** When its verdict was reached, in epoch seconds; 0 for none. */
 	judged: number;
 	/** Still held by a download client, so every rewrite is deferred. */
@@ -119,10 +121,16 @@ export function bytesOf(tracks: Track[], seconds: number): number {
 	return Math.round((rate / 8) * seconds * 1.004);
 }
 
-function fileOf(title: Title, spec: FileSpec): File {
+/** Every instance holding a title with its folder, primary first. */
+export function sources(spec: TitleSpec): { instance?: string; folder: string }[] {
+	return [{ instance: spec.instance ?? spec.arr, folder: spec.folder }, ...(spec.sources ?? [])];
+}
+
+function fileOf(title: Title, spec: FileSpec, held = sources(title.spec)[0]): File {
 	const opened = spec.history?.kind !== 'unchecked';
 	return {
-		path: `${title.spec.folder}/${spec.name}${spec.ext}`,
+		path: `${held.folder}/${spec.name}${spec.ext}`,
+		instance: held.instance,
 		name: spec.name.slice(spec.name.lastIndexOf('/') + 1) + spec.ext,
 		ext: spec.ext,
 		status: 'unchecked',
@@ -132,7 +140,7 @@ function fileOf(title: Title, spec: FileSpec): File {
 		tracks: opened ? spec.tracks : [],
 		planned: [],
 		why: {},
-		source: spec.tracks,
+		contents: spec.tracks,
 		runtime: spec.seconds,
 		judged: 0,
 		hardlinked: spec.history?.kind === 'deferred' || undefined,
@@ -154,7 +162,7 @@ export function rejudge(state: State, file: File, at: number): void {
 
 /** Open the file, as a sweep does the first time it reaches one. */
 export function probe(file: File): void {
-	file.tracks = file.source;
+	file.tracks = file.contents;
 	file.seconds = file.runtime;
 }
 
@@ -177,7 +185,7 @@ export function rewrite(state: State, file: File, at: number): Modified {
 		dropped,
 		added: after.filter((track) => track.flags?.includes('generated')).map((track) => track.index)
 	};
-	file.source = after;
+	file.contents = after;
 	file.tracks = after;
 	file.bytes = made.bytes_after!;
 	file.modified = made;
@@ -303,6 +311,16 @@ const STATES: Verdict[] = [
 
 const ACTIONABLE: Verdict[] = ['failed', 'pending'];
 
+/** How the pages name an *arr: its label setting, else its kind and the ID
+ * its settings keys carry. Read as an answer is built, as the service does. */
+export function sourceLabel(state: State, name: string): string {
+	const [kind, instance] = name.split('-', 2);
+	const label = String(state.settings[`${name.toUpperCase().replace('-', '_')}_LABEL`] ?? '');
+	if (label.trim()) return label.trim();
+	const word = kind[0].toUpperCase() + kind.slice(1);
+	return instance ? `${word} ${instance}` : word;
+}
+
 export function card(state: State, title: Title): Card {
 	const { spec } = title;
 	const counts: Record<string, number> = {};
@@ -335,6 +353,10 @@ export function card(state: State, title: Title): Card {
 		state: verdict,
 		added: title.added
 	};
+	if (spec.instance) {
+		made.source = sourceLabel(state, spec.instance);
+	}
+	if (spec.sources?.length) made.variants = spec.sources.length + 1;
 	if (spec.year) made.year = spec.year;
 	if (spec.lang) made.lang = spec.lang;
 	if (spec.rating && state.settings.IMDB_RATINGS) made.rating = spec.rating;
@@ -413,16 +435,17 @@ function known(state: State, title: Title): TitleLink[] {
 	const { arr, imdb, name } = title.spec;
 	const found: TitleLink[] = [];
 	if (arr) {
-		const base =
-			arr === 'radarr'
-				? settings.RADARR_PUBLIC_URL || settings.RADARR_URL
-				: settings.SONARR_PUBLIC_URL || settings.SONARR_URL;
-		if (base) {
-			found.push({
-				server: arr,
-				label: arr === 'radarr' ? 'Radarr' : 'Sonarr',
-				url: `${base}${ARR_ROUTES[arr]}${slug(name)}`
-			});
+		// One button per instance holding it, each carrying its own label.
+		for (const { instance = arr } of sources(title.spec)) {
+			const prefix = instance.toUpperCase().replace('-', '_');
+			const base = settings[`${prefix}_PUBLIC_URL`] || settings[`${prefix}_URL`];
+			if (base) {
+				found.push({
+					server: arr,
+					label: sourceLabel(state, instance),
+					url: `${base}${ARR_ROUTES[arr]}${slug(name)}`
+				});
+			}
 		}
 	}
 	if (imdb) {
@@ -440,11 +463,12 @@ function servers(state: State, title: Title): TitleServer[] {
 	return [...listed, ...known(state, title)];
 }
 
-export function wireFile(file: File): LibraryFile {
+export function wireFile(state: State, file: File): LibraryFile {
 	const { path, name, status, bytes, seconds, lang, tracks, planned, why, modified } = file;
 	return {
 		path,
 		name,
+		...(file.instance ? { source: sourceLabel(state, file.instance) } : {}),
 		status,
 		bytes,
 		seconds,
@@ -465,8 +489,12 @@ export function detail(state: State, title: Title): TitleDetail {
 		state: card(state, title).state,
 		folder: spec.folder,
 		current: state.current,
-		files: title.files.map(wireFile),
+		files: title.files.map((file) => wireFile(state, file)),
 		total: title.files.length,
+		folders: sources(spec).map(({ instance, folder }) => ({
+			source: instance ? sourceLabel(state, instance) : '',
+			folder
+		})),
 		servers: servers(state, title)
 	};
 	if (spec.year) made.year = spec.year;
@@ -525,23 +553,22 @@ export function placePauses(
 	by: string,
 	now = Date.now()
 ): void {
-	for (const target of titles) {
-		const spec = typeof target === 'string' ? { folder: target, id: '', name: '' } : target.spec;
-		state.pauses = state.pauses.filter((pause) => pause.path !== spec.folder);
+	for (const { folder, id, name } of pauseFolders(titles)) {
+		state.pauses = state.pauses.filter((pause) => pause.path !== folder);
 		state.pauses.push({
-			path: spec.folder,
+			path: folder,
 			seconds: seconds || null,
 			until: seconds ? stamp(now + seconds * 1000) : null,
 			by,
 			reason,
 			at: stamp(now),
-			title: spec.id,
-			name: spec.name
+			title: id,
+			name
 		});
 		record(state, {
 			event: 'item_paused',
-			path: spec.folder,
-			title: spec.id,
+			path: folder,
+			title: id,
 			...(seconds ? { seconds } : {}),
 			reason,
 			by
@@ -551,12 +578,24 @@ export function placePauses(
 	publish('events');
 }
 
+/** A file pauses on its own path; a title pauses on every folder holding it. */
+function pauseFolders(targets: (Title | string)[]) {
+	return targets.flatMap((target) =>
+		typeof target === 'string'
+			? [{ folder: target, id: '', name: '' }]
+			: sources(target.spec).map(({ folder }) => ({
+					folder,
+					id: target.spec.id,
+					name: target.spec.name
+				}))
+	);
+}
+
 export function resumePauses(state: State, titles: (Title | string)[], by: string): void {
-	for (const target of titles) {
-		const spec = typeof target === 'string' ? { folder: target, id: '', name: '' } : target.spec;
-		if (!state.pauses.some((pause) => pause.path === spec.folder)) continue;
-		state.pauses = state.pauses.filter((pause) => pause.path !== spec.folder);
-		record(state, { event: 'item_resumed', path: spec.folder, title: spec.id, by });
+	for (const { folder, id } of pauseFolders(titles)) {
+		if (!state.pauses.some((pause) => pause.path === folder)) continue;
+		state.pauses = state.pauses.filter((pause) => pause.path !== folder);
+		record(state, { event: 'item_resumed', path: folder, title: id, by });
 	}
 	publish('runs');
 	publish('events');
@@ -609,7 +648,7 @@ export function retag(
 			});
 			continue;
 		}
-		const track = file.source.find((each) => each.index === Number(target.index));
+		const track = file.contents.find((each) => each.index === Number(target.index));
 		if (!track) {
 			outcomes.push({
 				path: file.path,
@@ -675,14 +714,24 @@ export function saveSettings(
 	const secretsSet = new Set(state.secretsSet);
 	for (const [name, value] of Object.entries(changes)) {
 		if (ENV_PINNED.has(name)) continue;
-		if (SECRETS.includes(name)) {
+		if (isSecret(name)) {
 			// Empty leaves a credential alone; null clears it; anything else sets it.
 			if (value === '') continue;
 			const was = secretsSet.has(name);
-			if (value === null) secretsSet.delete(name);
-			else secretsSet.add(name);
+			if (value === null) {
+				secretsSet.delete(name);
+				delete next[name];
+			} else {
+				secretsSet.add(name);
+				next[name] = '';
+			}
 			if (was !== secretsSet.has(name))
 				moved[name] = { from: was ? 'set' : '', to: was ? '' : 'set' };
+			continue;
+		}
+		if (value === null && !(name in DEFAULTS)) {
+			moved[name] = { from: next[name], to: null };
+			delete next[name];
 			continue;
 		}
 		const to = value ?? DEFAULTS[name];
@@ -726,4 +775,54 @@ export function clearVerdicts(state: State): number {
 	state.current = true;
 	publish('library');
 	return dropped;
+}
+
+/** Optional board: colliding arr IDs, independent libraries and duplicate
+ * files within a library. Nothing in the opening catalogue changes. */
+export function addCopies(state: State, now: number): string[] {
+	const names: string[] = [];
+	for (const kind of ['movie', 'series']) {
+		const original =
+			state.titles.find((title) => title.spec.kind === kind && title.files.length > 1) ??
+			state.titles.find((title) => title.spec.kind === kind && title.files.length)!;
+		const { spec } = original;
+		const instance = `${spec.arr}-4k`;
+		// The same title held by a 4K instance too: one poster, a second folder.
+		const held = { instance, folder: spec.folder.replace('/media/', '/media/4k/') };
+		spec.sources = [held];
+		const upgrades = spec.files.slice(0, kind === 'series' ? 4 : 1).map((file) => ({
+			...file,
+			name: `${file.name.replace(/1080p/gi, '2160p')} [4K]`,
+			history: undefined,
+			tracks: file.tracks.filter((track) => track.kind !== 'audio' || track.channels !== 2)
+		}));
+		// A second release of the film / first episode in the same folder.
+		const alternate = structuredClone(spec.files[0]);
+		alternate.name += ' [1080p alternate]';
+		alternate.history = undefined;
+		const arrivals = [
+			fileOf(original, alternate),
+			...upgrades.map((upgrade) => fileOf(original, upgrade, held))
+		];
+		arrivals[1].failure = 'ffmpeg exited 1: Invalid data found when processing input';
+		for (const file of arrivals) {
+			rejudge(state, file, now);
+			original.files.push(file);
+			state.byPath.set(file.path, file);
+		}
+		const prefix = instance.toUpperCase().replace('-', '_');
+		state.settings[`${prefix}_URL`] = `http://localhost:${kind === 'movie' ? 7879 : 8990}`;
+		state.settings[`${prefix}_PUBLIC_URL`] = '';
+		state.settings[`${prefix}_API_KEY`] = '';
+		state.settings[`${prefix}_LABEL`] = '';
+		state.secretsSet.add(`${prefix}_API_KEY`);
+		names.push(spec.name);
+	}
+	state.settings.MEDIA_DIRS = [
+		...(state.settings.MEDIA_DIRS as string[]),
+		'/data/media/4k/movies',
+		'/data/media/4k/tv'
+	];
+	publish('library');
+	return names;
 }

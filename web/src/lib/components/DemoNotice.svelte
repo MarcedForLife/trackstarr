@@ -47,6 +47,12 @@
 	// In the order they read as a tour: the opening board, then the three that
 	// pose something it cannot show on its own.
 	const BOARDS = [
+		{
+			name: 'multiple-variants',
+			label: 'Multiple variants',
+			said: (titles: string[]) =>
+				`${titles.join(' and ')} held by a 4K instance as well. Open one to compare the files.`
+		},
 		{ name: 'full', label: 'Full board', said: () => 'Back to the opening board.' },
 		{ name: 'imports-only', label: 'Imports only', said: imported },
 		{
@@ -156,7 +162,7 @@
 				</div>
 				<p class="mt-1.5">
 					Each rebuilds the board from the catalogue: the sweep the demo opens on, imports only, a
-					rewrite that broke, or everything held with work waiting.
+					rewrite that broke, everything held with work waiting, or separate 4K and 1080p libraries.
 				</p>
 				<!-- The Debug link is off the top of a phone by the time the panel is
 				     read, so the way out shares the last line with what came back. -->

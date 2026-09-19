@@ -152,6 +152,7 @@ export const DEFAULTS: Settings = {
 	PROBE_TIMEOUT: '180',
 	PROBE_WORKERS: '4',
 	RADARR_API_KEY: '',
+	RADARR_LABEL: '',
 	RADARR_PUBLIC_URL: '',
 	RADARR_URL: 'http://localhost:7878',
 	REGENERATE_ABOVE_PERCENT: '0',
@@ -163,6 +164,7 @@ export const DEFAULTS: Settings = {
 	SDH_PATTERN: '\\bsdh\\b|\\bcc\\b|hearing[\\s._-]*impaired',
 	SKIP_HARDLINKS: true,
 	SONARR_API_KEY: '',
+	SONARR_LABEL: '',
 	SONARR_PUBLIC_URL: '',
 	SONARR_URL: 'http://localhost:8989',
 	SWEEP_AT: '0 3 * * *',
@@ -189,11 +191,15 @@ export const RULE_SETTINGS = new Set([
 	...Object.keys(RULES).map((name) => `RULE_${name.toUpperCase()}`)
 ]);
 
+export function isSecret(name: string): boolean {
+	return SECRETS.includes(name) || /^(RADARR|SONARR)_[A-Z0-9]+_API_KEY$/.test(name);
+}
+
 export function snapshot(settings: Settings, secretsSet: Set<string>): SettingsSnapshot {
 	const values: SettingsSnapshot['settings'] = {};
 	for (const [name, value] of Object.entries(settings)) {
 		values[name] = { value, env: ENV_PINNED.has(name) };
-		if (SECRETS.includes(name)) values[name] = { value: '', env: false, set: secretsSet.has(name) };
+		if (isSecret(name)) values[name] = { value: '', env: false, set: secretsSet.has(name) };
 	}
 	return {
 		rules: RULES,
@@ -207,7 +213,7 @@ export function snapshot(settings: Settings, secretsSet: Set<string>): SettingsS
 		stock: STOCK,
 		rates: RATES,
 		codecs: CODECS,
-		secrets: SECRETS,
+		secrets: Object.keys(settings).filter(isSecret).sort(),
 		settings: values
 	};
 }
@@ -242,6 +248,13 @@ export function problems(settings: Settings): string[] {
 	}
 	const at = String(settings.SWEEP_AT ?? '');
 	if (at && at.trim().split(/\s+/).length !== 5) found.push('SWEEP_AT needs five fields');
+	// A connection's display name is a grid line, kept to what one can hold.
+	for (const [name, value] of Object.entries(settings)) {
+		if (name.endsWith('_LABEL') && value && !/^[A-Za-z0-9 _-]{1,40}$/.test(String(value)))
+			found.push(
+				`${name}=${JSON.stringify(value)} may use letters, numbers, spaces, hyphens and underscores, up to 40 characters`
+			);
+	}
 	return found;
 }
 

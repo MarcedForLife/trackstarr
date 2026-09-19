@@ -26,6 +26,7 @@ import {
 	VERSION
 } from './util';
 import {
+	addCopies,
 	bytesOf,
 	pausedTitle,
 	pausesNow,
@@ -38,7 +39,8 @@ import {
 	type File,
 	type SimRun,
 	type Title,
-	type State
+	type State,
+	sources
 } from './state';
 
 // One file a run has picked up, with what the simulation needs to carry it on.
@@ -310,7 +312,8 @@ function coversFor(state: State, paths: string[]): FileCovers {
 	return Object.fromEntries(
 		paths.flatMap((path) => {
 			const title = (
-				state.byPath.get(path)?.title ?? state.titles.find((title) => title.spec.folder === path)
+				state.byPath.get(path)?.title ??
+				state.titles.find((title) => sources(title.spec).some((held) => held.folder === path))
 			)?.spec;
 			return title ? [[path, { id: title.id, name: title.name }]] : [];
 		})
@@ -896,7 +899,7 @@ export function simulateImport(
 				if (queued.path === oldPath) queued.path = file.path;
 			}
 		}
-		file.source = [
+		file.contents = [
 			{ index: 0, kind: 'video', codec: 'hevc', bitrate: 35_000_000, title: '4K UHD' },
 			{
 				index: 1,
@@ -908,7 +911,7 @@ export function simulateImport(
 				flags: ['default']
 			}
 		];
-		file.bytes = bytesOf(file.source, spec.seconds);
+		file.bytes = bytesOf(file.contents, spec.seconds);
 		file.tracks = [];
 		file.planned = [];
 		file.seconds = 0;
@@ -1023,6 +1026,11 @@ export const SCENARIOS: Record<
 	(state: State, now: number) => Refused | { status: string; titles: string[] }
 > = {
 	full: fullBoard,
+	'multiple-variants': (state, now) => {
+		const fresh = poseOpening(state);
+		abort(fresh, now);
+		return { status: 'posed', titles: addCopies(fresh, now) };
+	},
 	'imports-only': importsOnly,
 	failed: failedRewrite,
 	held: heldWork

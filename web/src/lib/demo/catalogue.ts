@@ -38,6 +38,10 @@ export type TitleSpec = {
 	folder: string;
 	files: FileSpec[];
 	arr?: 'radarr' | 'sonarr';
+	instance?: string;
+	/** Further instances holding the title, each in its own folder. The spec's
+	 * own arr, instance and folder are the primary. */
+	sources?: { instance: string; folder: string }[];
 	/** The IMDb id the *arr carried, which the sheet's IMDb button opens. A
 	 * folder no *arr claims has none. */
 	imdb?: string;

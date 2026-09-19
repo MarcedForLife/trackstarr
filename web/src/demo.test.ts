@@ -491,6 +491,9 @@ describe('the refusals', () => {
 	test('names an *arr and counts a media server the way each answers', async () => {
 		const radarr = await post<ConnectionResult>('/api/connections/test', { service: 'radarr' });
 		expect(radarr).toMatchObject({ ok: true, detail: 'Radarr 5.14.0.9383', webhook: 'connected' });
+		expect(radarr.paths).toBe('ready');
+		expect(radarr.hint).toContain('/data/media/movies:');
+		expect(radarr.hint).toContain('inside MEDIA_DIRS');
 		const plex = await post<ConnectionResult>('/api/connections/test', { service: 'plex' });
 		expect(plex).toMatchObject({ ok: true, detail: 'Plex, 2 libraries on tower', webhook: '' });
 	});
@@ -573,7 +576,7 @@ describe('demo webhook tools', () => {
 		const opening = await get<Activity>('/api/runs');
 		await post('/api/runs/abort');
 		await post('/api/demo/import', { arr: 'sonarr' });
-		// Still an admin, or the route refuses; the name is what proves it carried.
+		// Still an admin, or the route refuses; the name is what proves it contents.
 		currentState().account = { name: 'someone', role: 'admin', must_change: false };
 		await post('/api/demo/scenario', { name: 'full' });
 		const again = await get<Activity>('/api/runs');
@@ -639,17 +642,19 @@ describe('demo webhook tools', () => {
 		expect(file.name).toContain('2160p');
 		expect(currentState().byPath.has(original)).toBe(false);
 		expect(currentState().byPath.get(file.path)).toBe(file);
-		expect(file.source.find((track) => track.kind === 'video')?.codec).toBe('hevc');
+		expect(file.contents.find((track) => track.kind === 'video')?.codec).toBe('hevc');
 		expect(
-			file.source.filter((track) => track.kind === 'audio').map((track) => track.channels)
+			file.contents.filter((track) => track.kind === 'audio').map((track) => track.channels)
 		).toEqual([6]);
 		advance(3600);
 		expect(file.modified).toBeDefined();
 		expect(file.status).toBe('conform');
-		expect(file.source.some((track) => track.kind === 'audio' && track.channels === 2)).toBe(true);
+		expect(file.contents.some((track) => track.kind === 'audio' && track.channels === 2)).toBe(
+			true
+		);
 		await post('/api/runs/abort');
 		await post('/api/demo/import', { arr: 'radarr' });
-		expect(file.source.some((track) => track.channels === 2)).toBe(false);
+		expect(file.contents.some((track) => track.channels === 2)).toBe(false);
 	});
 
 	test('honours report-only mode for deliveries', async () => {
@@ -701,7 +706,7 @@ describe('import priority', () => {
 		if (!('run' in delivery)) throw new Error('delivery refused');
 		const run = state.runs.find((run) => run.id === delivery.run)!;
 		const file = state.byPath.get(run.queue[0].path)!;
-		file.source = state.titles
+		file.contents = state.titles
 			.flatMap((title) => title.files)
 			.find((file) => file.status === 'conform' && file.lang === 'eng')!.tracks;
 		tick(state, now);
@@ -712,4 +717,60 @@ describe('import priority', () => {
 		expect(queued(state).some((item) => item.run === run.id)).toBe(false);
 		expect(state.runs.find((run) => run.kind === 'sweep')?.active[0].stage).toBe('encoding');
 	});
+});
+
+test('multiple copies are optional and make one title with a folder per instance', async () => {
+	const opening = await get<Shelf>('/api/library');
+	expect(opening.titles.some((title) => title.variants)).toBe(false);
+	await post('/api/demo/scenario', { name: 'multiple-variants' });
+	const shelf = await get<Shelf>('/api/library');
+	const held = shelf.titles.filter((title) => title.variants);
+	expect(held.map((title) => title.variants)).toEqual([2, 2]);
+	expect(shelf.titles).toHaveLength(opening.titles.length);
+	for (const card of held) {
+		const title = await get<TitleDetail>(`/api/library/title?id=${encodeURIComponent(card.id)}`);
+		const label = card.kind === 'movie' ? 'Radarr' : 'Sonarr';
+		expect(title.folders.map((folder) => folder.source)).toEqual([label, `${label} 4k`]);
+		expect(title.folders[1].folder).toContain('/media/4k/');
+		const upgrades = title.files.filter((file) => file.path.includes('/media/4k/'));
+		expect(upgrades.length).toBeGreaterThan(0);
+		expect(upgrades.every((file) => file.source === `${label} 4k`)).toBe(true);
+		expect(
+			title.files
+				.filter((file) => !file.path.includes('/media/4k/'))
+				.every((file) => file.source === label)
+		).toBe(true);
+		// A title pause holds every folder; resuming lets both go.
+		const paused = await post<{ pauses: { title: string; path: string }[] }>('/api/pauses', {
+			ids: [card.id],
+			seconds: 3600
+		});
+		expect(
+			paused.pauses.filter((pause) => pause.title === card.id).map((pause) => pause.path)
+		).toEqual(title.folders.map((folder) => folder.folder));
+		const resumed = await post<{ pauses: { title: string }[] }>('/api/pauses/resume', {
+			ids: [card.id]
+		});
+		expect(resumed.pauses.some((pause) => pause.title === card.id)).toBe(false);
+		const links = await get<{ links: TitleLink[] }>(
+			`/api/library/links?id=${encodeURIComponent(card.id)}`
+		);
+		expect(
+			links.links
+				.filter(
+					(link) => link.server === card.kind.replace('movie', 'radarr').replace('series', 'sonarr')
+				)
+				.map((link) => link.label)
+		).toEqual([label, `${label} 4k`]);
+		expect(
+			links.links.some((link) => link.url.includes(card.kind === 'movie' ? ':7879/' : ':8990/'))
+		).toBe(true);
+	}
+	const snapshot = await get<SettingsSnapshot>('/api/settings');
+	expect(snapshot.settings.RADARR_4K_API_KEY).toEqual({ value: '', env: false, set: true });
+	const checked = await post<ConnectionResult>('/api/connections/test', { service: 'radarr-4k' });
+	expect(checked.ok).toBe(true);
+	expect(checked.hint).toContain('/data/media/4k/movies:');
+	await post('/api/demo/scenario', { name: 'full' });
+	expect((await get<Shelf>('/api/library')).titles).toHaveLength(opening.titles.length);
 });

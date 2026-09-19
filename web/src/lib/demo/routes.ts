@@ -44,6 +44,7 @@ import {
 	saveSettings,
 	settingsSnapshot,
 	shelf,
+	sources,
 	summary,
 	currentState,
 	type State
@@ -86,7 +87,9 @@ function named(here: State, body: Body) {
 	const ids = strings(body.ids);
 	const paths = strings(body.paths);
 	return here.titles.filter(
-		(title) => ids.includes(title.spec.id) || paths.includes(title.spec.folder)
+		(title) =>
+			ids.includes(title.spec.id) ||
+			sources(title.spec).some(({ folder }) => paths.includes(folder))
 	);
 }
 
@@ -152,11 +155,10 @@ const INDEXED: Record<string, string[]> = { plex: ['/media'], jellyfin: ['/media
 
 function testConnection(here: State, body: Body): ConnectionResult {
 	const name = String(body.service ?? '');
-	const service = CONNECTIONS[name];
-	const url = String(body.url || here.settings[`${name.toUpperCase()}_URL`] || '').replace(
-		/\/+$/,
-		''
-	);
+	const prefix = name.toUpperCase().replace('-', '_');
+	const base = CONNECTIONS[name.split('-')[0]];
+	const service = name.includes('-') ? { ...base, key: `${prefix}_API_KEY` } : base;
+	const url = String(body.url || here.settings[`${prefix}_URL`] || '').replace(/\/+$/, '');
 	// The saved key never leaves the service, so what is held is whether it is
 	// set, which is all the check reads.
 	const key = String(body.key || '') || (here.secretsSet.has(service.key) ? 'set' : '');
@@ -179,12 +181,44 @@ function testConnection(here: State, body: Body): ConnectionResult {
 			webhook: '',
 			webhook_detail: ''
 		};
+	const paths = service.arr ? arrPathHint(here, name) : undefined;
 	return {
 		ok: true,
 		detail: service.detail,
-		hint: pathHint(here, name),
+		hint: paths?.hint ?? pathHint(here, name),
+		paths: paths?.paths ?? '',
 		webhook,
 		webhook_detail: ''
+	};
+}
+
+function arrPathHint(here: State, name: string): Pick<ConnectionResult, 'hint' | 'paths'> {
+	const paths = [
+		...new Set(
+			here.titles
+				.flatMap(({ spec }) => sources(spec))
+				.filter(({ instance }) => instance === name)
+				.map(({ folder }) => folder.slice(0, folder.lastIndexOf('/')))
+		)
+	];
+	if (!paths.length)
+		return { hint: 'No library root folders are configured in this instance.', paths: 'attention' };
+	let ready = 0;
+	const results = paths.map((path) => {
+		const covered = strings(here.settings.MEDIA_DIRS).some((base) => {
+			const root = base.replace(/\/+$/, '');
+			return path === root || path.startsWith(`${root}/`);
+		});
+		if (covered) ready++;
+		return `${path}: visible as a directory to Trackstarr; ${
+			covered
+				? 'inside MEDIA_DIRS'
+				: 'outside MEDIA_DIRS; add this library root to MEDIA_DIRS for sweeps'
+		}.`;
+	});
+	return {
+		hint: `Library roots: ${ready} of ${paths.length} visible and inside MEDIA_DIRS.\n${results.join('\n')}`,
+		paths: ready === paths.length ? 'ready' : 'attention'
 	};
 }
 
@@ -304,8 +338,9 @@ const GET: Route[] = [
 		handler: (here, query) => {
 			const title = here.byId.get(query.get('id') ?? '');
 			if (!title) return refuse(404, 'no such title');
+			const folders = sources(title.spec).map(({ folder }) => folder);
 			const matches = (path: string) =>
-				path === title.spec.folder || path.startsWith(`${title.spec.folder}/`);
+				folders.some((folder) => path === folder || path.startsWith(`${folder}/`));
 			return ok({
 				queued: queued(here).filter((item) => matches(item.path)),
 				active: here.runs.flatMap((run) =>
@@ -324,10 +359,12 @@ const GET: Route[] = [
 			const path = query.get('path');
 			if (!path) return refuse(400, 'path is required');
 			const file = here.byPath.get(path);
-			const title = file?.title ?? here.titles.find((title) => title.spec.folder === path);
+			const title =
+				file?.title ??
+				here.titles.find((title) => sources(title.spec).some((held) => held.folder === path));
 			return ok({
 				current: here.current,
-				file: file ? wireFile(file) : null,
+				file: file ? wireFile(here, file) : null,
 				card: title ? card(here, title) : null
 			});
 		}
@@ -419,7 +456,11 @@ const POST: Route[] = [
 		admin: true,
 		handler: async (here, _query, body) => {
 			// A name the service does not know never reaches the check itself.
-			if (!CONNECTIONS[String(body.service ?? '')]) return refuse(404, 'no such service');
+			if (
+				!CONNECTIONS[String(body.service ?? '')] &&
+				!/^(radarr|sonarr)-(?!public$)[a-z0-9]+$/.test(String(body.service))
+			)
+				return refuse(404, 'no such service');
 			return (await pause(600), ok(testConnection(here, body)));
 		}
 	},
