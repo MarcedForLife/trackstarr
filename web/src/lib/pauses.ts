@@ -59,6 +59,16 @@ export async function resume(what: { ids?: string[]; paths?: string[] }): Promis
 	return answer.pauses ?? [];
 }
 
-export function forTitle(pauses: Pause[], id: string): Pause | undefined {
-	return pauses.find((pause) => pause.title === id);
+/** Holds follow source folders even when a different instance becomes primary.
+ * Before detail arrives, the opening ID is the only identity available. */
+export function forTitle(
+	pauses: Pause[],
+	id: string,
+	folders?: { folder: string }[]
+): Pause | undefined {
+	return pauses.find((pause) =>
+		folders
+			? !!pause.title && folders.some(({ folder }) => folder === pause.path)
+			: pause.title === id
+	);
 }

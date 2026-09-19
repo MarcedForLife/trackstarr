@@ -37,7 +37,7 @@ def main() -> None:
         library.Title(
             f"copy:{at}",
             "Benchmark series",
-            f"/library{at}/Show",
+            (library.Source(f"/library{at}/Show"),),
             "series",
             provider_id="tvdb:1",
         )

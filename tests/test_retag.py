@@ -536,7 +536,9 @@ def test_the_verdict_is_reached_in_the_titles_language_and_the_servers_told(
     tools([commentary_case(), commentary_case("jpn")])
     refreshed: list[str] = []
     monkeypatch.setattr(retag, "refresh_servers", refreshed.append)
-    dune = library.Title("arr:radarr:7", "Dune", "/m/Dune", "movie", lang="jpn")
+    dune = library.Title(
+        "arr:radarr:7", "Dune", (library.Source("/m/Dune"),), "movie", lang="jpn"
+    )
     judged: list[str | None] = []
     monkeypatch.setattr(
         retag,
@@ -605,7 +607,7 @@ def test_apply_all_answers_for_each_file_and_rescans_the_title_once(
     tools([commentary_case(), commentary_case("jpn")] * 2)
     arr = FakeArr()
     dune = library.Title(
-        "arr:radarr:7", "Dune", str(tmp_path), "movie", lang="jpn", arr=arr, item_id=7
+        "arr:radarr:7", "Dune", (library.Source(str(tmp_path), arr, 7),), "movie", lang="jpn"
     )
     monkeypatch.setattr(library, "known", lambda: library.Shelf([dune]))
 
@@ -621,7 +623,9 @@ def test_apply_all_answers_for_each_file_and_rescans_the_title_once(
 
 def test_apply_all_hands_each_file_its_entry_and_title(installed, mkv, tmp_path, monkeypatch):
     judged_at(mkv)
-    dune = library.Title("arr:radarr:7", "Dune", str(tmp_path), "movie", lang="jpn")
+    dune = library.Title(
+        "arr:radarr:7", "Dune", (library.Source(str(tmp_path)),), "movie", lang="jpn"
+    )
     monkeypatch.setattr(library, "known", lambda: library.Shelf([dune]))
     seen: list[tuple] = []
 
@@ -642,7 +646,7 @@ def test_a_title_nothing_changed_in_is_not_rescanned(installed, mkv, tmp_path, m
     judged_at(mkv)
     arr = FakeArr()
     dune = library.Title(
-        "arr:radarr:7", "Dune", str(tmp_path), "movie", lang="jpn", arr=arr, item_id=7
+        "arr:radarr:7", "Dune", (library.Source(str(tmp_path), arr, 7),), "movie", lang="jpn"
     )
     monkeypatch.setattr(library, "known", lambda: library.Shelf([dune]))
     monkeypatch.setattr(

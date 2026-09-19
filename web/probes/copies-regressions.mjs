@@ -7,7 +7,7 @@ import { responseDelays } from './copy-regressions/delays.mjs';
 import { selectionRegressions } from './copy-regressions/selection.mjs';
 import { readingRegressions } from './copy-regressions/reading.mjs';
 import { connectionRegressions } from './copy-regressions/connections.mjs';
-import { pauseRegressions } from './copy-regressions/pause.mjs';
+import { pauseRegressions, pauseIdentityRegressions } from './copy-regressions/pause.mjs';
 import { actionSessionRegressions } from './copy-regressions/actions.mjs';
 import { readSessionRegressions } from './copy-regressions/reads.mjs';
 import { editorSessionRegressions } from './copy-regressions/editor.mjs';
@@ -18,6 +18,7 @@ const scenarios = {
 	reading: readingRegressions,
 	connections: connectionRegressions,
 	pause: pauseRegressions,
+	'pause-identity': pauseIdentityRegressions,
 	'title-actions': actionSessionRegressions,
 	'file-actions': (page, fixture) => actionSessionRegressions(page, fixture, true),
 	reads: readSessionRegressions,

@@ -1349,7 +1349,9 @@ def test_activity_failure_keeps_labels_and_backs_off(monkeypatch):
             )
         library._catalogue.future.result(timeout=5)
         assert len(calls) == attempt + 1
-        assert library._catalogue.read() == ({}, False)
+        retained, complete = library._catalogue.read()
+        assert not complete
+        assert retained["/media/Dune"].id == "arr:radarr:1"
         assert library.covers_for_paths(paths) == expected
         assert library._catalogue.expires - now[0] == min(15 * 2**attempt, 300)
         now[0] = library._catalogue.expires

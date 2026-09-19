@@ -108,8 +108,9 @@ def _pause_targets(body: dict) -> tuple[list[tuple[str, str, str]], tuple[int, s
     files = [str(entry) for entry in named if str(entry)] if isinstance(named, list) else []
     if not ids and not files:
         return [], (400, "name the titles or files to pause")
-    found = library.pause_targets(ids) if ids else []
-    if {target[1] for target in found} != set(ids):
+    try:
+        found = library.pause_targets(ids, strict=True) if ids else []
+    except KeyError:
         return [], (404, "no such title")
     for spelling in files:
         path = paths.canonical(spelling)

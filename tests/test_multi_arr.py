@@ -3,13 +3,25 @@
 import json
 from dataclasses import replace
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
 
 from conftest import api, cache, configured_arr, pending, set_config
 from trackstarr import api as api_module
-from trackstarr import arr, auth, config, connections, covers, jobs, library, links, settings
+from trackstarr import (
+    arr,
+    auth,
+    config,
+    connections,
+    covers,
+    jobs,
+    library,
+    links,
+    pauses,
+    settings,
+)
 from trackstarr.api import _serve_title, _serve_title_work
 from trackstarr.status import Status
 from trackstarr.sweep_cache import Verdict
@@ -583,3 +595,105 @@ def test_parked_sonarr_jobs_use_current_connection_without_falling_back(change, 
         )
     else:
         assert calls == []
+
+
+def test_alias_pause_actions_share_read_identity_without_waiting(monkeypatch):
+    library.forget()
+    two_sources(monkeypatch)
+    canonical, alias = "arr:radarr:1", "arr:radarr-4k:7"
+    expected = [(folder, canonical, "Film") for folder in library.selected([alias])[0].folders]
+    entered, release = Event(), Event()
+
+    def blocked(arrs):
+        entered.set()
+        assert release.wait(5)
+        return {}
+
+    monkeypatch.setattr(library, "_from_arrs", blocked)
+    monkeypatch.setattr(library, "_read_cache", lambda: pytest.fail("pause read verdicts"))
+    library.forget()
+    try:
+        assert api_module._pause_targets({"ids": [alias]}) == (expected, None)
+        assert entered.wait(5)
+        # Canonical and alias IDs name the same folders once, and stored pauses
+        # carry the canonical title ID regardless of the spelling requested.
+        assert api_module._pause_targets({"ids": [canonical, alias, alias]}) == (expected, None)
+        assert api_module._pause_targets({"ids": [alias, "absent"]}) == (
+            [],
+            (404, "no such title"),
+        )
+    finally:
+        release.set()
+        library._catalogue.future.result(timeout=5)
+
+
+@pytest.mark.parametrize("change", ["offline", "removed", "reconfigured", "empty"])
+def test_merged_identity_and_pauses_follow_source_changes(monkeypatch, change):
+    library.forget()
+    title = two_sources(monkeypatch)
+    sources = [source.arr for source in title.sources]
+    original = list(sources)
+    monkeypatch.setattr(library, "all_arrs", lambda: sources)
+    canonical, alias = title.id, "arr:radarr-4k:7"
+    pauses.place_many(library.pause_targets([alias]), by="admin")
+    old_pauses = pauses.as_json()
+    assert {pause["title"] for pause in old_pauses} == {canonical}
+    healthy = original[0].all_items
+
+    def offline():
+        raise OSError("offline")
+
+    if change == "removed":
+        sources.pop(0)
+    elif change == "reconfigured":
+        sources[0] = replace(original[0], key="new-key")
+        sources[0].all_items = offline
+    else:
+        original[0].all_items = offline if change == "offline" else list
+    library.forget()
+    found = library.selected([alias])[0]
+    assert found.id == (canonical if change == "offline" else alias)
+    assert found.folders == (title.folders if change == "offline" else (title.folders[1],))
+    assert library.known().complete == (change in ("removed", "empty"))
+    assert library.pause_targets([alias]) == [
+        (folder, found.id, found.name) for folder in found.folders
+    ]
+    # The on-disk pause still protects the surviving file despite its old ID.
+    assert pauses.paused(title.folders[1] + "/2160p.mkv").title == canonical
+    answers = []
+    handler = SimpleNamespace(
+        read_json=lambda: {"ids": [alias]},
+        send_json=answers.append,
+        reply=lambda *args: pytest.fail(str(args)),
+    )
+    api_module._resume_pause(handler, SimpleNamespace(name="admin"))
+    assert answers[0]["resumed"] == len(found.sources)
+    assert pauses.paused(title.folders[1] + "/2160p.mkv") is None
+
+    original[0].all_items = healthy
+    sources[:] = original
+    library.forget()
+    assert library.selected([alias])[0].id == canonical
+    assert library.pause_targets([alias]) == [
+        (folder, canonical, title.name) for folder in title.folders
+    ]
+    # Recovery exposes any hold left on the removed source; resuming the
+    # reunited title clears it, without recreating the already lifted hold.
+    api_module._resume_pause(handler, SimpleNamespace(name="admin"))
+    assert not pauses.current()
+
+
+def test_title_primary_fields_follow_sources():
+    first = library.Source("/first", configured_arr(), 1, "film")
+    second = library.Source("/second", configured_arr("sonarr"), 2, "show")
+    title = library.Title("title", "Title", (first,), "movie")
+    moved = replace(title, sources=(second, first))
+    assert (moved.folder, moved.arr, moved.item_id, moved.slug) == (
+        second.folder,
+        second.arr,
+        second.item_id,
+        second.slug,
+    )
+    assert moved.folders == ("/second", "/first")
+    with pytest.raises(ValueError, match="at least one source"):
+        replace(title, sources=())

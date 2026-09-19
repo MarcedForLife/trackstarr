@@ -58,3 +58,49 @@ export async function pauseRegressions(page, { site, card, folder, remote, delay
 		await page.unroute('**/api/library/work**');
 	}
 }
+
+export async function pauseIdentityRegressions(page, { site, shape, card, folder, remote, files }) {
+	const primary = card.id;
+	const secondary = 'arr:sonarr-remote:7';
+	for (const recovered of [false, true]) {
+		card.id = recovered ? primary : secondary;
+		const folders = recovered ? [{ folder }, { folder: remote }] : [{ folder: remote }];
+		let pauses = [
+			{
+				path: remote,
+				title: recovered ? secondary : primary,
+				name: card.name,
+				seconds: null,
+				until: null,
+				by: 'admin',
+				reason: '',
+				at: new Date().toISOString()
+			}
+		];
+		await page.route('**/api/library/title**', (route) =>
+			route.fulfill({ json: { ...shape.title, id: card.id, folders, files, total: files.length } })
+		);
+		await page.route('**/api/library/work**', (route) =>
+			route.fulfill({ json: { queued: [], active: [], pauses } })
+		);
+		await page.route('**/api/pauses', (route) => route.fulfill({ json: { pauses } }));
+		await page.route('**/api/pauses/resume', (route) => {
+			assert.deepEqual(route.request().postDataJSON(), { ids: [card.id] });
+			pauses = [];
+			return route.fulfill({ json: { pauses, resumed: 1 } });
+		});
+		await page.goto(`${site}/library`);
+		await page
+			.getByRole('button', { name: new RegExp(`^${card.name}`) })
+			.first()
+			.click();
+		const sheet = page.getByRole('dialog', { name: card.name, exact: true });
+		await sheet.getByRole('button', { name: 'Resume', exact: true }).click();
+		await sheet.getByRole('button', { name: `Pause ${card.name}`, exact: true }).waitFor();
+		assert.equal(pauses.length, 0, 'a hold with the former primary ID can be resumed');
+		await page.unroute('**/api/library/title**');
+		await page.unroute('**/api/library/work**');
+		await page.unroute('**/api/pauses');
+		await page.unroute('**/api/pauses/resume');
+	}
+}

@@ -136,24 +136,18 @@ class Title:
     same title in several instances is one Title with several ``sources``; the
     first configured instance is primary and supplies ``id``, ``folder``,
     ``arr``, ``item_id`` and ``slug``. ``folder`` is in this container's paths,
-    as the cache keys are. Built without ``sources``, a title has the one.
+    as the cache keys are. Primary-source fields are derived from ``sources[0]``.
     """
 
     id: str
     name: str
-    folder: str
+    sources: tuple[Source, ...]
     kind: str
     year: int | None = None
     lang: str | None = None
     #: When the title joined the library, in epoch seconds; 0 when unknown.
     #: The *arr's ``added``, or the folder's mtime for an unclaimed title.
     added: float = 0.0
-    #: Only on an *arr title, and only so the cover can be fetched.
-    arr: Arr | None = None
-    item_id: int = 0
-    #: What the *arr's own pages route on: the TMDB id for Radarr, a name
-    #: slug for Sonarr. Lets the sheet link back to it.
-    slug: str = ""
     #: The IMDb id both *arrs carry, ``tt`` and digits.
     imdb_id: str = ""
     #: The IMDb score out of ten, or None. From :func:`trackstarr.ratings.scores`.
@@ -165,12 +159,26 @@ class Title:
     #: The TMDB id for a film, the TVDB id for a series: what one title is
     #: called in every instance, so copies merge on it. Empty when unknown.
     provider_id: str = ""
-    sources: tuple[Source, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.sources:
-            one = Source(self.folder, self.arr, self.item_id, self.slug)
-            object.__setattr__(self, "sources", (one,))
+            raise ValueError("a title needs at least one source")
+
+    @property
+    def folder(self) -> str:
+        return self.sources[0].folder
+
+    @property
+    def arr(self) -> Arr | None:
+        return self.sources[0].arr
+
+    @property
+    def item_id(self) -> int:
+        return self.sources[0].item_id
+
+    @property
+    def slug(self) -> str:
+        return self.sources[0].slug
 
     @property
     def folders(self) -> tuple[str, ...]:
@@ -223,7 +231,8 @@ class Catalogue:
         self.connection: tuple = ()
         self.labels: Mapping[str, Identity] = MappingProxyType({})
         self.unclaimed: dict[str, Identity] = {}
-        self.services: dict[str, dict[str, Identity]] = {}
+        self.services: dict[str, dict[str, Title]] = {}
+        self.index: Mapping[str, Title] = MappingProxyType({})
         self.result: tuple[dict[str, Title], bool] | None = None
         self.expires = 0.0
         self.failures = 0
@@ -250,7 +259,7 @@ class Catalogue:
                 self.connection = connection
                 self.generation += 1
                 self.unclaimed = {}
-                self.labels = self._labels()
+                self.labels, self.index = self._identities()
                 self.result = None
                 self.expires = 0.0
                 self.failures = 0
@@ -264,26 +273,19 @@ class Catalogue:
 
     def refresh(self, generation: int, arrs: list[Arr]) -> None:
         acquired = _from_arrs(arrs)
-        titles = _merged(
-            title
-            for fetched in acquired.values()
-            if fetched is not None
-            for title in fetched.values()
-        )
         complete = all(fetched is not None for fetched in acquired.values())
         with self.lock:
             if generation != self.generation or self.closed:
                 return
-            self.result = titles, complete
-            # The merged title's id, so a row under a secondary instance's
-            # folder names the same poster the grid draws.
+            # Retain the last successful source catalogue during an outage.
+            # Removal/reconfiguration prunes it in request(); a healthy empty
+            # response removes its titles. Reads and actions share this view.
             for name, fetched in acquired.items():
                 if fetched is not None:
-                    self.services[name] = {
-                        folder: Identity(titles[folder].id, titles[folder].name)
-                        for folder in fetched
-                    }
-            labels = self._labels()
+                    self.services[name] = fetched
+            titles = self._merged()
+            self.result = titles, complete
+            labels, self.index = self._identities(titles)
             changed = self.labels != labels
             self.labels = labels
             if complete:
@@ -295,13 +297,34 @@ class Catalogue:
         if changed:
             notify.publish(notify.RUNS)
 
-    def _labels(self) -> Mapping[str, Identity]:
-        """First configured service owns duplicates, including retained labels."""
-        labels: dict[str, Identity] = {}
-        for name, _, _ in self.connection:
-            for folder, label in self.services.get(name, {}).items():
-                labels.setdefault(folder, label)
-        return MappingProxyType({**self.unclaimed, **labels})
+    def _merged(self) -> dict[str, Title]:
+        return _merged(
+            title
+            for name, _, _ in self.connection
+            for title in self.services.get(name, {}).values()
+        )
+
+    def _identities(
+        self, titles: dict[str, Title] | None = None
+    ) -> tuple[Mapping[str, Identity], Mapping[str, Title]]:
+        """Publish labels and aliases from the same source ownership decisions."""
+        titles = self._merged() if titles is None else titles
+        labels = {folder: Identity(title.id, title.name) for folder, title in titles.items()}
+        local = [
+            Title(label.id, label.name, (Source(folder),), "folder")
+            for folder, label in self.unclaimed.items()
+            if folder not in titles
+        ]
+        return (
+            MappingProxyType({**self.unclaimed, **labels}),
+            MappingProxyType(_title_index([*titles.values(), *local])),
+        )
+
+    def resolve(self, title_ids: list[str]) -> dict[str, Title]:
+        """Resolve aliases locally; never wait for acquisition or verdict reads."""
+        self.request()
+        with self.lock:
+            return {key: self.index[key] for key in title_ids if key in self.index}
 
     def read(self) -> tuple[dict[str, Title], bool]:
         while True:
@@ -324,7 +347,7 @@ class Catalogue:
                 for title in titles
                 if title.arr is None
             }
-            labels = self._labels()
+            labels, self.index = self._identities()
             changed = labels != self.labels
             self.labels = labels
         if changed:
@@ -336,6 +359,7 @@ class Catalogue:
             self.closed = True
             self.generation += 1
             self.labels = MappingProxyType({})
+            self.index = MappingProxyType({})
             self.result = None
         self.executor.shutdown(wait=True)
 
@@ -440,14 +464,11 @@ def _title_of(arr: Arr, item: dict, scored: dict[str, float]) -> Title | None:
     return Title(
         id=_arr_id(arr, item["id"]),
         name=item.get("title") or os.path.basename(folder),
-        folder=folder,
+        sources=(Source(folder, arr, item["id"], slug),),
         kind=KINDS.get(arr.kind, "title"),
         year=item.get("year") or None,
         lang=original_of(item),
         added=_epoch(item.get("added")),
-        arr=arr,
-        item_id=item["id"],
-        slug=slug,
         imdb_id=imdb_id,
         rating=scored.get(imdb_id),
         on_disk=_on_disk(item),
@@ -564,6 +585,17 @@ def _unclaimed(path: str) -> str | None:
     return None
 
 
+def _title_index(titles: Iterable[Title]) -> dict[str, Title]:
+    """Canonical IDs and source aliases, shared by shelf reads and local actions."""
+    index: dict[str, Title] = {}
+    for title in titles:
+        index[title.id] = title
+        for source in title.sources:
+            if source.arr:
+                index.setdefault(_arr_id(source.arr, source.item_id), title)
+    return index
+
+
 def _shelf(stored: sweep_cache.Stored) -> Shelf:
     """The titles from the *arrs plus unclaimed folders the sweep found,
     memoised for :data:`_INDEX_TTL`.
@@ -586,18 +618,13 @@ def _shelf(stored: sweep_cache.Stored) -> Shelf:
             folders[folder] = Title(
                 id=f"dir:{folder}",
                 name=os.path.basename(folder),
-                folder=folder,
+                sources=(Source(folder),),
                 kind="folder",
                 added=_folder_added(folder),
             )
     # A merged title sits under each of its folders; the grid draws it once.
     titles = list({id(title): title for title in folders.values()}.values())
-    index = {title.id: title for title in titles}
-    for title in titles:
-        for source in title.sources:
-            if source.arr:
-                index.setdefault(_arr_id(source.arr, source.item_id), title)
-    shelf = Shelf(titles, complete, stored.current, index)
+    shelf = Shelf(titles, complete, stored.current, _title_index(titles))
     _catalogue.include_folders(claimed, titles)
     with _lock:
         _cached = (time.monotonic(), shelf)
@@ -1099,20 +1126,19 @@ def selected(title_ids: list[str]) -> list[Title]:
     return [found for title_id in title_ids if (found := index.get(title_id))]
 
 
-def pause_targets(title_ids: list[str]) -> list[tuple[str, str, str]]:
-    """Every folder behind each id, as (folder, id, name); unknown ids are dropped.
+def pause_targets(title_ids: list[str], *, strict: bool = False) -> list[tuple[str, str, str]]:
+    """Every source folder behind canonical IDs or aliases, resolved locally.
 
-    A title held in two instances answers with both folders, so a pause on it
-    holds every copy. Only locally known ids resolve; pause commands never
-    wait for a service. The library view populates unclaimed folders as well
-    as catalogue titles. A cold or changed connection may have no identities
-    yet; paths remain usable.
+    Unknown IDs are dropped unless strict is requested; then the entire request
+    fails before any pause changes. Persisted labels always use the canonical ID.
     """
-    labels, _ = _catalogue.request()
-    wanted: dict[str, list[tuple[str, str, str]]] = {}
-    for folder, label in labels.items():
-        wanted.setdefault(label.id, []).append((folder, label.id, label.name))
-    return [target for title_id in title_ids for target in wanted.get(title_id, [])]
+    found = _catalogue.resolve(title_ids)
+    if strict and set(found) != set(title_ids):
+        raise KeyError("no such title")
+    titles = {title.id: title for title in found.values()}
+    return [
+        (folder, title.id, title.name) for title in titles.values() for folder in title.folders
+    ]
 
 
 def covers_for_paths(paths: Iterable[str]) -> dict[str, dict]:

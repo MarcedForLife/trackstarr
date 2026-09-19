@@ -118,7 +118,7 @@
 	const manyFiles = $derived(kind === 'series' || (detail?.total ?? opened?.files ?? 0) > 1);
 	const pause = $derived(
 		opened
-			? (forTitle(pauses, opened.id) ??
+			? (forTitle(pauses, opened.id, detail?.folders) ??
 					(!manyFiles ? pauses.find((item) => item.path === detail?.files[0]?.path) : undefined))
 			: undefined
 	);

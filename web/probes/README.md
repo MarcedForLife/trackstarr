@@ -112,6 +112,7 @@ ENGINES=chromium SCENARIOS=reading,editor node probes/copies-regressions.mjs
 | `selection`                     | Shared folders, initial/load-more/refresh retry, complete-group paging, reorder, selection fallback, editor removal and season introduction |
 | `reading`                       | Per-library page/render depth, season and file selection, failed switch retry, close reset and empty-title recovery                         |
 | `connections`                   | Webhook badges, root diagnostics, stale connection tests and callback-save retesting                                                        |
+| `pause-identity`                | Held-state display and Resume after primary-source removal and recovery                                                                     |
 | `pause`                         | Failed pause retry and a late initial pause lookup                                                                                          |
 | `title-actions`, `file-actions` | Original cancellation targets, stale successes/failures and newer busy state across same/different title reopening                          |
 | `reads`                         | Same-task quick reopen, stale watch links and obsolete work reads                                                                           |
