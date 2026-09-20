@@ -34,8 +34,10 @@
 	} = $props();
 	const id = $props.id();
 	const title = $derived(named(pause.path));
-	const art = $derived(cover ?? (pause.title ? { id: pause.title, name: pause.name } : undefined));
-	const shown = $derived(art?.name || pause.name || title.name);
+	const art = $derived(
+		cover ?? (pause.title_id ? { id: pause.title_id, name: pause.title_name } : undefined)
+	);
+	const shown = $derived(art?.name || pause.title_name || title.name);
 	let open = $state(false);
 </script>
 
@@ -61,7 +63,7 @@
 					     it, the rest on the line under. -->
 					<span class="flex items-baseline gap-1.5 text-[13px] leading-snug font-medium text-fg">
 						<span class="truncate" title={shown}>{shown}</span>
-						{#if !pause.title && title.episode}<span class="flex-none text-dim"
+						{#if !pause.title_id && title.episode}<span class="flex-none text-dim"
 								>{title.episode}</span
 							>{/if}
 					</span>
@@ -71,12 +73,12 @@
 							>{pause.seconds !== null ? `${duration(pause.seconds)} left` : 'Until resumed'}</span
 						>
 						<!-- Last, so it is the part that gives way. -->
-						{#if !pause.title && title.detail}<span class="min-w-0 truncate text-faint"
+						{#if !pause.title_id && title.detail}<span class="min-w-0 truncate text-faint"
 								>{title.detail}</span
 							>{/if}
 					</span>
 					<!-- A folder has nothing judged under it to draw. -->
-					{#if !pause.title}<PlanLine {plan} {current} />{/if}
+					{#if !pause.title_id}<PlanLine {plan} {current} />{/if}
 				</span>
 				{@render chevron()}
 			</span>
@@ -85,7 +87,7 @@
 			{#if admin}<button
 					onclick={onresume}
 					{disabled}
-					aria-label={`Resume ${pause.name || title.name}`}
+					aria-label={`Resume ${pause.title_name || title.name}`}
 					class={rowWord}>{resuming ? 'Resuming…' : 'Resume'}</button
 				>{/if}
 		{/snippet}
@@ -99,9 +101,9 @@
 				<p class="mb-3">
 					{pause.until ? `Pause ends ${stamp(pause.until)}.` : 'Paused until you resume.'}
 				</p>
-				{#if !pause.title}<FilePlan path={pause.path} />{/if}
+				{#if !pause.title_id}<FilePlan path={pause.path} />{/if}
 				<p class="mb-1 border-t border-line pt-3 text-[11px] font-medium">
-					{pause.title ? 'Title folder' : 'File path'}
+					{pause.title_id ? 'Title folder' : 'File path'}
 				</p>
 				<p class="font-mono text-[11px] wrap-anywhere text-faint select-text">{pause.path}</p>
 			</div>

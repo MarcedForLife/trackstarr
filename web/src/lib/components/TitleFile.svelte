@@ -1,5 +1,8 @@
 <script lang="ts">
+	import PathDetails from './PathDetails.svelte';
+	import type { Runner } from './TitleSheet.svelte';
 	import FileAccount, { type Editing } from './FileAccount.svelte';
+	import type { FileActionAdapter } from '$lib/title-work.svelte';
 	import FileWork from './FileWork.svelte';
 	import QueuePlace from './QueuePlace.svelte';
 	import { ago } from '$lib/events';
@@ -14,11 +17,15 @@
 		// The title holds more than one file, so this one carries its own queue
 		// controls.
 		manyFiles = false,
+		embedded = false,
+		sourced = false,
 		admin = false,
 		work,
+		runner,
 		unavailable = false,
 		busy = $bindable(false),
 		onchanged,
+		onaction,
 		editing = null,
 		// The title's other files, for an edit offered across twins.
 		siblings = [],
@@ -26,11 +33,16 @@
 	}: {
 		file: LibraryFile;
 		manyFiles?: boolean;
+		embedded?: boolean;
+		// The title is held in more than one instance, so the row names the file's.
+		sourced?: boolean;
 		admin?: boolean;
 		work?: TitleWork;
+		runner?: Runner;
 		unavailable?: boolean;
 		busy?: boolean;
 		onchanged: () => Promise<void>;
+		onaction?: FileActionAdapter;
 		editing?: Editing | null;
 		siblings?: LibraryFile[];
 		series?: boolean;
@@ -60,8 +72,11 @@
 	});
 </script>
 
-<li class="rounded-xl border border-line bg-sunken p-3">
-	{#if manyFiles}
+<svelte:element
+	this={embedded ? 'div' : 'li'}
+	class={embedded ? 'p-3' : 'rounded-xl border border-line bg-sunken p-3'}
+>
+	{#if manyFiles || admin}
 		<FileWork
 			path={file.path}
 			{standing}
@@ -70,6 +85,11 @@
 			{unavailable}
 			bind:busy
 			{onchanged}
+			{onaction}
+			onrun={runner?.onfile ? (mode) => runner!.onfile!(file.path, mode) : undefined}
+			mayRewrite={runner?.mayRewrite ?? false}
+			runDisabled={!!runner?.starting || !!runner?.run}
+			refuses={runner?.refuses ?? ''}
 		>
 			{@render head()}
 		</FileWork>
@@ -77,7 +97,7 @@
 		{@render head()}
 	{/if}
 	<FileAccount {file} {editing} {siblings} {series} />
-</li>
+</svelte:element>
 
 <!-- Left-aligned under the name at one x, which reads down a season faster than
      labels ranged off a ragged right edge. A flex row rather than a run of text:
@@ -85,7 +105,7 @@
      to. -->
 {#snippet head()}
 	<div class="min-w-0 flex-1">
-		<p class="truncate text-[13px] font-medium" title={file.name}>{file.name}</p>
+		<PathDetails path={file.path} label={file.name} prominent />
 		<p class="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[11.5px] text-faint">
 			{#if manyFiles}
 				<span class={`font-semibold ${tone}`}>{led}</span>
@@ -99,6 +119,10 @@
 				<span aria-hidden="true">·</span>
 			{/if}
 			<span>{size(file.bytes)}</span>
+			{#if (sourced || embedded) && file.source}
+				<span aria-hidden="true">·</span>
+				<span>{file.source}</span>
+			{/if}
 			{#if file.modified}
 				<span aria-hidden="true">·</span>
 				<span class="text-ok">Modified {ago(file.modified.at)}</span>

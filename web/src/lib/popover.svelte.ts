@@ -41,7 +41,7 @@ export function popover({ edge = 'right', onclose }: Options = {}): Popover {
 		close: () => {
 			open = false;
 			panel?.hidePopover();
-			trigger?.focus();
+			trigger?.focus({ preventScroll: true });
 			onclose?.();
 		}
 	});

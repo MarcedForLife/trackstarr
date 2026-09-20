@@ -8,7 +8,7 @@ import { onDestroy } from 'svelte';
 import type { Landed, Snapshot } from '$lib/activity.svelte';
 import { refusalText } from '$lib/api';
 import { count, getEvents, LOOKBACK, type Event } from '$lib/events';
-import { runTitles, type RunMode } from '$lib/library';
+import { runFiles, runTitles, type RunMode } from '$lib/library';
 import { stopRun, type Run } from '$lib/runs';
 import { told } from '$lib/stream';
 
@@ -76,7 +76,7 @@ export class Recheck {
 		const activity = snapshot.current;
 		this.mayRewrite = activity.may_rewrite;
 		this.paused = activity.paused;
-		this.#watching = activity.runs.find((run) => run.kind === 'recheck')?.id ?? null;
+		this.#watching = activity.runs.find((run) => run.type === 'recheck')?.id ?? null;
 		// On this class's own terms, or the adopted run would be its own rival
 		// until the first look.
 		this.otherRun = activity.runs.find((run) => this.#rival(run)) ?? null;
@@ -96,7 +96,7 @@ export class Recheck {
 
 	/** Anything the service is running that this page did not start. */
 	#rival(run: Run): boolean {
-		return run.id !== this.#watching && (run.kind === 'sweep' || run.kind === 'recheck');
+		return run.id !== this.#watching && (run.type === 'sweep' || run.type === 'recheck');
 	}
 
 	/** Whether anything is rewriting the verdicts the grid draws. */
@@ -129,7 +129,8 @@ export class Recheck {
 		error: this.#fromSheet ? this.refusal : '',
 		run: this.#fromSheet ? this.running : null,
 		onrefresh: () => this.prod(),
-		onrun: (id: string, mode: RunMode) => this.runOne(id, mode)
+		onrun: (id: string, mode: RunMode) => this.runOne(id, mode),
+		onfile: (path: string, mode: RunMode) => this.#launch([], true, mode, [path])
 	});
 
 	// What the last run came to: files looked at, and the three verdicts worth a
@@ -196,8 +197,8 @@ export class Recheck {
 
 	// Both ways of starting come through here; which one decides only where the
 	// progress and result show.
-	async #launch(ids: string[], fromSheet: boolean, mode: RunMode) {
-		if (!ids.length) return;
+	async #launch(ids: string[], fromSheet: boolean, mode: RunMode, paths?: string[]) {
+		if (!ids.length && !paths?.length) return;
 		this.#starting = true;
 		this.started = mode;
 		this.#requestedMode = mode;
@@ -205,7 +206,7 @@ export class Recheck {
 		this.summary = null;
 		this.#fromSheet = fromSheet;
 		try {
-			const answer = await runTitles(ids, mode);
+			const answer = paths ? await runFiles(paths, mode) : await runTitles(ids, mode);
 			this.#watching = answer.run;
 			this.#watchedAt = Date.now();
 			// Fetch the snapshot now rather than at the next idle look; `warming`
@@ -236,7 +237,7 @@ export class Recheck {
 		// A re-check nobody here started. It is writing this grid's verdicts, so
 		// the bar shows it.
 		if (!this.#watching) {
-			const loose = activity.runs.find((run) => run.kind === 'recheck');
+			const loose = activity.runs.find((run) => run.type === 'recheck');
 			if (loose) {
 				this.#watching = loose.id;
 				this.#watchedAt = Date.now();

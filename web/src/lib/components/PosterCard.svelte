@@ -129,7 +129,9 @@
 	const sub = $derived(
 		[
 			card.year ?? (card.kind === 'series' ? 'Series' : ''),
-			card.files ? `${card.files} file${card.files === 1 ? '' : 's'}` : ''
+			card.source,
+			card.files ? `${card.files} file${card.files === 1 ? '' : 's'}` : '',
+			card.source_count ? `${card.source_count} sources` : ''
 		]
 			.filter(Boolean)
 			.join(' · ')

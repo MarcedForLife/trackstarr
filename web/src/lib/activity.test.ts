@@ -42,7 +42,7 @@ const { getActivity } = await import('$lib/runs');
 function run(over: Partial<Run> = {}): Run {
 	return {
 		id: 'r1',
-		kind: 'sweep',
+		type: 'sweep',
 		started: '2026-09-08T04:00:00+12:00',
 		seconds: 12,
 		dry_run: true,

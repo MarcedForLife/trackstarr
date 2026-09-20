@@ -23,6 +23,9 @@ export function pageSettings(): SettingsDraft | undefined {
 export type Changes = Record<string, SettingValue | null>;
 
 type Options = {
+	// Pages with structured records adapt them to the shared field editor.
+	// They disable edits during save, so the returned snapshot replaces the draft.
+	save?: (changes: Changes) => Promise<Record<string, Setting>>;
 	// Names whose written order matters, so a reorder reads as a change.
 	ordered?: Set<string>;
 	// A viewer sees every page and saves none.
@@ -93,7 +96,7 @@ export class SettingsDraft {
 
 	desc(name: string, fallback: string): string {
 		return this.baseline[name]?.env
-			? `Set by ${name} in the environment, which wins over anything saved here.`
+			? `Set by ${this.baseline[name]?.env_name ?? name} in the environment, which wins over anything saved here.`
 			: fallback;
 	}
 
@@ -125,16 +128,19 @@ export class SettingsDraft {
 		this.problems = [];
 		this.answered = '';
 		try {
-			const snapshot = await saveSettings(sent);
-			refill(this.baseline, snapshot.settings);
+			const settings = this.#options.save
+				? await this.#options.save(sent)
+				: (await saveSettings(sent)).settings;
+			refill(this.baseline, settings);
 			// Only the names that went, so a keystroke during the save survives.
-			const fresh = cloneValues(snapshot.settings);
+			const fresh = cloneValues(settings);
 			for (const [name, value] of Object.entries(fresh)) {
 				if (name in sent || !(name in this.draft)) this.draft[name] = value;
 			}
 			for (const name of Object.keys(sent)) {
 				if (!(name in fresh)) delete this.draft[name];
 			}
+			if (this.#options.save) refill(this.draft, fresh);
 			this.#rebuilt(sent);
 			this.answered = 'Settings saved.';
 		} catch (error) {

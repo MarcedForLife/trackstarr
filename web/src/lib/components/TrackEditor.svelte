@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import Select from '$lib/components/Select.svelte';
 	import Toggle from '$lib/components/Toggle.svelte';
 	import { refusalText } from '$lib/api';
@@ -83,21 +83,28 @@
 	// file it would not change. Cleared as the form moves on.
 	let problems = $state<string[]>([]);
 
+	let gone = false;
+	onDestroy(() => {
+		gone = true;
+	});
+
 	async function apply() {
 		if (!changed || busy || !targets.length) return;
+		const done = ondone;
 		busy = true;
 		problems = [];
 		try {
 			const outcomes = await retagTracks(targets, edit);
+			if (gone) return;
 			const told = summarise(outcomes);
 			// Nothing took, so the form stays as set and says why; the sheet has
 			// nothing new to show.
-			if (told.changed || told.same) ondone(outcomes);
+			if (told.changed || told.same) done(outcomes);
 			else problems = told.problems.length ? told.problems : [told.line];
 		} catch (caught) {
-			problems = [refusalText(caught)];
+			if (!gone) problems = [refusalText(caught)];
 		} finally {
-			busy = false;
+			if (!gone) busy = false;
 		}
 	}
 

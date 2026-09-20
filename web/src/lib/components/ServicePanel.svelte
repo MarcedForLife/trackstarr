@@ -141,7 +141,7 @@
 	// The run a row belongs to, said only where the rows differ on it. A dry run
 	// says so either way, since nothing it plans will be written.
 	function originOf(run: Run): string {
-		return [mixed ? source(run) : '', run.dry_run && run.kind !== 'import' ? 'Plan only' : '']
+		return [mixed ? source(run) : '', run.dry_run && run.type !== 'import' ? 'Plan only' : '']
 			.filter(Boolean)
 			.join(' · ');
 	}
@@ -200,7 +200,7 @@
 	// A walk holding the sweep cache; the service refuses a second. A re-check
 	// counts.
 	const sweeping = $derived(
-		activity.runs.some((run) => run.kind === 'sweep' || run.kind === 'recheck')
+		activity.runs.some((run) => run.type === 'sweep' || run.type === 'recheck')
 	);
 
 	// Paused workers finishing, or the next scheduled check while idle.

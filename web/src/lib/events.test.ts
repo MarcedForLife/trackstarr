@@ -172,3 +172,10 @@ test.each(['paused', 'resumed', 'held', 'lifted', 'item_paused', 'item_resumed',
 		expect(details(line).find((row) => row.label === 'By')?.values).toEqual(['operator']);
 	}
 );
+
+test('a file re-check receipt counts files rather than zero titles', () => {
+	const run = entry({ event: 'recheck', files: 1, counts: { conform: 1 } });
+	expect(headline(run)).toBe('Re-checked 1 file');
+	expect(details(run).some((row) => row.label === 'Titles')).toBe(false);
+	expect(headline({ ...run, titles: 1 })).toBe('Re-checked 1 title');
+});

@@ -337,7 +337,7 @@ def test_arr_path_diagnostic_uses_test_credentials(monkeypatch, tmp_path):
     monkeypatch.setattr(
         connections, "_webhook_state", lambda *args: connections.WebhookState("missing")
     )
-    set_config(arr_values={"RADARR_4K_URL": "http://saved", "RADARR_4K_API_KEY": "saved-key"})
+    set_config(arr_settings={"RADARR_4K_URL": "http://saved", "RADARR_4K_API_KEY": "saved-key"})
     assert connections.check("radarr-4k").ok
     assert calls[-1] == ("http://saved/api/v3/rootfolder", "saved-key")
     assert connections.check("radarr-4k", "http://edited", "edited-key").ok

@@ -5,6 +5,7 @@
 	import { refusalText } from '$lib/api';
 	import { frosted } from '$lib/controls';
 	import { popover } from '$lib/popover.svelte';
+	import { REPORT_ONLY_NOTE, type RunMode } from '$lib/library';
 
 	let {
 		label,
@@ -12,6 +13,10 @@
 		active = false,
 		onskip,
 		ontop,
+		onrun,
+		mayRewrite = false,
+		runDisabled = false,
+		refuses = '',
 		disabled = false,
 		class: shape = '',
 		onchoose
@@ -21,6 +26,10 @@
 		active?: boolean;
 		onskip?: () => void | Promise<void>;
 		ontop?: () => void | Promise<void>;
+		onrun?: (mode: RunMode) => Promise<void>;
+		mayRewrite?: boolean;
+		runDisabled?: boolean;
+		refuses?: string;
 		disabled?: boolean;
 		class?: string;
 		onchoose: (seconds: number) => Promise<void>;
@@ -119,6 +128,22 @@
 			</button>
 		{/each}
 	{:else}
+		{#if onrun}
+			<button
+				onclick={() => act(() => onrun!('report'))}
+				disabled={busy !== null || disabled || runDisabled || !!refuses}
+				class="flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[13px] font-medium hover:bg-sunken disabled:opacity-(--disabled)"
+				><Glyph name="doc" /> Plan</button
+			>
+			<button
+				onclick={() => (mayRewrite ? act(() => onrun!('apply')) : (error = REPORT_ONLY_NOTE))}
+				disabled={busy !== null || disabled || runDisabled || !!refuses}
+				aria-disabled={!mayRewrite || undefined}
+				class="flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[13px] font-medium hover:bg-sunken disabled:opacity-(--disabled) aria-disabled:opacity-(--disabled)"
+				><Glyph name="play" /> Process</button
+			>
+			{#if refuses}<p class="px-2.5 py-2 text-[12px] text-faint">{refuses}</p>{/if}
+		{/if}
 		{#if ontop}<button
 				onclick={() => act(ontop!)}
 				disabled={busy !== null || disabled}
@@ -128,8 +153,8 @@
 		<button
 			onclick={showSpans}
 			disabled={busy !== null || disabled}
-			class="min-h-11 w-full rounded-lg px-2.5 text-left text-[13px] font-medium hover:bg-sunken"
-			>Pause…</button
+			class="flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[13px] font-medium hover:bg-sunken"
+			><Glyph name="pause" /> Pause…</button
 		>
 		{#if onskip}<button
 				onclick={() => act(onskip!)}

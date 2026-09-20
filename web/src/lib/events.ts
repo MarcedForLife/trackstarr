@@ -50,6 +50,7 @@ export type Event = {
 	cached?: number;
 	counts?: Record<string, number>;
 	arr?: string;
+	arr_label?: string;
 	// The files a delivery queued, by name.
 	paths?: string[];
 	// The library title this line is about, as an id into the page's `titles`.
@@ -227,11 +228,10 @@ export function headline(entry: Event, title = ''): string {
 				: `${action} complete · ${count(entry.files, 'file')}`;
 		}
 		case 'recheck':
-			// Counted in titles, which is what was selected. Files are the detail
-			// line's.
+			// File runs omit the title count because no whole title was selected.
 			return entry.stopped
 				? `Re-check stopped after ${count(entry.files, 'file')}`
-				: `Re-checked ${count(entry.titles, 'title')}`;
+				: `Re-checked ${entry.titles === undefined ? count(entry.files, 'file') : count(entry.titles, 'title')}`;
 		case 'paused':
 			return 'Processing paused';
 		case 'resumed':
@@ -249,7 +249,7 @@ export function headline(entry: Event, title = ''): string {
 		case 'webhook': {
 			// Counted even for one, since a release file name truncates at any
 			// width. The name goes on the second line.
-			const who = entry.arr ? entry.arr[0].toUpperCase() + entry.arr.slice(1) : 'An import';
+			const who = entry.arr_label || 'An import';
 			return `${who} queued ${count(entry.files, 'file')}`;
 		}
 		case 'config':
@@ -336,8 +336,10 @@ export function detail(entry: Event): string {
 		case 'sweep':
 			return verdicts(entry).join(' · ');
 		case 'recheck':
-			// The file count leads: the headline counted titles.
-			return [count(entry.files, 'file'), ...verdicts(entry)].join(' · ');
+			return [
+				...(entry.titles === undefined ? [] : [count(entry.files, 'file')]),
+				...verdicts(entry)
+			].join(' · ');
 		case 'paused':
 		case 'resumed':
 		case 'lifted':
