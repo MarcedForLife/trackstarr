@@ -1,12 +1,10 @@
 name: Demo
 
 # The web UI built with no service behind it, answering from a sample library in
-# the browser, published to GitHub Pages. See web/README.md, "The demo".
+# the browser, published to GitHub Pages. See web/README.md.
 #
 # Pages has to be switched on once, under Settings, Pages, with GitHub Actions
-# as the source, and its github-pages environment has to allow each branch
-# here. The feature branch is here so the demo can go up before the UI reaches
-# main; drop it, and its branch policy, once that has happened.
+# as the source, and its github-pages environment has to allow main.
 on:
   push:
     branches: [main]

@@ -35,9 +35,9 @@ export type TitleSpec = {
 	rating?: number;
 	/** Days before now the title joined the library. */
 	addedDays: number;
-	folder: string;
 	files: FileSpec[];
-	arr?: 'radarr' | 'sonarr';
+	/** All folders holding the title, primary first. */
+	sources: { instance_id?: string; folder: string }[];
 	/** The IMDb id the *arr carried, which the sheet's IMDb button opens. A
 	 * folder no *arr claims has none. */
 	imdb?: string;
@@ -142,9 +142,8 @@ function movie(spec: MovieSpec): TitleSpec {
 		rating: spec.rating,
 		imdb: spec.imdb,
 		addedDays: spec.addedDays,
-		folder,
-		files: spec.missing ? [] : [file],
-		arr: 'radarr'
+		sources: [{ instance_id: 'radarr', folder }],
+		files: spec.missing ? [] : [file]
 	};
 }
 
@@ -174,15 +173,14 @@ function series(spec: SeriesSpec): TitleSpec {
 		rating: spec.rating,
 		imdb: spec.imdb,
 		addedDays: spec.addedDays,
-		folder,
+		sources: [{ instance_id: 'sonarr', folder }],
 		files: spec.episodes.map((episode, at) => ({
 			name: `Season 01/${spec.name} - S01E${String(at + 1).padStart(2, '0')} - ${episode.title}`,
 			ext: episode.ext ?? '.mkv',
 			seconds: spec.minutes * 60,
 			tracks: episode.tracks ?? spec.tracks,
 			history: episode.history
-		})),
-		arr: 'sonarr'
+		}))
 	};
 }
 
@@ -582,9 +580,8 @@ export function catalogue(): TitleSpec[] {
 			lang: 'eng',
 			rating: 7.7,
 			addedDays: 4,
-			folder: `${TV}/One Step Beyond`,
-			files: [],
-			arr: 'sonarr'
+			sources: [{ instance_id: 'sonarr', folder: `${TV}/One Step Beyond` }],
+			files: []
 		}
 	];
 }

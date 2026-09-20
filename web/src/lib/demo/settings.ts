@@ -2,7 +2,15 @@
 // REWRITE_MODE at `all`, so the buttons that rewrite are live, plus the
 // vocabulary the settings pages draw their controls from.
 
-import type { SettingsSnapshot, SettingValue } from '$lib/settings';
+import type {
+	ArrInstance,
+	ArrField,
+	Setting,
+	SettingsChanges,
+	SettingsSnapshot,
+	SettingValue
+} from '$lib/settings';
+import { ARR_FIELDS } from '$lib/connections';
 import { ORIGINAL, STOCK, type Settings } from './judge';
 
 // Every rule, its default mode and the summary its row shows, as the service
@@ -152,6 +160,7 @@ export const DEFAULTS: Settings = {
 	PROBE_TIMEOUT: '180',
 	PROBE_WORKERS: '4',
 	RADARR_API_KEY: '',
+	RADARR_NAME: '',
 	RADARR_PUBLIC_URL: '',
 	RADARR_URL: 'http://localhost:7878',
 	REGENERATE_ABOVE_PERCENT: '0',
@@ -163,6 +172,7 @@ export const DEFAULTS: Settings = {
 	SDH_PATTERN: '\\bsdh\\b|\\bcc\\b|hearing[\\s._-]*impaired',
 	SKIP_HARDLINKS: true,
 	SONARR_API_KEY: '',
+	SONARR_NAME: '',
 	SONARR_PUBLIC_URL: '',
 	SONARR_URL: 'http://localhost:8989',
 	SWEEP_AT: '0 3 * * *',
@@ -189,13 +199,117 @@ export const RULE_SETTINGS = new Set([
 	...Object.keys(RULES).map((name) => `RULE_${name.toUpperCase()}`)
 ]);
 
+export function isSecret(name: string): boolean {
+	return SECRETS.includes(name) || /^(RADARR|SONARR)_[A-Z0-9]+_API_KEY$/.test(name);
+}
+
+// The demo emulates the server's flat storage boundary. UI code only sees records.
+function arrInstances(values: Record<string, Setting>): ArrInstance[] {
+	const ids = new Set<string>();
+	for (const name of Object.keys(values)) {
+		const match = name.match(
+			/^(RADARR|SONARR)_((?!PUBLIC_)[A-Z0-9]+)_(?:URL|API_KEY|PUBLIC_URL|NAME)$/
+		);
+		if (match) ids.add(`${match[1].toLowerCase()}-${match[2].toLowerCase()}`);
+	}
+	return ['radarr', 'sonarr', ...[...ids].sort()].map((id) => {
+		const type = id.split('-')[0] as 'radarr' | 'sonarr';
+		return {
+			id,
+			type,
+			fields: Object.fromEntries(
+				ARR_FIELDS.map((field) => {
+					const name = `${id.toUpperCase().replaceAll('-', '_')}_${field.toUpperCase()}`;
+					return [
+						field,
+						{
+							...(values[name] ?? {
+								value: '',
+								env: false,
+								...(field === 'api_key' ? { set: false } : {})
+							}),
+							env_name: name
+						}
+					];
+				})
+			) as Record<ArrField, Setting>
+		};
+	});
+}
+
+/** Validate and flatten the structured API request as the Python service does. */
+export function arrChanges(
+	changes: SettingsChanges,
+	instances: ArrInstance[]
+): Record<string, SettingValue | null> {
+	const { arr_instances: operations = [], ...ordinary } = changes;
+	const flat = ordinary as Record<string, SettingValue | null>;
+	if (!Array.isArray(operations))
+		throw new Error('arr_instances must be a list of connection changes');
+	const seen = new Set<string>();
+	for (const operation of operations) {
+		if (
+			!operation ||
+			typeof operation !== 'object' ||
+			Array.isArray(operation) ||
+			Object.keys(operation).some(
+				(key) => !['id', 'type', 'create', 'remove', 'values'].includes(key)
+			)
+		)
+			throw new Error('invalid connection change');
+		const { id, create = false, remove = false, values = {} } = operation;
+		if (typeof id !== 'string' || !/^(radarr|sonarr)(?:-(?!public$)[a-z0-9]+)?$/.test(id))
+			throw new Error('invalid connection id');
+		const prefix = id.toUpperCase().replaceAll('-', '_');
+		if (seen.has(id) || ARR_FIELDS.some((field) => `${prefix}_${field.toUpperCase()}` in flat))
+			throw new Error(`connection ${id} is changed more than once`);
+		seen.add(id);
+		const held = instances.find((instance) => instance.id === id);
+		if (typeof create !== 'boolean' || typeof remove !== 'boolean' || (create && remove))
+			throw new Error('create and remove must be boolean and cannot both be true');
+		if (create && held) throw new Error(`connection ${id} already exists; reload before adding it`);
+		if (!create && !held)
+			throw new Error(`connection ${id} no longer exists; reload before editing it`);
+		if (operation.type && operation.type !== id.split('-')[0])
+			throw new Error(`connection ${id} cannot change type`);
+		if (
+			!values ||
+			typeof values !== 'object' ||
+			Array.isArray(values) ||
+			Object.keys(values).some((key) => !ARR_FIELDS.includes(key as ArrField))
+		)
+			throw new Error(`connection ${id} has unknown fields`);
+		if (remove && Object.keys(values).length)
+			throw new Error('a removed connection cannot also have field changes');
+		const fields = remove
+			? Object.fromEntries(ARR_FIELDS.map((field) => [field, null]))
+			: create
+				? { ...Object.fromEntries(ARR_FIELDS.map((field) => [field, ''])), ...values }
+				: values;
+		for (const [field, value] of Object.entries(fields)) {
+			if (value !== null && typeof value !== 'string')
+				throw new Error(`connection ${id} ${field} must be a string or null`);
+			if (field === 'api_key' && value === '' && !create) continue;
+			if (held?.fields[field as ArrField].env)
+				throw new Error('connection field is set by the environment');
+			flat[`${prefix}_${field.toUpperCase()}`] = value;
+		}
+	}
+	return flat;
+}
+
 export function snapshot(settings: Settings, secretsSet: Set<string>): SettingsSnapshot {
 	const values: SettingsSnapshot['settings'] = {};
 	for (const [name, value] of Object.entries(settings)) {
 		values[name] = { value, env: ENV_PINNED.has(name) };
-		if (SECRETS.includes(name)) values[name] = { value: '', env: false, set: secretsSet.has(name) };
+		if (isSecret(name)) values[name] = { value: '', env: false, set: secretsSet.has(name) };
+	}
+	const instances = arrInstances(values);
+	for (const instance of instances) {
+		for (const field of Object.values(instance.fields)) delete values[field.env_name!];
 	}
 	return {
+		arr_instances: instances,
 		rules: RULES,
 		modes: MODES,
 		languages: LANGUAGES,
@@ -207,7 +321,7 @@ export function snapshot(settings: Settings, secretsSet: Set<string>): SettingsS
 		stock: STOCK,
 		rates: RATES,
 		codecs: CODECS,
-		secrets: SECRETS,
+		secrets: Object.keys(values).filter(isSecret).sort(),
 		settings: values
 	};
 }
@@ -242,6 +356,13 @@ export function problems(settings: Settings): string[] {
 	}
 	const at = String(settings.SWEEP_AT ?? '');
 	if (at && at.trim().split(/\s+/).length !== 5) found.push('SWEEP_AT needs five fields');
+	// A connection's display name is a grid line, kept to what one can hold.
+	for (const [name, value] of Object.entries(settings)) {
+		if (name.endsWith('_NAME') && value && !/^[A-Za-z0-9 _-]{1,40}$/.test(String(value)))
+			found.push(
+				`${name}=${JSON.stringify(value)} may use letters, numbers, spaces, hyphens and underscores, up to 40 characters`
+			);
+	}
 	return found;
 }
 
