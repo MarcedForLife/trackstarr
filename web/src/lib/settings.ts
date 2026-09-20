@@ -14,8 +14,24 @@ export type Codec = {
 };
 // A credential comes back as set-or-not with an empty value; the service never
 // echoes one.
-export type Setting = { value: SettingValue; env: boolean; set?: boolean };
+export type Setting = { value: SettingValue; env: boolean; env_name?: string; set?: boolean };
+export type ArrType = 'radarr' | 'sonarr';
+export type ArrField = 'url' | 'api_key' | 'public_url' | 'name';
+export type ArrInstance = {
+	id: string;
+	type: ArrType;
+	fields: Record<ArrField, Setting>;
+};
+export type ArrChange = {
+	id: string;
+	type?: ArrType;
+	create?: boolean;
+	remove?: boolean;
+	values?: Partial<Record<ArrField, string | null>>;
+};
+export type SettingsChanges = Record<string, SettingValue | null | ArrChange[]>;
 export type SettingsSnapshot = {
+	arr_instances: ArrInstance[];
 	// Every rule, its summary and its default mode. Each is set by RULE_<NAME>.
 	rules: Record<string, { default: string; summary: string }>;
 	// What a rule may be set to, weakest first.
@@ -54,9 +70,7 @@ export function getSettings(fetcher: typeof fetch = fetch): Promise<SettingsSnap
 	return request<SettingsSnapshot>('/api/settings', undefined, fetcher);
 }
 
-export async function saveSettings(
-	changes: Record<string, SettingValue | null>
-): Promise<SettingsSnapshot> {
+export async function saveSettings(changes: SettingsChanges): Promise<SettingsSnapshot> {
 	try {
 		return await request<SettingsSnapshot>('/api/settings', {
 			method: 'POST',

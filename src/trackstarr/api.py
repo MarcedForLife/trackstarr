@@ -39,8 +39,9 @@ from . import (
     sweep,
     users,
 )
-from .arr import reregister_webhooks
+from .arr import reregister_webhooks, source_name
 from .client import API_ERRORS
+from .policy import Policy
 from .processing import effective_dry_run
 
 if TYPE_CHECKING:
@@ -108,8 +109,9 @@ def _pause_targets(body: dict) -> tuple[list[tuple[str, str, str]], tuple[int, s
     files = [str(entry) for entry in named if str(entry)] if isinstance(named, list) else []
     if not ids and not files:
         return [], (400, "name the titles or files to pause")
-    found = library.pause_targets(ids) if ids else []
-    if len(found) != len(ids):
+    try:
+        found = library.pause_targets(ids, strict=True) if ids else []
+    except KeyError:
         return [], (404, "no such title")
     for spelling in files:
         path = paths.canonical(spelling)
@@ -119,16 +121,20 @@ def _pause_targets(body: dict) -> tuple[list[tuple[str, str, str]], tuple[int, s
     return found, None
 
 
-def _subject(found: library.Title) -> links.Subject:
-    """The few facts about a title that :mod:`trackstarr.links` needs."""
-    return links.Subject(
-        folder=found.folder,
-        name=found.name,
-        year=found.year,
-        arr=found.arr.name if found.arr else "",
-        slug=found.slug,
-        imdb_id=found.imdb_id,
-    )
+def _subjects(found: library.Title) -> list[links.Subject]:
+    """The few facts about a title that :mod:`trackstarr.links` needs, one per
+    folder holding it, so each instance gets its own button."""
+    return [
+        links.Subject(
+            folder=source.folder,
+            name=found.name,
+            year=found.year,
+            arr=source.arr.instance_id if source.arr else "",
+            slug=source.slug,
+            imdb_id=found.imdb_id,
+        )
+        for source in found.sources
+    ]
 
 
 def _event_files(entry: dict) -> list[str]:
@@ -428,7 +434,7 @@ def _serve_title_work(handler: Handler, query: str) -> None:
         return
     # Resolved before the capture, so reaching the catalogue never holds the
     # scheduler's condition.
-    handler.send_json(lifecycle.title_work(titles[0].folder))
+    handler.send_json(lifecycle.title_work(titles[0].folders))
 
 
 def _serve_file(handler: Handler, query: str) -> None:
@@ -442,16 +448,25 @@ def _serve_file(handler: Handler, query: str) -> None:
 
 def _serve_title(handler: Handler, query: str) -> None:
     """One title's files, with what each is and what each would become."""
-    wanted = urllib.parse.parse_qs(query).get("id", [""])[0]
+    params = urllib.parse.parse_qs(query)
+    wanted = params.get("id", [""])[0]
+    try:
+        pages = int(params.get("pages", ["1"])[0])
+    except ValueError:
+        handler.reply(400, "pages must be a positive whole number")
+        return
+    if pages < 1:
+        handler.reply(400, "pages must be a positive whole number")
+        return
     titles = library.selected([wanted]) if wanted else []
-    found = library.title(wanted) if titles else None
+    found = library.title(wanted, pages=pages) if titles else None
     if found is None:
         handler.reply(404, "no such title")
         return
     # Which services could offer a link is a settings read, so the sheet
     # draws its buttons at once. Resolving them means calling the media
     # servers, which is the second request.
-    handler.send_json({**found, "servers": links.offered(_subject(titles[0]))})
+    handler.send_json({**found, "servers": links.offered(*_subjects(titles[0]))})
 
 
 def _serve_links(handler: Handler, query: str) -> None:
@@ -466,7 +481,7 @@ def _serve_links(handler: Handler, query: str) -> None:
     if not found:
         handler.reply(404, "no such title")
         return
-    handler.send_json({"links": links.for_title(_subject(found[0]))})
+    handler.send_json({"links": links.for_title(*_subjects(found[0]))})
 
 
 def _serve_cover(handler: Handler, query: str) -> None:
@@ -534,6 +549,11 @@ def _serve_events(handler: Handler, query: str) -> None:
         handler.send_json({"events": [], "titles": {}, "next": None}, tag=True)
         return
     entries, cursor = events.read(limit, before, since, until)
+    # Persist identities only; display names follow the current configuration.
+    entries = [
+        {**entry, "arr_label": source_name(entry["arr"])} if entry.get("arr") else entry
+        for entry in entries
+    ]
     # Tagged like the shelf: the page refetches on every visit and the
     # lines rarely change. The cards let the feed draw a poster and raise
     # the library's title sheet.
@@ -631,7 +651,7 @@ def _walk_refused(handler: Handler) -> bool:
         return True
     if existing := runs.cache_holder():
         handler.send_json(
-            {"status": f"a {existing.kind} is already running", "run": existing.id}, 409
+            {"status": f"a {existing.type} is already running", "run": existing.id}, 409
         )
         return True
     return False
@@ -642,8 +662,8 @@ def _recheck_titles(handler: Handler, signed_in: users.Account) -> None:
 
     A sweep over picked titles: same modes, REWRITE_MODE latch, pause and
     shared work queue, but every file is re-probed since the stored
-    verdict is usually what is in question. The body names title ids,
-    resolved against the library, so it can reach nothing else.
+    verdict is usually what is in question. The body names title ids or
+    exact video paths inside MEDIA_DIRS; file targets never expand to folders.
     """
     body = handler.read_json()
     if body is None:
@@ -653,33 +673,76 @@ def _recheck_titles(handler: Handler, signed_in: users.Account) -> None:
         return
     wanted = body.get("ids")
     ids = [str(entry) for entry in wanted] if isinstance(wanted, list) else []
-    if not ids:
-        handler.reply(400, "name the titles to run")
+    files: list[str] | None = None
+    if "paths" in body:
+        named = body["paths"]
+        if "ids" in body or not isinstance(named, list) or not named:
+            handler.reply(400, "name either titles or files to run")
+            return
+        files = []
+        policy = Policy.from_config()
+        for spelling in named:
+            if not isinstance(spelling, str) or not os.path.isabs(spelling):
+                handler.reply(400, "each file needs an absolute path")
+                return
+            path = paths.canonical(spelling)
+            if not lifecycle.under_media(path) or not any(
+                paths.within(os.path.realpath(root))(os.path.realpath(path))
+                for root in config.current().MEDIA_DIRS
+            ):
+                handler.reply(400, "that file is not in a swept library")
+                return
+            if not os.path.isfile(path):
+                handler.reply(404, "no such file")
+                return
+            if not policy.is_video(path):
+                handler.reply(400, "that file is not a video")
+                return
+            if path not in files:
+                files.append(path)
+    if not ids and files is None:
+        handler.reply(400, "name the titles or files to run")
         return
     if lifecycle.paused():
         handler.reply(409, "processing is paused. Resume it first")
         return
-    chosen = library.selected(ids)
-    if not chosen:
+    chosen = library.selected(ids) if ids else []
+    if not chosen and files is None:
         handler.reply(404, "no such title")
         return
     run = events.run_id()
     # The run card's label: one title by name, more by count.
-    label = chosen[0].name if len(chosen) == 1 else f"{len(chosen)} titles"
+    label = (
+        (os.path.basename(files[0]) if len(files) == 1 else f"{len(files)} files")
+        if files is not None
+        else (chosen[0].name if len(chosen) == 1 else f"{len(chosen)} titles")
+    )
     log.info(
-        "re-check of %d title(s) started from the web UI by %s (mode=%s)",
-        len(chosen),
+        "re-check of %s started from the web UI by %s (mode=%s)",
+        label,
         signed_in.name,
         mode,
     )
     if not lifecycle.launch(
         _recheck_thread,
-        args=([title.folder for title in chosen], mode != "apply", run, label),
+        args=(
+            [folder for title in chosen for folder in title.folders],
+            mode != "apply",
+            run,
+            label,
+            files,
+        ),
         name="recheck",
     ):
         handler.reply(503, "the service is stopping")
         return
-    handler.send_json({"status": "started", "run": run, "titles": len(chosen)})
+    handler.send_json(
+        {
+            "status": "started",
+            "run": run,
+            **({"files": len(files)} if files is not None else {"titles": len(chosen)}),
+        }
+    )
 
 
 def _retag_targets(body: dict) -> tuple[list[tuple[str, int]], tuple[int, str] | None]:
@@ -748,7 +811,7 @@ def _cache_busy(handler: Handler, advice: str) -> bool:
     ``advice`` is what the caller can do about it."""
     if existing := runs.cache_holder():
         handler.send_json(
-            {"status": f"a {existing.kind} is running. {advice}", "run": existing.id}, 409
+            {"status": f"a {existing.type} is running. {advice}", "run": existing.id}, 409
         )
         return True
     return False
@@ -819,8 +882,7 @@ def _logout(handler: Handler, signed_in: users.Account) -> None:
 
 
 def _update_settings(handler: Handler, signed_in: users.Account) -> None:
-    """Write the body's NAME -> value changes to settings.json and apply
-    them live.
+    """Apply flat settings and structured arr operations to settings.json live.
 
     null unsets a name. A change that would refuse startup is rolled back
     whole and answered with the CLI's messages. The account name goes to
@@ -848,7 +910,17 @@ def _update_settings(handler: Handler, signed_in: users.Account) -> None:
     links.forget()
     # An *arr that was unset or unreachable can answer for a poster now.
     covers.forget()
-    if not _ARR_CONNECTION.isdisjoint(body):
+    # A name is only read when an answer is built, so it is left out here.
+    if (
+        any(
+            operation.get("create")
+            or operation.get("remove")
+            or {"url", "api_key", "public_url"}.intersection(operation.get("values", {}))
+            for operation in body.get("arr_instances", [])
+        )
+        or not _ARR_CONNECTION.isdisjoint(body)
+        or any(config.arr_setting(name) and not name.endswith("_NAME") for name in body)
+    ):
         # Off the request thread: two round trips per *arr.
         threading.Thread(target=reregister_webhooks, daemon=True, name="reregister").start()
     handler.send_json(settings.snapshot())
@@ -865,7 +937,7 @@ def _test_connection(handler: Handler, signed_in: users.Account) -> None:
     if body is None:
         return
     name = str(body.get("service") or "")
-    if name not in connections.BY_NAME:
+    if connections.service_for(name) is None:
         handler.reply(404, "no such service")
         return
     result = connections.check(name, str(body.get("url") or ""), str(body.get("key") or ""))
@@ -1141,11 +1213,14 @@ def _sweep_thread(run: str, dry_run: bool) -> None:  # pragma: no cover
 
 # No cover: a thread body around recheck(), which is covered directly.
 def _recheck_thread(  # pragma: no cover
-    folders: list[str], dry_run: bool, run: str, label: str
+    folders: list[str], dry_run: bool, run: str, label: str, files: list[str] | None = None
 ) -> None:
     """One re-check, off the request thread. The page follows it through /api/runs."""
     try:
-        sweep.recheck(folders, dry_run=dry_run, run=run, label=label)
+        if files is None:
+            sweep.recheck(folders, dry_run=dry_run, run=run, label=label)
+        else:
+            sweep.recheck(folders, dry_run=dry_run, run=run, label=label, files=files)
     except Exception:
         log.exception("re-check started from the web UI failed")
 

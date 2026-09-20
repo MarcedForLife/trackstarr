@@ -398,7 +398,7 @@ def test_a_sweep_shows_its_progress_while_it_walks(monkeypatch, tmp_path, clean_
     assert seen[0]["done"] == 0
     assert [snap["done"] for snap in seen] == sorted(snap["done"] for snap in seen)
     assert [snap["done"] for snap in seen] == sorted(snap["done"] for snap in seen)
-    assert seen[0]["kind"] == "sweep" and seen[0]["dry_run"] is True
+    assert seen[0]["type"] == "sweep" and seen[0]["dry_run"] is True
     # And it lets go of itself afterwards, however the walk ended.
     assert clean_registry.snapshot()["runs"] == []
 
@@ -1277,7 +1277,7 @@ def test_a_recheck_registers_itself_so_the_page_can_watch_it(
     monkeypatch.setattr("trackstarr.sweep._judge", judge)
     sweep_mod.recheck([folder], dry_run=True, run="r#2", label="Dune")
 
-    assert (seen[0]["kind"], seen[0]["label"]) == ("recheck", "Dune")
+    assert (seen[0]["type"], seen[0]["label"]) == ("recheck", "Dune")
     assert seen[0]["dry_run"] is True
     # Closed when it ends, or the next one would be refused for ever.
     assert clean_registry.snapshot()["runs"] == []
@@ -1939,3 +1939,20 @@ def test_fast_pass_books_a_concurrent_verdict_without_processing(monkeypatch, tm
     assert event["counts"][str(Status.MODIFIED)] == 3
     assert event["files"] == 4
     assert path not in (Path(config.STATE_DIR) / "pending.tsv").read_text()
+
+
+def test_file_recheck_does_not_discover_sibling_variants(monkeypatch, tmp_path, clean_registry):
+    folder = _folder(tmp_path, "Dune", "Dune.1080p.mkv", "Dune.2160p.mkv")
+    target = os.path.join(folder, "Dune.2160p.mkv")
+    probed = []
+    monkeypatch.setattr(
+        "trackstarr.sweep.process",
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            probed.append(job.path) or ProcessResult(Status.CONFORM, None)
+        ),
+    )
+    sweep_mod.recheck([], dry_run=True, run="file-run", files=[target, target])
+    assert probed == [target]
+    summary = next(entry for entry in read_events() if entry["event"] == "recheck")
+    assert summary["files"] == 1
+    assert "titles" not in summary

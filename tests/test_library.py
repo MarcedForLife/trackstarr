@@ -883,9 +883,8 @@ def test_the_summary_counts_untagged_titles_as_the_grids_chip_does(media, monkey
     assert library.summary()["counts"]["untagged"] == 1
 
 
-def test_a_title_lists_what_needs_work_first(media, monkeypatch):
-    """A series past the cap shows a part of itself, so the part it shows has
-    to be the part worth reading."""
+def test_a_title_lists_latest_episodes_first(media, monkeypatch):
+    """Verdict changes do not reorder a title's episodes."""
     folder = f"{media}/Show"
     stub_arrs(monkeypatch, [movie(1, "Show", folder)], name="sonarr")
     cache(
@@ -894,8 +893,9 @@ def test_a_title_lists_what_needs_work_first(media, monkeypatch):
         (f"{folder}/s01e03.mkv", Verdict(Status.SKIP, "no video stream")),
     )
     detail = library.title("arr:sonarr:1")
-    assert [file["status"] for file in detail["files"]] == ["pending", "skip", "conform"]
+    assert [file["status"] for file in detail["files"]] == ["skip", "pending", "conform"]
     assert detail["total"] == 3
+    assert detail["counts"] == {"skip": 1, "pending": 1, "conform": 1}
 
 
 def test_a_long_title_is_capped_and_says_so(media, monkeypatch):
@@ -910,6 +910,7 @@ def test_a_long_title_is_capped_and_says_so(media, monkeypatch):
     detail = library.title("arr:sonarr:1")
     assert len(detail["files"]) == library.MAX_FILES
     assert detail["total"] == library.MAX_FILES + 5
+    assert detail["counts"] == {"conform": library.MAX_FILES + 5}
 
 
 def test_an_unknown_title_is_no_answer_rather_than_an_empty_one(media, monkeypatch):
@@ -1349,7 +1350,9 @@ def test_activity_failure_keeps_labels_and_backs_off(monkeypatch):
             )
         library._catalogue.future.result(timeout=5)
         assert len(calls) == attempt + 1
-        assert library._catalogue.read() == ({}, False)
+        retained, complete = library._catalogue.read()
+        assert not complete
+        assert retained["/media/Dune"].id == "arr:radarr:1"
         assert library.covers_for_paths(paths) == expected
         assert library._catalogue.expires - now[0] == min(15 * 2**attempt, 300)
         now[0] = library._catalogue.expires
@@ -1492,9 +1495,9 @@ def test_partial_refresh_replaces_only_healthy_service_identities(media, monkeyp
     }
 
     def fetch(self):
-        if responses[self.name] is None:
+        if responses[self.instance_id] is None:
             raise OSError("offline")
-        return responses[self.name]
+        return responses[self.instance_id]
 
     monkeypatch.setattr(type(arrs[0]), "all_items", fetch)
     library.known()

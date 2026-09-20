@@ -51,7 +51,13 @@ def test_snapshot_offers_languages_by_name(settings_state):
 def test_the_page_is_shown_every_setting_it_may_write(settings_state):
     """EDITABLE and the snapshot are separate lists of the same names. A name
     only EDITABLE holds is writable and invisible: no field renders for it."""
-    missing = settings.EDITABLE - set(settings.snapshot()["settings"])
+    snapshot = settings.snapshot()
+    shown = set(snapshot["settings"]) | {
+        field["env_name"]
+        for instance in snapshot["arr_instances"]
+        for field in instance["fields"].values()
+    }
+    missing = settings.EDITABLE - shown
     assert not missing
 
 
@@ -239,16 +245,17 @@ def test_the_high_bitrate_threshold_saves_and_takes_zero_for_off(settings_state)
 def test_a_credential_is_reported_as_set_never_echoed(settings_state):
     """/api/settings is a read any session may make, so a viewer must not be
     able to walk away with the *arrs' keys."""
-    assert settings.snapshot()["settings"]["RADARR_API_KEY"] == {
+    assert settings.snapshot()["arr_instances"][0]["fields"]["api_key"] == {
         "value": "",
         "env": False,
         "set": False,
+        "env_name": "RADARR_API_KEY",
     }
     assert settings.update({"RADARR_API_KEY": "abc123"}) == []
-    assert config.current().RADARR_API_KEY == "abc123"
+    assert config.value("RADARR_API_KEY") == "abc123"
 
-    entry = settings.snapshot()["settings"]["RADARR_API_KEY"]
-    assert entry == {"value": "", "env": False, "set": True}
+    entry = settings.snapshot()["arr_instances"][0]["fields"]["api_key"]
+    assert entry == {"value": "", "env": False, "set": True, "env_name": "RADARR_API_KEY"}
     assert "abc123" not in json.dumps(settings.snapshot())
 
 
@@ -260,7 +267,7 @@ def test_a_saved_credential_is_sealed_on_the_volume(settings_state):
     assert held.startswith(keystore.PREFIX)
     assert "abc123" not in held
     # Sealed on disk, plain in hand: this is the value replayed to Radarr.
-    assert config.current().RADARR_API_KEY == "abc123"
+    assert config.value("RADARR_API_KEY") == "abc123"
     assert mode(config.SETTINGS_FILE) == 0o600
     assert mode(keystore.KEY_FILE) == 0o600
 
@@ -279,11 +286,11 @@ def test_a_hand_written_credential_is_sealed_by_the_next_save(settings_state):
     with open(os.path.join(config.STATE_DIR, config.SETTINGS_FILE), "w") as by_hand:
         json.dump({"RADARR_API_KEY": "typed-in", "PLEX_URL": "http://plex:32400"}, by_hand)
     config.apply(config.load())
-    assert config.current().RADARR_API_KEY == "typed-in"
+    assert config.value("RADARR_API_KEY") == "typed-in"
 
     assert settings.update({"RULE_COMMENTARY": "always"}) == []
     assert read_settings_file()["RADARR_API_KEY"].startswith(keystore.PREFIX)
-    assert config.current().RADARR_API_KEY == "typed-in"
+    assert config.value("RADARR_API_KEY") == "typed-in"
 
 
 def test_a_credential_whose_key_is_gone_reads_as_unset_and_says_so(settings_state):
@@ -292,7 +299,7 @@ def test_a_credential_whose_key_is_gone_reads_as_unset_and_says_so(settings_stat
     assert settings.update({"RADARR_API_KEY": "abc123"}) == []
     os.remove(os.path.join(config.STATE_DIR, keystore.KEY_FILE))
     config.apply(config.load())
-    assert config.current().RADARR_API_KEY == ""
+    assert config.value("RADARR_API_KEY") == ""
     (told,) = [problem for problem in config.warnings() if "sealed" in problem]
     assert "RADARR_API_KEY" in told
     assert config.errors() == []
@@ -309,7 +316,7 @@ def test_a_key_that_cannot_be_minted_refuses_the_save(settings_state, monkeypatc
     monkeypatch.setattr(keystore, "ensure", refuse)
     (problem,) = settings.update({"RADARR_API_KEY": "abc123"})
     assert "could not be sealed" in problem
-    assert config.current().RADARR_API_KEY == ""
+    assert config.value("RADARR_API_KEY") == ""
     assert not os.path.exists(os.path.join(config.STATE_DIR, config.SETTINGS_FILE))
 
 
@@ -321,7 +328,7 @@ def test_a_damaged_key_file_disables_the_credentials_and_says_so(settings_state)
         clipped.write("abcd\n")
     config.apply(config.load())
 
-    assert config.current().RADARR_API_KEY == ""
+    assert config.value("RADARR_API_KEY") == ""
     assert any(keystore.KEY_FILE in problem for problem in config.warnings())
     assert config.errors() == []
 
@@ -335,7 +342,7 @@ def test_a_credential_sealed_under_another_key_reads_as_unset(settings_state):
         elsewhere.write("33" * 32 + "\n")
     config.apply(config.load())
 
-    assert config.current().RADARR_API_KEY == ""
+    assert config.value("RADARR_API_KEY") == ""
     (told,) = [problem for problem in config.warnings() if "different key" in problem]
     assert "RADARR_API_KEY" in told
 
@@ -348,7 +355,7 @@ def test_re_entering_a_credential_recovers_from_a_lost_key(settings_state):
     config.apply(config.load())
 
     assert settings.update({"RADARR_API_KEY": "def456"}) == []
-    assert config.current().RADARR_API_KEY == "def456"
+    assert config.value("RADARR_API_KEY") == "def456"
     assert not any("sealed" in problem for problem in config.warnings())
 
 
@@ -360,8 +367,8 @@ def test_a_credential_mounted_as_a_file_counts_as_pinned(settings_state, tmp_pat
     os.environ["RADARR_API_KEY_FILE"] = str(secret)
     try:
         config.apply(config.load())
-        entry = settings.snapshot()["settings"]["RADARR_API_KEY"]
-        assert entry == {"value": "", "env": True, "set": True}
+        entry = settings.snapshot()["arr_instances"][0]["fields"]["api_key"]
+        assert entry == {"value": "", "env": True, "set": True, "env_name": "RADARR_API_KEY"}
         (problem,) = settings.update({"RADARR_API_KEY": "typed"})
         assert "environment" in problem
     finally:
@@ -372,9 +379,9 @@ def test_a_credential_mounted_as_a_file_counts_as_pinned(settings_state, tmp_pat
 def test_an_address_without_a_scheme_is_rolled_back(settings_state):
     (problem,) = settings.update({"RADARR_URL": "radarr:7878"})
     assert "must start with http:// or https://" in problem
-    assert config.current().RADARR_URL == ""
+    assert config.value("RADARR_URL") == ""
     assert settings.update({"RADARR_URL": "http://radarr:7878"}) == []
-    assert config.current().RADARR_URL == "http://radarr:7878"
+    assert config.value("RADARR_URL") == "http://radarr:7878"
 
 
 def test_a_path_map_round_trips_as_the_pairs_it_was_written_as(settings_state):

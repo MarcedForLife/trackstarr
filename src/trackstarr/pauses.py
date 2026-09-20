@@ -52,8 +52,8 @@ class Pause:
     at: str = ""
     #: The library title it was placed on, and that title's name. Labels for
     #: the pages: the path is what the pipeline matches on.
-    title: str = ""
-    name: str = ""
+    title_id: str = ""
+    title_name: str = ""
 
     def lapsed(self, now: float | None = None) -> bool:
         return bool(self.until) and (time.time() if now is None else now) >= self.until
@@ -74,8 +74,8 @@ class Pause:
             "by": self.by,
             "reason": self.reason,
             "at": self.at,
-            "title": self.title,
-            "name": self.name,
+            "title_id": self.title_id,
+            "title_name": self.title_name,
         }
 
 
@@ -135,8 +135,8 @@ def _pause(path: str, record: dict) -> Pause:
         by=str(record.get("by") or ""),
         reason=str(record.get("reason") or ""),
         at=str(record.get("at") or ""),
-        title=str(record.get("title") or ""),
-        name=str(record.get("name") or ""),
+        title_id=str(record.get("title_id", record.get("title")) or ""),
+        title_name=str(record.get("title_name", record.get("name")) or ""),
     )
 
 
@@ -176,8 +176,8 @@ def _save(found: dict[str, Pause]) -> None:
                 "by": pause.by,
                 "reason": pause.reason,
                 "at": pause.at,
-                "title": pause.title,
-                "name": pause.name,
+                "title_id": pause.title_id,
+                "title_name": pause.title_name,
             }
             for pause in found.values()
         },
@@ -244,7 +244,7 @@ def place_many(
     by: str = "",
     reason: str = "",
 ) -> list[Pause]:
-    """Atomically place (path, title, name) targets; last duplicate wins.
+    """Atomically place (path, title_id, title_name) targets; last duplicate wins.
 
     Validate the entire batch before writing. Negative durations retain the
     single-item convention of indefinite pauses. Capacity counts distinct live
@@ -255,7 +255,7 @@ def place_many(
     """
     if not _numeric(seconds) or not math.isfinite(seconds):
         raise ValueError("seconds must be finite")
-    targets = [(_key(path), title, name) for path, title, name in targets]
+    targets = [(_key(path), title_id, title_name) for path, title_id, title_name in targets]
     seconds = min(max(seconds, 0.0), MAX_SECONDS)
 
     def change(found: dict[str, Pause]) -> list[Pause]:
@@ -267,10 +267,10 @@ def place_many(
                 by,
                 reason,
                 events.timestamp(),
-                title,
-                name,
+                title_id,
+                title_name,
             )
-            for path, title, name in targets
+            for path, title_id, title_name in targets
         }
         if len(found.keys() | placed.keys()) > MAX_PAUSES:
             raise CapacityError("pause limit reached")
@@ -282,7 +282,7 @@ def place_many(
         events.record(
             "item_paused",
             path=pause.path,
-            title=pause.title or None,
+            title=pause.title_id or None,
             seconds=round(seconds) or None,
             reason=reason or None,
             by=by or None,
@@ -296,11 +296,11 @@ def place(
     seconds: float = 0.0,
     by: str = "",
     reason: str = "",
-    title: str = "",
-    name: str = "",
+    title_id: str = "",
+    title_name: str = "",
 ) -> Pause:
     """Place or extend one pause; delegates to the batch transaction."""
-    return place_many([(path, title, name)], seconds, by, reason)[0]
+    return place_many([(path, title_id, title_name)], seconds, by, reason)[0]
 
 
 def resume_many(targets: Sequence[str], by: str = "") -> list[Pause]:
@@ -315,7 +315,9 @@ def resume_many(targets: Sequence[str], by: str = "") -> list[Pause]:
 
     gone = _mutate(change)
     for pause in gone:
-        events.record("item_resumed", path=pause.path, title=pause.title or None, by=by or None)
+        events.record(
+            "item_resumed", path=pause.path, title=pause.title_id or None, by=by or None
+        )
         log.info("pause resumed on %s%s", pause.path, f" by {by}" if by else "")
     return gone
 

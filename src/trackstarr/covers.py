@@ -107,7 +107,7 @@ def _fetch_cover(title_id: str) -> bytes | None:
     if _known_absent(title_id):
         return None
     found = library.known().index.get(title_id)
-    body = _from_arr(found) or _local_cover(found.folder) if found else None
+    body = _artwork(found) if found else None
     if body:
         _keep_cover(title_id, body)
     else:
@@ -116,14 +116,23 @@ def _fetch_cover(title_id: str) -> bytes | None:
     return body
 
 
-def _from_arr(found: library.Title) -> bytes | None:
-    if not (found.arr and found.arr.enabled):
+def _artwork(found: library.Title) -> bytes | None:
+    """The first source that answers: its *arr, then artwork beside its files.
+    A title held in two instances has two chances."""
+    for source in found.sources:
+        if body := _from_arr(source) or _local_cover(source.folder):
+            return body
+    return None
+
+
+def _from_arr(source: library.Source) -> bytes | None:
+    if not (source.arr and source.arr.enabled):
         return None
     for name in _COVER_NAMES:
         try:
             body, kind = fetch(
-                f"{found.arr.url}/api/v3/mediacover/{found.item_id}/{name}",
-                {"X-Api-Key": found.arr.key},
+                f"{source.arr.url}/api/v3/mediacover/{source.item_id}/{name}",
+                {"X-Api-Key": source.arr.key},
             )
         except API_ERRORS:
             continue

@@ -18,13 +18,13 @@ import threading
 import time
 from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import NamedTuple
 
 from . import config, notify, ratings, rewrites, state, sweep_cache
-from .arr import Arr, all_arrs, innermost, original_of
+from .arr import Arr, all_arrs, innermost, original_of, source_name
 from .client import API_ERRORS
 from .planner import Changes, changes
 from .policy import Policy
@@ -107,44 +107,83 @@ FILTERS = (
 #: and chip name. :func:`summary` counts these off the cards.
 _COUNTED_FIELDS = ((_MODIFIED_FIELD, MODIFIED), (UNTAGGED, UNTAGGED))
 
-#: Most files a title's detail returns. A 300-episode series with tracks and
-#: plans is megabytes of JSON; actionable files come first, so the cut falls
-#: on those with nothing to report.
+#: Groups per detail page. Variants of a film or numbered episode stay together.
+#: Latest seasons and episodes come first. Unnumbered files have their own group.
 MAX_FILES = 200
 
 
 @dataclass(frozen=True)
-class Title:
-    """One movie or series.
+class Source:
+    """One folder holding a title, and the *arr claiming it.
 
-    ``id`` is ``arr:radarr:12`` for a claimed title and ``dir:/path`` for an
-    unclaimed folder. ``folder`` is in this container's paths, as the cache
-    keys are.
+    A title in two *arr instances has two, primary first. ``arr`` is None for a
+    folder no *arr claims. ``conflicting_instances`` names the other instances
+    claiming this same folder. The first configured one owns it.
+    """
+
+    folder: str
+    arr: Arr | None = None
+    item_id: int = 0
+    slug: str = ""
+    conflicting_instances: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Title:
+    """One movie or series, wherever its variants live.
+
+    Both *arrs and the sweep's unclaimed folders end up as one of these. The
+    same title in several instances is one Title with several ``sources``. The
+    first configured instance is primary and supplies ``id``, ``folder``,
+    ``arr``, ``item_id`` and ``slug``. ``folder`` is in this container's paths,
+    as the cache keys are. Primary-source fields are derived from ``sources[0]``.
     """
 
     id: str
     name: str
-    folder: str
+    sources: tuple[Source, ...]
     kind: str
     year: int | None = None
     lang: str | None = None
     #: When the title joined the library, in epoch seconds; 0 when unknown.
     #: The *arr's ``added``, or the folder's mtime for an unclaimed title.
     added: float = 0.0
-    #: Only on an *arr title, and only so the cover can be fetched.
-    arr: Arr | None = None
-    item_id: int = 0
-    #: What the *arr's own pages route on: the TMDB id for Radarr, a name
-    #: slug for Sonarr. Lets the sheet link back to it.
-    slug: str = ""
     #: The IMDb id both *arrs carry, ``tt`` and digits.
     imdb_id: str = ""
     #: The IMDb score out of ten, or None. From :func:`trackstarr.ratings.scores`.
     rating: float | None = None
-    #: Whether the *arr says anything is downloaded. False is a tracked title
-    #: with no file to judge, distinct from one no sweep has reached; see
+    #: Whether any source says something is downloaded. False is a tracked
+    #: title with no file to judge, distinct from one no sweep has reached; see
     #: :func:`_card`.
     on_disk: bool = True
+    #: The TMDB id for a film, the TVDB id for a series: what one title is
+    #: called in every instance, so variants merge on it. Empty when unknown.
+    provider_id: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.sources:
+            raise ValueError("a title needs at least one source")
+
+    @property
+    def folder(self) -> str:
+        return self.sources[0].folder
+
+    @property
+    def arr(self) -> Arr | None:
+        return self.sources[0].arr
+
+    @property
+    def item_id(self) -> int:
+        return self.sources[0].item_id
+
+    @property
+    def slug(self) -> str:
+        return self.sources[0].slug
+
+    @property
+    def folders(self) -> tuple[str, ...]:
+        """Every folder holding the title, primary first."""
+        return tuple(source.folder for source in self.sources)
 
 
 @dataclass(frozen=True)
@@ -159,7 +198,9 @@ class Shelf:
     titles: list[Title]
     complete: bool = True
     current: bool = True
-    #: The same titles keyed by id, since a grid asks for one cover per poster.
+    #: The same titles keyed by id, since a grid asks for one cover per poster,
+    #: and by each source's own id, so an id a secondary instance minted still
+    #: finds its title.
     index: dict[str, Title] = field(default_factory=dict)
 
 
@@ -168,7 +209,7 @@ _cached: tuple[float, Shelf] | None = None
 
 
 class Identity(NamedTuple):
-    """The immutable activity projection; no verdicts or service clients."""
+    """The immutable activity projection, without verdicts or service clients."""
 
     id: str
     name: str
@@ -190,7 +231,8 @@ class Catalogue:
         self.connection: tuple = ()
         self.labels: Mapping[str, Identity] = MappingProxyType({})
         self.unclaimed: dict[str, Identity] = {}
-        self.services: dict[str, dict[str, Identity]] = {}
+        self.services: dict[str, dict[str, Title]] = {}
+        self.index: Mapping[str, Title] = MappingProxyType({})
         self.result: tuple[dict[str, Title], bool] | None = None
         self.expires = 0.0
         self.failures = 0
@@ -206,7 +248,7 @@ class Catalogue:
     def request(self) -> tuple[Mapping[str, Identity], Future | None]:
         with self.lock:
             arrs = all_arrs()
-            connection = tuple((arr.name, arr.url, arr.key) for arr in arrs)
+            connection = tuple((arr.instance_id, arr.url, arr.key) for arr in arrs)
             if connection != self.connection:
                 unchanged = set(self.connection) & set(connection)
                 self.services = {
@@ -217,7 +259,7 @@ class Catalogue:
                 self.connection = connection
                 self.generation += 1
                 self.unclaimed = {}
-                self.labels = self._labels()
+                self.labels, self.index = self._identities()
                 self.result = None
                 self.expires = 0.0
                 self.failures = 0
@@ -231,23 +273,19 @@ class Catalogue:
 
     def refresh(self, generation: int, arrs: list[Arr]) -> None:
         acquired = _from_arrs(arrs)
-        titles: dict[str, Title] = {}
-        for fetched in acquired.values():
-            if fetched is not None:
-                for folder, title in fetched.items():
-                    titles.setdefault(folder, title)
         complete = all(fetched is not None for fetched in acquired.values())
         with self.lock:
             if generation != self.generation or self.closed:
                 return
-            self.result = titles, complete
+            # Retain the last successful source catalogue during an outage.
+            # Removal/reconfiguration prunes it in request(); a healthy empty
+            # response removes its titles. Reads and actions share this view.
             for name, fetched in acquired.items():
                 if fetched is not None:
-                    self.services[name] = {
-                        folder: Identity(title.id, title.name)
-                        for folder, title in fetched.items()
-                    }
-            labels = self._labels()
+                    self.services[name] = fetched
+            titles = self._merged()
+            self.result = titles, complete
+            labels, self.index = self._identities(titles)
             changed = self.labels != labels
             self.labels = labels
             if complete:
@@ -259,13 +297,34 @@ class Catalogue:
         if changed:
             notify.publish(notify.RUNS)
 
-    def _labels(self) -> Mapping[str, Identity]:
-        """First configured service owns duplicates, including retained labels."""
-        labels: dict[str, Identity] = {}
-        for name, _, _ in self.connection:
-            for folder, label in self.services.get(name, {}).items():
-                labels.setdefault(folder, label)
-        return MappingProxyType({**self.unclaimed, **labels})
+    def _merged(self) -> dict[str, Title]:
+        return _merged(
+            title
+            for name, _, _ in self.connection
+            for title in self.services.get(name, {}).values()
+        )
+
+    def _identities(
+        self, titles: dict[str, Title] | None = None
+    ) -> tuple[Mapping[str, Identity], Mapping[str, Title]]:
+        """Publish labels and aliases from the same source ownership decisions."""
+        titles = self._merged() if titles is None else titles
+        labels = {folder: Identity(title.id, title.name) for folder, title in titles.items()}
+        local = [
+            Title(label.id, label.name, (Source(folder),), "folder")
+            for folder, label in self.unclaimed.items()
+            if folder not in titles
+        ]
+        return (
+            MappingProxyType({**self.unclaimed, **labels}),
+            MappingProxyType(_title_index([*titles.values(), *local])),
+        )
+
+    def resolve(self, title_ids: list[str]) -> dict[str, Title]:
+        """Resolve aliases locally without waiting for acquisition or verdict reads."""
+        self.request()
+        with self.lock:
+            return {key: self.index[key] for key in title_ids if key in self.index}
 
     def read(self) -> tuple[dict[str, Title], bool]:
         while True:
@@ -288,7 +347,7 @@ class Catalogue:
                 for title in titles
                 if title.arr is None
             }
-            labels = self._labels()
+            labels, self.index = self._identities()
             changed = labels != self.labels
             self.labels = labels
         if changed:
@@ -300,6 +359,7 @@ class Catalogue:
             self.closed = True
             self.generation += 1
             self.labels = MappingProxyType({})
+            self.index = MappingProxyType({})
             self.result = None
         self.executor.shutdown(wait=True)
 
@@ -329,7 +389,7 @@ def forget() -> None:
     Called when the *arr settings change, and by tests. The parsed cache and
     the built grid go too: neither is keyed on the rules, so a settings save
     must not serve an answer judged under the old ones. Activity identities
-    survive policy/ratings changes; request() fences changed connections.
+    survive policy/ratings changes. request() fences changed connections.
     """
     global _built, _cached, _parsed
     _catalogue.invalidate()
@@ -384,6 +444,12 @@ def _on_disk(item: dict) -> bool:
     return True
 
 
+def _arr_id(arr: Arr, item_id: int) -> str:
+    """The id an *arr title is known by: instance and item, so two instances
+    numbering from one never collide."""
+    return f"arr:{arr.instance_id}:{item_id}"
+
+
 def _title_of(arr: Arr, item: dict, scored: dict[str, float]) -> Title | None:
     """One *arr object as a Title, or None if it has no folder.
 
@@ -394,25 +460,84 @@ def _title_of(arr: Arr, item: dict, scored: dict[str, float]) -> Title | None:
     if not folder or not item.get("id"):
         return None
     imdb_id = str(item.get("imdbId") or "").strip()
+    slug = str(item.get("titleSlug") or "")
     return Title(
-        id=f"arr:{arr.name}:{item['id']}",
+        id=_arr_id(arr, item["id"]),
         name=item.get("title") or os.path.basename(folder),
-        folder=folder,
-        kind=KINDS.get(arr.name, "title"),
+        sources=(Source(folder, arr, item["id"], slug),),
+        kind=KINDS.get(arr.type, "title"),
         year=item.get("year") or None,
         lang=original_of(item),
         added=_epoch(item.get("added")),
-        arr=arr,
-        item_id=item["id"],
-        slug=str(item.get("titleSlug") or ""),
         imdb_id=imdb_id,
         rating=scored.get(imdb_id),
         on_disk=_on_disk(item),
+        provider_id=str(item.get("tmdbId" if arr.type == "radarr" else "tvdbId") or ""),
     )
 
 
+def _instance(source: Source) -> str:
+    """The instance claiming a source, empty for an unclaimed folder."""
+    return source.arr.instance_id if source.arr else ""
+
+
+def _merge_key(title: Title) -> tuple[str, str] | None:
+    """What variants of one title across instances share: the provider id, else
+    the IMDb id, with the kind. None for a title carrying neither, which stands
+    alone. Matching names would merge the wrong films silently."""
+    if key := title.provider_id or title.imdb_id:
+        return title.kind, key
+    return None
+
+
+def _merged(titles: Iterable[Title]) -> dict[str, Title]:
+    """Every folder to its title, one Title per provider id across instances.
+
+    First wins on a duplicate folder, matching :func:`trackstarr.arr.path_index`,
+    and the later claimant is recorded on the folder's source. Titles from
+    different instances sharing a merge key become one Title with its sources
+    in connection order, so the first configured instance is primary and
+    decides the id. Every source folder then maps to that one Title.
+    """
+    by_folder: dict[str, Title] = {}
+    for title in titles:
+        source = title.sources[0]
+        if owner := by_folder.get(source.folder):
+            claimed = replace(
+                owner.sources[0],
+                conflicting_instances=(
+                    *owner.sources[0].conflicting_instances,
+                    _instance(source),
+                ),
+            )
+            by_folder[source.folder] = replace(owner, sources=(claimed,))
+        else:
+            by_folder[source.folder] = title
+    merged: dict[tuple[str, str], Title] = {}
+    for title in by_folder.values():
+        if (key := _merge_key(title)) is None:
+            continue
+        if head := merged.get(key):
+            merged[key] = replace(
+                head,
+                sources=(*head.sources, *title.sources),
+                on_disk=head.on_disk or title.on_disk,
+            )
+        else:
+            merged[key] = title
+    for title in merged.values():
+        for source in title.sources:
+            by_folder[source.folder] = title
+    return by_folder
+
+
+def _folders(titles: Iterable[Title]) -> dict[str, Title]:
+    """Every folder to its title, the shape :func:`trackstarr.arr.innermost` reads."""
+    return {folder: title for title in titles for folder in title.folders}
+
+
 def _from_arrs(arrs: list[Arr]) -> dict[str, dict[str, Title] | None]:
-    """Titles per service; None distinguishes a failure from an empty response.
+    """Titles per service. None distinguishes a failure from an empty response.
 
     First wins on a duplicate folder, matching :func:`trackstarr.arr.path_index`.
     """
@@ -423,15 +548,15 @@ def _from_arrs(arrs: list[Arr]) -> dict[str, dict[str, Title] | None]:
             fetched = arr.all_items()
         except API_ERRORS as err:
             log.warning(
-                "%s: could not list its titles for the library view (%s)", arr.name, err
+                "%s: could not list its titles for the library view (%s)", arr.instance_id, err
             )
-            services[arr.name] = None
+            services[arr.instance_id] = None
             continue
         titles: dict[str, Title] = {}
         for item in fetched:
             if title := _title_of(arr, item, scored):
                 titles.setdefault(title.folder, title)
-        services[arr.name] = titles
+        services[arr.instance_id] = titles
     return services
 
 
@@ -460,6 +585,17 @@ def _unclaimed(path: str) -> str | None:
     return None
 
 
+def _title_index(titles: Iterable[Title]) -> dict[str, Title]:
+    """Canonical IDs and source aliases, shared by shelf reads and local actions."""
+    index: dict[str, Title] = {}
+    for title in titles:
+        index[title.id] = title
+        for source in title.sources:
+            if source.arr:
+                index.setdefault(_arr_id(source.arr, source.item_id), title)
+    return index
+
+
 def _shelf(stored: sweep_cache.Stored) -> Shelf:
     """The titles from the *arrs plus unclaimed folders the sweep found,
     memoised for :data:`_INDEX_TTL`.
@@ -482,12 +618,13 @@ def _shelf(stored: sweep_cache.Stored) -> Shelf:
             folders[folder] = Title(
                 id=f"dir:{folder}",
                 name=os.path.basename(folder),
-                folder=folder,
+                sources=(Source(folder),),
                 kind="folder",
                 added=_folder_added(folder),
             )
-    titles = list(folders.values())
-    shelf = Shelf(titles, complete, stored.current, {title.id: title for title in titles})
+    # A merged title sits under each of its folders. The grid draws it once.
+    titles = list({id(title): title for title in folders.values()}.values())
+    shelf = Shelf(titles, complete, stored.current, _title_index(titles))
     _catalogue.include_folders(claimed, titles)
     with _lock:
         _cached = (time.monotonic(), shelf)
@@ -660,7 +797,13 @@ def _card(title: Title, rollup: Rollup | None) -> dict:
     rollup = rollup or Rollup()
     # Empty optional fields are dropped; the four the grid keys on are always
     # present.
+    # A named instance is worth a word on the card; the label is read here, so
+    # a rename reaches every card without a resweep.
+    named = title.arr if title.arr and "-" in title.arr.instance_id else None
     optional = {
+        "source": source_name(named.instance_id) if named else None,
+        # How many instances hold it. One is the ordinary case and says nothing.
+        "source_count": len(title.sources) if len(title.sources) > 1 else None,
         "year": title.year,
         "lang": title.lang,
         # Only the sheet draws it, but its header is the card until the fetch
@@ -742,7 +885,7 @@ def shelf() -> dict:
         built = _built
     if built is not None and built.came_from(stored, found, made):
         return built.answer
-    folders = {title.folder: title for title in found.titles}
+    folders = _folders(found.titles)
     rollups = _tally(stored.files, folders, rewrites.against(stored.files))
     cards = [_card(title, rollups.get(title.id)) for title in found.titles]
     cards.sort(key=lambda card: (_rank(card), card["name"].lower()))
@@ -753,6 +896,21 @@ def shelf() -> dict:
         "current": stored.current,
         "swept": len(stored.files),
     }
+    conflicts = [
+        {
+            "folder": source.folder,
+            "owner": {"id": _instance(source), "name": source_name(_instance(source))},
+            "others": [
+                {"id": identity, "name": source_name(identity)}
+                for identity in source.conflicting_instances
+            ],
+        }
+        for title in found.titles
+        for source in title.sources
+        if source.conflicting_instances
+    ]
+    if conflicts:
+        answer["conflicts"] = conflicts
     with _lock:
         _built = _Built(stored, found, made, answer)
     return answer
@@ -827,19 +985,22 @@ def _find(title_id: str, stored: sweep_cache.Stored) -> Title | None:
     return _shelf(stored).index.get(title_id)
 
 
-#: Files with a verdict first, in :data:`STATES` order, then the ones a rewrite
-#: of ours left, then by path. Rewrites lead their verdict because they are all
-#: a settled title has to read, and :data:`MAX_FILES` would otherwise cut them
-#: off a long series entirely.
 def _file_rank(entry: dict) -> tuple[int, int, str]:
-    status = str(entry.get("status") or UNCHECKED)
-    rank = STATES.index(status) if status in STATES else len(STATES)
-    return (rank, 0 if entry.get("modified") else 1, entry.get("path", ""))
+    """Latest season and episode first, with unnumbered files last."""
+    path = entry.get("path", "")
+    episode = re.search(r"\bS(\d{1,3})E(\d{1,3})", os.path.basename(path), re.IGNORECASE)
+    if episode:
+        return (-int(episode[1]), -int(episode[2]), path)
+    season = re.search(r"/Season[ ._-]*(\d{1,3})/", path, re.IGNORECASE)
+    return (-int(season[1]) if season else 1, 0, path)
 
 
-def _file(entry: dict) -> dict:
+def _file(entry: dict, source: Source | None = None) -> dict:
     """One file as the sheet reads it: its verdict, what the probe saw and what
     a rewrite would leave.
+
+    ``source`` is the folder holding it. An *arr-owned one labels the file, so
+    a title held in two instances can say which file is whose.
 
     ``modified`` is only on a file trackstarr has rewritten and still holds a
     claim on, and is merged in by :func:`title` before the sort. The verdict
@@ -853,6 +1014,7 @@ def _file(entry: dict) -> dict:
     return {
         "path": entry["path"],
         "name": os.path.basename(entry["path"]),
+        **({"source": source_name(source.arr.instance_id)} if source and source.arr else {}),
         "status": entry.get("status") or UNCHECKED,
         "bytes": entry.get("size") or 0,
         "seconds": entry.get("duration") or 0,
@@ -865,7 +1027,7 @@ def _file(entry: dict) -> dict:
 
 
 def file_detail(path: str, *, card: bool = False) -> dict:
-    """The saved verdict and plan for one exact path; never read or probe the file.
+    """The saved verdict and plan for one exact path, without reading or probing it.
 
     The card means tallying every verdict under the title, which is the whole
     cost of the answer, so only a caller opening the title asks for one.
@@ -880,7 +1042,19 @@ def file_detail(path: str, *, card: bool = False) -> dict:
     }
 
 
-def title(title_id: str) -> dict | None:
+def _variant_key(path: str, kind: str) -> str:
+    """Match frontend grouping, enforced by shared variant-groups.json fixtures."""
+    if kind == "movie":
+        return "film"
+    episode = re.search(
+        r"\bS\d{1,3}E\d{1,3}(?:(?:-?E|-)\d{1,3})*\b",
+        os.path.basename(path),
+        re.IGNORECASE | re.ASCII,
+    )
+    return episode[0].upper() if kind == "series" and episode else path
+
+
+def title(title_id: str, *, pages: int = 1) -> dict | None:
     """One title with its files, or None for an unknown id.
 
     Each file carries its tracks, its planned tracks and the reasons, all from
@@ -890,7 +1064,8 @@ def title(title_id: str) -> dict | None:
     found = _find(title_id, stored)
     if found is None:
         return None
-    folders = {found.folder: found}
+    folders = _folders([found])
+    sources = {source.folder: source for source in found.sources}
     made = rewrites.against(stored.files)
     rollup = _tally(stored.files, folders, made).get(found.id, Rollup())
     entries = [
@@ -899,7 +1074,15 @@ def title(title_id: str) -> dict | None:
         if innermost(folders, path) is not None
     ]
     entries.sort(key=_file_rank)
-    files = [_file(entry) for entry in entries[:MAX_FILES]]
+    # Keep every alternative with its episode across page boundaries.
+    groups: dict[str, list[dict]] = {}
+    for entry in entries:
+        groups.setdefault(_variant_key(entry["path"], found.kind), []).append(entry)
+    files = [
+        _file(entry, innermost(sources, entry["path"]))
+        for group in list(groups.values())[: MAX_FILES * pages]
+        for entry in group
+    ]
     return {
         "id": found.id,
         "name": found.name,
@@ -907,6 +1090,7 @@ def title(title_id: str) -> dict | None:
         # The card's word, read again here: a sheet left open through a
         # rewrite has only the card it opened with.
         "state": _verdict(found, rollup),
+        "counts": rollup.counts,
         "year": found.year,
         "lang": found.lang,
         "folder": found.folder,
@@ -914,6 +1098,15 @@ def title(title_id: str) -> dict | None:
         "files": files,
         # So a series past MAX_FILES can say it is showing part of itself.
         "total": len(entries),
+        # Every folder holding it and whose it is, primary first. An unclaimed
+        # folder has no source to name.
+        "folders": [
+            {
+                "source": source_name(_instance(source)) if source.arr else "",
+                "folder": source.folder,
+            }
+            for source in found.sources
+        ],
     }
 
 
@@ -934,15 +1127,19 @@ def selected(title_ids: list[str]) -> list[Title]:
     return [found for title_id in title_ids if (found := index.get(title_id))]
 
 
-def pause_targets(title_ids: list[str]) -> list[tuple[str, str, str]]:
-    """Resolve only locally known ids; pause commands never wait for a service.
+def pause_targets(title_ids: list[str], *, strict: bool = False) -> list[tuple[str, str, str]]:
+    """Every source folder behind canonical IDs or aliases, resolved locally.
 
-    The library view populates unclaimed folders as well as catalogue titles.
-    A cold or changed connection may have no identities yet; paths remain usable.
+    Unknown IDs are dropped unless strict is requested. Then the entire request
+    fails before any pause changes. Persisted labels always use the canonical ID.
     """
-    labels, _ = _catalogue.request()
-    wanted = {label.id: (folder, label.id, label.name) for folder, label in labels.items()}
-    return [wanted[title_id] for title_id in title_ids if title_id in wanted]
+    found = _catalogue.resolve(title_ids)
+    if strict and set(found) != set(title_ids):
+        raise KeyError("no such title")
+    titles = {title.id: title for title in found.values()}
+    return [
+        (folder, title.id, title.name) for title in titles.values() for folder in title.folders
+    ]
 
 
 def covers_for_paths(paths: Iterable[str]) -> dict[str, dict]:
@@ -1022,7 +1219,7 @@ def cards_for_paths(paths: Iterable[str]) -> tuple[dict[str, str], dict[str, dic
         return {}, {}
     stored = _read_cache()
     found = _shelf(stored)
-    folders = {title.folder: title for title in found.titles}
+    folders = _folders(found.titles)
     owners = {
         path: title.id for path in wanted if (title := innermost(folders, path)) is not None
     }

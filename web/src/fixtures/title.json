@@ -3,6 +3,10 @@
 	"name": "Severance",
 	"kind": "series",
 	"state": "failed",
+	"counts": {
+		"conform": 1,
+		"failed": 1
+	},
 	"year": 2022,
 	"lang": "eng",
 	"folder": "/data/media/tv/Severance",
@@ -11,6 +15,7 @@
 		{
 			"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
 			"name": "Severance - S01E02 - Half Loop.mkv",
+			"source": "Sonarr",
 			"status": "failed",
 			"bytes": 2147483648,
 			"seconds": 3305.0,
@@ -61,6 +66,7 @@
 		{
 			"path": "/data/media/tv/Severance/Season 01/Severance - S01E01 - Good News About Hell.mkv",
 			"name": "Severance - S01E01 - Good News About Hell.mkv",
+			"source": "Sonarr",
 			"status": "conform",
 			"bytes": 2251799813,
 			"seconds": 3420.0,
@@ -142,6 +148,12 @@
 		}
 	],
 	"total": 2,
+	"folders": [
+		{
+			"source": "Sonarr",
+			"folder": "/data/media/tv/Severance"
+		}
+	],
 	"servers": [
 		{
 			"server": "plex",

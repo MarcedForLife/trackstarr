@@ -23,6 +23,20 @@ DUNE_FILE = f"{DUNE}/Dune (2024).mkv"
 ARRIVAL_FILE = f"{MOVIES}/Arrival (2016)/Arrival (2016).mkv"
 
 
+def test_legacy_pause_metadata_is_read_and_written_with_explicit_names():
+    path = Path(config.STATE_DIR) / pauses.PAUSES_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({DUNE: {"title": "arr:radarr:1", "name": "Dune"}}))
+    held = pauses.paused(DUNE_FILE)
+    assert held.title_id == "arr:radarr:1"
+    assert held.title_name == "Dune"
+    pauses.place(ARRIVAL_FILE)
+    stored = json.loads(path.read_text())[DUNE]
+    assert stored["title_id"] == held.title_id
+    assert stored["title_name"] == held.title_name
+    assert not {"title", "name"} & stored.keys()
+
+
 @pytest.fixture(autouse=True)
 def _forget():
     """The store is memoised on the file's mark, and two tmp dirs can share
@@ -171,7 +185,7 @@ def test_batch_capacity_duplicates_and_extension(monkeypatch):
     monkeypatch.setattr(pauses, "MAX_PAUSES", 2)
     placed = pauses.place_many([(DUNE, "", "old"), (DUNE, "", "new"), (ARRIVAL_FILE, "", "")])
     assert len(placed) == 2
-    assert placed[0].name == "new"
+    assert placed[0].title_name == "new"
     assert pauses.full()
     pauses.place(DUNE, seconds=3600)
     before = Path(store_path()).read_bytes()
@@ -243,7 +257,7 @@ def test_a_sibling_folder_with_the_same_prefix_is_not_covered():
 def test_spellings_of_one_file_count_once_against_capacity(monkeypatch):
     monkeypatch.setattr(pauses, "MAX_PAUSES", 1)
     placed = pauses.place_many([(DUNE, "", "first"), (f"{MOVIES}/./Dune (2024)", "", "second")])
-    assert [pause.name for pause in placed] == ["second"]
+    assert [pause.title_name for pause in placed] == ["second"]
     assert pauses.full()
 
 

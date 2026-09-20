@@ -48,7 +48,7 @@ def webhook_url() -> str:
 class Arr:
     """One *arr, and every fact that differs between Radarr and Sonarr."""
 
-    name: str
+    instance_id: str
     url: str
     key: str
     item_ep: str  # endpoint listing the movies/series
@@ -58,6 +58,10 @@ class Arr:
     folder_key: str  # field on that object holding the title's folder
     file_key: str  # webhook body key for a single imported file
     files_key: str  # webhook body key for a batch of them
+
+    @property
+    def type(self) -> str:
+        return self.instance_id.split("-", 1)[0]
 
     @property
     def enabled(self) -> bool:
@@ -85,7 +89,7 @@ class Arr:
         try:
             return self._call(f"{self.item_ep}/{item_id}")
         except API_ERRORS as err:
-            log.warning("%s: lookup of id %s failed (%s)", self.name, item_id, err)
+            log.warning("%s: lookup of id %s failed (%s)", self.instance_id, item_id, err)
             return None
 
     def _connection(self) -> dict | None:
@@ -97,7 +101,7 @@ class Arr:
         """Whether an entry points here and carries a secret the listener
         accepts. Verified against the stored digest, since only that is kept."""
         return _webhook_current(ours, _payload(url)) and auth.matches(
-            self.name, _sent_secret(ours)
+            self.instance_id, _sent_secret(ours)
         )
 
     def _delivery_failure(self, ours: dict) -> str:
@@ -144,16 +148,18 @@ class Arr:
         try:
             ours = self._connection()
         except API_ERRORS as err:
-            log.warning("%s: webhook registration failed (%s), will retry", self.name, err)
+            log.warning(
+                "%s: webhook registration failed (%s), will retry", self.instance_id, err
+            )
             return False
         if ours and self._connection_current(ours, url):
             self._warn_if_undeliverable(ours)
             return True
         try:
-            secret = auth.mint(self.name)
+            secret = auth.mint(self.instance_id)
         except OSError as err:
             log.warning(
-                "%s: cannot provision a webhook secret (%s), will retry", self.name, err
+                "%s: cannot provision a webhook secret (%s), will retry", self.instance_id, err
             )
             return False
         payload = _payload(url, secret)
@@ -168,11 +174,15 @@ class Arr:
             else:
                 self._call("/api/v3/notification", payload)
         except API_ERRORS as err:
-            log.warning("%s: webhook registration failed (%s), will retry", self.name, err)
+            log.warning(
+                "%s: webhook registration failed (%s), will retry", self.instance_id, err
+            )
             return False
         # Always rotates the secret, so seeing this on every restart means the
         # *arr is not returning the header as saved.
-        log.info("%s: webhook connection registered with a fresh secret -> %s", self.name, url)
+        log.info(
+            "%s: webhook connection registered with a fresh secret -> %s", self.instance_id, url
+        )
         return True
 
     def _warn_if_undeliverable(self, ours: dict) -> None:
@@ -182,10 +192,12 @@ class Arr:
         try:
             failure = self._delivery_failure(ours)
         except API_ERRORS as err:
-            log.debug("%s: could not test the webhook connection (%s)", self.name, err)
+            log.debug("%s: could not test the webhook connection (%s)", self.instance_id, err)
             return
         if failure:
-            log.warning("%s holds our webhook but cannot call it: %s", self.name, failure)
+            log.warning(
+                "%s holds our webhook but cannot call it: %s", self.instance_id, failure
+            )
 
     def rescan(self, item_id: int) -> None:
         """Re-read the file, so the *arr's size and media info stay true."""
@@ -194,7 +206,7 @@ class Arr:
         try:
             self._call("/api/v3/command", {"name": self.rescan_cmd, self.rescan_key: item_id})
         except API_ERRORS as err:
-            log.warning("%s: rescan of id %s failed (%s)", self.name, item_id, err)
+            log.warning("%s: rescan of id %s failed (%s)", self.instance_id, item_id, err)
 
 
 def _payload(url: str, secret: str | None = None) -> dict:
@@ -248,28 +260,25 @@ def _webhook_current(notification: dict, payload: dict) -> bool:
     return events_on and fields_match
 
 
-def radarr() -> Arr:
-    settings = config.current()
+def _client(instance: config.ArrInstanceConfig) -> Arr:
+    """Attach the service protocol to one captured configuration."""
+    if instance.type == "radarr":
+        return Arr(
+            instance_id=instance.id,
+            url=instance.url,
+            key=instance.api_key,
+            item_ep="/api/v3/movie",
+            rescan_cmd="RescanMovie",
+            rescan_key="movieId",
+            body_key="movie",
+            folder_key="folderPath",
+            file_key="movieFile",
+            files_key="movieFiles",
+        )
     return Arr(
-        name="radarr",
-        url=settings.RADARR_URL,
-        key=settings.RADARR_API_KEY,
-        item_ep="/api/v3/movie",
-        rescan_cmd="RescanMovie",
-        rescan_key="movieId",
-        body_key="movie",
-        folder_key="folderPath",
-        file_key="movieFile",
-        files_key="movieFiles",
-    )
-
-
-def sonarr() -> Arr:
-    settings = config.current()
-    return Arr(
-        name="sonarr",
-        url=settings.SONARR_URL,
-        key=settings.SONARR_API_KEY,
+        instance_id=instance.id,
+        url=instance.url,
+        key=instance.api_key,
         item_ep="/api/v3/series",
         rescan_cmd="RescanSeries",
         rescan_key="seriesId",
@@ -280,8 +289,27 @@ def sonarr() -> Arr:
     )
 
 
+def radarr() -> Arr:
+    return _client(
+        config.current().arr_instance("radarr") or config.ArrInstanceConfig("radarr")
+    )
+
+
+def sonarr() -> Arr:
+    return _client(
+        config.current().arr_instance("sonarr") or config.ArrInstanceConfig("sonarr")
+    )
+
+
+def source_name(name: str) -> str:
+    """Resolve names live while persisted data retains the stable ID."""
+    instance = config.current().arr_instance(name)
+    return config.instance_name(name, instance.name if instance else "")
+
+
 def all_arrs() -> list[Arr]:
-    return [radarr(), sonarr()]
+    settings = config.current()
+    return [_client(instance) for instance in settings.arr_instances]
 
 
 #: Registration retry delays. The containers usually start together, so early
@@ -310,7 +338,7 @@ def reregister_webhooks() -> None:
     """
     for arr in all_arrs():
         if arr.enabled and not arr.register_webhook(webhook_url()):
-            log.warning("%s: no webhook connection after the settings change", arr.name)
+            log.warning("%s: no webhook connection after the settings change", arr.instance_id)
 
 
 def original_of(item: dict | None) -> str | None:
@@ -354,7 +382,7 @@ def path_index(arrs: list[Arr]) -> LibraryIndex:
         try:
             fetched = arr.all_items()
         except API_ERRORS as err:
-            log.warning("%s: could not fetch library (%s)", arr.name, err)
+            log.warning("%s: could not fetch library (%s)", arr.instance_id, err)
             complete = False
             continue
         for item in fetched:
@@ -362,6 +390,13 @@ def path_index(arrs: list[Arr]) -> LibraryIndex:
             # claim every file.
             if base := (item.get("path") or "").rstrip("/"):
                 # First wins.
+                if base in items and items[base].arr.instance_id != arr.instance_id:
+                    log.warning(
+                        "folder conflict at %s: %s owns it; %s also claims it",
+                        base,
+                        items[base].arr.instance_id,
+                        arr.instance_id,
+                    )
                 items.setdefault(base, LibraryItem(original_of(item), item["id"], arr))
     log.info("indexed %d titles from the *arrs", len(items))
     return LibraryIndex(items, complete)

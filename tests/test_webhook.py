@@ -9,7 +9,7 @@ import socket
 
 import pytest
 
-from conftest import keep_alive, read_events, request
+from conftest import keep_alive, read_events, request, set_config
 from trackstarr import auth, jobs, lifecycle, webhook
 from trackstarr.arr import AUTH_HEADER
 from trackstarr.webhook import jobs_from_hook
@@ -30,7 +30,7 @@ def test_radarr_import_webhook():
     assert [job.path for job in delivered] == ["/data/media/movies/Film (2024)/Film (2024).mkv"]
     assert delivered[0].lang == "kor"
     assert delivered[0].item_id == 12
-    assert delivered[0].arr.name == "radarr"
+    assert delivered[0].arr.instance_id == "radarr"
 
 
 def test_radarr_absolute_path_wins_over_relative():
@@ -59,7 +59,7 @@ def test_sonarr_import_webhook():
     assert [job.path for job in delivered] == ["/data/media/tv/Show/Season 01/S01E01.mkv"]
     assert delivered[0].lang == "eng"
     assert delivered[0].item_id == 7
-    assert delivered[0].arr.name == "sonarr"
+    assert delivered[0].arr.instance_id == "sonarr"
 
 
 def test_sonarr_multi_file_webhook():
@@ -161,7 +161,17 @@ def queued(monkeypatch):
     return taken
 
 
-def test_post_queues_only_existing_paths(listener, media_root, queued):
+@pytest.fixture
+def enabled_arrs():
+    set_config(
+        RADARR_URL="http://radarr",
+        RADARR_API_KEY="radarr-key",
+        SONARR_URL="http://sonarr",
+        SONARR_API_KEY="sonarr-key",
+    )
+
+
+def test_post_queues_only_existing_paths(listener, media_root, queued, enabled_arrs):
     """A POST naming a file this container cannot see, usually a mount mismatch,
     answers 200 and queues nothing."""
     headers = {AUTH_HEADER: auth.mint("radarr")}
@@ -173,7 +183,7 @@ def test_post_queues_only_existing_paths(listener, media_root, queued):
     assert [job.path for job in queued] == [str(media_root / "f.mkv")]
 
 
-def test_a_queued_post_records_the_delivery(listener, media_root, queued):
+def test_a_queued_post_records_the_delivery(listener, media_root, queued, enabled_arrs):
     """The run exists in the history before its rewrites do, so a runs view
     can show work still queued."""
     headers = {AUTH_HEADER: auth.mint("radarr")}
@@ -185,7 +195,7 @@ def test_a_queued_post_records_the_delivery(listener, media_root, queued):
     assert entry["run"] == queued[0].run
 
 
-def test_a_delivery_names_the_files_it_queued(listener, media_root):
+def test_a_delivery_names_the_files_it_queued(listener, media_root, enabled_arrs):
     """A delivery whose files all conform leaves no other line, so the count
     alone would say a season arrived and never say which episodes."""
     headers = {AUTH_HEADER: auth.mint("sonarr")}
@@ -222,7 +232,7 @@ def test_a_delivery_arriving_during_shutdown_is_refused_not_dropped(
     assert read_events() == []
 
 
-def test_a_post_that_queues_nothing_records_nothing(listener, media_root):
+def test_a_post_that_queues_nothing_records_nothing(listener, media_root, enabled_arrs):
     """Test buttons and mount mismatches are not runs; recording them would
     fill the history with entries no rewrite ever joins."""
     headers = {AUTH_HEADER: auth.mint("radarr")}
@@ -299,7 +309,7 @@ def test_the_arrs_test_button_is_answered_without_queueing(listener):
     assert jobs.queued_count() == 0
 
 
-def test_a_post_for_a_file_already_in_flight_queues_nothing(listener, media_root):
+def test_a_post_for_a_file_already_in_flight_queues_nothing(listener, media_root, enabled_arrs):
     """A sweep and a webhook naming the same file is routine; the second must
     answer 200 having queued nothing, not stack a second rewrite behind it."""
     body = movie_body(str(media_root / "f.mkv"), str(media_root))
@@ -309,7 +319,9 @@ def test_a_post_for_a_file_already_in_flight_queues_nothing(listener, media_root
     assert post(listener, body, headers) == (200, "queued 0")
 
 
-def test_a_delivery_is_one_run_on_the_activity_page(listener, media_root, clean_registry):
+def test_a_delivery_is_one_run_on_the_activity_page(
+    listener, media_root, clean_registry, enabled_arrs
+):
     """Not a run per file: a season import is one thing that happened, and the
     page has to show it as one line however many files it carried."""
     first = os.path.join(media_root, "s01e01.mkv")
@@ -324,11 +336,13 @@ def test_a_delivery_is_one_run_on_the_activity_page(listener, media_root, clean_
     post(listener, body, {AUTH_HEADER: auth.mint("sonarr")})
 
     (run,) = clean_registry.snapshot()["runs"]
-    assert run["kind"] == "import"
-    assert (run["label"], run["total"], run["done"]) == ("sonarr", 1, 0)
+    assert run["type"] == "import"
+    assert (run["label"], run["total"], run["done"]) == ("Sonarr", 1, 0)
 
 
-def test_a_delivery_that_names_no_files_registers_nothing(listener, clean_registry):
+def test_a_delivery_that_names_no_files_registers_nothing(
+    listener, clean_registry, enabled_arrs
+):
     """A Download whose file carries no path at all: there is no work, so
     there must be no run sitting on the activity page either."""
     body = {"eventType": "Download", "movie": {"id": 1, "folderPath": "/data"}, "movieFile": {}}

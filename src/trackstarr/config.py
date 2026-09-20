@@ -15,7 +15,7 @@ import os
 import re
 import time
 import zoneinfo
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import ENV_TZ, cron, keystore
 
@@ -88,6 +88,77 @@ def rule_variable(rule: str) -> str:
 #: Prefixes scanned for rather than read by name, and so not in Settings.read.
 #: The settings API's allow-list asks the same question.
 SCANNED_PREFIXES = (RULE_PREFIX,)
+
+# Named connections keep the existing flat settings/secret-file conventions.
+ARR_SETTING = re.compile(
+    r"(RADARR|SONARR)_((?!PUBLIC_)[A-Z0-9]+)_(URL|API_KEY|PUBLIC_URL|NAME)"
+)
+ARR_SUFFIXES = ("URL", "API_KEY", "PUBLIC_URL", "NAME")
+
+#: What a connection's display name may hold. Stored data names a connection by
+#: its ID, so the name is free to change; this keeps it fit for a grid line.
+NAME_CHARS = re.compile(r"[A-Za-z0-9 _-]{1,40}")
+NAME_RULE = "may use letters, numbers, spaces, hyphens and underscores, up to 40 characters"
+
+
+def arr_setting(name: str) -> bool:
+    return ARR_SETTING.fullmatch(name) is not None
+
+
+def arr_setting_parts(name: str) -> tuple[str, str] | None:
+    """Decode the flat storage name into an instance ID and model field."""
+    for kind in ("radarr", "sonarr"):
+        for suffix in ARR_SUFFIXES:
+            if name == f"{kind.upper()}_{suffix}":
+                return kind, suffix.lower()
+    if match := ARR_SETTING.fullmatch(name):
+        return f"{match[1].lower()}-{match[2].lower()}", match[3].lower()
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class ArrInstanceConfig:
+    """One source, independent of how its settings are stored.
+
+    IDs are stable webhook and persisted-job identities. Names may change.
+    The default sources use IDs ``radarr`` and ``sonarr``.
+    """
+
+    id: str
+    url: str = ""
+    api_key: str = field(default="", repr=False)
+    public_url: str = ""
+    name: str = ""
+
+    @property
+    def type(self) -> str:
+        return self.id.partition("-")[0]
+
+    def setting_name(self, attribute: str) -> str:
+        """The environment/file key for one of this instance's fields."""
+        return f"{self.id.upper().replace('-', '_')}_{attribute.upper()}"
+
+    @property
+    def browser_url(self) -> str:
+        return self.public_url or self.url
+
+
+def instance_name(identity: str, name: str = "") -> str:
+    """Display text for a connection; only its optional name is stored."""
+    kind, _, suffix = identity.partition("-")
+    if re.fullmatch(r"[0-9a-f]{32}", suffix):
+        suffix = ""
+    return name or (f"{kind.title()} {suffix}" if suffix else kind.title())
+
+
+def value(name: str, settings: Settings | None = None) -> str:
+    """A flat connection setting at the storage/API boundary."""
+    settings = settings if settings is not None else current()
+    if parts := arr_setting_parts(name):
+        instance = settings.arr_instance(parts[0])
+        return getattr(instance, parts[1]) if instance else ""
+    return getattr(settings, name, "")
+
 
 #: What this install may rewrite, as a ladder. ``report`` rewrites nothing,
 #: even under ``sweep --apply``, so a new install can watch a week first.
@@ -349,13 +420,33 @@ class _Source:
         self.read.add("TZ")
         return STATED_TZ or (self.file.get("TZ") or "").strip()
 
+    def _arr_instances(self) -> tuple[ArrInstanceConfig, ...]:
+        ids = set()
+        for name in self.file.keys() | os.environ.keys():
+            plain = name.removeprefix("FILE__").removesuffix("_FILE")
+            if arr_setting(plain) and (parts := arr_setting_parts(plain)):
+                ids.add(parts[0])
+        instances = []
+        for identity in ("radarr", "sonarr", *sorted(ids)):
+            instance = ArrInstanceConfig(identity)
+            instances.append(
+                ArrInstanceConfig(
+                    id=identity,
+                    url=self._raw(instance.setting_name("url"), "").rstrip("/"),
+                    api_key=self._secret(instance.setting_name("api_key")),
+                    public_url=self._raw(instance.setting_name("public_url"), "").rstrip("/"),
+                    name=self._raw(instance.setting_name("name"), "").strip(),
+                )
+            )
+        return tuple(instances)
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
     """Every setting as one read left them.
 
     Uppercase fields are settings, spelt as the variable and the settings-file
-    key that set them. The four lowercase ones are what reading them turned up.
+    key that set them. All arr sources live in arr_instances.
     """
 
     #: The clock the schedule, log and event stamps use. An IANA name such as
@@ -367,12 +458,8 @@ class Settings:
     #: works; wants room for the biggest file and speed.
     WORK_DIR: str
 
-    #: Every credential also takes RADARR_API_KEY_FILE or FILE__RADARR_API_KEY
-    #: naming a file to read it from; see _Source._secret.
-    RADARR_URL: str
-    RADARR_API_KEY: str
-    SONARR_URL: str
-    SONARR_API_KEY: str
+    #: Default and named sources share one immutable representation.
+    arr_instances: tuple[ArrInstanceConfig, ...]
 
     #: Media servers to refresh after a rewrite, since their watchers see
     #: nothing on a network mount. Jellyfin's settings fit Emby too.
@@ -381,12 +468,10 @@ class Settings:
     JELLYFIN_URL: str
     JELLYFIN_API_KEY: str
 
-    #: Where a browser reaches the same four, for the title sheet's "Open in"
+    #: Where a browser reaches the media servers, for the title sheet's "Open in"
     #: links. The addresses above are this container's, and
     #: ``http://plex:32400`` on a compose network is not a browser's. Unset
     #: means the address above is.
-    RADARR_PUBLIC_URL: str
-    SONARR_PUBLIC_URL: str
     PLEX_PUBLIC_URL: str
     JELLYFIN_PUBLIC_URL: str
 
@@ -500,6 +585,11 @@ class Settings:
     #: Every name a parser asked for. The environment gets no unread check.
     read: frozenset[str]
 
+    def arr_instance(self, identity: str) -> ArrInstanceConfig | None:
+        return next(
+            (instance for instance in self.arr_instances if instance.id == identity), None
+        )
+
 
 def load() -> Settings:
     """Read both sources into a fresh Settings. The defaults are here, beside
@@ -510,16 +600,11 @@ def load() -> Settings:
         TZ=source._zone(),
         MEDIA_DIRS=source._list("MEDIA_DIRS", "/data/media/movies:/data/media/tv"),
         WORK_DIR=source._raw("WORK_DIR", "/data/trackstarr-work"),
-        RADARR_URL=source._raw("RADARR_URL", "").rstrip("/"),
-        RADARR_API_KEY=source._secret("RADARR_API_KEY"),
-        SONARR_URL=source._raw("SONARR_URL", "").rstrip("/"),
-        SONARR_API_KEY=source._secret("SONARR_API_KEY"),
+        arr_instances=source._arr_instances(),
         PLEX_URL=source._raw("PLEX_URL", "").rstrip("/"),
         PLEX_TOKEN=source._secret("PLEX_TOKEN"),
         JELLYFIN_URL=source._raw("JELLYFIN_URL", "").rstrip("/"),
         JELLYFIN_API_KEY=source._secret("JELLYFIN_API_KEY"),
-        RADARR_PUBLIC_URL=source._raw("RADARR_PUBLIC_URL", "").rstrip("/"),
-        SONARR_PUBLIC_URL=source._raw("SONARR_PUBLIC_URL", "").rstrip("/"),
         PLEX_PUBLIC_URL=source._raw("PLEX_PUBLIC_URL", "").rstrip("/"),
         JELLYFIN_PUBLIC_URL=source._raw("JELLYFIN_PUBLIC_URL", "").rstrip("/"),
         PLEX_PATH_MAP=source._path_map("PLEX_PATH_MAP"),
@@ -625,12 +710,8 @@ def reset() -> None:
 
 #: Every setting holding a base URL, for the scheme check below.
 _URL_SETTINGS = (
-    "RADARR_URL",
-    "SONARR_URL",
     "PLEX_URL",
     "JELLYFIN_URL",
-    "RADARR_PUBLIC_URL",
-    "SONARR_PUBLIC_URL",
     "PLEX_PUBLIC_URL",
     "JELLYFIN_PUBLIC_URL",
     "WEBHOOK_URL",
@@ -639,8 +720,6 @@ _URL_SETTINGS = (
 #: Each URL and its credential. Setting one alone leaves the service off,
 #: which is a warning: clearing an address is how a service is switched off.
 _CREDENTIALLED = (
-    ("RADARR_URL", "RADARR_API_KEY"),
-    ("SONARR_URL", "SONARR_API_KEY"),
     ("PLEX_URL", "PLEX_TOKEN"),
     ("JELLYFIN_URL", "JELLYFIN_API_KEY"),
 )
@@ -661,6 +740,15 @@ def errors() -> list[str]:
         for name in _URL_SETTINGS
         if (value := getattr(settings, name)) and not value.startswith(("http://", "https://"))
     ]
+    for instance in settings.arr_instances:
+        for attribute in ("url", "public_url"):
+            url = getattr(instance, attribute)
+            if url and not url.startswith(("http://", "https://")):
+                problems.append(
+                    f"{instance.setting_name(attribute)}={url!r} must start with http:// or https://"
+                )
+        if instance.name and not NAME_CHARS.fullmatch(instance.name):
+            problems.append(f"{instance.setting_name('name')}={instance.name!r} {NAME_RULE}")
     # Fatal: an unknown zone reads as UTC, so a 04:00 sweep runs at the wrong
     # hour and every stamp agrees with it.
     if settings.TZ and (problem := _tz_error(settings.TZ)):
@@ -723,6 +811,14 @@ def warnings() -> list[str]:
         for set_name, unset_name in [(url_name, key_name), (key_name, url_name)]
         if getattr(settings, set_name) and not getattr(settings, unset_name)
     ]
+    for instance in settings.arr_instances:
+        for present, missing in (("url", "api_key"), ("api_key", "url")):
+            if getattr(instance, present) and not getattr(instance, missing):
+                problems.append(
+                    f"{instance.setting_name(present)} is set but "
+                    f"{instance.setting_name(missing)} is not, "
+                    "so that service stays switched off"
+                )
     return problems
 
 

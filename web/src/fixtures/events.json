@@ -18,7 +18,8 @@
 			"files": 1,
 			"paths": [
 				"/data/media/movies/Arrival (2016)/Arrival (2016) Bluray-1080p.mkv"
-			]
+			],
+			"arr_label": "Radarr"
 		},
 		{
 			"ts": "2026-03-01T11:16:00+13:00",
@@ -153,6 +154,7 @@
 			"paths": [
 				"/data/media/movies/Dune (2024)/Dune (2024) Bluray-2160p.mkv"
 			],
+			"arr_label": "Radarr",
 			"title": "arr:radarr:7"
 		},
 		{

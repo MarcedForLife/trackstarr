@@ -402,7 +402,7 @@ def test_parking_survives_a_restart(parked, seeded_file):
     assert job.item_id == 12
     # Stored by name and rebuilt from current config, so a job restored after
     # its *arr was reconfigured carries the new settings, not the old ones.
-    assert job.arr.name == "sonarr"
+    assert job.arr.instance_id == "sonarr"
     # The delivery's run rides along, so a rewrite finished days after its
     # import still groups with it.
     assert job.run == "r#1"
@@ -492,7 +492,7 @@ def test_a_skipped_import_is_booked_rather_than_rewritten(clean_registry, monkey
     )
     # Still being handed files, so the delivery is here to read afterwards; a
     # sealed one with nothing left retires the moment this is booked.
-    lifecycle.open_run("r#1", runs.IMPORT, label="radarr", filling=True)
+    lifecycle.open_run("r#1", runs.IMPORT, instance_id="radarr", filling=True)
     assert jobs.enqueue(Job("/data/f.mkv", run="r#1"))
     assert lifecycle.skip_file("r#1", "/data/f.mkv") == ("waiting", 0)
 
@@ -507,7 +507,7 @@ def test_a_parked_file_does_not_strand_its_delivery_on_the_page(
 ):
     """Nothing books a parked file, so an import waiting on a download client
     would sit on the activity page for ever."""
-    lifecycle.open_run("r#1", runs.IMPORT, label="radarr", filling=True)
+    lifecycle.open_run("r#1", runs.IMPORT, instance_id="radarr", filling=True)
     job = Job(seeded_file, run="r#1")
     jobs.enqueue(job)
     lifecycle.seal("r#1")
@@ -525,7 +525,7 @@ def test_a_released_parked_file_is_booked_against_its_own_delivery(
 ):
     """Days can pass between the import and the download client letting go; it
     is still that import finishing, not a new one."""
-    lifecycle.open_run("r#1", runs.IMPORT, label="radarr")
+    lifecycle.open_run("r#1", runs.IMPORT, instance_id="radarr")
     jobs.park(Job(seeded_file, run="r#1", arr=configured_arr()))
     os.remove(tmp_path / "seed.mkv")
 

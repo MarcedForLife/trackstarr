@@ -148,8 +148,15 @@ class Job:
     path: str
     lang: str | None = None
     item_id: int | None = None
+    #: Captured client for this execution; only instance_id is persisted.
     arr: Arr | None = None
     run: str | None = None
+    #: Durable identity, retained even when the connection cannot be resolved.
+    instance_id: str = ""
+
+    def __post_init__(self) -> None:
+        if self.arr:
+            object.__setattr__(self, "instance_id", self.arr.instance_id)
 
     @classmethod
     def from_match(

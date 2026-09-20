@@ -68,7 +68,7 @@ def _save_parked() -> None:
                 "path": job.path,
                 "lang": job.lang,
                 "item_id": job.item_id,
-                "arr": job.arr.name if job.arr else None,
+                "instance_id": job.instance_id or None,
                 "run": job.run,
             }
             for job in _parked.values()
@@ -95,15 +95,16 @@ def load_parked() -> None:
     except (OSError, ValueError) as err:
         log.warning("ignoring unreadable parked set %s: %s", _parked_path(), err)
         return
-    arrs = {arr.name: arr for arr in all_arrs()}
+    arrs = {arr.instance_id: arr for arr in all_arrs()}
     restored = {
         record["path"]: Job(
             record["path"],
             record.get("lang"),
             record.get("item_id"),
             # "" matches no *arr name, for a job that had none.
-            arrs.get(record.get("arr") or ""),
+            arrs.get(record.get("instance_id", record.get("arr")) or ""),
             record.get("run"),
+            instance_id=record.get("instance_id", record.get("arr")) or "",
         )
         for record in (records if isinstance(records, list) else [])
         if isinstance(record, dict) and record.get("path")
@@ -359,7 +360,7 @@ def _release(job: Job) -> bool:
     try:
         # Reopen the delivery's run for this one file, then seal it again.
         if job.run:
-            lifecycle.open_run(job.run, runs.IMPORT, label=job.arr.name if job.arr else "")
+            lifecycle.open_run(job.run, runs.IMPORT, instance_id=job.instance_id)
         if enqueue(job):
             log.info("hard link released, queued %s", job.path)
         if job.run:

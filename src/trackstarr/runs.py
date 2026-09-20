@@ -18,19 +18,20 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
 from . import estimate, events, notify, paths, runlog
+from .arr import source_name
 from .executor import Cancel, running_count, terminate_phase, terminate_running
 
 log = logging.getLogger(__name__)
 
-#: The kinds of run: a library walk, a delivery from an *arr (Radarr or
+#: The run types: a library walk, a delivery from an *arr (Radarr or
 #: Sonarr), and a re-check of chosen titles.
 SWEEP = "sweep"
 IMPORT = "import"
 RECHECK = "recheck"
 
-#: The kinds that update the sweep cache. Cache maintenance waits for them;
+#: The types that update the sweep cache. Cache maintenance waits for them;
 #: title re-checks may run alongside an existing walk.
-CACHE_KINDS = (SWEEP, RECHECK)
+CACHE_TYPES = (SWEEP, RECHECK)
 
 #: What the thread holding a file is doing. Waiting for a slot and encoding are
 #: both minutes, so the page must be told which, or a bar at zero reads as a
@@ -92,11 +93,13 @@ class Run:
     """One run while it is going. Mutable, guarded by the module lock."""
 
     id: str
-    kind: str
+    type: str
     #: time.time() when it started.
     started: float
     dry_run: bool = False
-    #: Which *arr sent it, for an import; the titles' name for a re-check.
+    #: Stable source identity for an import; its name is resolved for the API.
+    instance_id: str = ""
+    #: Display text for a re-check (one title name or a count).
     label: str = ""
     total: int = 0
     done: int = 0
@@ -192,10 +195,11 @@ def _moved(run_id: str, floor: float = _MOVED_SECONDS) -> None:
 
 def open_run(
     run_id: str,
-    kind: str,
+    run_type: str,
     *,
     dry_run: bool = False,
     label: str = "",
+    instance_id: str = "",
     filling: bool = False,
 ) -> Run:
     """Register a run, or return the one already under that id.
@@ -206,7 +210,14 @@ def open_run(
     with _lock:
         run = _runs.get(run_id)
         if run is None:
-            run = Run(run_id, kind, time.time(), dry_run=dry_run, label=label)
+            run = Run(
+                run_id,
+                run_type,
+                time.time(),
+                dry_run=dry_run,
+                label=label,
+                instance_id=instance_id,
+            )
             _runs[run_id] = run
         run.filling = run.filling or filling
     return run
@@ -241,7 +252,7 @@ def retire(run_id: str, *, closing: bool = False) -> bool:
         if run is None:
             return False
         if closing or (
-            run.kind == IMPORT and not run.filling and not run.active and run.done >= run.total
+            run.type == IMPORT and not run.filling and not run.active and run.done >= run.total
         ):
             del _runs[run_id]
             return True
@@ -401,7 +412,7 @@ def cache_holder() -> Run | None:
     walks, so their checkpoints cannot restore entries after a clear.
     """
     with _lock:
-        return next((run for run in _runs.values() if run.kind in CACHE_KINDS), None)
+        return next((run for run in _runs.values() if run.type in CACHE_TYPES), None)
 
 
 def workload() -> tuple[int, int]:
@@ -503,11 +514,11 @@ def _as_json(run: Run, now: float, control: Control) -> dict:
     waiting = sum(row.expected for row in claimed) + control.expected
     return {
         "id": run.id,
-        "kind": run.kind,
+        "type": run.type,
         "started": stamp(run.started),
         "seconds": round(now - run.started, 1),
         "dry_run": run.dry_run,
-        "label": run.label,
+        "label": source_name(run.instance_id) if run.instance_id else run.label,
         "total": run.total,
         "done": run.done,
         "counts": dict(run.counts),
