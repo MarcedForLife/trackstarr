@@ -13,7 +13,7 @@ from trackstarr import __version__, config, library, policy, sweep_cache, verdic
 from trackstarr.policy import Policy
 from trackstarr.status import Status
 from trackstarr.sweep_cache import FileKey, SweepCache, Verdict, cache_key, read
-from trackstarr.verdict_store import FORMAT
+from trackstarr.verdict_store import FORMAT, READS_FROM
 
 CONFORM = Verdict(Status.CONFORM)
 
@@ -270,31 +270,45 @@ def test_the_format_is_stamped_on_what_is_written(cache_path, media):
     assert json.loads(Path(cache_path).read_text())["format"] == FORMAT
 
 
-def test_an_older_format_is_dropped_rather_than_carried(cache_path, media):
+def test_an_older_entry_is_dropped_rather_than_carried(cache_path, media):
     """carry() moves entries forward byte for byte, so an entry written before a
-    field was added keeps its old shape for ever. Every one must miss."""
+    field was added keeps its old shape for ever. One too old must miss."""
     key = cache_key(media, "eng")
     saved_cache(cache_path, (media, key, CONFORM))
     stored = json.loads(Path(cache_path).read_text())
-    del stored["format"]
+    stored["files"][media]["format"] = READS_FROM - 1
     Path(cache_path).write_text(json.dumps(stored))
 
     assert SweepCache.load(cache_path, fingerprint()).lookup(media, key) is None
-    # And the library view reads nothing rather than entries whose shape is
+    # And the library view reads nothing rather than an entry whose shape is
     # another build's.
     assert read(cache_path, fingerprint()).files == {}
 
 
-def test_an_older_format_outranks_a_matching_fingerprint(cache_path, media):
-    """Same rules, older entries: the rules being unchanged says nothing about
-    what fields an entry carries."""
+def test_an_older_entry_outranks_a_matching_fingerprint(cache_path, media):
+    """Same rules, an older entry: the rules being unchanged says nothing about
+    what fields it carries."""
     key = cache_key(media, "eng")
     saved_cache(cache_path, (media, key, CONFORM))
     stored = json.loads(Path(cache_path).read_text())
-    stored["format"] = FORMAT - 1
+    del stored["files"][media]["format"]
+    stored["format"] = READS_FROM - 1
     Path(cache_path).write_text(json.dumps(stored))
 
     assert SweepCache.load(cache_path, fingerprint()).lookup(media, key) is None
+
+
+def test_a_store_written_by_an_older_build_keeps_the_entries_it_can_use(cache_path, media):
+    """An update that leaves the entry shape alone keeps its verdicts. The
+    document's stamp has moved on, each entry's has not."""
+    key = cache_key(media, "eng")
+    saved_cache(cache_path, (media, key, CONFORM))
+    stored = json.loads(Path(cache_path).read_text())
+    stored["format"] = READS_FROM - 1
+    Path(cache_path).write_text(json.dumps(stored))
+
+    assert SweepCache.load(cache_path, fingerprint()).lookup(media, key) is not None
+    assert read(cache_path, fingerprint()).files.keys() == {media}
 
 
 def test_an_entry_is_stamped_with_when_the_verdict_was_reached(cache_path, media, monkeypatch):

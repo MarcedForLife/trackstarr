@@ -109,7 +109,7 @@ def read(path: str, fingerprint: dict) -> Stored:
         if (batch := _pending.get(path)) is not None:
             return Stored(dict(batch.entries), batch.fingerprint == fingerprint)
     document = verdict_store.load(path)
-    if document is None or not (document.present and document.known):
+    if document is None or not document.present:
         return Stored({}, True)
     return Stored(document.entries, document.fingerprint == fingerprint)
 
@@ -145,6 +145,9 @@ def _entry(key: FileKey, verdict: Verdict) -> dict:
     }
     return {
         **asdict(key),
+        # Per entry, since carry() moves one forward for as long as the file is
+        # unchanged and the document's stamp stops describing it.
+        "format": verdict_store.FORMAT,
         "status": str(verdict.status),
         "reasons": verdict.reasons,
         # Whole seconds: it is sorted on and never counted with.
@@ -567,7 +570,7 @@ def _for_update(fingerprint: dict, cache_file: str) -> dict[str, dict] | None:
         return None
     if not document.present:
         return {}
-    if not document.known or document.fingerprint != fingerprint:
+    if document.fingerprint != fingerprint:
         return None
     return document.entries
 
@@ -726,12 +729,11 @@ class SweepCache:
         document = verdict_store.load(path)
         if document is None or not document.present:
             return cache
-        if not document.known:
-            log.info("sweep cache is an older format, dropping it for a full re-probe")
-            return cache
         if document.fingerprint != fingerprint:
             log.info("rule configuration changed, dropping the sweep cache")
             return cache
+        if document.dropped:
+            log.info("%d verdicts an older build wrote will be probed again", document.dropped)
         cache._previous = document.entries
         return cache
 
