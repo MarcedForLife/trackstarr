@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from trackstarr import verdict_store
-from trackstarr.verdict_store import FORMAT, Document
+from trackstarr.verdict_store import FORMAT, READS_FROM, Document
 
 RULES = {"remux": "always"}
 
@@ -26,14 +26,40 @@ def test_a_store_that_is_not_an_object_is_refused(tmp_path):
     assert verdict_store.load(store(tmp_path)) is None
 
 
-def test_another_builds_entries_are_never_handed_out(tmp_path):
-    """The format is reported so a caller can say why it dropped the store,
-    but its entries are not, since their fields are anyone's guess."""
+def test_an_entry_too_old_to_use_is_left_behind(tmp_path):
+    """Its fields are anyone's guess, and the count is reported so a caller can
+    say how much of the library it is about to probe again."""
     Path(store(tmp_path)).write_text(
-        json.dumps({"format": FORMAT - 1, "config": RULES, "files": {"/a.mkv": {}}})
+        json.dumps({"format": READS_FROM - 1, "config": RULES, "files": {"/a.mkv": {}}})
     )
     document = verdict_store.load(store(tmp_path))
-    assert document == Document(present=True, known=False, fingerprint=RULES)
+    assert document == Document(present=True, dropped=1, fingerprint=RULES)
+
+
+def test_an_entry_says_which_build_wrote_it_rather_than_the_document(tmp_path):
+    """The stamp's whole point. A store whose format has moved on keeps every
+    entry this build can still use, so an update re-probes only the rest."""
+    Path(store(tmp_path)).write_text(
+        json.dumps(
+            {
+                "format": READS_FROM - 1,
+                "config": RULES,
+                "files": {"/old.mkv": {}, "/new.mkv": {"format": FORMAT}},
+            }
+        )
+    )
+    document = verdict_store.load(store(tmp_path))
+    assert document.entries == {"/new.mkv": {"format": FORMAT}}
+    assert document.dropped == 1
+
+
+def test_an_unstamped_entry_is_the_format_its_document_says(tmp_path):
+    """Written before entries carried a stamp of their own, by the build the
+    document names."""
+    Path(store(tmp_path)).write_text(
+        json.dumps({"format": FORMAT, "config": RULES, "files": {"/a.mkv": {}}})
+    )
+    assert verdict_store.load(store(tmp_path)).entries == {"/a.mkv": {}}
 
 
 def test_an_entry_that_is_not_an_object_is_dropped(tmp_path):
