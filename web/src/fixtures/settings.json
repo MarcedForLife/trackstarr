@@ -236,9 +236,7 @@
 	],
 	"secrets": [
 		"JELLYFIN_API_KEY",
-		"PLEX_TOKEN",
-		"RADARR_API_KEY",
-		"SONARR_API_KEY"
+		"PLEX_TOKEN"
 	],
 	"settings": {
 		"ALLOWED_EXTS": {
@@ -326,14 +324,6 @@
 			"value": "4",
 			"env": false
 		},
-		"RADARR_PUBLIC_URL": {
-			"value": "",
-			"env": false
-		},
-		"RADARR_URL": {
-			"value": "http://radarr:7878",
-			"env": false
-		},
 		"REGENERATE_ABOVE_PERCENT": {
 			"value": "0",
 			"env": false
@@ -360,14 +350,6 @@
 		},
 		"SKIP_HARDLINKS": {
 			"value": true,
-			"env": false
-		},
-		"SONARR_PUBLIC_URL": {
-			"value": "",
-			"env": false
-		},
-		"SONARR_URL": {
-			"value": "http://sonarr:8989",
 			"env": false
 		},
 		"SWEEP_AT": {
@@ -431,16 +413,62 @@
 			"value": "",
 			"env": false,
 			"set": true
-		},
-		"RADARR_API_KEY": {
-			"value": "",
-			"env": false,
-			"set": false
-		},
-		"SONARR_API_KEY": {
-			"value": "",
-			"env": false,
-			"set": false
 		}
-	}
+	},
+	"arr_instances": [
+		{
+			"id": "radarr",
+			"type": "radarr",
+			"fields": {
+				"url": {
+					"value": "http://radarr:7878",
+					"env": false,
+					"env_name": "RADARR_URL"
+				},
+				"api_key": {
+					"value": "",
+					"env": false,
+					"env_name": "RADARR_API_KEY",
+					"set": false
+				},
+				"public_url": {
+					"value": "",
+					"env": false,
+					"env_name": "RADARR_PUBLIC_URL"
+				},
+				"name": {
+					"value": "",
+					"env": false,
+					"env_name": "RADARR_NAME"
+				}
+			}
+		},
+		{
+			"id": "sonarr",
+			"type": "sonarr",
+			"fields": {
+				"url": {
+					"value": "http://sonarr:8989",
+					"env": false,
+					"env_name": "SONARR_URL"
+				},
+				"api_key": {
+					"value": "",
+					"env": false,
+					"env_name": "SONARR_API_KEY",
+					"set": false
+				},
+				"public_url": {
+					"value": "",
+					"env": false,
+					"env_name": "SONARR_PUBLIC_URL"
+				},
+				"name": {
+					"value": "",
+					"env": false,
+					"env_name": "SONARR_NAME"
+				}
+			}
+		}
+	]
 }

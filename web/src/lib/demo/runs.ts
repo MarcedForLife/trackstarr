@@ -26,6 +26,8 @@ import {
 	VERSION
 } from './util';
 import {
+	addVariants,
+	addLargeSeries,
 	bytesOf,
 	pausedTitle,
 	pausesNow,
@@ -38,7 +40,8 @@ import {
 	type File,
 	type SimRun,
 	type Title,
-	type State
+	type State,
+	sourceName
 } from './state';
 
 // One file a run has picked up, with what the simulation needs to carry it on.
@@ -85,18 +88,20 @@ export function runLog(state: State, run: string, path: string): string[] {
 
 function newRun(
 	state: State,
-	kind: SimRun['kind'],
+	type: SimRun['type'],
 	started: number,
 	dryRun: boolean,
-	label = ''
+	label = '',
+	instance_id = ''
 ): SimRun {
 	return {
 		id: runId(started),
-		kind,
+		type,
 		started: stamp(started),
 		seconds: 0,
 		dry_run: dryRun,
 		label,
+		instance_id,
 		total: 0,
 		done: 0,
 		counts: {},
@@ -105,7 +110,7 @@ function newRun(
 		recent: [],
 		queue: [],
 		walkUntil: null,
-		source: kind === 'import' ? 'webhook' : kind,
+		source: type === 'import' ? 'webhook' : type,
 		titles: [],
 		stopped: 0,
 		cached: 0
@@ -182,7 +187,7 @@ export function seed(state: State): void {
 	}
 	state.runs.push(sweep);
 
-	const importRun = newRun(state, 'import', now - IMPORT_STARTED_AGO_MS, false, 'radarr');
+	const importRun = newRun(state, 'import', now - IMPORT_STARTED_AGO_MS, false, '', 'radarr');
 	const delivered = state.byId.get('arr:radarr:9')!.files[0];
 	importRun.total = 1;
 	state.runs.push(importRun);
@@ -310,7 +315,8 @@ function coversFor(state: State, paths: string[]): FileCovers {
 	return Object.fromEntries(
 		paths.flatMap((path) => {
 			const title = (
-				state.byPath.get(path)?.title ?? state.titles.find((title) => title.spec.folder === path)
+				state.byPath.get(path)?.title ??
+				state.titles.find((title) => title.spec.sources.some((held) => held.folder === path))
 			)?.spec;
 			return title ? [[path, { id: title.id, name: title.name }]] : [];
 		})
@@ -492,7 +498,7 @@ export function tick(state: State, now = Date.now()): void {
 		run.queue = run.queue.filter((item) => !item.skipped);
 		// The last probe has landed, so every plan is this ruleset's. Not for a
 		// walk stopped part way, which left the rest unjudged.
-		if (run.kind === 'sweep' && !state.current && !run.stopping && !finding(run)) {
+		if (run.type === 'sweep' && !state.current && !run.stopping && !finding(run)) {
 			state.current = true;
 			changed.library = true;
 		}
@@ -519,10 +525,10 @@ function announce(changed: Changed): void {
  * work, a few at a time, which is what the service does with them. */
 function finishWalk(state: State, run: SimRun): void {
 	const files =
-		run.kind === 'recheck'
-			? run.titles.flatMap((title) => title.files)
+		run.type === 'recheck'
+			? (run.files ?? run.titles.flatMap((title) => title.files))
 			: state.titles.flatMap((title) => title.files);
-	const opening = (file: File) => run.kind === 'recheck' || !state.current || !file.tracks.length;
+	const opening = (file: File) => run.type === 'recheck' || !state.current || !file.tracks.length;
 	let probes = 0;
 	for (const file of files) {
 		if (opening(file)) {
@@ -543,7 +549,7 @@ function finishWalk(state: State, run: SimRun): void {
 /** Whether a run is still finding work: listing, or probing what it listed.
  * An import is handed its files, so it never walks. */
 function finding(run: SimRun): boolean {
-	if (run.kind === 'import') return false;
+	if (run.type === 'import') return false;
 	return (
 		run.walkUntil !== null ||
 		run.queue.some((item) => item.discovery) ||
@@ -563,7 +569,7 @@ function judged(
 ): void {
 	const file = state.byPath.get(active.path)!;
 	const opened = !file.tracks.length;
-	if (opened || run.kind === 'recheck' || !state.current) probe(file);
+	if (opened || run.type === 'recheck' || !state.current) probe(file);
 	rejudge(state, file, now);
 	changed.library = true;
 	const pause = pausedTitle(state, file.title, file.path);
@@ -595,7 +601,7 @@ function judged(
 		remove(run, active);
 		run.queue.push({ path: file.path, skipped: false });
 		const order = ordering(state);
-		if (run.kind === 'import' && !order.undo)
+		if (run.type === 'import' && !order.undo)
 			order.ranks.set(queueKey({ run: run.id, path: file.path }), --order.front);
 		changed.runs = true;
 		return;
@@ -724,7 +730,7 @@ function close(state: State, run: SimRun, now: number): void {
 	run.stopped = run.queue.length;
 	run.queue = [];
 	const seconds = Math.round(((now - Date.parse(run.started)) / 1000) * 10) / 10;
-	if (run.kind === 'sweep') {
+	if (run.type === 'sweep') {
 		state.swept += 1;
 		record(state, {
 			event: 'sweep',
@@ -741,12 +747,12 @@ function close(state: State, run: SimRun, now: number): void {
 			seconds,
 			...(run.stopped ? { stopped: run.stopped } : {})
 		});
-	} else if (run.kind === 'recheck') {
+	} else if (run.type === 'recheck') {
 		record(state, {
 			event: 'recheck',
 			run: run.id,
 			dry_run: run.dry_run,
-			titles: run.titles.length,
+			...(run.files ? {} : { titles: run.titles.length }),
 			files: run.done,
 			config_id: configId(state),
 			counts: run.counts,
@@ -774,11 +780,11 @@ function wireRun(state: State, run: SimRun, now: number): Run {
 	}, 0);
 	return {
 		id: run.id,
-		kind: run.kind,
+		type: run.type,
 		started: run.started,
 		seconds: Math.round((now - Date.parse(run.started)) / 1000),
 		dry_run: run.dry_run,
-		label: run.label,
+		label: run.instance_id ? sourceName(state, run.instance_id) : run.label,
 		total: run.total,
 		done: run.done,
 		counts: run.counts,
@@ -855,7 +861,7 @@ export const refused = (answer: Refused | object): answer is Refused =>
 type Delivered = { status: string; run: string; titles: string[] };
 
 function walking(state: State): SimRun | undefined {
-	return state.runs.find((run) => run.kind !== 'import');
+	return state.runs.find((run) => run.type !== 'import');
 }
 
 /** Demo debug delivery: replace sample media with a 4K upgrade missing stereo. */
@@ -866,19 +872,19 @@ export function simulateImport(
 ): Refused | Delivered {
 	const occupied = new Set(
 		state.runs.flatMap((run) => [
-			...(run.kind === 'import' ? run.queue.map((file) => file.path) : []),
+			...(run.type === 'import' ? run.queue.map((file) => file.path) : []),
 			...run.active.map((file) => file.path)
 		])
 	);
 	const title = state.titles.find(
 		(title) =>
-			title.spec.arr === arr &&
+			title.spec.sources[0].instance_id === arr &&
 			title.files.length &&
 			title.files.every((file) => !occupied.has(file.path) && !pausedTitle(state, title, file.path))
 	);
 	if (!title) return { status: 409, body: { status: 'all sample titles are busy or paused' } };
 	const files = title.files.slice(0, arr === 'sonarr' ? 3 : 1);
-	const run = newRun(state, 'import', now, state.settings.REWRITE_MODE === 'report', arr);
+	const run = newRun(state, 'import', now, state.settings.REWRITE_MODE === 'report', '', arr);
 	// Multiple deliveries can share a millisecond in tests or a fast browser.
 	run.id += `-${state.nextSeq}`;
 	for (const file of files) {
@@ -886,7 +892,7 @@ export function simulateImport(
 		const oldPath = file.path;
 		const name = spec.name.replace(/(?:Bluray|WEB|HDTV)-\d+p/i, 'Bluray-2160p');
 		file.ext = '.mkv';
-		file.path = `${title.spec.folder}/${name === spec.name ? `${name} Bluray-2160p` : name}${file.ext}`;
+		file.path = `${title.spec.sources[0].folder}/${name === spec.name ? `${name} Bluray-2160p` : name}${file.ext}`;
 		file.name = file.path.slice(file.path.lastIndexOf('/') + 1);
 		state.byPath.delete(oldPath);
 		state.byPath.set(file.path, file);
@@ -896,7 +902,7 @@ export function simulateImport(
 				if (queued.path === oldPath) queued.path = file.path;
 			}
 		}
-		file.source = [
+		file.contents = [
 			{ index: 0, kind: 'video', codec: 'hevc', bitrate: 35_000_000, title: '4K UHD' },
 			{
 				index: 1,
@@ -908,7 +914,7 @@ export function simulateImport(
 				flags: ['default']
 			}
 		];
-		file.bytes = bytesOf(file.source, spec.seconds);
+		file.bytes = bytesOf(file.contents, spec.seconds);
 		file.tracks = [];
 		file.planned = [];
 		file.seconds = 0;
@@ -1023,7 +1029,23 @@ export const SCENARIOS: Record<
 	(state: State, now: number) => Refused | { status: string; titles: string[] }
 > = {
 	full: fullBoard,
-	'imports-only': importsOnly,
+	'multiple-variants': (state, now) => {
+		const fresh = poseOpening(state);
+		abort(fresh, now);
+		return { status: 'posed', titles: addVariants(fresh, now) };
+	},
+	'large-series': (state, now) => {
+		const fresh = poseOpening(state);
+		abort(fresh, now);
+		return { status: 'posed', titles: addLargeSeries(fresh, now) };
+	},
+	'connection-trouble': (state, now) => {
+		const fresh = poseOpening(state);
+		abort(fresh, now);
+		fresh.connectionTrouble = true;
+		return { status: 'posed', titles: [] };
+	},
+	'imports-only': (state, now) => importsOnly(poseOpening(state), now),
 	failed: failedRewrite,
 	held: heldWork
 };
@@ -1047,13 +1069,25 @@ export function recheck(
 	state: State,
 	titles: Title[],
 	mode: string,
-	now = Date.now()
+	now = Date.now(),
+	files?: File[]
 ): Refused | { status: string; run: string; titles: number } {
-	const label = titles.length === 1 ? titles[0].spec.name : `${titles.length} titles`;
+	if (!['report', 'apply'].includes(mode))
+		return { status: 400, body: { status: 'unknown run mode' } };
+	if (state.paused)
+		return { status: 409, body: { status: 'processing is paused. Resume it first' } };
+	const label = files
+		? files.length === 1
+			? files[0].name
+			: `${files.length} files`
+		: titles.length === 1
+			? titles[0].spec.name
+			: `${titles.length} titles`;
 	const run = newRun(state, 'recheck', now, mode !== 'apply' || !mayRewrite(state), label);
 	run.titles = titles;
+	run.files = files;
 	run.walkUntil = now + RECHECK_WALK_MS;
-	run.total = titles.flatMap((title) => title.files).length;
+	run.total = (files ?? titles.flatMap((title) => title.files)).length;
 	state.runs.push(run);
 	publish('runs');
 	return { status: 'started', run: run.id, titles: titles.length };

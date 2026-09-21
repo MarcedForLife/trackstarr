@@ -1,11 +1,13 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { onDestroy, type Snippet } from 'svelte';
+	import type { FileActionAdapter } from '$lib/title-work.svelte';
 	import { refusalText } from '$lib/api';
 	import { rowButton } from '$lib/controls';
 	import { named } from '$lib/format';
 	import { resume, place } from '$lib/pauses';
 	import { atFront, queueAction, type FileState } from '$lib/queue';
 	import { skipFile } from '$lib/runs';
+	import type { RunMode } from '$lib/library';
 	import FileActions from './FileActions.svelte';
 
 	// The queue controls for one file, at the corner of the card handed in. What
@@ -19,6 +21,11 @@
 		unavailable = false,
 		busy = $bindable(false),
 		onchanged,
+		onaction,
+		onrun,
+		mayRewrite = false,
+		runDisabled = false,
+		refuses = '',
 		children
 	}: {
 		path: string;
@@ -29,6 +36,11 @@
 		unavailable?: boolean;
 		busy?: boolean;
 		onchanged: () => Promise<void>;
+		onaction?: FileActionAdapter;
+		onrun?: (mode: RunMode) => Promise<void>;
+		mayRewrite?: boolean;
+		runDisabled?: boolean;
+		refuses?: string;
 		children: Snippet;
 	} = $props();
 
@@ -41,7 +53,30 @@
 	// Hovering to the raised tone: these rows sit on the sunken tray.
 	const control = `${rowButton} gap-1.5 px-2 text-dim hover:bg-raised`;
 
+	let alive = true;
+	onDestroy(() => {
+		alive = false;
+	});
+
 	async function act(action: 'top' | 'skip' | 'pause' | 'resume', seconds?: number) {
+		if (onaction) {
+			const target = path;
+			const operation = onaction(path, standing, action, seconds);
+			const current = () => alive && path === target && operation.current();
+			error = '';
+			notice = '';
+			try {
+				const message = await operation.run();
+				if (current()) notice = message;
+			} catch (failure) {
+				if (current()) {
+					error = refusalText(failure);
+					throw failure;
+				}
+			}
+			return;
+		}
+
 		busy = true;
 		error = '';
 		notice = '';
@@ -70,11 +105,12 @@
 	}
 </script>
 
-<!-- Pulled into the card's padding, since a 44px target wants the edge. -->
+<!-- Center the 44px action target on the 32px filename row, keeping its
+     larger hit area in the card's padding. -->
 <div class="flex items-start gap-2">
 	{@render children()}
 	{#if admin && ready}
-		<span class="-mt-2 -mr-2 flex-none">
+		<span class="-mt-1.5 -mr-2 flex-none">
 			{#if standing.waiting.length || standing.running.length}
 				<FileActions
 					{label}
@@ -97,6 +133,10 @@
 			{:else if !standing.paused}
 				<FileActions
 					{label}
+					{onrun}
+					{mayRewrite}
+					{runDisabled}
+					{refuses}
 					disabled={busy || unavailable}
 					onchoose={(seconds) => act('pause', seconds)}
 					class={control}

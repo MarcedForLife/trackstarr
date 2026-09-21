@@ -1,3 +1,4 @@
+import type { SettingsChanges } from '$lib/settings';
 // The service's API, answered from the state: one row per path, the same
 // access rules, the same refusals. What each handler returns is what the
 // service would put on the wire.
@@ -44,6 +45,7 @@ import {
 	saveSettings,
 	settingsSnapshot,
 	shelf,
+	sourceName,
 	summary,
 	currentState,
 	type State
@@ -71,7 +73,7 @@ function current(): State {
 }
 
 function busy(here: State): Answer | null {
-	const going = here.runs.find((run) => run.kind !== 'import');
+	const going = here.runs.find((run) => run.type !== 'import');
 	return going
 		? { status: 409, body: { status: 'a sweep is running. Stop it first', run: going.id } }
 		: null;
@@ -86,7 +88,8 @@ function named(here: State, body: Body) {
 	const ids = strings(body.ids);
 	const paths = strings(body.paths);
 	return here.titles.filter(
-		(title) => ids.includes(title.spec.id) || paths.includes(title.spec.folder)
+		(title) =>
+			ids.includes(title.spec.id) || title.spec.sources.some(({ folder }) => paths.includes(folder))
 	);
 }
 
@@ -110,7 +113,9 @@ function eventsPage(here: State, query: URLSearchParams): EventPage {
 		if (title && !titles[title.spec.id]) titles[title.spec.id] = card(here, title);
 	}
 	return {
-		events: page.map((line) => line.entry),
+		events: page.map(({ entry }) =>
+			entry.arr ? { ...entry, arr_label: sourceName(here, entry.arr) } : entry
+		),
 		titles,
 		next: within.length > limit ? page[page.length - 1].seq : null
 	};
@@ -152,11 +157,10 @@ const INDEXED: Record<string, string[]> = { plex: ['/media'], jellyfin: ['/media
 
 function testConnection(here: State, body: Body): ConnectionResult {
 	const name = String(body.service ?? '');
-	const service = CONNECTIONS[name];
-	const url = String(body.url || here.settings[`${name.toUpperCase()}_URL`] || '').replace(
-		/\/+$/,
-		''
-	);
+	const prefix = name.toUpperCase().replace('-', '_');
+	const base = CONNECTIONS[name.split('-')[0]];
+	const service = name.includes('-') ? { ...base, key: `${prefix}_API_KEY` } : base;
+	const url = String(body.url || here.settings[`${prefix}_URL`] || '').replace(/\/+$/, '');
 	// The saved key never leaves the service, so what is held is whether it is
 	// set, which is all the check reads.
 	const key = String(body.key || '') || (here.secretsSet.has(service.key) ? 'set' : '');
@@ -179,12 +183,61 @@ function testConnection(here: State, body: Body): ConnectionResult {
 			webhook: '',
 			webhook_detail: ''
 		};
+	if (here.connectionTrouble && name === 'radarr')
+		return {
+			ok: false,
+			detail: 'Could not reach Radarr: connection timed out.',
+			hint: 'Check the address and whether Radarr is running.',
+			webhook: 'unknown',
+			webhook_detail: ''
+		};
+	if (here.connectionTrouble && name === 'sonarr')
+		return {
+			ok: true,
+			detail: service.detail,
+			hint: 'The library root /data/media/tv is not visible to Trackstarr.',
+			paths: 'attention',
+			webhook: 'unreachable',
+			webhook_detail: 'Connection refused by the callback address.'
+		};
+	const paths = service.arr ? arrPathHint(here, name) : undefined;
 	return {
 		ok: true,
 		detail: service.detail,
-		hint: pathHint(here, name),
+		hint: paths?.hint ?? pathHint(here, name),
+		paths: paths?.paths ?? '',
 		webhook,
 		webhook_detail: ''
+	};
+}
+
+function arrPathHint(here: State, name: string): Pick<ConnectionResult, 'hint' | 'paths'> {
+	const paths = [
+		...new Set(
+			here.titles
+				.flatMap(({ spec }) => spec.sources)
+				.filter(({ instance_id }) => instance_id === name)
+				.map(({ folder }) => folder.slice(0, folder.lastIndexOf('/')))
+		)
+	];
+	if (!paths.length)
+		return { hint: 'No library root folders are configured in this instance.', paths: 'attention' };
+	let ready = 0;
+	const results = paths.map((path) => {
+		const covered = strings(here.settings.MEDIA_DIRS).some((base) => {
+			const root = base.replace(/\/+$/, '');
+			return path === root || path.startsWith(`${root}/`);
+		});
+		if (covered) ready++;
+		return `${path}: visible as a directory to Trackstarr; ${
+			covered
+				? 'inside MEDIA_DIRS'
+				: 'outside MEDIA_DIRS; add this library root to MEDIA_DIRS for sweeps'
+		}.`;
+	});
+	return {
+		hint: `Library roots: ${ready} of ${paths.length} visible and inside MEDIA_DIRS.\n${results.join('\n')}`,
+		paths: ready === paths.length ? 'ready' : 'attention'
 	};
 }
 
@@ -304,8 +357,9 @@ const GET: Route[] = [
 		handler: (here, query) => {
 			const title = here.byId.get(query.get('id') ?? '');
 			if (!title) return refuse(404, 'no such title');
+			const folders = title.spec.sources.map(({ folder }) => folder);
 			const matches = (path: string) =>
-				path === title.spec.folder || path.startsWith(`${title.spec.folder}/`);
+				folders.some((folder) => path === folder || path.startsWith(`${folder}/`));
 			return ok({
 				queued: queued(here).filter((item) => matches(item.path)),
 				active: here.runs.flatMap((run) =>
@@ -324,10 +378,12 @@ const GET: Route[] = [
 			const path = query.get('path');
 			if (!path) return refuse(400, 'path is required');
 			const file = here.byPath.get(path);
-			const title = file?.title ?? here.titles.find((title) => title.spec.folder === path);
+			const title =
+				file?.title ??
+				here.titles.find((title) => title.spec.sources.some((held) => held.folder === path));
 			return ok({
 				current: here.current,
-				file: file ? wireFile(file) : null,
+				file: file ? wireFile(here, file) : null,
 				card: title ? card(here, title) : null
 			});
 		}
@@ -337,7 +393,9 @@ const GET: Route[] = [
 		admin: false,
 		handler: (here, query) => {
 			const title = here.byId.get(query.get('id') ?? '');
-			return title ? ok(detail(here, title)) : refuse(404, 'no such title');
+			return title
+				? ok(detail(here, title, Math.max(1, Math.min(100, Number(query.get('pages')) || 1))))
+				: refuse(404, 'no such title');
 		}
 	},
 	{
@@ -407,10 +465,7 @@ const POST: Route[] = [
 		path: '/api/settings',
 		admin: true,
 		handler: (here, _query, body) => {
-			const outcome = saveSettings(
-				here,
-				body as Record<string, string | boolean | string[] | null>
-			);
+			const outcome = saveSettings(here, body as SettingsChanges);
 			return 'problems' in outcome ? { status: 400, body: outcome } : ok(outcome);
 		}
 	},
@@ -419,7 +474,11 @@ const POST: Route[] = [
 		admin: true,
 		handler: async (here, _query, body) => {
 			// A name the service does not know never reaches the check itself.
-			if (!CONNECTIONS[String(body.service ?? '')]) return refuse(404, 'no such service');
+			if (
+				!CONNECTIONS[String(body.service ?? '')] &&
+				!/^(radarr|sonarr)-(?!public$)[a-z0-9]+$/.test(String(body.service))
+			)
+				return refuse(404, 'no such service');
 			return (await pause(600), ok(testConnection(here, body)));
 		}
 	},
@@ -487,6 +546,26 @@ const POST: Route[] = [
 		path: '/api/library/run',
 		admin: true,
 		handler: (here, _query, body) => {
+			if ('paths' in body) {
+				if (
+					'ids' in body ||
+					!Array.isArray(body.paths) ||
+					!body.paths.length ||
+					!body.paths.every((path) => typeof path === 'string')
+				)
+					return refuse(400, 'name either titles or files to run');
+				const files = [...new Set(body.paths as string[])].map((path) => here.byPath.get(path));
+				if (files.some((file) => !file)) return refuse(404, 'no such file');
+				return answerOf(
+					recheck(
+						here,
+						[],
+						String(body.mode ?? 'report'),
+						Date.now(),
+						files.filter((file) => !!file)
+					)
+				);
+			}
 			const titles = named(here, body);
 			if (!strings(body.ids).length) return refuse(400, 'name the titles to run');
 			if (!titles.length) return refuse(404, 'no such title');
@@ -524,7 +603,10 @@ const POST: Route[] = [
 			await pause(900);
 			here.ratingsFetched = Math.floor(Date.now() / 1000);
 			publish('library');
-			return ok({ ...ratings(here), titles: here.titles.filter((title) => title.spec.arr).length });
+			return ok({
+				...ratings(here),
+				titles: here.titles.filter((title) => title.spec.sources[0].instance_id).length
+			});
 		}
 	}
 ];

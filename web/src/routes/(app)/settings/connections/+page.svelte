@@ -1,8 +1,20 @@
 <script lang="ts">
-	import { SERVICES } from '$lib/connections';
+	import { saveSettings, type ArrInstance, type SettingValue } from '$lib/settings';
+	import {
+		ARR_FIELDS,
+		arrField,
+		connectionSettings,
+		connectionChanges,
+		SERVICES,
+		newInstance,
+		sources,
+		type Service,
+		type ServiceName
+	} from '$lib/connections';
 	import { button, field } from '$lib/controls';
 	import ConnectionCard from '$lib/components/ConnectionCard.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
+	import NewConnection from '$lib/components/NewConnection.svelte';
 	import NumberField from '$lib/components/NumberField.svelte';
 	import Page from '$lib/components/Page.svelte';
 	import SaveBar from '$lib/components/SaveBar.svelte';
@@ -14,11 +26,23 @@
 
 	let { data }: PageProps = $props();
 
+	// Descriptors persist separately from editable fields; names never move IDs.
+	// svelte-ignore state_referenced_locally
+	let savedInstances = data.snapshot.arr_instances;
+	let instances = $state<ArrInstance[]>([...savedInstances]);
+
 	const readOnly = $derived(data.user?.role !== 'admin');
 
 	// Typed: `dropping` below reads the baseline off the draft it is handed to.
 	// svelte-ignore state_referenced_locally
-	const settings: SettingsDraft = new SettingsDraft(data.snapshot.settings, {
+	const settings: SettingsDraft = new SettingsDraft(connectionSettings(data.snapshot), {
+		save: async (changes) => {
+			const snapshot = await saveSettings(
+				connectionChanges(instances, baseline, changes, new Set(Object.keys(removed)))
+			);
+			savedInstances = snapshot.arr_instances;
+			return connectionSettings(snapshot);
+		},
 		readOnly: () => readOnly,
 		// An empty field means "leave it alone", so cleared names travel as null.
 		// The diff cannot see them, since the service never echoes a credential.
@@ -38,10 +62,102 @@
 	// Which credentials the reader emptied. The page's, since the draft turns one
 	// into a change.
 	let cleared = $state<Record<string, boolean>>({});
-	settings.onreset(() => (cleared = {}));
+	// Cards taken off, held until the save so Undo can put them back.
+	let removed = $state<Record<string, { service: Service; values: Record<string, SettingValue> }>>(
+		{}
+	);
+	// Fixed services added this visit and still empty keep a card.
+	let shown = $state<Record<string, boolean>>({});
+	// The card just added opens on arrival.
+	let opened = $state<Record<string, boolean>>({});
+	settings.onreset(() => {
+		cleared = {};
+		removed = {};
+		opened = {};
+		shown = {};
+		instances = [...savedInstances];
+	});
 
-	const SOURCES = SERVICES.filter((service) => service.group === 'source');
-	const LIBRARIES = SERVICES.filter((service) => service.group === 'library');
+	/** The setting names one card edits. */
+	function names(service: Service): string[] {
+		return [service.url, service.key, service.publicUrl, service.map, service.nameField].filter(
+			(name): name is string => !!name
+		);
+	}
+	/** Whether the saved settings hold anything for this service. */
+	function saved(service: Service): boolean {
+		return names(service).some(
+			(name) => baseline[name]?.set || !!baseline[name]?.value || baseline[name]?.env
+		);
+	}
+	/** A fixed service earns its card by holding something, saved or typed, or
+	 * by being added; a named instance has one for as long as it has keys. */
+	function present(service: Service): boolean {
+		if (service.instance && service.name !== service.type) return true;
+		return saved(service) || !!shown[service.name] || names(service).some((name) => draft[name]);
+	}
+	const SOURCES = $derived(
+		SERVICES.filter((service) => service.group === 'source').flatMap((kind) =>
+			sources(instances, draft).filter(
+				(service) => service.type === kind.name && (present(service) || removed[service.name])
+			)
+		)
+	);
+	const LIBRARIES = $derived(
+		SERVICES.filter((service) => service.group === 'library' && present(service))
+	);
+	const ADDED = $derived(
+		new Set(
+			SERVICES.filter(
+				(service) => service.group === 'library' && (present(service) || removed[service.name])
+			).map((service) => service.name)
+		)
+	);
+
+	function add(name: ServiceName) {
+		const fixed =
+			sources(instances, draft).find((service) => service.name === name) ??
+			SERVICES.find((service) => service.name === name)!;
+		if (!present(fixed) && !removed[name]) {
+			shown[name] = true;
+			opened[name] = true;
+			return;
+		}
+		if (name !== 'radarr' && name !== 'sonarr') return;
+		const instance = newInstance(name);
+		instances.push(instance);
+		for (const field of ARR_FIELDS) draft[arrField(instance.id, field)] = '';
+		opened[instance.id] = true;
+	}
+
+	function rename(service: Service, text: string) {
+		draft[service.nameField!] = text;
+	}
+
+	/** Removal is held for Undo, then sent as one connection operation. */
+	function remove(service: Service) {
+		delete shown[service.name];
+		delete opened[service.name];
+		if (!(service.url in baseline)) {
+			instances = instances.filter((instance) => instance.id !== service.name);
+			for (const name of names(service)) delete draft[name];
+			return;
+		}
+		const values: Record<string, SettingValue> = {};
+		for (const name of names(service)) {
+			if (name in draft) values[name] = draft[name];
+			delete draft[name];
+		}
+		removed[service.name] = { service, values };
+	}
+
+	function undoRemoval(name: string) {
+		Object.assign(draft, removed[name].values);
+		delete removed[name];
+	}
+	function removable(service: Service): boolean {
+		return !readOnly && !names(service).some(envLocked);
+	}
 
 	// Test all is a press passed on to each card.
 	const cards: Record<string, ConnectionCard | undefined> = $state({});
@@ -53,7 +169,9 @@
 		const feedback = new Promise<void>((resolve) => setTimeout(resolve, 600));
 		testingAll = true;
 		try {
-			await Promise.all(SERVICES.map((service) => cards[service.name]?.test(600)));
+			await Promise.all(
+				[...SOURCES, ...LIBRARIES].map((service) => cards[service.name]?.test(600))
+			);
 		} finally {
 			await feedback;
 			testingAll = false;
@@ -80,6 +198,37 @@
 	);
 </script>
 
+{#snippet card(service: Service)}
+	{#if removed[service.name]}
+		<div class="rounded-xl border border-line bg-raised p-3">
+			<p class="text-sm font-semibold">{removed[service.name].service.label}</p>
+			<p role="status" class="mt-1 text-[13px] text-dim">
+				{service.group === 'source'
+					? 'Will be removed on save. Imports from this connection will no longer be accepted.'
+					: 'Will be removed on save. It will no longer be asked to rescan.'}
+			</p>
+			<button
+				type="button"
+				class={`${button} mt-2`}
+				onclick={() => undoRemoval(service.name)}
+				aria-label={`Undo removal of ${removed[service.name].service.label}`}>Undo</button
+			>
+		</div>
+	{:else}
+		<ConnectionCard
+			bind:this={cards[service.name]}
+			{service}
+			{settings}
+			{readOnly}
+			cleared={!!cleared[service.key]}
+			onclear={(yes) => (cleared[service.key] = yes)}
+			opened={!!opened[service.name]}
+			onname={service.nameField ? (typed) => rename(service, typed) : undefined}
+			onremove={removable(service) ? () => remove(service) : undefined}
+		/>
+	{/if}
+{/snippet}
+
 <Page
 	eyebrow="Settings"
 	lead="The services trackstarr talks to, and how imports are handled. Changes apply without a restart."
@@ -91,14 +240,12 @@
 			<p class="mt-2 text-[13px] text-faint">Viewing only. An admin can change or test these.</p>
 		{/if}
 
-		<div class="mt-7 flex items-end justify-between gap-3">
-			<div class="min-w-0">
-				<p class="text-[13px] font-semibold">Sources</p>
-				<p class="mt-0.5 text-[13px] leading-snug text-pretty text-dim">
-					Radarr and Sonarr, which call trackstarr as they import. Each gets a webhook connection on
-					save.
-				</p>
-			</div>
+		<div class="mt-6 flex items-center justify-between gap-2">
+			{#if readOnly}
+				<span></span>
+			{:else}
+				<NewConnection added={ADDED} onpick={add} />
+			{/if}
 			<!-- Held wide, so Checking does not shift it. -->
 			<button
 				type="button"
@@ -112,16 +259,19 @@
 				<span role="status">{testingAll ? 'Checking…' : 'Test all'}</span>
 			</button>
 		</div>
+
+		<div class="mt-6">
+			<p class="text-[13px] font-semibold">Sources</p>
+			<p class="mt-0.5 text-[13px] leading-snug text-pretty text-dim">
+				Radarr and Sonarr, which call trackstarr as they import. Each gets a webhook connection on
+				save.
+			</p>
+		</div>
 		<div class="mt-3 flex flex-col gap-2">
 			{#each SOURCES as service (service.name)}
-				<ConnectionCard
-					bind:this={cards[service.name]}
-					{service}
-					{settings}
-					{readOnly}
-					cleared={!!cleared[service.key]}
-					onclear={(yes) => (cleared[service.key] = yes)}
-				/>
+				{@render card(service)}
+			{:else}
+				<p class="text-[13px] text-faint">None yet.</p>
 			{/each}
 		</div>
 
@@ -133,14 +283,9 @@
 		</div>
 		<div class="mt-3 flex flex-col gap-2">
 			{#each LIBRARIES as service (service.name)}
-				<ConnectionCard
-					bind:this={cards[service.name]}
-					{service}
-					{settings}
-					{readOnly}
-					cleared={!!cleared[service.key]}
-					onclear={(yes) => (cleared[service.key] = yes)}
-				/>
+				{@render card(service)}
+			{:else}
+				<p class="text-[13px] text-faint">None yet.</p>
 			{/each}
 		</div>
 

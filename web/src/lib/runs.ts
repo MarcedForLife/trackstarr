@@ -51,7 +51,7 @@ export type Run = {
 	id: string;
 	// A library walk, a delivery from an *arr (Radarr or Sonarr), or a re-check
 	// of selected titles.
-	kind: 'sweep' | 'import' | 'recheck';
+	type: 'sweep' | 'import' | 'recheck';
 	// A stamp with its offset, like every `ts` in the history.
 	started: string;
 	seconds: number;
@@ -156,16 +156,16 @@ export const skipFile = (run: string, path: string) =>
 
 /** A run's name: "Sweep", "Radarr", "Re-check: <title or count>". */
 export function source(run: Run): string {
-	if (run.kind === 'import') {
-		return run.label ? run.label[0].toUpperCase() + run.label.slice(1) : 'Import';
+	if (run.type === 'import') {
+		return run.label || 'Import';
 	}
-	if (run.kind === 'recheck') return `Re-check: ${run.label || 'the selected titles'}`;
+	if (run.type === 'recheck') return `Re-check: ${run.label || 'the selected titles'}`;
 	return 'Sweep';
 }
 
 // The verb per kind, biggest job first: a sweep with a delivery beside it is
 // still "Sweeping".
-const VERBS: [Run['kind'], string][] = [
+const VERBS: [Run['type'], string][] = [
 	['sweep', 'Sweeping'],
 	['recheck', 'Re-checking'],
 	['import', 'Importing']
@@ -178,8 +178,8 @@ export function doing(activity: Activity): string {
 	const { runs } = activity;
 	if (!runs.length) return 'Idle';
 	if (runs.every((run) => run.stopping)) return 'Stopping';
-	const going = new Set(runs.map((run) => run.kind));
-	return VERBS.find(([kind]) => going.has(kind))?.[1] ?? 'Working';
+	const going = new Set(runs.map((run) => run.type));
+	return VERBS.find(([type]) => going.has(type))?.[1] ?? 'Working';
 }
 
 /**
@@ -192,8 +192,8 @@ export function doing(activity: Activity): string {
 export function progressLabel(run: Run): string {
 	if (run.total > 1) return `${run.done.toLocaleString()} of ${run.total.toLocaleString()} files`;
 	if (!run.total) {
-		if (run.kind === 'import') return 'Queueing the delivery…';
-		return run.kind === 'recheck' ? 'Listing the files…' : 'Walking the library…';
+		if (run.type === 'import') return 'Queueing the delivery…';
+		return run.type === 'recheck' ? 'Listing the files…' : 'Walking the library…';
 	}
 	return run.active.length || run.done ? '' : 'Waiting for a free worker';
 }

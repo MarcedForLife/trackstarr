@@ -363,15 +363,23 @@ class Activity:
             "queue_preview": self.queue.page(limit=3)["items"],
         }
 
-    def for_folder(self, folder: str) -> dict:
+    def for_folders(self, folders: Sequence[str]) -> dict:
         """One title's files: what a thread holds and what is still waiting.
 
-        A file between its probe and its rewrite is in neither. It has no
-        worker and the walk has not yet said whether there is a rewrite to come.
+        A title held in two instances has two folders; their rows merge in
+        the queue's own order, so it reads as one title. A file between its
+        probe and its rewrite is in neither list. It has no worker and the
+        walk has not yet said whether there is a rewrite to come.
         """
+        queued = [row for folder in folders for row in self.queue.for_folder(folder)]
+        queued.sort(key=lambda row: row["position"])
         return {
-            "queued": self.queue.for_folder(folder),
-            "active": self.telemetry.active_under(folder, self.controls),
+            "queued": queued,
+            "active": [
+                row
+                for folder in folders
+                for row in self.telemetry.active_under(folder, self.controls)
+            ],
         }
 
 
@@ -397,9 +405,10 @@ def snapshot() -> dict:
     return activity().overview()
 
 
-def title_work(folder: str) -> dict:
-    """What one title has queued and in progress, and what is paused under it."""
-    return {**activity().for_folder(folder), "pauses": pauses.as_json()}
+def title_work(folders: Sequence[str]) -> dict:
+    """What one title has queued and in progress across its folders, and what
+    is paused."""
+    return {**activity().for_folders(folders), "pauses": pauses.as_json()}
 
 
 @dataclass
@@ -458,16 +467,24 @@ def submit_import(
 
 def open_run(
     run_id: str,
-    kind: str,
+    run_type: str,
     *,
     dry_run: bool = False,
     label: str = "",
+    instance_id: str = "",
     filling: bool = False,
 ) -> runs.Run:
     """Open admission and reporting together before any worker can claim."""
     with work.scheduler.condition:
         created = work.scheduler.open_run(run_id)
-        record = runs.open_run(run_id, kind, dry_run=dry_run, label=label, filling=filling)
+        record = runs.open_run(
+            run_id,
+            run_type,
+            dry_run=dry_run,
+            label=label,
+            instance_id=instance_id,
+            filling=filling,
+        )
     if created:
         notify.publish(notify.RUNS)
     return record

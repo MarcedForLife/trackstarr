@@ -247,7 +247,7 @@ def seed_library(monkeypatch, clock: Clock) -> None:
         ],
     }
     monkeypatch.setattr(library, "all_arrs", lambda: [radarr, sonarr])
-    monkeypatch.setattr(type(radarr), "all_items", lambda self: items[self.name])
+    monkeypatch.setattr(type(radarr), "all_items", lambda self: items[self.instance_id])
     library.forget()
 
     os.makedirs(config.STATE_DIR, exist_ok=True)
@@ -426,8 +426,8 @@ def seed_history() -> None:
         4 * 3600,
         by="admin",
         reason="watching it",
-        title=SEVERANCE_ID,
-        name="Severance",
+        title_id=SEVERANCE_ID,
+        title_name="Severance",
     )
     pauses.resume(SEVERANCE, by="admin")
     # Taken off the run mid-encode; the worker writes nothing for it.
@@ -498,7 +498,9 @@ def seed_runs(clock: Clock) -> None:
     work.scheduler.submit(SWEEP_RUN, CONTACT, "work", lambda: None)
     # One of the queued files taken off this sweep, and a title paused past it.
     assert work.scheduler.skip_file(SWEEP_RUN, CONTACT)[0] == "waiting"
-    pauses.place(BEAR, 0, by="admin", reason="not until I say", title=BEAR_ID, name="The Bear")
+    pauses.place(
+        BEAR, 0, by="admin", reason="not until I say", title_id=BEAR_ID, title_name="The Bear"
+    )
     clock.now = NOW - 1500
     runs.begin(SWEEP_RUN, DUNE_FILE, 9330.0)
     runs.stage(SWEEP_RUN, DUNE_FILE, runs.ENCODING, 9330.0)
@@ -506,7 +508,7 @@ def seed_runs(clock: Clock) -> None:
     runs.progress(SWEEP_RUN, DUNE_FILE, 1800.0, 1.5)
 
     clock.now = NOW - 300
-    lifecycle.open_run(IMPORT_RUN, runs.IMPORT, label="radarr", filling=True)
+    lifecycle.open_run(IMPORT_RUN, runs.IMPORT, instance_id="radarr", filling=True)
     runs.add_file(IMPORT_RUN)
     runs.begin(IMPORT_RUN, ARRIVAL_FILE)
     runs.stage(IMPORT_RUN, ARRIVAL_FILE, runs.WAITING)

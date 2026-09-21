@@ -271,8 +271,8 @@ class Walk:
     """What differs between a sweep and a re-check. The loop is the same: list,
     judge on the probe pool, rewrite on the rewrite pool, book."""
 
-    #: The run kind; also the log name and the probe threads' prefix.
-    kind: str
+    #: The run type; also the log name and the probe threads' prefix.
+    type: str
     #: Lists the files. Called by the walk, not before it, since listing is
     #: slow and the run must already be on the record.
     find: Callable[[Policy], list[str]]
@@ -325,13 +325,13 @@ def _registered(walk: Walk, run: str, dry_run: bool, label: str = "") -> Iterato
     asked_for = dry_run
     dry_run = effective_dry_run(dry_run)
     if dry_run and not asked_for:
-        log.info("REWRITE_MODE is report; the %s reports only", walk.kind)
+        log.info("REWRITE_MODE is report; the %s reports only", walk.type)
     # Taken before the run is opened and held past the last write, so a
     # shutdown waits for the cache and the report rather than for the queue.
     with lifecycle.producer() as allowed:
         if not allowed:
             raise ValueError("the process is stopping")
-        record = lifecycle.open_run(run, walk.kind, dry_run=dry_run, label=label)
+        record = lifecycle.open_run(run, walk.type, dry_run=dry_run, label=label)
         try:
             policy = Policy.from_config()
             index = path_index(all_arrs())
@@ -342,7 +342,7 @@ def _registered(walk: Walk, run: str, dry_run: bool, label: str = "") -> Iterato
                 log.error(
                     "a *arr library could not be listed; this %s is report-only, "
                     "nothing rewritten",
-                    walk.kind,
+                    walk.type,
                 )
                 # On the record too: the run card is already showing.
                 dry_run = record.dry_run = True
@@ -360,7 +360,7 @@ def sweep(dry_run: bool, run: str | None = None) -> dict[Status, int]:
     # Every event this sweep writes carries one run id.
     run = run or events.run_id()
     walk = Walk(
-        kind=runs.SWEEP,
+        type=runs.SWEEP,
         find=walk_library,
         report=os.path.join(config.STATE_DIR, "pending.tsv"),
         prunes=True,
@@ -470,7 +470,14 @@ def remember(
     )
 
 
-def recheck(folders: list[str], dry_run: bool, run: str, label: str = "") -> dict[Status, int]:
+def recheck(
+    folders: list[str],
+    dry_run: bool,
+    run: str,
+    label: str = "",
+    *,
+    files: list[str] | None = None,
+) -> dict[Status, int]:
     """Re-judge every file under ``folders``, ignoring stored verdicts.
 
     The library page's "look at this one now". The folders come from
@@ -478,10 +485,17 @@ def recheck(folders: list[str], dry_run: bool, run: str, label: str = "") -> dic
     them. pending.tsv is left alone, since it is the last full sweep's answer,
     and nothing is pruned, since that would drop the rest of the library's
     verdicts. Concurrent walks share fresh cache entries and the work queue.
+    Explicit ``files`` replace folder discovery and never include siblings.
     """
     walk = Walk(
-        kind=runs.RECHECK,
-        find=functools.partial(_walk, roots=folders, noun="title folder"),
+        type=runs.RECHECK,
+        find=(
+            functools.partial(_walk, roots=folders, noun="title folder")
+            if files is None
+            else lambda policy: list(
+                dict.fromkeys(path for path in files if policy.is_video(path))
+            )
+        ),
         force=True,
     )
     with _registered(walk, run, dry_run, label=label) as ready:
@@ -490,7 +504,7 @@ def recheck(folders: list[str], dry_run: bool, run: str, label: str = "") -> dic
             "recheck",
             run=run,
             dry_run=ready.dry_run,
-            titles=len(folders),
+            titles=len(folders) if files is None else None,
             files=totals.walked - totals.stopped,
             stopped=totals.stopped or None,
             config_id=ready.policy.digest(),
@@ -650,7 +664,7 @@ def _walk_cached(run: str, ready: _Ready, walk: Walk, cache: SweepCache) -> _Tot
     policy, dry_run = ready.policy, ready.dry_run
     files = list(dict.fromkeys(walk.find(policy)))
     runs.set_total(run, len(files))
-    log.info("%s starting: %d files, dry_run=%s", walk.kind, len(files), dry_run)
+    log.info("%s starting: %d files, dry_run=%s", walk.type, len(files), dry_run)
 
     started = time.monotonic()
     last_checkpoint = started
@@ -778,11 +792,11 @@ def _walk_cached(run: str, ready: _Ready, walk: Walk, cache: SweepCache) -> _Tot
     if totals.stopped:
         log.warning(
             "%s stopped after %d file(s), %d not looked at",
-            walk.kind,
+            walk.type,
             sum(totals.counts.values()),
             totals.stopped,
         )
-    log.info("%s done: %s (%d verdicts from cache)", walk.kind, totals.counts, totals.cached)
+    log.info("%s done: %s (%d verdicts from cache)", walk.type, totals.counts, totals.cached)
     if walk.report:
         log.info("report: %s", walk.report)
     return totals
@@ -915,7 +929,7 @@ def run_scheduled() -> None:
         # A manual sweep, an overrunning scheduled one or a re-check. Avoid
         # starting another full-library walk while any of them is active.
         log.warning(
-            "%s %s is still running, skipping this scheduled sweep", existing.kind, existing.id
+            "%s %s is still running, skipping this scheduled sweep", existing.type, existing.id
         )
     else:
         # Only REWRITE_MODE=all lets the scheduled sweep write.

@@ -2,9 +2,18 @@
 
 import pytest
 
-from conftest import queued_control
+from conftest import queued_control, set_config
 from trackstarr import lifecycle, runlog, runs
 from trackstarr.executor import Cancel
+
+
+def test_import_labels_follow_connection_renames():
+    record = lifecycle.open_run("delivery", runs.IMPORT, instance_id="radarr-4k", filling=True)
+    for label in ("UHD", "Cinema"):
+        set_config(RADARR_4K_NAME=label)
+        assert runs.snapshot()["runs"][0]["label"] == label
+    assert record.instance_id == "radarr-4k"
+    assert record.label == ""
 
 
 @pytest.fixture(autouse=True)
@@ -26,7 +35,7 @@ def test_a_sweep_reports_its_progress_while_it_runs():
     lifecycle.tally("r#1", "conform")
 
     (run,) = runs.snapshot()["runs"]
-    assert run["kind"] == "sweep"
+    assert run["type"] == "sweep"
     assert (run["done"], run["total"]) == (1, 3)
     assert run["counts"] == {"conform": 1}
     assert run["dry_run"] is True
@@ -122,7 +131,7 @@ def test_the_snapshot_says_which_registry_answered_it():
 
 
 def test_an_import_retires_itself_once_its_last_file_is_done():
-    lifecycle.open_run("r#1", runs.IMPORT, label="sonarr", filling=True)
+    lifecycle.open_run("r#1", runs.IMPORT, instance_id="sonarr", filling=True)
     runs.add_file("r#1")
     runs.add_file("r#1")
     lifecycle.seal("r#1")
@@ -136,7 +145,7 @@ def test_an_import_retires_itself_once_its_last_file_is_done():
 def test_an_import_stays_while_its_files_are_still_arriving():
     """A delivery whose first file finishes before its third is queued must
     stay one run, not close and reopen as two."""
-    lifecycle.open_run("r#1", runs.IMPORT, label="radarr", filling=True)
+    lifecycle.open_run("r#1", runs.IMPORT, instance_id="radarr", filling=True)
     runs.add_file("r#1")
     lifecycle.tally("r#1", "modified")
     assert runs.snapshot()["runs"], "still being handed files"
@@ -148,9 +157,9 @@ def test_an_import_stays_while_its_files_are_still_arriving():
 
 
 def test_a_released_parked_file_rejoins_the_delivery_that_queued_it():
-    lifecycle.open_run("r#1", runs.IMPORT, label="sonarr")
+    lifecycle.open_run("r#1", runs.IMPORT, instance_id="sonarr")
     first = runs.snapshot()["runs"][0]["started"]
-    lifecycle.open_run("r#1", runs.IMPORT, label="sonarr")
+    lifecycle.open_run("r#1", runs.IMPORT, instance_id="sonarr")
     (run,) = runs.snapshot()["runs"]
     assert run["started"] == first, "the same import resuming, not a second one"
 

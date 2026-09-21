@@ -1,7 +1,8 @@
 """Settings the web UI reads and writes: the STATE_DIR/settings.json half of
 :mod:`trackstarr.config`.
 
-Only EDITABLE names and the scanned prefixes are accepted. A name the
+Structured arr operations are translated to flat settings at this boundary.
+Only EDITABLE names and the scanned prefixes are stored. A name the
 environment pins is refused, since the file entry would sit there overridden.
 Every write runs startup's validation, and a change that would refuse startup
 is rolled back whole.
@@ -50,6 +51,8 @@ EDITABLE = frozenset(
         "SONARR_URL",
         "SONARR_API_KEY",
         "SONARR_PUBLIC_URL",
+        "RADARR_NAME",
+        "SONARR_NAME",
         "PLEX_URL",
         "PLEX_TOKEN",
         "PLEX_PATH_MAP",
@@ -88,7 +91,19 @@ def _settings_path() -> str:
 
 
 def editable(name: str) -> bool:
-    return name in EDITABLE or name.startswith(config.SCANNED_PREFIXES)
+    return (
+        name in EDITABLE or config.arr_setting(name) or name.startswith(config.SCANNED_PREFIXES)
+    )
+
+
+def secret(name: str) -> bool:
+    return name in SECRETS or (config.arr_setting(name) and name.endswith("_API_KEY"))
+
+
+def _secret_names() -> set[str]:
+    return set(SECRETS) | {
+        instance.setting_name("api_key") for instance in config.current().arr_instances
+    }
 
 
 def env_pinned(name: str) -> bool:
@@ -99,7 +114,7 @@ def env_pinned(name: str) -> bool:
         # This process writes TZ itself to apply a saved zone, so config keeps
         # the deploy's own word from before that.
         return bool(config.STATED_TZ)
-    forms = (name, f"{name}_FILE", f"FILE__{name}") if name in SECRETS else (name,)
+    forms = (name, f"{name}_FILE", f"FILE__{name}") if secret(name) else (name,)
     return any((os.environ.get(form) or "").strip() for form in forms)
 
 
@@ -124,7 +139,11 @@ def _held(name: str) -> object:
     Shaped by type rather than by name: config's parser already chose it, so a
     tuple's order is part of the setting and a set has none of its own.
     """
-    held = getattr(config.current(), _ATTRIBUTES.get(name, name))
+    held = (
+        config.value(name)
+        if config.arr_setting_parts(name)
+        else getattr(config.current(), _ATTRIBUTES.get(name, name))
+    )
     if isinstance(held, re.Pattern):
         return held.pattern
     # Before the int test, which a bool passes: the page wants a boolean.
@@ -150,26 +169,124 @@ def _values() -> dict[str, object]:
     Sorted, or EDITABLE's hash order would reshuffle the answer every run.
     """
     values: dict[str, object] = {name: _held(name) for name in sorted(EDITABLE - SECRETS)}
+    values.update(
+        {
+            instance.setting_name(attribute): getattr(instance, attribute)
+            for instance in config.current().arr_instances
+            for attribute in ("url", "public_url", "name")
+        }
+    )
     # Every rule's effective mode, not only the stated ones.
     for rule, mode in policy.resolved_modes(config.current().RULE_MODES).items():
         values[config.rule_variable(rule)] = mode
     return values
 
 
+ARR_FIELDS = ("url", "api_key", "public_url", "name")
+
+
+def arr_snapshot() -> list[dict]:
+    """Structured sources, with credentials redacted and per-field provenance."""
+    return [
+        {
+            "id": instance.id,
+            "type": instance.type,
+            "fields": {
+                attribute: {
+                    "value": "" if attribute == "api_key" else getattr(instance, attribute),
+                    "env": env_pinned(instance.setting_name(attribute)),
+                    "env_name": instance.setting_name(attribute),
+                    **({"set": bool(instance.api_key)} if attribute == "api_key" else {}),
+                }
+                for attribute in ARR_FIELDS
+            },
+        }
+        for instance in config.current().arr_instances
+    ]
+
+
+def _arr_changes(changes: dict) -> dict:
+    """Translate structured source operations at the storage boundary.
+
+    Called under the write lock: create checks and the resulting write are one
+    transaction. Legacy flat writes remain accepted, but cannot also name an
+    instance addressed by a structured operation in the same request.
+    """
+    flat = {name: value for name, value in changes.items() if name != "arr_instances"}
+    operations = changes.get("arr_instances", [])
+    if not isinstance(operations, list):
+        raise ValueError("arr_instances must be a list of connection changes")
+    seen = set()
+    for operation in operations:
+        if not isinstance(operation, dict) or set(operation) - {
+            "id",
+            "type",
+            "values",
+            "create",
+            "remove",
+        }:
+            raise ValueError("invalid connection change")
+        identity = operation.get("id")
+        if not isinstance(identity, str):
+            raise ValueError("a connection change needs an id")
+        parts = config.arr_setting_parts(identity.upper().replace("-", "_") + "_URL")
+        if not parts or parts[0] != identity:
+            raise ValueError(f"invalid connection id: {identity}")
+        if identity in seen or any(
+            (held := config.arr_setting_parts(name)) and held[0] == identity for name in flat
+        ):
+            raise ValueError(f"connection {identity} is changed more than once")
+        seen.add(identity)
+        instance = config.current().arr_instance(identity)
+        create, remove = operation.get("create", False), operation.get("remove", False)
+        if not isinstance(create, bool) or not isinstance(remove, bool) or (create and remove):
+            raise ValueError("create and remove must be boolean and cannot both be true")
+        if create and instance is not None:
+            raise ValueError(f"connection {identity} already exists; reload before adding it")
+        if not create and instance is None:
+            raise ValueError(
+                f"connection {identity} no longer exists; reload before editing it"
+            )
+        instance_type = identity.partition("-")[0]
+        if operation.get("type", instance_type) != instance_type:
+            raise ValueError(f"connection {identity} cannot change type")
+        instance = instance or config.ArrInstanceConfig(identity)
+        values = operation.get("values", {})
+        if not isinstance(values, dict) or set(values) - set(ARR_FIELDS):
+            raise ValueError(f"connection {identity} has unknown fields")
+        if remove:
+            if values:
+                raise ValueError("a removed connection cannot also have field changes")
+            values = dict.fromkeys(ARR_FIELDS)
+        elif create:
+            values = {**dict.fromkeys(ARR_FIELDS, ""), **values}
+        for attribute, value in values.items():
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"connection {identity} {attribute} must be a string or null")
+            # Omission or blank leaves a redacted credential alone; null clears it.
+            if attribute == "api_key" and value == "" and not create:
+                continue
+            flat[instance.setting_name(attribute)] = value
+    return flat
+
+
 def snapshot() -> dict:
     """The settings page's read: effective values, and who set each one."""
-    values = _values()
+    values = {
+        name: value for name, value in _values().items() if not config.arr_setting_parts(name)
+    }
     entries = {
         name: {"value": value, "env": env_pinned(name)} for name, value in values.items()
     }
     # Set-or-not in place of the value. Sorted, or a frozenset's iteration
     # order reshuffles the contract fixture on every run.
-    settings = config.current()
     for name in sorted(SECRETS):
+        if config.arr_setting_parts(name):
+            continue
         entries[name] = {
             "value": "",
             "env": env_pinned(name),
-            "set": bool(getattr(settings, name)),
+            "set": bool(config.value(name)),
         }
     return {
         # So the page keeps no second copy of the vocabulary.
@@ -204,8 +321,9 @@ def snapshot() -> dict:
             for codec in tracks.CODECS.values()
         ],
         # So the page knows an empty field means "leave it alone".
-        "secrets": sorted(SECRETS),
+        "secrets": sorted(name for name in SECRETS if not config.arr_setting_parts(name)),
         "settings": entries,
+        "arr_instances": arr_snapshot(),
     }
 
 
@@ -281,8 +399,11 @@ def _seal_secrets(merged: dict) -> None:
     """
     plain = [
         name
-        for name in sorted(SECRETS)
-        if (held := merged.get(name)) and isinstance(held, str) and not keystore.sealed(held)
+        for name in sorted(merged)
+        if secret(name)
+        and (held := merged.get(name))
+        and isinstance(held, str)
+        and not keystore.sealed(held)
     ]
     if not plain:
         return
@@ -294,9 +415,8 @@ def _seal_secrets(merged: dict) -> None:
 def _recorded() -> dict[str, object]:
     """Every setting as the history keeps it: credentials as set-or-not."""
     values = _values()
-    settings = config.current()
-    for name in SECRETS:
-        values[name] = "set" if getattr(settings, name) else "unset"
+    for name in _secret_names():
+        values[name] = "set" if config.value(name) else "unset"
     return values
 
 
@@ -309,9 +429,9 @@ def _changes(before: dict, after: dict) -> dict[str, dict]:
     always has two sides.
     """
     return {
-        name: {"from": before[name], "to": after[name]}
-        for name in sorted(before)
-        if before[name] != after[name]
+        name: {"from": before.get(name), "to": after.get(name)}
+        for name in sorted(before.keys() | after.keys())
+        if before.get(name) != after.get(name)
     }
 
 
@@ -322,16 +442,19 @@ def update(changes: dict, by: str | None = None) -> list[str]:
     count, so a deploy broken some other way can still save an unrelated
     setting. ``by`` is the account the history credits.
     """
-    try:
-        serialised = {name: _serialise(name, value) for name, value in changes.items()}
-    except ValueError as err:
-        return [str(err)]
-    for name in serialised:
-        if not editable(name):
-            return [f"{name} is not a setting the UI edits"]
-        if env_pinned(name):
-            return [f"{name} is set by the environment, which wins over anything saved here"]
     with _WRITE_LOCK:
+        try:
+            flat = _arr_changes(changes)
+            serialised = {name: _serialise(name, value) for name, value in flat.items()}
+        except ValueError as err:
+            return [str(err)]
+        for name in serialised:
+            if not editable(name):
+                return [f"{name} is not a setting the UI edits"]
+            if env_pinned(name):
+                return [
+                    f"{name} is set by the environment, which wins over anything saved here"
+                ]
         try:
             previous = _read_file()
         except ValueError as err:

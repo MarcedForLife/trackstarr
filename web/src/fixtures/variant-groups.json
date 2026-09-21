@@ -1,0 +1,21 @@
+[
+	{ "kind": "movie", "path": "/movies/Film.mkv", "key": "film" },
+	{ "kind": "movie", "path": "/movies/alternate/Film.mkv", "key": "film" },
+	{ "kind": "series", "path": "/tv/Show S01E01.1080p.mkv", "key": "S01E01" },
+	{ "kind": "series", "path": "/tv/Show s01e01.2160p.mkv", "key": "S01E01" },
+	{ "kind": "series", "path": "/tv/剧S01E01.mkv", "key": "S01E01" },
+	{ "kind": "series", "path": "/tv/Show S1E1.mkv", "key": "S1E1" },
+	{ "kind": "series", "path": "/tv/Show S001E123.mkv", "key": "S001E123" },
+	{ "kind": "series", "path": "/tv/Show S00E01.mkv", "key": "S00E01" },
+	{ "kind": "series", "path": "/tv/Show S01E01-E02.mkv", "key": "S01E01-E02" },
+	{ "kind": "series", "path": "/tv/Show S01E01E02.mkv", "key": "S01E01E02" },
+	{ "kind": "series", "path": "/tv/Show S01E01-02.mkv", "key": "S01E01-02" },
+	{ "kind": "series", "path": "/tv/Show S01E01-E02-E03.mkv", "key": "S01E01-E02-E03" },
+	{ "kind": "series", "path": "/tv/S01E01/Extra.mkv", "key": "/tv/S01E01/Extra.mkv" },
+	{ "kind": "series", "path": "/tv/Show_S01E01.mkv", "key": "/tv/Show_S01E01.mkv" },
+	{ "kind": "series", "path": "/tv/Show S01E0001.mkv", "key": "/tv/Show S01E0001.mkv" },
+	{ "kind": "series", "path": "/tv/Show 1x01.mkv", "key": "/tv/Show 1x01.mkv" },
+	{ "kind": "series", "path": "/tv/Extra.mkv", "key": "/tv/Extra.mkv" },
+	{ "kind": "series", "path": "/tv/alternate/Extra.mkv", "key": "/tv/alternate/Extra.mkv" },
+	{ "kind": "folder", "path": "/other/S01E01.mkv", "key": "/other/S01E01.mkv" }
+]

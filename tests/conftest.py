@@ -107,8 +107,19 @@ def set_config(**values) -> None:
     """Make these settings live for one test: ``set_config(MEDIA_DIRS=[root])``.
 
     Names and shapes are config.Settings', which is what the parsers left, so
-    a layout list arrives as a tuple. Undone by _isolated_state.
+    a layout list arrives as a tuple. Flat arr keys are also accepted;
+    arr_settings replaces the named instances. Undone by _isolated_state.
     """
+    instances = {instance.id: instance for instance in config.current().arr_instances}
+    if "arr_settings" in values:
+        instances = {key: value for key, value in instances.items() if "-" not in key}
+        values.update(values.pop("arr_settings"))
+    for name in list(values):
+        if parts := config.arr_setting_parts(name):
+            identity, attribute = parts
+            instance = instances.get(identity) or config.ArrInstanceConfig(identity)
+            instances[identity] = replace(instance, **{attribute: values.pop(name)})
+    values.setdefault("arr_instances", tuple(instances.values()))
     config.apply(replace(config.current(), **values))
 
 
@@ -277,7 +288,7 @@ def registered(run_id: str) -> bool:
 
 def live_run(kind: str) -> dict | None:
     """The first run of a kind the registry reports, or None."""
-    return next((run for run in runs.snapshot()["runs"] if run["kind"] == kind), None)
+    return next((run for run in runs.snapshot()["runs"] if run["type"] == kind), None)
 
 
 def claim(queue):

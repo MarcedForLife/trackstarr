@@ -13,7 +13,7 @@ import type { ActiveFile, Run } from '$lib/runs';
 function run(over: Partial<Run> = {}): Run {
 	return {
 		id: 'r1',
-		kind: 'sweep',
+		type: 'sweep',
 		started: '2026-09-02T04:00:00+12:00',
 		seconds: 0,
 		dry_run: false,
@@ -48,9 +48,9 @@ describe('progressLabel', () => {
 	// "0 of 0" would read as a run that found nothing rather than one still
 	// counting, and each kind is still counting for a different reason.
 	test('says what a run with no total yet is doing', () => {
-		expect(progressLabel(run({ kind: 'sweep' }))).toBe('Walking the library…');
-		expect(progressLabel(run({ kind: 'import' }))).toBe('Queueing the delivery…');
-		expect(progressLabel(run({ kind: 'recheck' }))).toBe('Listing the files…');
+		expect(progressLabel(run({ type: 'sweep' }))).toBe('Walking the library…');
+		expect(progressLabel(run({ type: 'import' }))).toBe('Queueing the delivery…');
+		expect(progressLabel(run({ type: 'recheck' }))).toBe('Listing the files…');
 	});
 
 	test('counts nothing for a run of one file, and says where it is', () => {

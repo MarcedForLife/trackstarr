@@ -49,7 +49,7 @@ const { runTitles } = await import('$lib/library');
 function run(over: Partial<Run> = {}): Run {
 	return {
 		id: 'r1',
-		kind: 'recheck',
+		type: 'recheck',
 		started: '2026-09-05T04:00:00+12:00',
 		seconds: 12,
 		dry_run: true,
@@ -237,7 +237,7 @@ test('a receipt does not land on a run adopted while the history was read', asyn
 });
 
 test('a sweep next door ending is verdicts rewritten, and nothing of this page', async () => {
-	const recheck = watching([run({ id: 'sweep-1', kind: 'sweep', label: '' })]);
+	const recheck = watching([run({ id: 'sweep-1', type: 'sweep', label: '' })]);
 	expect(recheck.otherRun?.id).toBe('sweep-1');
 	expect(recheck.refuses).toBe('');
 

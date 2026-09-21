@@ -167,7 +167,7 @@ def test_fix_still_matches_arr_items_when_original_is_given(startup_ok, monkeypa
 
     assert main(["fix", "--original", "ja", "/lib/Movie/Movie.mkv"]) == 0
     (job,) = jobs
-    assert (job.lang, job.item_id, job.arr.name) == ("jpn", 7, "radarr")
+    assert (job.lang, job.item_id, job.arr.instance_id) == ("jpn", 7, "radarr")
 
 
 def test_fix_refuses_when_an_arr_cannot_answer(startup_ok, monkeypatch, caplog):

@@ -62,7 +62,7 @@ def serve() -> None:  # pragma: no cover
     log.info("listening on %s:%s", settings.LISTEN_ADDR, settings.LISTEN_PORT)
     log.info(
         "arrs=[%s] servers=[%s] languages=%s sweep_at=%s mode=%s",
-        ", ".join(f"{arr.name}={'on' if arr.enabled else 'off'}" for arr in all_arrs()),
+        ", ".join(f"{arr.instance_id}={'on' if arr.enabled else 'off'}" for arr in all_arrs()),
         ", ".join(f"{name}={'on' if on else 'off'}" for name, on in server_status().items()),
         list(settings.LANGUAGES),
         settings.SWEEP_AT or "disabled",

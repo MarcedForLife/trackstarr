@@ -259,7 +259,7 @@ export function chronicle(state: State, now: number): Event[] {
 		ts: stamp(dayAt(now, 7, 19, 30)),
 		event: 'item_paused',
 		version,
-		path: charade.spec.folder,
+		path: charade.spec.sources[0].folder,
 		title: CHARADE,
 		seconds: 8 * 3600,
 		reason: '',
@@ -269,7 +269,7 @@ export function chronicle(state: State, now: number): Event[] {
 		ts: stamp(dayAt(now, 6, 21, 0)),
 		event: 'item_resumed',
 		version,
-		path: charade.spec.folder,
+		path: charade.spec.sources[0].folder,
 		title: CHARADE,
 		by: story.by
 	});
@@ -315,7 +315,7 @@ export function chronicle(state: State, now: number): Event[] {
 		ts: stamp(now - 2 * HOUR_MS),
 		event: 'item_paused',
 		version,
-		path: metropolis.spec.folder,
+		path: metropolis.spec.sources[0].folder,
 		title: METROPOLIS,
 		seconds: 3600,
 		reason: '',

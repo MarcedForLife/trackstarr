@@ -567,7 +567,9 @@ def test_tagging_an_untagged_original_makes_it_the_downmix_source(make_file):
     set_langs("eng", "original")
     set_layouts("5.1", "2.0")
     path = make_file("f.mkv", [(6, "und", ""), (2, "eng", "")])
-    dune = library.Title("arr:radarr:7", "Dune", os.path.dirname(path), "movie", lang="jpn")
+    dune = library.Title(
+        "arr:radarr:7", "Dune", (library.Source(os.path.dirname(path)),), "movie", lang="jpn"
+    )
     assert not build_plan(path, "jpn").needed
 
     result = retag.apply(path, 1, retag.Edit("jpn"), "admin", judged(path), title=dune)

@@ -14,8 +14,8 @@ export type Pause = {
 	at: string;
 	// The library title it was placed on, and that title's name. Empty for a
 	// pause placed on one file off a run.
-	title: string;
-	name: string;
+	title_id: string;
+	title_name: string;
 };
 
 // Optional, and defaulted at every call: a body without the key is an answer
@@ -59,6 +59,16 @@ export async function resume(what: { ids?: string[]; paths?: string[] }): Promis
 	return answer.pauses ?? [];
 }
 
-export function forTitle(pauses: Pause[], id: string): Pause | undefined {
-	return pauses.find((pause) => pause.title === id);
+/** Holds follow source folders even when a different instance becomes primary.
+ * Before detail arrives, the opening ID is the only identity available. */
+export function forTitle(
+	pauses: Pause[],
+	id: string,
+	folders?: { folder: string }[]
+): Pause | undefined {
+	return pauses.find((pause) =>
+		folders
+			? !!pause.title_id && folders.some(({ folder }) => folder === pause.path)
+			: pause.title_id === id
+	);
 }

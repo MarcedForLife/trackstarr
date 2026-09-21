@@ -7,8 +7,8 @@
 			"by": "admin",
 			"reason": "not until I say",
 			"at": "2026-03-01T11:18:00+13:00",
-			"title": "arr:sonarr:31",
-			"name": "The Bear"
+			"title_id": "arr:sonarr:31",
+			"title_name": "The Bear"
 		}
 	]
 }

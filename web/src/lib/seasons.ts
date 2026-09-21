@@ -13,7 +13,7 @@ export type Season = {
 	state: Verdict;
 };
 
-// Sonarr's season and episode off the name; `named` has already cut the tags
+// Sonarr's season and episode off the name. `named` has already cut the tags
 // and the title away.
 const NUMBERED = /^S(\d{1,3})E(\d{1,3})/i;
 // The folder the *arrs put a season in, for a file named some other way.
@@ -31,7 +31,16 @@ function seasonOf(file: LibraryFile): number | null {
 function episodeOf(file: LibraryFile): number {
 	const found = named(file.name).episode.match(NUMBERED);
 	// An extra belongs behind the numbered episodes, not ahead of them.
-	return found ? Number(found[2]) : Number.MAX_SAFE_INTEGER;
+	return found ? Number(found[2]) : -1;
+}
+
+/** Match the service's file order before pagination, including a single season. */
+export function newestFirst(one: LibraryFile, two: LibraryFile): number {
+	return (
+		(seasonOf(two) ?? -1) - (seasonOf(one) ?? -1) ||
+		episodeOf(two) - episodeOf(one) ||
+		one.path.localeCompare(two.path)
+	);
 }
 
 function label(number: number | null): string {
@@ -56,10 +65,9 @@ export function seasons(files: LibraryFile[]): Season[] | null {
 	const grouped = [...held].map(([number, episodes]) => ({
 		number,
 		label: label(number),
-		// Episode order inside a season: the service sorts the flat list worst
-		// first, which reads as shuffled once the seasons are apart.
+		// Keep the latest episodes first inside each season.
 		files: episodes.sort(
-			(one, two) => episodeOf(one) - episodeOf(two) || one.name.localeCompare(two.name)
+			(one, two) => episodeOf(two) - episodeOf(one) || one.name.localeCompare(two.name)
 		),
 		state: worstOf(episodes)
 	}));

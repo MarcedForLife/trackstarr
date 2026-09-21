@@ -14,7 +14,7 @@
 	}: {
 		// An option may be off on its own, as Rewrite is on a report-only install.
 		// Off means unofferable, never discouraged.
-		options: { value: string; label: string; disabled?: boolean }[];
+		options: { value: string; label: string; title?: string; disabled?: boolean }[];
 		value: string;
 		disabled?: boolean;
 		// Padding for a one-character label.
@@ -37,11 +37,14 @@
 	const stop = $derived(index >= 0 ? index : options.findIndex((option) => !option.disabled));
 
 	let buttons: HTMLButtonElement[] = [];
+	let keyboard = $state(false);
 
 	// Moving is choosing, as in a radio group.
 	const STEPS: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
 
 	function steer(event: KeyboardEvent) {
+		if (disabled) return;
+		keyboard = true;
 		// Skip options that are off.
 		const live = options.map((_, at) => at).filter((at) => !options[at].disabled);
 		if (!live.length) return;
@@ -82,7 +85,8 @@
 	{#if index >= 0}
 		<span
 			aria-hidden="true"
-			class="pointer-events-none absolute top-0.5 bottom-0.5 left-0.5 rounded-[10px] border border-line-strong bg-raised shadow-sm transition-transform duration-200 sm:rounded-[9px]"
+			class="pointer-events-none absolute top-0.5 bottom-0.5 left-0.5 rounded-[10px] border border-line-strong bg-raised shadow-sm transition-transform duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none sm:rounded-[9px]"
+			style:transition-duration={keyboard ? '0ms' : undefined}
 			style={`width: calc((100% - 0.25rem) / ${options.length}); transform: translateX(${index * 100}%)`}
 		></span>
 	{/if}
@@ -90,18 +94,24 @@
 		{@const off = disabled || !!option.disabled}
 		<button
 			bind:this={buttons[at]}
+			type="button"
 			role="radio"
+			value={option.value}
+			title={option.title}
 			aria-checked={value === option.value}
 			tabindex={at === stop ? 0 : -1}
 			disabled={off}
-			onclick={() => onchange(option.value)}
+			onclick={(event) => {
+				keyboard = event.detail === 0;
+				onchange(option.value);
+			}}
 			class={`relative flex h-full min-w-0 items-center justify-center rounded-[10px] text-[13px] whitespace-nowrap transition-colors sm:rounded-[9px] ${
 				tight ? 'px-2.5 sm:px-3' : 'px-3 sm:px-3.5'
 			} ${off && !disabled ? 'text-faint line-through decoration-1' : ''} ${
 				value === option.value ? 'font-semibold text-fg' : 'font-medium text-dim hover:text-fg'
 			}`}
 		>
-			{option.label}
+			<span class="truncate">{option.label}</span>
 		</button>
 	{/each}
 </div>

@@ -6,6 +6,7 @@
 		| 'pause'
 		| 'stop'
 		| 'doc'
+		| 'folder'
 		| 'open'
 		| 'next'
 		| 'arrow'
@@ -17,7 +18,8 @@
 		| 'pencil'
 		| 'list'
 		| 'log'
-		| 'calendar';
+		| 'calendar'
+		| 'plus';
 </script>
 
 <script lang="ts">
@@ -30,7 +32,7 @@
 	// settings without a gear, whose teeth are mud at 12px. `pencil` marks a
 	// row whose tags open for editing. `list` is a queue, its last line short
 	// for the files still to come. `log` is a prompt and the line it wrote,
-	// since a page of text is `doc` already.
+	// since a page of text is `doc` already. `plus` adds a card.
 	let { name, size = 12 }: { name: GlyphName; size?: number } = $props();
 </script>
 
@@ -62,6 +64,14 @@
 			<path d="M6.6 8.4h3"></path>
 			<path d="M6.6 10.6h3"></path>
 		</g>
+	{:else if name === 'folder'}
+		<path
+			d="M2 4.5V3h4.5L8 4.5h6V13H2z"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.5"
+			stroke-linejoin="round"
+		></path>
 	{:else if name === 'open'}
 		<!-- The box is open at the top right, or the crossing strokes blot. -->
 		<g
@@ -92,6 +102,14 @@
 			stroke-width="1.6"
 			stroke-linecap="round"
 			stroke-linejoin="round"
+		></path>
+	{:else if name === 'plus'}
+		<path
+			d="M8 3.2v9.6M3.2 8h9.6"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.8"
+			stroke-linecap="round"
 		></path>
 	{:else if name === 'more'}
 		<circle cx="3" cy="8" r="1.35"></circle>

@@ -60,6 +60,7 @@ def answers(monkeypatch):
         "/Library/VirtualFolders": JELLYFIN_FOLDERS,
         # Nothing of ours registered, which is the quiet default.
         "/api/v3/notification": [],
+        "/api/v3/rootfolder": [],
     }
 
     def fake_request(url, headers=None, payload=None, timeout=30, method=None):
@@ -272,3 +273,95 @@ def test_configured_needs_both_halves():
     assert not connections.configured(service)
     set_config(SONARR_API_KEY="key")
     assert connections.configured(service)
+
+
+@pytest.mark.parametrize("name", ["radarr", "sonarr-remote"])
+@pytest.mark.parametrize(
+    "visible,covered", [(True, True), (True, False), (False, True), (False, False)]
+)
+def test_arr_root_path_checks_visibility_and_sweep_coverage(
+    answers, tmp_path, name, visible, covered
+):
+    root = tmp_path / "movies"
+    if visible:
+        root.mkdir()
+    # A sibling sharing the prefix must not count as coverage.
+    set_config(MEDIA_DIRS=[str(tmp_path) if covered else str(root) + "2"])
+    answers.canned["/api/v3/rootfolder"] = [{"path": str(root)}]
+    result = connections.check(name, "http://edited-arr", "edited-key")
+    assert result.ok
+    assert result.paths == ("ready" if visible and covered else "attention")
+    assert str(root) in result.hint
+    assert ("not visible" in result.hint) is (not visible)
+    assert ("outside MEDIA_DIRS" in result.hint) is (not covered)
+    assert "http://edited-arr/api/v3/rootfolder" in answers.urls
+
+
+@pytest.mark.parametrize("base", ["/", "/data/", "/data/movies/.."])
+def test_arr_root_path_normalises_directory_boundaries(answers, base):
+    set_config(MEDIA_DIRS=[base])
+    answers.canned["/api/v3/rootfolder"] = [{"path": "/data/movies"}]
+    assert "inside MEDIA_DIRS" in connections.check("radarr", "http://arr", "key").hint
+
+
+def test_arr_relative_path_is_not_reported_as_covered(answers):
+    answers.canned["/api/v3/rootfolder"] = [{"path": "movies"}]
+    assert "outside MEDIA_DIRS" in connections.check("radarr", "http://arr", "key").hint
+
+
+@pytest.mark.parametrize(
+    "roots,expected",
+    [
+        ([], "No library root folders"),
+        ([{}, {"path": ""}, None], "No library root folders"),
+        ({"error": "unavailable"}, "unexpected response"),
+        (http_error(403), "could not be checked"),
+    ],
+)
+def test_arr_path_diagnostic_failure_does_not_fail_api_health(answers, roots, expected):
+    answers.canned["/api/v3/rootfolder"] = roots
+    result = connections.check("sonarr", "http://arr", "key")
+    assert result.ok
+    assert result.paths == ("attention" if isinstance(roots, list) else "unknown")
+    assert expected in result.hint
+
+
+def test_arr_path_diagnostic_uses_test_credentials(monkeypatch, tmp_path):
+    calls = []
+
+    def request(url, headers, **kwargs):
+        calls.append((url, headers["X-Api-Key"]))
+        return [{"path": str(tmp_path)}] if url.endswith("/rootfolder") else ARR_STATUS
+
+    monkeypatch.setattr(connections, "request", request)
+    monkeypatch.setattr(
+        connections, "_webhook_state", lambda *args: connections.WebhookState("missing")
+    )
+    set_config(arr_settings={"RADARR_4K_URL": "http://saved", "RADARR_4K_API_KEY": "saved-key"})
+    assert connections.check("radarr-4k").ok
+    assert calls[-1] == ("http://saved/api/v3/rootfolder", "saved-key")
+    assert connections.check("radarr-4k", "http://edited", "edited-key").ok
+    assert calls[-1] == ("http://edited/api/v3/rootfolder", "edited-key")
+
+
+def test_arr_checks_all_roots_even_when_first_is_healthy(answers, tmp_path):
+    root = tmp_path / "movies"
+    root.mkdir()
+    missing = tmp_path / "movies4k"
+    outside = tmp_path / "remote"
+    outside.mkdir()
+    set_config(MEDIA_DIRS=[str(root), str(missing)])
+    answers.canned["/api/v3/rootfolder"] = [
+        {"path": str(root)},
+        {"path": str(missing)},
+        {"path": str(outside)},
+    ]
+    result = connections.check("radarr", "http://arr", "key")
+    assert result.ok
+    summary, good, invisible, uncovered = result.hint.splitlines()
+    assert summary == "Library roots: 1 of 3 visible and inside MEDIA_DIRS."
+    assert good == f"{root}: visible as a directory to Trackstarr; inside MEDIA_DIRS."
+    assert invisible.startswith(f"{missing}: not visible as a directory")
+    assert "inside MEDIA_DIRS" in invisible
+    assert uncovered.startswith(f"{outside}: visible as a directory")
+    assert "outside MEDIA_DIRS" in uncovered

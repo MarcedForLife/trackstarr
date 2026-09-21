@@ -15,10 +15,7 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"lint": "prettier --check . && eslint .",
-		"format": "prettier --write .",
-		"probe:prepare": "npm run build && cd probes && npm install --no-audit --no-fund && npx playwright install chromium firefox",
-		"probe": "npm run probe:prepare && node probes/focus.mjs",
-		"probe:sweep": "npm run probe:prepare && node probes/sweep.mjs"
+		"format": "prettier --write ."
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",

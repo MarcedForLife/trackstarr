@@ -75,6 +75,18 @@ def test_the_events_api_pages_the_history_newest_first(listener):
     assert page["next"] is None
 
 
+def test_history_resolves_current_connection_labels_without_persisting_them(listener):
+    headers = {AUTH_HEADER: auth.mint("browser")}
+    set_config(RADARR_4K_NAME="UHD")
+    events.record("webhook", arr="radarr-4k", files=1)
+    for label in ("UHD", "Cinema"):
+        set_config(RADARR_4K_NAME=label)
+        _, page = request(listener, "GET", "/api/events", headers=headers)
+        assert page["events"][0]["arr"] == "radarr-4k"
+        assert page["events"][0]["arr_label"] == label
+    assert "arr_label" not in read_events()[0]
+
+
 def test_the_events_api_bounds_a_page_in_time(listener):
     """What the feed's time control asks in. A preset works out its own
     `since` each time it fetches, so "the last hour" stays the last hour."""
@@ -462,6 +474,7 @@ def test_a_connection_test_answers_the_check(listener, fast_scrypt, monkeypatch)
         "hint": "",
         "webhook": "connected",
         "webhook_detail": "",
+        "paths": "",
     }
     # The page's own values, passed through rather than read back off disk.
     assert asked == [("radarr", "http://radarr:7878", "typed")]
@@ -487,8 +500,9 @@ def test_an_unknown_service_cannot_be_tested(listener, fast_scrypt):
     assert (status, answer["status"]) == (404, "no such service")
 
 
+@pytest.mark.parametrize("operation", ["flat", "update", "create", "remove"])
 def test_saving_an_arr_address_re_registers_the_webhook(
-    listener, fast_scrypt, settings_state, monkeypatch
+    listener, fast_scrypt, settings_state, monkeypatch, operation
 ):
     """Nothing else revisits the *arrs' connections until a restart, so a new
     address would otherwise be saved and never called."""
@@ -497,11 +511,23 @@ def test_saving_an_arr_address_re_registers_the_webhook(
     fired = threading.Event()
     monkeypatch.setattr("trackstarr.api.reregister_webhooks", fired.set)
 
-    unrelated = {"REWRITE_MODE": "report"}
-    assert api(listener, "POST", "/api/settings", unrelated, cookie=cookie)[0] == 200
-    assert not fired.is_set()
+    assert settings.update({"RADARR_EXTRA_NAME": "Extra"}) == []
+    for unrelated in (
+        {"REWRITE_MODE": "report"},
+        {"arr_instances": []},
+        {"arr_instances": [{"id": "radarr", "values": {"name": "Main"}}]},
+    ):
+        assert api(listener, "POST", "/api/settings", unrelated, cookie=cookie)[0] == 200
+        assert not fired.is_set()
 
-    change = {"RADARR_URL": "http://radarr:7878"}
+    change = {
+        "flat": {"RADARR_URL": "http://radarr:7878"},
+        "update": {
+            "arr_instances": [{"id": "radarr", "values": {"url": "http://radarr:7878"}}]
+        },
+        "create": {"arr_instances": [{"id": "radarr-new", "create": True}]},
+        "remove": {"arr_instances": [{"id": "radarr-extra", "remove": True}]},
+    }[operation]
     assert api(listener, "POST", "/api/settings", change, cookie=cookie)[0] == 200
     assert fired.wait(timeout=5)
 
@@ -1029,7 +1055,7 @@ def test_a_pause_is_stored_under_the_path_the_pipeline_matches(listener, fast_sc
     _, answer, _ = api(listener, "POST", "/api/pauses", body, cookie=cookie)
     (placed,) = answer["pauses"]
     assert placed["path"] == "/data/media/movies/Dune (2024)/Dune (2024).mkv"
-    assert placed["name"] == "Dune (2024).mkv"
+    assert placed["title_name"] == "Dune (2024).mkv"
     assert pauses.paused(placed["path"]) is not None
 
 
@@ -1687,3 +1713,61 @@ def test_a_walk_cannot_report_started_after_shutdown(
         listener, "POST", endpoint, {"ids": ["arr:radarr:7"], "mode": "report"}, cookie=cookie
     )
     assert (status, answer["status"]) == (503, "the service is stopping")
+
+
+@pytest.mark.parametrize("mode", ["report", "apply"])
+@pytest.mark.parametrize("count", [1, 2])
+def test_file_recheck_targets_only_the_requested_variant(
+    listener, fast_scrypt, clean_registry, one_title, monkeypatch, mode, count
+):
+    users.add("admin", "right password", "admin")
+    targets = [os.path.join(one_title, f"Dune.{at}.mkv") for at in range(count)]
+    for target in targets:
+        with open(target, "w") as file:
+            file.write("video")
+    ran = threading.Event()
+    seen = []
+
+    def fake_recheck(folders, dry_run, run, label, *, files):
+        seen.append((folders, dry_run, files, label))
+        ran.set()
+        return {}
+
+    monkeypatch.setattr(sweep, "recheck", fake_recheck)
+    status, answer, _ = api(
+        listener,
+        "POST",
+        "/api/library/run",
+        {"paths": [*targets, targets[0]], "mode": mode},
+        cookie=sign_in(listener, "admin"),
+    )
+    assert status == 200
+    assert answer["files"] == count
+    assert ran.wait(5)
+    assert seen == [([], mode == "report", targets, "Dune.0.mkv" if count == 1 else "2 files")]
+
+
+def test_file_recheck_refuses_invalid_targets(listener, fast_scrypt, one_title, tmp_path):
+    users.add("admin", "right password", "admin")
+    cookie = sign_in(listener, "admin")
+    text = os.path.join(one_title, "notes.txt")
+    with open(text, "w") as file:
+        file.write("not video")
+    outside = tmp_path / "outside.mkv"
+    outside.write_text("video")
+    link = os.path.join(one_title, "escape.mkv")
+    os.symlink(outside, link)
+    cases = [
+        ({"paths": []}, 400),
+        ({"paths": "all"}, 400),
+        ({"paths": [1]}, 400),
+        ({"paths": ["relative.mkv"]}, 400),
+        ({"paths": [str(outside)]}, 400),
+        ({"paths": [link]}, 400),
+        ({"paths": [one_title]}, 404),
+        ({"paths": [os.path.join(one_title, "missing.mkv")]}, 404),
+        ({"paths": [text]}, 400),
+        ({"paths": [text], "ids": ["arr:radarr:7"]}, 400),
+    ]
+    for body, expected in cases:
+        assert api(listener, "POST", "/api/library/run", body, cookie=cookie)[0] == expected

@@ -99,7 +99,7 @@ const activity = pins<Activity>()({
 	),
 	runs: wire.runs.map((run) => ({
 		...run,
-		kind: run.kind as Run['kind'],
+		type: run.type as Run['type'],
 		active: run.active.map((file) => ({ ...file, stage: file.stage as Stage })),
 		seen: 0
 	}))
@@ -125,13 +125,19 @@ pins<EventPage>()({
 	titles: Object.fromEntries(Object.entries(page.titles).map(([id, card]) => [id, verdicted(card)]))
 });
 pins<{ pauses: Pause[] }>()(paused);
-pins<SettingsSnapshot>()(settings);
+pins<SettingsSnapshot>()({
+	...settings,
+	arr_instances: settings.arr_instances.map((instance) => ({
+		...instance,
+		type: instance.type as 'radarr' | 'sonarr'
+	}))
+});
 pins<ConnectionResult>()(connection);
 
 describe('the activity', () => {
 	test('reads every run and file as one of its kinds', () => {
 		for (const run of activity.runs) {
-			expect(['sweep', 'import', 'recheck']).toContain(run.kind);
+			expect(['sweep', 'import', 'recheck']).toContain(run.type);
 			for (const file of run.active)
 				expect(['working', 'waiting', 'encoding']).toContain(file.stage);
 		}

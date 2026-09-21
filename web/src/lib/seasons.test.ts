@@ -18,7 +18,7 @@ function episode(path: string, status: Verdict = 'conform'): LibraryFile {
 const SHOW = '/data/media/tv/Severance';
 
 describe('seasons', () => {
-	test('groups by season, latest first, episodes in order', () => {
+	test('groups by season, latest first, latest episodes first', () => {
 		const grouped = seasons([
 			episode(`${SHOW}/Season 01/Severance - S01E02 - Half Loop.mkv`),
 			episode(`${SHOW}/Season 02/Severance - S02E01 - Hello, Ms. Cobel.mkv`),
@@ -27,8 +27,8 @@ describe('seasons', () => {
 
 		expect(grouped?.map((season) => season.label)).toEqual(['Season 2', 'Season 1']);
 		expect(grouped?.[1].files.map((file) => file.name)).toEqual([
-			'Severance - S01E01 - Good News.mkv',
-			'Severance - S01E02 - Half Loop.mkv'
+			'Severance - S01E02 - Half Loop.mkv',
+			'Severance - S01E01 - Good News.mkv'
 		]);
 	});
 

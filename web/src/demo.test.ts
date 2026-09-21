@@ -169,8 +169,8 @@ describe('the history', () => {
 describe('the runs', () => {
 	test('opens mid-sweep with an import waiting on the slot', async () => {
 		const activity = await get<Activity>('/api/runs');
-		expect(activity.runs.map((run) => run.kind).sort()).toEqual(['import', 'sweep']);
-		const sweep = activity.runs.find((run) => run.kind === 'sweep')!;
+		expect(activity.runs.map((run) => run.type).sort()).toEqual(['import', 'sweep']);
+		const sweep = activity.runs.find((run) => run.type === 'sweep')!;
 		expect(sweep.active[0].stage).toBe('encoding');
 		expect(sweep.upcoming?.length).toBeGreaterThan(2);
 		expect(sweep.recent?.map((row) => row.status).sort()).toEqual(['deferred', 'modified']);
@@ -211,9 +211,11 @@ describe('the runs', () => {
 		// The same word the plan chips use: history and plans name a layout alike.
 		expect(modified?.adds).toEqual(['Stereo']);
 		expect(modified?.drops).toBe(3);
-		expect(page.events.indexOf(modified!)).toBeLessThan(page.events.indexOf(before));
+		expect(page.events.indexOf(modified!)).toBeLessThan(
+			page.events.findIndex((entry) => entry.ts === before.ts && entry.event === before.event)
+		);
 		const activity = await get<Activity>('/api/runs');
-		const sweep = activity.runs.find((run) => run.kind === 'sweep')!;
+		const sweep = activity.runs.find((run) => run.type === 'sweep')!;
 		expect(sweep.counts.modified).toBeGreaterThanOrEqual(2);
 	});
 
@@ -237,11 +239,11 @@ describe('the runs', () => {
 		const paused = await post<Activity>('/api/runs/pause');
 		expect(paused.paused).toBe(true);
 		expect(await refusal('POST', '/api/runs/start', { mode: 'apply' })).toBe(409);
-		const sweep = paused.runs.find((run) => run.kind === 'sweep')!;
+		const sweep = paused.runs.find((run) => run.type === 'sweep')!;
 		await post('/api/runs/stop', { run: sweep.id });
 		advance(400);
 		const activity = await get<Activity>('/api/runs');
-		expect(activity.runs.find((run) => run.kind === 'sweep')).toBeUndefined();
+		expect(activity.runs.find((run) => run.type === 'sweep')).toBeUndefined();
 		const page = await get<EventPage>('/api/events?limit=5');
 		const summary = page.events.find((entry) => entry.event === 'sweep')!;
 		expect(summary.stopped).toBeGreaterThan(0);
@@ -306,7 +308,7 @@ describe('the sheet', () => {
 	});
 
 	test('pauses a title and resumes it', async () => {
-		const paused = await post<{ pauses: { title: string; seconds: number | null }[] }>(
+		const paused = await post<{ pauses: { title_id: string; seconds: number | null }[] }>(
 			'/api/pauses',
 			{
 				ids: ['arr:radarr:25'],
@@ -314,11 +316,13 @@ describe('the sheet', () => {
 				reason: 'watching it'
 			}
 		);
-		expect(paused.pauses.find((pause) => pause.title === 'arr:radarr:25')?.seconds).toBe(3 * 3600);
-		const resumed = await post<{ pauses: { title: string }[] }>('/api/pauses/resume', {
+		expect(paused.pauses.find((pause) => pause.title_id === 'arr:radarr:25')?.seconds).toBe(
+			3 * 3600
+		);
+		const resumed = await post<{ pauses: { title_id: string }[] }>('/api/pauses/resume', {
 			ids: ['arr:radarr:25']
 		});
-		expect(resumed.pauses.some((pause) => pause.title === 'arr:radarr:25')).toBe(false);
+		expect(resumed.pauses.some((pause) => pause.title_id === 'arr:radarr:25')).toBe(false);
 	});
 
 	test('pauses a single file by path and resumes it without pausing its siblings', async () => {
@@ -332,7 +336,7 @@ describe('the sheet', () => {
 			}
 		);
 		expect(paused.pauses.find((pause) => pause.path === path)).toMatchObject({
-			title: '',
+			title_id: '',
 			seconds: 3600
 		});
 		expect(pausedTitle(currentState(), title, path)).toBeDefined();
@@ -345,7 +349,7 @@ describe('the sheet', () => {
 
 	test.each(['report', 'apply'])('starts a title %s while a sweep is running', async (mode) => {
 		const before = await get<Activity>('/api/runs');
-		const sweep = before.runs.find((run) => run.kind === 'sweep')!;
+		const sweep = before.runs.find((run) => run.type === 'sweep')!;
 		expect(sweep).toBeDefined();
 		const started = await post<{ run: string }>('/api/library/run', {
 			ids: ['arr:radarr:3'],
@@ -370,7 +374,7 @@ describe('the sheet', () => {
 			// Long enough for the probe: a re-check opens its files rather than
 			// judging them where it lists them.
 			advance(10);
-			expect(here.runs.some((run) => run.kind === 'sweep')).toBe(true);
+			expect(here.runs.some((run) => run.type === 'sweep')).toBe(true);
 			expect(here.runs.some((run) => run.id === started.run)).toBe(false);
 			const page = await get<EventPage>('/api/events?limit=20');
 			expect(
@@ -491,6 +495,9 @@ describe('the refusals', () => {
 	test('names an *arr and counts a media server the way each answers', async () => {
 		const radarr = await post<ConnectionResult>('/api/connections/test', { service: 'radarr' });
 		expect(radarr).toMatchObject({ ok: true, detail: 'Radarr 5.14.0.9383', webhook: 'connected' });
+		expect(radarr.paths).toBe('ready');
+		expect(radarr.hint).toContain('/data/media/movies:');
+		expect(radarr.hint).toContain('inside MEDIA_DIRS');
 		const plex = await post<ConnectionResult>('/api/connections/test', { service: 'plex' });
 		expect(plex).toMatchObject({ ok: true, detail: 'Plex, 2 libraries on tower', webhook: '' });
 	});
@@ -549,17 +556,17 @@ describe('demo webhook tools', () => {
 	test('poses imports-only work from both arrs and permits a sweep alongside it', async () => {
 		await post('/api/demo/scenario', { name: 'imports-only' });
 		let activity = await get<Activity>('/api/runs');
-		expect(activity.runs.map((run) => run.kind)).toEqual(['import', 'import']);
+		expect(activity.runs.map((run) => run.type)).toEqual(['import', 'import']);
 		expect(activity.paused).toBe(false);
 		advance(5);
 		activity = await get<Activity>('/api/runs');
 		expect(activity.runs.some((run) => run.active.length > 0)).toBe(true);
 		await post('/api/runs/start', { mode: 'report' });
 		activity = await get<Activity>('/api/runs');
-		expect(activity.runs.map((run) => run.kind).sort()).toEqual(['import', 'import', 'sweep']);
+		expect(activity.runs.map((run) => run.type).sort()).toEqual(['import', 'import', 'sweep']);
 		// By run, since the seeded history has webhooks of its own.
 		const posed = new Set(
-			activity.runs.filter((run) => run.kind === 'import').map((run) => run.id)
+			activity.runs.filter((run) => run.type === 'import').map((run) => run.id)
 		);
 		const history = await get<EventPage>('/api/events');
 		const delivered = history.events
@@ -573,12 +580,12 @@ describe('demo webhook tools', () => {
 		const opening = await get<Activity>('/api/runs');
 		await post('/api/runs/abort');
 		await post('/api/demo/import', { arr: 'sonarr' });
-		// Still an admin, or the route refuses; the name is what proves it carried.
+		// Still an admin, or the route refuses; the name is what proves it contents.
 		currentState().account = { name: 'someone', role: 'admin', must_change: false };
 		await post('/api/demo/scenario', { name: 'full' });
 		const again = await get<Activity>('/api/runs');
-		expect(again.runs.map((run) => run.kind).sort()).toEqual(
-			opening.runs.map((run) => run.kind).sort()
+		expect(again.runs.map((run) => run.type).sort()).toEqual(
+			opening.runs.map((run) => run.type).sort()
 		);
 		expect(again.rewrites).toBe(opening.rewrites);
 		expect(currentState().account?.name).toBe('someone');
@@ -629,7 +636,9 @@ describe('demo webhook tools', () => {
 
 	test('replaces a conforming release with a 4K file and generates its missing stereo', async () => {
 		await get('/api/runs');
-		const title = currentState().titles.find((title) => title.spec.arr === 'radarr')!;
+		const title = currentState().titles.find(
+			(title) => title.spec.sources[0].instance_id === 'radarr'
+		)!;
 		const original = title.files[0].path;
 		// A clear board, so the delivery lands on the first sample rather than
 		// whichever one the seeded runs left free.
@@ -639,17 +648,19 @@ describe('demo webhook tools', () => {
 		expect(file.name).toContain('2160p');
 		expect(currentState().byPath.has(original)).toBe(false);
 		expect(currentState().byPath.get(file.path)).toBe(file);
-		expect(file.source.find((track) => track.kind === 'video')?.codec).toBe('hevc');
+		expect(file.contents.find((track) => track.kind === 'video')?.codec).toBe('hevc');
 		expect(
-			file.source.filter((track) => track.kind === 'audio').map((track) => track.channels)
+			file.contents.filter((track) => track.kind === 'audio').map((track) => track.channels)
 		).toEqual([6]);
 		advance(3600);
 		expect(file.modified).toBeDefined();
 		expect(file.status).toBe('conform');
-		expect(file.source.some((track) => track.kind === 'audio' && track.channels === 2)).toBe(true);
+		expect(file.contents.some((track) => track.kind === 'audio' && track.channels === 2)).toBe(
+			true
+		);
 		await post('/api/runs/abort');
 		await post('/api/demo/import', { arr: 'radarr' });
-		expect(file.source.some((track) => track.channels === 2)).toBe(false);
+		expect(file.contents.some((track) => track.channels === 2)).toBe(false);
 	});
 
 	test('honours report-only mode for deliveries', async () => {
@@ -669,7 +680,7 @@ describe('import priority', () => {
 			await get<Activity>('/api/runs');
 			stopTicking();
 			const state = currentState();
-			const sweep = state.runs.find((run) => run.kind === 'sweep')!;
+			const sweep = state.runs.find((run) => run.type === 'sweep')!;
 			const active = sweep.active[0];
 			const chosen = queued(state).find((item) => item.run === sweep.id)!;
 			if (curation !== 'none') {
@@ -701,7 +712,7 @@ describe('import priority', () => {
 		if (!('run' in delivery)) throw new Error('delivery refused');
 		const run = state.runs.find((run) => run.id === delivery.run)!;
 		const file = state.byPath.get(run.queue[0].path)!;
-		file.source = state.titles
+		file.contents = state.titles
 			.flatMap((title) => title.files)
 			.find((file) => file.status === 'conform' && file.lang === 'eng')!.tracks;
 		tick(state, now);
@@ -710,6 +721,177 @@ describe('import priority', () => {
 		expect(run.done).toBe(1);
 		expect(run.counts.conform).toBe(1);
 		expect(queued(state).some((item) => item.run === run.id)).toBe(false);
-		expect(state.runs.find((run) => run.kind === 'sweep')?.active[0].stage).toBe('encoding');
+		expect(state.runs.find((run) => run.type === 'sweep')?.active[0].stage).toBe('encoding');
 	});
+});
+
+test.each(['report', 'apply'])('runs only the selected variant in %s mode', async (mode) => {
+	await post('/api/demo/scenario', { name: 'multiple-variants' });
+	const state = currentState();
+	const title = state.titles.find(
+		(title) => title.spec.kind === 'movie' && title.spec.sources.length > 1
+	)!;
+	const target = title.files.find((file) => file.path.includes('/media/4k/'))!;
+	const siblings = title.files.filter((file) => file !== target);
+	const before = siblings.map((file) => ({
+		status: file.status,
+		bytes: file.bytes,
+		tracks: structuredClone(file.tracks)
+	}));
+	const started = await post<{ run: string }>('/api/library/run', { paths: [target.path], mode });
+	const run = state.runs.find((run) => run.id === started.run)!;
+	expect(run.total).toBe(1);
+	expect(run.label).toBe(target.name);
+	expect(run.dry_run).toBe(mode === 'report');
+	advance(300);
+	expect(state.runs.some((run) => run.id === started.run)).toBe(false);
+	expect(target.status).toBe(mode === 'report' ? 'pending' : 'conform');
+	expect(
+		siblings.map((file) => ({ status: file.status, bytes: file.bytes, tracks: file.tracks }))
+	).toEqual(before);
+});
+
+test('multiple variants are optional and make one title with a folder per instance', async () => {
+	const opening = await get<Shelf>('/api/library');
+	expect(opening.titles.some((title) => title.source_count)).toBe(false);
+	await post('/api/demo/scenario', { name: 'multiple-variants' });
+	const shelf = await get<Shelf>('/api/library');
+	const held = shelf.titles.filter((title) => title.source_count);
+	expect(held.map((title) => title.source_count)).toEqual([2, 2]);
+	expect(shelf.titles).toHaveLength(opening.titles.length);
+	for (const card of held) {
+		const title = await get<TitleDetail>(`/api/library/title?id=${encodeURIComponent(card.id)}`);
+		const label = card.kind === 'movie' ? 'Radarr' : 'Sonarr';
+		expect(title.folders.map((folder) => folder.source)).toEqual([label, `${label} 4k`]);
+		expect(title.folders[1].folder).toContain('/media/4k/');
+		const upgrades = title.files.filter((file) => file.path.includes('/media/4k/'));
+		expect(upgrades.length).toBeGreaterThan(0);
+		expect(upgrades.every((file) => file.source === `${label} 4k`)).toBe(true);
+		expect(title.files.every((file) => ['conform', 'pending'].includes(file.status))).toBe(true);
+		expect(title.files.every((file) => file.tracks.some((track) => track.kind === 'audio'))).toBe(
+			true
+		);
+		expect(upgrades.every((file) => file.status === 'pending')).toBe(true);
+		for (const file of upgrades) {
+			expect(file.name).toContain('2160p HEVC');
+			expect(file.tracks.find((track) => track.kind === 'video')).toMatchObject({
+				codec: 'hevc',
+				bitrate: 24_000_000
+			});
+			expect(file.tracks.find((track) => track.kind === 'audio')).toMatchObject({
+				codec: 'eac3',
+				channels: 6
+			});
+			expect(file.bytes).toBeGreaterThan(
+				Math.min(
+					...title.files
+						.filter((original) => !original.path.includes('/media/4k/'))
+						.map((original) => original.bytes)
+				)
+			);
+		}
+		expect(
+			title.files
+				.filter((file) => !file.path.includes('/media/4k/'))
+				.every((file) => file.source === label)
+		).toBe(true);
+		// A title pause holds every folder; resuming lets both go.
+		const paused = await post<{ pauses: { title_id: string; path: string }[] }>('/api/pauses', {
+			ids: [card.id],
+			seconds: 3600
+		});
+		expect(
+			paused.pauses.filter((pause) => pause.title_id === card.id).map((pause) => pause.path)
+		).toEqual(title.folders.map((folder) => folder.folder));
+		const resumed = await post<{ pauses: { title_id: string }[] }>('/api/pauses/resume', {
+			ids: [card.id]
+		});
+		expect(resumed.pauses.some((pause) => pause.title_id === card.id)).toBe(false);
+		const links = await get<{ links: TitleLink[] }>(
+			`/api/library/links?id=${encodeURIComponent(card.id)}`
+		);
+		expect(
+			links.links
+				.filter(
+					(link) => link.server === card.kind.replace('movie', 'radarr').replace('series', 'sonarr')
+				)
+				.map((link) => link.label)
+		).toEqual([label, `${label} 4k`]);
+		expect(
+			links.links.some((link) => link.url.includes(card.kind === 'movie' ? ':7879/' : ':8990/'))
+		).toBe(true);
+	}
+	const snapshot = await get<SettingsSnapshot>('/api/settings');
+	expect(
+		snapshot.arr_instances.find((instance) => instance.id === 'radarr-4k')!.fields.api_key
+	).toEqual({ value: '', env: false, set: true, env_name: 'RADARR_4K_API_KEY' });
+	const checked = await post<ConnectionResult>('/api/connections/test', { service: 'radarr-4k' });
+	expect(checked.ok).toBe(true);
+	expect(checked.hint).toContain('/data/media/4k/movies:');
+	await post('/api/demo/scenario', { name: 'full' });
+	expect((await get<Shelf>('/api/library')).titles).toHaveLength(opening.titles.length);
+});
+
+test('large series pages whole episodes and every scenario resets its predecessor', async () => {
+	const opening = await get<Shelf>('/api/library');
+	await post('/api/demo/scenario', { name: 'multiple-variants' });
+	await post('/api/demo/scenario', { name: 'large-series' });
+	const shelf = await get<Shelf>('/api/library');
+	expect(shelf.titles.some((title) => title.source_count)).toBe(false);
+	const id = currentState().titles.find((title) => title.files.length === 1000)!.spec.id;
+	const first = await get<TitleDetail>(`/api/library/title?id=${encodeURIComponent(id)}`);
+	const second = await get<TitleDetail>(`/api/library/title?id=${encodeURIComponent(id)}&pages=2`);
+	expect(first.total).toBe(1000);
+	expect(first.files).toHaveLength(200);
+	expect(second.files).toHaveLength(400);
+	expect(second.files.slice(0, 200)).toEqual(first.files);
+	await post('/api/demo/scenario', { name: 'large-series' });
+	expect(currentState().titles.find((title) => title.spec.id === id)!.files).toHaveLength(1000);
+	await post('/api/demo/scenario', { name: 'connection-trouble' });
+	expect(
+		(await get<TitleDetail>(`/api/library/title?id=${encodeURIComponent(id)}`)).total
+	).toBeLessThan(200);
+	const radarr = await post<ConnectionResult>('/api/connections/test', { service: 'radarr' });
+	const sonarr = await post<ConnectionResult>('/api/connections/test', { service: 'sonarr' });
+	expect(radarr.ok).toBe(false);
+	expect(sonarr.webhook).toBe('unreachable');
+	expect(sonarr.paths).toBe('attention');
+	await post('/api/demo/scenario', { name: 'imports-only' });
+	expect((await post<ConnectionResult>('/api/connections/test', { service: 'radarr' })).ok).toBe(
+		true
+	);
+	await post('/api/demo/scenario', { name: 'full' });
+	expect((await get<Shelf>('/api/library')).titles.map((title) => title.id)).toEqual(
+		opening.titles.map((title) => title.id)
+	);
+});
+
+test('structured connection lifecycle keeps identity and credentials through rename and removal', async () => {
+	const id = 'radarr-new';
+	let shot = await post<SettingsSnapshot>('/api/settings', {
+		arr_instances: [
+			{ id, create: true, values: { url: 'http://new', api_key: 'private', name: 'Public' } }
+		]
+	});
+	expect(shot.settings).not.toHaveProperty('RADARR_NEW_URL');
+	expect(JSON.stringify(shot)).not.toContain('private');
+	shot = await post<SettingsSnapshot>('/api/settings', {
+		arr_instances: [{ id, values: { name: 'Films', api_key: '' } }]
+	});
+	expect(shot.arr_instances.find((instance) => instance.id === id)!.fields).toMatchObject({
+		name: { value: 'Films' },
+		api_key: { set: true, value: '' }
+	});
+	expect(await refusal('POST', '/api/settings', { arr_instances: [{ id, create: true }] })).toBe(
+		400
+	);
+	shot = await post<SettingsSnapshot>('/api/settings', {
+		arr_instances: [{ id, values: { api_key: null } }]
+	});
+	expect(shot.arr_instances.find((instance) => instance.id === id)!.fields.api_key.set).toBe(false);
+	shot = await post<SettingsSnapshot>('/api/settings', { arr_instances: [{ id, remove: true }] });
+	expect(shot.arr_instances.some((instance) => instance.id === id)).toBe(false);
+	expect(
+		await refusal('POST', '/api/settings', { arr_instances: [{ id, values: { name: 'Late' } }] })
+	).toBe(400);
 });

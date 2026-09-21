@@ -85,7 +85,7 @@ def test_an_empty_library_response_is_a_list(monkeypatch):
 def test_all_arrs_reports_both_regardless_of_configuration():
     """The startup banner lists each with its state, so both are always present
     and `enabled` is what varies."""
-    assert [a.name for a in all_arrs()] == ["radarr", "sonarr"]
+    assert [a.instance_id for a in all_arrs()] == ["radarr", "sonarr"]
     assert all(isinstance(a, Arr) for a in all_arrs())
 
 

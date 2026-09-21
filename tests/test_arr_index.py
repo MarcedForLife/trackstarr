@@ -40,7 +40,7 @@ def test_the_index_keys_a_title_by_its_folder():
     assert set(index.items) == {"/data/media/movies/Film (2024)"}
 
     (item,) = index.items.values()
-    assert (item.lang, item.item_id, item.arr.name) == ("kor", 1, "radarr")
+    assert (item.lang, item.item_id, item.arr.instance_id) == ("kor", 1, "radarr")
 
 
 def test_every_arr_answering_makes_the_index_complete():
@@ -117,4 +117,4 @@ def test_the_first_arr_wins_a_folder_they_both_claim():
             stub_arr(("/data/media", "English"), name="sonarr"),
         ]
     )
-    assert match_path(index, "/data/media/f.mkv").arr.name == "radarr"
+    assert match_path(index, "/data/media/f.mkv").arr.instance_id == "radarr"

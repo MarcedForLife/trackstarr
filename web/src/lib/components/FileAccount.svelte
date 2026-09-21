@@ -188,13 +188,14 @@
 				</div>
 				{#if open}
 					{@const track = onDisk(row)}
+					{@const done = editing?.done}
 					<div class="mt-1 font-sans">
 						<TrackEditor
 							{track}
 							twins={matching(siblings, file, track)}
 							languages={editing?.languages ?? null}
 							many={series}
-							ondone={(outcomes) => editing?.done(file, row, outcomes)}
+							ondone={(outcomes) => done?.(file, row, outcomes)}
 							oncancel={() => editing?.cancel()}
 						/>
 					</div>

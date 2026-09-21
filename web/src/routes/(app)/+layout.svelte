@@ -273,6 +273,17 @@
 		animation: enter 160ms cubic-bezier(0.2, 0, 0, 1);
 	}
 
+	/* A transform makes main the containing block for fixed sheets. If one
+	   opens during page entry, settle the page before focus enters the sheet,
+	   or the browser scrolls it into view and it jumps when the transform ends.
+	   A zero duration rather than `animation: none`: `.entering` stays until
+	   the next navigation, and an animation taken off and put back as the sheet
+	   went inert ran again, blanking the page under the slide out. Cut short,
+	   it stays ended when the duration comes back. */
+	main:global(.entering):has(:global([aria-modal='true']:not([inert]))) {
+		animation-duration: 0s;
+	}
+
 	@keyframes enter {
 		from {
 			opacity: 0;
