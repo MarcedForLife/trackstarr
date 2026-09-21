@@ -9,10 +9,22 @@ import socket
 
 import pytest
 
-from conftest import keep_alive, read_events, request, set_config
-from trackstarr import auth, jobs, lifecycle, webhook
+from conftest import (
+    cache,
+    keep_alive,
+    pending,
+    read_events,
+    request,
+    rewrote,
+    seed_verdict,
+    set_config,
+)
+from trackstarr import auth, config, jobs, lifecycle, rewrites, sweep_cache, webhook
 from trackstarr.arr import AUTH_HEADER
-from trackstarr.webhook import jobs_from_hook
+from trackstarr.policy import Policy
+from trackstarr.status import Status
+from trackstarr.sweep_cache import SweepCache, Verdict, cache_key
+from trackstarr.webhook import Removed, jobs_from_hook, removed_from_hook, renamed_from_hook
 
 
 def test_radarr_import_webhook():
@@ -94,8 +106,7 @@ def test_jobs_share_the_run_the_delivery_was_stamped_with():
     "event", ["Grab", "Test", "HealthIssue", "ApplicationUpdate", "Rename"]
 )
 def test_uninteresting_events_are_ignored(event):
-    """Rename included: its body carries files only under renamed*Files keys
-    nothing here reads, and a rename changes no track content."""
+    """Rename included: it changes no track content, so nothing is queued."""
     assert jobs_from_hook({"eventType": event, "movie": {}}) == []
 
 
@@ -112,6 +123,87 @@ def test_missing_relative_path_yields_no_path():
         }
     )
     assert delivered == []
+
+
+def test_an_upgrade_names_the_file_it_replaced():
+    """Both *arrs list what an upgrade displaced under deletedFiles, beside the
+    import. Unread, the old file's verdict stands next to the new file's as a
+    second variant of the title until a full sweep."""
+    removed = removed_from_hook(
+        {
+            "eventType": "Download",
+            "isUpgrade": True,
+            "movie": {"id": 1, "folderPath": "/data/media/movies/Film (2024)"},
+            "movieFile": {"relativePath": "Film (2024) 2160p.mkv"},
+            "deletedFiles": [{"relativePath": "Film (2024) 1080p.mkv"}],
+        }
+    )
+    assert removed == Removed(("/data/media/movies/Film (2024)/Film (2024) 1080p.mkv",))
+
+
+def test_a_fresh_import_removes_nothing():
+    body = {
+        "eventType": "Download",
+        "movie": {"id": 1, "folderPath": "/data/media/movies/A"},
+        "movieFile": {"relativePath": "A.mkv"},
+    }
+    assert removed_from_hook(body) is None
+    assert removed_from_hook({"eventType": "Grab", "movie": {"id": 1}}) is None
+    assert removed_from_hook({"eventType": "MovieFileDelete"}) is None, "no *arr key"
+
+
+@pytest.mark.parametrize(
+    ("event", "item", "folder_key", "file_key"),
+    [
+        ("MovieFileDelete", "movie", "folderPath", "movieFile"),
+        ("EpisodeFileDelete", "series", "path", "episodeFile"),
+    ],
+)
+def test_a_deleted_file_arrives_under_the_imports_key(event, item, folder_key, file_key):
+    body = {
+        "eventType": event,
+        item: {"id": 1, folder_key: "/data/media/T"},
+        file_key: {"relativePath": "T.mkv"},
+        "deleteReason": "manual",
+    }
+    assert removed_from_hook(body) == Removed(("/data/media/T/T.mkv",))
+    assert jobs_from_hook(body) == [], "nothing to judge: the file is gone"
+
+
+def test_a_title_deleted_with_its_files_names_its_folder():
+    body = {
+        "eventType": "MovieDelete",
+        "movie": {"id": 1, "folderPath": "/data/media/movies/Film (2024)"},
+        "deletedFiles": True,
+    }
+    assert removed_from_hook(body) == Removed(folder="/data/media/movies/Film (2024)")
+    # Dropped from the *arr with the files left on disk: they stand, as a
+    # folder no *arr claims.
+    assert removed_from_hook({**body, "deletedFiles": False}) is None
+
+
+@pytest.mark.parametrize(
+    ("item", "folder_key", "files_key"),
+    [("movie", "folderPath", "renamedMovieFiles"), ("series", "path", "renamedEpisodeFiles")],
+)
+def test_a_rename_names_each_files_old_and_new_path(item, folder_key, files_key):
+    body = {
+        "eventType": "Rename",
+        item: {"id": 1, folder_key: "/data/media/T"},
+        files_key: [
+            {"previousPath": "/data/media/T/old.mkv", "path": "/data/media/T/new.mkv"},
+            {"previousRelativePath": "b.mkv", "relativePath": "Season 01/b.mkv"},
+            # Unchanged, nameless and malformed entries say nothing.
+            {"previousPath": "/data/media/T/same.mkv", "path": "/data/media/T/same.mkv"},
+            {},
+            "not a file",
+        ],
+    }
+    assert renamed_from_hook(body) == [
+        ("/data/media/T/old.mkv", "/data/media/T/new.mkv"),
+        ("/data/media/T/b.mkv", "/data/media/T/Season 01/b.mkv"),
+    ]
+    assert renamed_from_hook({"eventType": "Rename"}) == [], "no *arr key"
 
 
 def post(server, body: dict, headers: dict | None = None) -> tuple[int, str]:
@@ -216,6 +308,151 @@ def test_a_delivery_names_the_files_it_queued(listener, media_root, enabled_arrs
     # Only what was really queued, so the names and the count cannot disagree.
     assert entry["paths"] == [str(media_root / "S01E01.mkv")]
     assert entry["files"] == len(entry["paths"])
+
+
+def stored_paths() -> set[str]:
+    """Every path the sweep cache holds a verdict for."""
+    fingerprint = Policy.from_config().fingerprint()
+    return set(sweep_cache.read(sweep_cache.cache_path(), fingerprint).files)
+
+
+def test_a_removal_drops_the_verdict_of_a_file_that_has_gone(
+    listener, media_root, enabled_arrs
+):
+    """Not a run: nothing was done to a file, so the history gets no line."""
+    kept, gone = str(media_root / "f.mkv"), str(media_root / "old.mkv")
+    cache((kept, Verdict(Status.CONFORM)), (gone, Verdict(Status.PENDING)))
+    body = {
+        "eventType": "MovieFileDelete",
+        "movie": {"id": 1, "folderPath": str(media_root)},
+        "movieFile": {"path": gone},
+        "deleteReason": "upgrade",
+    }
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    assert post(listener, body, headers) == (200, "queued 0, dropped 1")
+    assert stored_paths() == {kept}
+    assert read_events() == []
+
+
+def test_a_removal_of_a_file_still_here_leaves_its_verdict(listener, media_root, enabled_arrs):
+    """The *arr spoke of its own copy. A path this container can still see
+    keeps what was judged about it."""
+    kept = str(media_root / "f.mkv")
+    cache((kept, Verdict(Status.CONFORM)))
+    body = {
+        "eventType": "MovieFileDelete",
+        "movie": {"id": 1, "folderPath": str(media_root)},
+        "movieFile": {"path": kept},
+    }
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    assert post(listener, body, headers) == (200, "queued 0, dropped 0")
+    assert stored_paths() == {kept}
+
+
+def test_an_upgrade_queues_the_new_file_and_drops_the_old(
+    listener, media_root, queued, enabled_arrs
+):
+    new, old = str(media_root / "f.mkv"), str(media_root / "old.mkv")
+    cache((old, Verdict(Status.PENDING)))
+    body = {
+        **movie_body(new, str(media_root)),
+        "isUpgrade": True,
+        "deletedFiles": [{"path": old}],
+    }
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    assert post(listener, body, headers) == (200, "queued 1, dropped 1")
+    assert [job.path for job in queued] == [new]
+    assert stored_paths() == set()
+
+
+def test_a_title_deleted_with_its_files_drops_everything_under_it(
+    listener, media_root, enabled_arrs
+):
+    """MovieDelete names no files, only whether the folder went with it. Its
+    entries would otherwise come back as a folder title no *arr claims."""
+    folder = media_root / "Film (2024)"
+    under = (str(folder / "Film.mkv"), str(folder / "Film.1080p.mkv"))
+    elsewhere = str(media_root / "f.mkv")
+    cache(*((path, Verdict(Status.CONFORM)) for path in (*under, elsewhere)))
+    body = {
+        "eventType": "MovieDelete",
+        "movie": {"id": 1, "folderPath": str(folder)},
+        "deletedFiles": True,
+    }
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    assert post(listener, body, headers) == (200, "queued 0, dropped 2")
+    assert stored_paths() == {elsewhere}
+
+
+def rename_body(folder: str, *moves: tuple[str, str]) -> dict:
+    return {
+        "eventType": "Rename",
+        "movie": {"id": 1, "folderPath": folder},
+        "renamedMovieFiles": [
+            {"previousPath": previous, "path": path} for previous, path in moves
+        ],
+    }
+
+
+def test_a_rename_takes_the_verdict_and_the_rewrite_record_with_it(
+    listener, media_root, enabled_arrs
+):
+    """The file is the same file under a new name, so what was judged and
+    what we did to it both follow it. Neither waits for a walk."""
+    (media_root / "g.mkv").write_bytes(b"y")
+    moves = [
+        (str(media_root / "old-f.mkv"), str(media_root / "f.mkv")),
+        (str(media_root / "old-g.mkv"), str(media_root / "g.mkv")),
+    ]
+    fingerprint = Policy.from_config().fingerprint()
+    os.makedirs(config.STATE_DIR, exist_ok=True)
+    store = SweepCache(sweep_cache.cache_path(), fingerprint)
+    for previous, new in moves:
+        # The key a rename leaves alone: the entry holds the file's own.
+        seed_verdict(store, previous, cache_key(new, "eng"), pending())
+    store.save()
+    # Only one of the two was ours to rewrite.
+    rewrote(moves[0][0])
+
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    assert post(listener, rename_body(str(media_root), *moves), headers) == (
+        200,
+        "queued 0, moved 2",
+    )
+    stored = sweep_cache.read(sweep_cache.cache_path(), fingerprint).files
+    assert set(stored) == {new for _, new in moves}
+    assert stored[moves[0][1]]["status"] == "pending"
+    assert set(rewrites.records()) == {moves[0][1]}
+
+
+def test_a_rename_onto_another_file_drops_the_old_verdict(listener, media_root, enabled_arrs):
+    """A file at the new path under another key is not the file that was
+    judged. The old entry goes and the new file waits for a walk."""
+    old, new = str(media_root / "old.mkv"), str(media_root / "f.mkv")
+    cache((old, Verdict(Status.PENDING)))
+
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    assert post(listener, rename_body(str(media_root), (old, new)), headers) == (
+        200,
+        "queued 0, moved 0",
+    )
+    assert stored_paths() == set()
+
+
+def test_a_rename_of_a_file_still_at_its_old_path_moves_nothing(
+    listener, media_root, enabled_arrs
+):
+    """Usually a mount mismatch: the *arr and this container spell the
+    library differently, so its rename describes files we cannot see."""
+    old, new = str(media_root / "f.mkv"), str(media_root / "new.mkv")
+    cache((old, Verdict(Status.CONFORM)))
+
+    headers = {AUTH_HEADER: auth.mint("radarr")}
+    assert post(listener, rename_body(str(media_root), (old, new)), headers) == (
+        200,
+        "queued 0, moved 0",
+    )
+    assert stored_paths() == {old}
 
 
 def test_a_delivery_arriving_during_shutdown_is_refused_not_dropped(

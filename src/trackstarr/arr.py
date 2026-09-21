@@ -58,6 +58,7 @@ class Arr:
     folder_key: str  # field on that object holding the title's folder
     file_key: str  # webhook body key for a single imported file
     files_key: str  # webhook body key for a batch of them
+    renamed_files_key: str  # webhook body key for the files a Rename moved
 
     @property
     def type(self) -> str:
@@ -100,7 +101,7 @@ class Arr:
     def _connection_current(self, ours: dict, url: str) -> bool:
         """Whether an entry points here and carries a secret the listener
         accepts. Verified against the stored digest, since only that is kept."""
-        return _webhook_current(ours, _payload(url)) and auth.matches(
+        return _webhook_current(ours, _payload(url, arr_type=self.type)) and auth.matches(
             self.instance_id, _sent_secret(ours)
         )
 
@@ -162,7 +163,7 @@ class Arr:
                 "%s: cannot provision a webhook secret (%s), will retry", self.instance_id, err
             )
             return False
-        payload = _payload(url, secret)
+        payload = _payload(url, secret, self.type)
         try:
             # Saving fires a test event at the url, so the listener must be up.
             if ours:
@@ -209,9 +210,18 @@ class Arr:
             log.warning("%s: rescan of id %s failed (%s)", self.instance_id, item_id, err)
 
 
-def _payload(url: str, secret: str | None = None) -> dict:
+#: The flags each *arr calls a removal by: a file deleted by hand, one an
+#: upgrade replaced, and a title deleted with its files.
+_REMOVAL_FLAGS = {
+    "radarr": ("onMovieFileDelete", "onMovieFileDeleteForUpgrade", "onMovieDelete"),
+    "sonarr": ("onEpisodeFileDelete", "onEpisodeFileDeleteForUpgrade", "onSeriesDelete"),
+}
+
+
+def _payload(url: str, secret: str | None = None, arr_type: str = "radarr") -> dict:
     """The connection we want the *arr to hold. Without a secret it is what
-    an existing connection is compared against; with one, the body to save."""
+    an existing connection is compared against; with one, the body to save.
+    ``arr_type`` picks the removal flags, which the *arrs name differently."""
     fields = [
         {"name": "url", "value": url},
         {"name": "method", "value": 1},
@@ -223,9 +233,11 @@ def _payload(url: str, secret: str | None = None) -> dict:
         "name": WEBHOOK_NAME,
         "implementation": "Webhook",
         "configContract": "WebhookSettings",
-        # Import and upgrade are the only events the listener acts on.
+        # Imports and upgrades queue work; removals and renames edit verdicts.
         "onDownload": True,
         "onUpgrade": True,
+        "onRename": True,
+        **dict.fromkeys(_REMOVAL_FLAGS.get(arr_type, ()), True),
         "fields": fields,
     }
 
@@ -274,6 +286,7 @@ def _client(instance: config.ArrInstanceConfig) -> Arr:
             folder_key="folderPath",
             file_key="movieFile",
             files_key="movieFiles",
+            renamed_files_key="renamedMovieFiles",
         )
     return Arr(
         instance_id=instance.id,
@@ -286,6 +299,7 @@ def _client(instance: config.ArrInstanceConfig) -> Arr:
         folder_key="path",
         file_key="episodeFile",
         files_key="episodeFiles",
+        renamed_files_key="renamedEpisodeFiles",
     )
 
 

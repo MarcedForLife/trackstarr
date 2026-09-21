@@ -173,6 +173,24 @@ def test_save_prunes_entries_the_sweep_never_visited(cache_path, media, tmp_path
     assert reloaded.lookup(other, other_key) is None
 
 
+def test_save_within_folders_prunes_only_under_them(cache_path, media, tmp_path):
+    """A walk of one folder has seen the whole of it and none of the rest, so
+    the rest's unvisited entries are not departures."""
+    folder = tmp_path / "title"
+    folder.mkdir()
+    gone = folder / "gone.mkv"
+    gone.write_bytes(b"g" * 4)
+    key, gone_key = cache_key(media, "eng"), cache_key(str(gone), "eng")
+    cache = saved_cache(cache_path, (media, key, CONFORM), (str(gone), gone_key, CONFORM))
+    gone.unlink()
+
+    cache.save(within=[str(folder)])
+
+    reloaded = SweepCache.load(cache_path, fingerprint())
+    assert reloaded.lookup(media, key) == CONFORM
+    assert reloaded.lookup(str(gone), gone_key) is None
+
+
 def test_a_checkpoint_keeps_them(cache_path, media, tmp_path):
     """Mid-sweep, where the rest of the library is simply still ahead of the
     walk rather than gone."""

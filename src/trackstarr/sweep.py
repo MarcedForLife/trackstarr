@@ -12,12 +12,24 @@ import os
 import queue
 import time
 import zoneinfo
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from concurrent.futures import Future, as_completed
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 
-from . import config, cron, estimate, events, lifecycle, notify, pauses, runs, sweep_cache, work
+from . import (
+    config,
+    cron,
+    estimate,
+    events,
+    lifecycle,
+    notify,
+    pauses,
+    rewrites,
+    runs,
+    sweep_cache,
+    work,
+)
 from .arr import LibraryIndex, all_arrs, match_path, path_index
 from .executor import Cancel, drop_staged, is_staged_file
 from .policy import Policy
@@ -281,8 +293,12 @@ class Walk:
     #: Where the report goes, or None to leave the last one alone.
     report: str | None = None
     #: Drop every entry the walk did not visit when it finishes. Only a walk
-    #: over the whole library can tell a departed file from an unvisited one.
+    #: that listed the whole of a folder can tell a departed file from an
+    #: unvisited one.
     prunes: bool = False
+    #: The folders the walk lists, when less than the library; pruning stays
+    #: under them. Empty is the whole library.
+    roots: tuple[str, ...] = ()
 
 
 @dataclass
@@ -482,10 +498,11 @@ def recheck(
 
     The library page's "look at this one now". The folders come from
     :func:`trackstarr.library.selected`; ``label`` is the run card's name for
-    them. pending.tsv is left alone, since it is the last full sweep's answer,
-    and nothing is pruned, since that would drop the rest of the library's
-    verdicts. Concurrent walks share fresh cache entries and the work queue.
-    Explicit ``files`` replace folder discovery and never include siblings.
+    them. pending.tsv is left alone, since it is the last full sweep's answer.
+    Entries under its folders that the walk did not find are dropped: it has
+    seen the whole of each, and nothing else. Concurrent walks share fresh
+    cache entries and the work queue. Explicit ``files`` replace folder
+    discovery, never include siblings, and so prune nothing.
     """
     walk = Walk(
         type=runs.RECHECK,
@@ -497,6 +514,8 @@ def recheck(
             )
         ),
         force=True,
+        prunes=files is None,
+        roots=tuple(folders),
     )
     with _registered(walk, run, dry_run, label=label) as ready:
         totals = _walk_files(run, ready, walk)
@@ -512,6 +531,86 @@ def recheck(
             seconds=round(totals.seconds, 1),
         )
         return totals.counts
+
+
+def _no_waiting() -> bool:
+    """A ``stopped`` that gives up at once. A webhook answers now; a rewrite
+    can hold a file for an hour."""
+    return True
+
+
+@contextlib.contextmanager
+def _fenced(*paths: str) -> Iterator[sweep_cache.Observation | None]:
+    """An observation of ``paths`` for an edit of the store, or None where a
+    rewrite holds one of them. The rewrite's own publication settles what it
+    holds."""
+    try:
+        with sweep_cache.observing(paths[0], stopped=_no_waiting) as observation:
+            if all(observation.watch(path, _no_waiting) for path in paths[1:]):
+                yield observation
+            else:
+                yield None
+    except sweep_cache.ObservationStoppedError:
+        yield None
+
+
+def _show(changed: list[str]) -> None:
+    """Write the store now, not when the coalescing window closes, then tell
+    open pages, so what they refetch has the change."""
+    if changed:
+        sweep_cache.flush()
+        notify.publish(notify.LIBRARY)
+
+
+def remove(paths: Iterable[str], folders: Iterable[str] = ()) -> list[str]:
+    """Drop the stored verdicts of files an *arr says it removed, and return
+    the paths dropped.
+
+    ``folders`` adds everything stored under a title deleted with its files.
+    A path still on disk keeps its verdict: the *arr spoke of its own copy.
+    Verdicts judged under other rules cannot be edited and go with the next
+    sweep.
+    """
+    fingerprint = Policy.from_config().fingerprint()
+    stored = sweep_cache.read(cache_path(), fingerprint).files
+    roots = tuple(folder.rstrip(os.sep) + os.sep for folder in folders if folder.strip(os.sep))
+    wanted = dict.fromkeys(paths)
+    if roots:
+        wanted.update(dict.fromkeys(path for path in stored if path.startswith(roots)))
+    dropped: list[str] = []
+    for path in wanted:
+        if path not in stored or os.path.exists(path):
+            continue
+        with _fenced(path) as observation:
+            if observation is not None and sweep_cache.publish(
+                observation, path, path, None, None, fingerprint
+            ):
+                dropped.append(path)
+    _show(dropped)
+    return dropped
+
+
+def relocate(moves: Iterable[tuple[str, str]]) -> list[str]:
+    """Put each renamed file's stored verdict and rewrite record under its new
+    path, and return the new paths that took one.
+
+    A rename changes no track and none of the file key, so the verdict stands.
+    Skipped while the old path is still there or the new one is not.
+    """
+    fingerprint = Policy.from_config().fingerprint()
+    stored = sweep_cache.read(cache_path(), fingerprint).files
+    moved: list[str] = []
+    for previous, path in moves:
+        if previous not in stored or os.path.exists(previous) or not os.path.exists(path):
+            continue
+        with _fenced(previous, path) as observation:
+            if observation is not None and sweep_cache.move(
+                observation, previous, path, fingerprint
+            ):
+                rewrites.move(previous, path)
+                moved.append(path)
+    _show(moved)
+    return moved
 
 
 def _report_row(judged: Judged) -> str:
@@ -663,6 +762,9 @@ def _walk_cached(run: str, ready: _Ready, walk: Walk, cache: SweepCache) -> _Tot
     """Discover on probe workers, queue rewrites, and account on this thread."""
     policy, dry_run = ready.policy, ready.dry_run
     files = list(dict.fromkeys(walk.find(policy)))
+    # Taken with the listing: a root that was not there listed nothing, and
+    # pruning under it would read an unmounted folder as an emptied one.
+    present = tuple(root for root in walk.roots if os.path.isdir(root))
     runs.set_total(run, len(files))
     log.info("%s starting: %d files, dry_run=%s", walk.type, len(files), dry_run)
 
@@ -782,10 +884,12 @@ def _walk_cached(run: str, ready: _Ready, walk: Walk, cache: SweepCache) -> _Tot
         # an unvisited file from one that left the library. See :class:`Walk`.
         # Still inside live(), so the view or the file always holds what this
         # walk reached.
-        if walk.prunes and not totals.stopped:
-            cache.save()
-        else:
+        if not walk.prunes or totals.stopped:
             cache.keep()
+        elif walk.roots:
+            cache.save(within=present)
+        else:
+            cache.save()
 
     totals.seconds = time.monotonic() - started
     _write_report(walk, files, totals.rows)

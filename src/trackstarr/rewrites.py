@@ -137,6 +137,17 @@ def rekey(path: str, key: FileKey | None) -> None:
         _save({**found, path: Rewrite(key.size, key.mtime_ns, rewrite.made)})
 
 
+def move(previous: str, path: str) -> None:
+    """Put a record under the name an *arr renamed the file to. Size and mtime
+    survive a rename, so the claim still holds."""
+    with _write_lock:
+        found = _read()
+        if (rewrite := found.get(previous)) is None:
+            return
+        kept = {name: record for name, record in found.items() if name != previous}
+        _save({**kept, path: rewrite})
+
+
 def drop(path: str) -> None:
     """Forget one file, for the source a remux published under another name."""
     with _write_lock:

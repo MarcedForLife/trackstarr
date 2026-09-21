@@ -29,7 +29,7 @@ import logging
 import os
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import asdict, dataclass, field
 from typing import cast
 
@@ -409,44 +409,99 @@ def publish(
         # still be able to progress. Recheck revisions after all slow reads.
         if verdict is not None and (key is None or cache_key(output, key.lang) != key):
             return False
-        store = observation.cache_file
-        entries = None if cache is not None else _for_update(fingerprint, store)
+        paths = {path, output}
+        entry = _entry(cast(FileKey, key), verdict) if verdict is not None else None
+
+        def edit(entries: dict[str, dict]) -> None:
+            entries.pop(path, None)
+            if entry is None:
+                entries.pop(output, None)
+            else:
+                entries[output] = entry
+
+        if cache is None:
+            return _edit_store(observation, paths, fingerprint, edit)
         with _update_lock:
-            paths = {path, output}
-            if (cache is not None and cache.path != store) or not observation.accepts(paths):
+            if cache.path != observation.cache_file or not observation.accepts(paths):
                 return False
             if fingerprint != observation.policy.fingerprint():
                 return False
-            if cache is not None:
-                if cache.fingerprint != fingerprint or cache._superseded:
-                    return False
-                for name in paths:
-                    entry = _entry(key, verdict) if name == output and key and verdict else None
-                    cache._install(name, entry)
-                observation.published = True
-                return True
-            if entries is None:
+            if cache.fingerprint != fingerprint or cache._superseded:
                 return False
-            before = dict(entries)
-            for live_cache in _live:
-                if (
-                    live_cache.path == store
-                    and live_cache.fingerprint == fingerprint
-                    and not live_cache._superseded
-                ):
-                    entries = live_cache._standing()
-            entries.pop(path, None)
-            if verdict is None:
-                entries.pop(output, None)
-            else:
-                entries[output] = _entry(cast(FileKey, key), verdict)
             for name in paths:
-                _advance(store, name)
-                _share(name, entries.get(name), fingerprint, store)
+                cache._install(name, entry if name == output else None)
             observation.published = True
-        if entries != before:
-            _defer(store, fingerprint, entries)
-        return True
+            return True
+
+
+def move(observation: Observation, previous: str, path: str, fingerprint: dict) -> bool:
+    """Put the entry stored for ``previous`` under ``path``, where the *arr
+    renamed the file. Outside a walk only.
+
+    The entry holds the file key, which a rename leaves alone, so it is kept
+    as it stands. A file at ``path`` under another key is another file: the
+    old entry goes and nothing is written for the new one. True only where
+    the entry now stands under ``path``.
+    """
+    with _writer:
+        found = cache_key(path, None)
+        moved = False
+
+        def edit(entries: dict[str, dict]) -> None:
+            nonlocal moved
+            entry = entries.pop(previous, None)
+            if entry is not None and found is not None and _same_file(entry, found):
+                entries[path] = entry
+                moved = True
+
+        return _edit_store(observation, {previous, path}, fingerprint, edit) and moved
+
+
+def _same_file(entry: dict, key: FileKey) -> bool:
+    """Whether the entry describes the file the key was taken from. The
+    language is the *arr's, not the file's, so it is not compared."""
+    return (entry.get("size"), entry.get("mtime_ns"), entry.get("nlink")) == (
+        key.size,
+        key.mtime_ns,
+        key.nlink,
+    )
+
+
+def _edit_store(
+    observation: Observation,
+    paths: set[str],
+    fingerprint: dict,
+    edit: Callable[[dict[str, dict]], None],
+) -> bool:
+    """Apply ``edit`` to the store outside a walk, under the observation's
+    fence on ``paths``, and hold the result for the coalescing window.
+
+    A live walk's standing view is edited instead of the file, so its save
+    cannot write over the change. The caller holds the writer lock.
+    """
+    store = observation.cache_file
+    entries = _for_update(fingerprint, store)
+    with _update_lock:
+        if not observation.accepts(paths) or fingerprint != observation.policy.fingerprint():
+            return False
+        if entries is None:
+            return False
+        before = dict(entries)
+        for live_cache in _live:
+            if (
+                live_cache.path == store
+                and live_cache.fingerprint == fingerprint
+                and not live_cache._superseded
+            ):
+                entries = live_cache._standing()
+        edit(entries)
+        for name in paths:
+            _advance(store, name)
+            _share(name, entries.get(name), fingerprint, store)
+        observation.published = True
+    if entries != before:
+        _defer(store, fingerprint, entries)
+    return True
 
 
 def _share(
@@ -789,19 +844,28 @@ class SweepCache:
         self._snapshot = (next(_generations), self._standing())
         return True
 
-    def save(self) -> None:
-        """Persist a completed walk, dropping entries it never visited."""
+    def save(self, within: Iterable[str] | None = None) -> None:
+        """Persist a completed walk, dropping entries it never visited.
+
+        ``within`` names the folders the walk listed when they were less than
+        the library: only entries under them are dropped, since the rest was
+        never looked at. None is a walk of everything.
+        """
         with _writer:
             with _update_lock:
                 if self._superseded:
                     return
-                entries = self._merge_external(self._next)
-                pruned = self._standing().keys() - entries.keys()
+                standing = self._standing()
+                unvisited = standing.keys() - self._merge_external(self._next).keys()
+                pruned = {path for path in unvisited if within is None or _under(path, within)}
                 for path in pruned:
                     _advance(self.path, path)
                     _share(path, None, self.fingerprint, self.path, self)
                 self._dropped.update(pruned)
                 self._changes += len(pruned)
+                entries = {
+                    path: entry for path, entry in standing.items() if path not in pruned
+                }
             self._write(entries)
 
     def _write(self, entries: dict[str, dict]) -> None:
@@ -819,6 +883,12 @@ class SweepCache:
 
 #: Active walks share changes while retaining their own pruning scope.
 _live: list[SweepCache] = []
+
+
+def _under(path: str, folders: Iterable[str]) -> bool:
+    """Whether the path is inside one of the folders. Lexical, like
+    :func:`trackstarr.arr.innermost`."""
+    return any(path.startswith(folder.rstrip(os.sep) + os.sep) for folder in folders)
 
 
 @contextlib.contextmanager

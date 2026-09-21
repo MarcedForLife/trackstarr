@@ -29,10 +29,14 @@ def headers_field(secret: str) -> dict:
 
 
 def make_arr(
-    existing: list[dict] | None = None, calls: list[tuple] | None = None, *, call=None
+    existing: list[dict] | None = None,
+    calls: list[tuple] | None = None,
+    *,
+    call=None,
+    name: str = "radarr",
 ):
-    """A Radarr client whose _call records requests and serves a canned notification list."""
-    arr = configured_arr()
+    """An *arr client whose _call records requests and serves a canned notification list."""
+    arr = configured_arr(name)
 
     def fake_call(path, payload=None, timeout=30, method=None):
         calls.append((method or ("POST" if payload is not None else "GET"), path, payload))
@@ -49,6 +53,10 @@ def registration(url: str = URL, secret: str = UNMINTED, **overrides) -> dict:
         "name": WEBHOOK_NAME,
         "onDownload": True,
         "onUpgrade": True,
+        "onRename": True,
+        "onMovieFileDelete": True,
+        "onMovieFileDeleteForUpgrade": True,
+        "onMovieDelete": True,
         "fields": [
             {"name": "url", "value": url},
             {"name": "method", "value": 1},
@@ -117,6 +125,51 @@ def test_updates_when_an_event_was_unticked():
     arr = make_arr([registration(secret=auth.mint("radarr"), onUpgrade=False)], calls)
     assert arr.register_webhook(URL)
     assert calls[-1][0] == "PUT"
+
+
+def _events_on(payload: dict) -> list[str]:
+    return sorted(key for key, value in payload.items() if key.startswith("on") and value)
+
+
+def test_registers_the_removal_events_in_each_arrs_own_words():
+    """A replaced or deleted file is only heard of if the *arr is asked to say
+    so, and Radarr and Sonarr name those events differently."""
+    radarr_calls: list[tuple] = []
+    assert make_arr([], radarr_calls).register_webhook(URL)
+    sonarr_calls: list[tuple] = []
+    assert make_arr([], sonarr_calls, name="sonarr").register_webhook(URL)
+
+    assert _events_on(radarr_calls[-1][2]) == [
+        "onDownload",
+        "onMovieDelete",
+        "onMovieFileDelete",
+        "onMovieFileDeleteForUpgrade",
+        "onRename",
+        "onUpgrade",
+    ]
+    assert _events_on(sonarr_calls[-1][2]) == [
+        "onDownload",
+        "onEpisodeFileDelete",
+        "onEpisodeFileDeleteForUpgrade",
+        "onRename",
+        "onSeriesDelete",
+        "onUpgrade",
+    ]
+
+
+def test_a_connection_from_before_removals_were_heard_is_brought_up_to_date():
+    """An install upgraded in place holds a connection ticked for imports
+    only. It is updated rather than left to say nothing about deletions."""
+    calls: list[tuple] = []
+    held = registration(secret=auth.mint("radarr"))
+    for flag in ("onMovieFileDelete", "onMovieFileDeleteForUpgrade", "onMovieDelete"):
+        held.pop(flag)
+    arr = make_arr([held], calls)
+    assert arr.register_webhook(URL)
+
+    method, path, payload = calls[-1]
+    assert (method, path) == ("PUT", "/api/v3/notification/5")
+    assert payload["onMovieFileDelete"] and payload["onMovieDelete"]
 
 
 @pytest.mark.parametrize(
