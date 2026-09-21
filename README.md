@@ -87,8 +87,9 @@ language-tagging conditions and regeneration thresholds.
 
 ## Processing and safety
 
-**Imports and sweeps.** Webhooks queue imported files. `SWEEP_AT` schedules a walk
-of `MEDIA_DIRS` using a cron expression in the configured timezone.
+**Imports and sweeps.** Webhooks queue imported files, and keep stored verdicts
+in step with files the *arrs report replaced, deleted or renamed. `SWEEP_AT`
+schedules a walk of `MEDIA_DIRS` using a cron expression in the configured timezone.
 Sweeps write actionable results to `/config/pending.tsv`. Imports take priority
 over waiting sweep work unless the queue has been manually reordered.
 Running rewrites finish first.

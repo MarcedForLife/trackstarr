@@ -228,6 +228,10 @@ def held_webhook() -> list[dict]:
             "name": WEBHOOK_NAME,
             "onDownload": True,
             "onUpgrade": True,
+            "onRename": True,
+            "onMovieFileDelete": True,
+            "onMovieFileDeleteForUpgrade": True,
+            "onMovieDelete": True,
             "fields": [
                 {"name": "url", "value": webhook_url()},
                 {"name": "method", "value": 1},

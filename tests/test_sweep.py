@@ -14,7 +14,16 @@ from pathlib import Path
 
 import pytest
 
-from conftest import cache_verdict, live_run, pending, publish_verdict, read_events, set_config
+from conftest import (
+    cache,
+    cache_verdict,
+    live_run,
+    pending,
+    publish_verdict,
+    read_events,
+    set_config,
+    set_rules,
+)
 from trackstarr import (
     config,
     estimate,
@@ -1186,8 +1195,8 @@ def test_a_recheck_reprobes_a_file_the_cache_has_already_judged(
 def test_a_recheck_leaves_the_rest_of_the_librarys_verdicts_alone(
     monkeypatch, tmp_path, clean_registry
 ):
-    """save() drops every unvisited entry, which for a walk of one folder is
-    the rest of the library."""
+    """A recheck prunes only under its own folders: the rest of the library
+    was never looked at, so nothing can be said about it."""
     dune = _folder(tmp_path, "Dune (2024)", "Dune.mkv")
     _folder(tmp_path, "Arrival (2016)", "Arrival.mkv")
     monkeypatch.setattr(
@@ -1205,6 +1214,109 @@ def test_a_recheck_leaves_the_rest_of_the_librarys_verdicts_alone(
         "Arrival.mkv",
         "Dune.mkv",
     ]
+
+
+def _conforming(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "trackstarr.sweep.process",
+        lambda job, dry_run, source="", policy=None, cancel=None, observation=None: (
+            ProcessResult(Status.CONFORM, None)
+        ),
+    )
+
+
+def _stored_names() -> list[str]:
+    stored = json.loads((Path(config.STATE_DIR) / "sweep-cache.json").read_text())
+    return sorted(os.path.basename(path) for path in stored["files"])
+
+
+def test_a_recheck_drops_what_has_left_the_folder_it_walked(
+    monkeypatch, tmp_path, clean_registry
+):
+    """A walk of a whole title folder has seen everything left in it, so a
+    file it did not find has gone: an upgrade's leftover, or a deletion no
+    webhook said."""
+    dune = _folder(tmp_path, "Dune (2024)", "Dune.mkv", "Dune.old.mkv")
+    _folder(tmp_path, "Arrival (2016)", "Arrival.mkv")
+    _conforming(monkeypatch)
+    sweep(dry_run=True)
+    os.remove(os.path.join(dune, "Dune.old.mkv"))
+
+    sweep_mod.recheck([dune], dry_run=True, run="r#2")
+
+    assert _stored_names() == ["Arrival.mkv", "Dune.mkv"]
+
+
+def test_a_recheck_of_named_files_drops_nothing(monkeypatch, tmp_path, clean_registry):
+    """Explicit files never list their siblings, so an unvisited sibling says
+    nothing about whether it is still there."""
+    dune = _folder(tmp_path, "Dune (2024)", "Dune.mkv", "Dune.old.mkv")
+    _conforming(monkeypatch)
+    sweep(dry_run=True)
+    os.remove(os.path.join(dune, "Dune.old.mkv"))
+
+    sweep_mod.recheck([dune], dry_run=True, run="r#2", files=[os.path.join(dune, "Dune.mkv")])
+
+    assert _stored_names() == ["Dune.mkv", "Dune.old.mkv"]
+
+
+def test_a_recheck_of_a_folder_that_is_not_there_drops_nothing(
+    monkeypatch, tmp_path, clean_registry
+):
+    """An unmounted title folder lists nothing, which must not read as a
+    folder emptied out. Its verdicts wait for the mount to come back."""
+    dune = _folder(tmp_path, "Dune (2024)", "Dune.mkv")
+    _conforming(monkeypatch)
+    sweep(dry_run=True)
+    os.rename(dune, dune + ".away")
+
+    sweep_mod.recheck([dune], dry_run=True, run="r#2")
+
+    assert _stored_names() == ["Dune.mkv"]
+
+
+def test_a_removed_file_a_rewrite_holds_is_left_to_the_rewrite(tmp_path):
+    """A webhook answers in milliseconds; a rewrite can hold a file for an
+    hour. The rewrite's own publication settles the entry either way, so the
+    drop waits for nobody."""
+    gone = str(tmp_path / "gone.mkv")
+    cache((gone, Verdict(Status.PENDING)))
+
+    with sweep_cache.observing(gone) as rewrite:
+        assert rewrite.changing(gone)
+        assert sweep_mod.remove([gone]) == []
+
+    fingerprint = Policy.from_config().fingerprint()
+    assert gone in sweep_cache.read(sweep_cache.cache_path(), fingerprint).files
+
+
+def test_a_rename_onto_a_file_a_rewrite_holds_waits_for_the_rewrite(tmp_path):
+    """Both ends of a move are fenced. A rewrite publishing under the new
+    name settles that entry itself, so the move gives way rather than wait."""
+    old, new = str(tmp_path / "old.mkv"), str(tmp_path / "new.mkv")
+    Path(new).write_bytes(b"x" * 8)
+    cache((old, Verdict(Status.PENDING)))
+
+    with sweep_cache.observing(new) as rewrite:
+        assert rewrite.changing(new)
+        assert sweep_mod.relocate([(old, new)]) == []
+
+    fingerprint = Policy.from_config().fingerprint()
+    assert set(sweep_cache.read(sweep_cache.cache_path(), fingerprint).files) == {old}
+
+
+def test_a_removed_files_verdict_under_old_rules_waits_for_the_next_sweep(tmp_path):
+    """A cache judged under rules since changed is the next sweep's to drop
+    whole. One entry cannot be edited out of it, and the page already says
+    those verdicts are not current."""
+    gone = str(tmp_path / "gone.mkv")
+    cache((gone, Verdict(Status.PENDING)))
+    set_rules(remux="always")
+
+    assert sweep_mod.remove([gone]) == []
+
+    stored = sweep_cache.read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
+    assert gone in stored.files and not stored.current
 
 
 def test_a_recheck_replaces_the_verdict_it_re_judged(monkeypatch, tmp_path, clean_registry):
