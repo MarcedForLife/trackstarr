@@ -16,7 +16,7 @@
 	import Reveal from '$lib/components/Reveal.svelte';
 	import RunFile from '$lib/components/RunFile.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
-	import { rowFade, rowSlide } from '$lib/motion.svelte';
+	import { keepRowSlots, rowArrive, rowFade, rowLeave, rowSlide } from '$lib/motion.svelte';
 	import SweepButtons from '$lib/components/SweepButtons.svelte';
 	import type { Landed, Snapshot } from '$lib/activity.svelte';
 	import { refusalText } from '$lib/api';
@@ -299,6 +299,12 @@
 	// What is being left alone for now, and how long is left of each.
 	const pausedItems = $derived(activity.pauses ?? []);
 
+	let panelRoot = $state<HTMLElement>();
+	keepRowSlots(
+		() => panelRoot,
+		() => [activeFiles, shownQueue, pausedItems]
+	);
+
 	function release(pause: Pause) {
 		act(`resume-${pause.path}`, () => resumeItem({ paths: [pause.path] }));
 	}
@@ -329,9 +335,9 @@
 />
 
 {#snippet fileList(items: Row[])}
-	<ul class="space-y-2">
+	<ul data-rows class="relative flex flex-col gap-2">
 		{#each items as file (file.key)}
-			<li animate:flip={rowSlide()} in:fade={rowFade()} out:fade={rowFade()}>
+			<li animate:flip={rowSlide()} in:fade={rowArrive()} out:rowLeave>
 				<!-- A run winding up leaves the file it is on encoding, so a held file
 				     keeps its skip. Only the ones it will never reach lose theirs. -->
 				<RunFile
@@ -360,7 +366,11 @@
 	</ul>
 {/snippet}
 
-<section aria-labelledby="now" class="mt-6 rounded-xl border border-line bg-raised">
+<section
+	bind:this={panelRoot}
+	aria-labelledby="now"
+	class="mt-6 rounded-xl border border-line bg-raised"
+>
 	<div class="px-4 py-5 sm:px-5">
 		<div class="flex items-center justify-between gap-3">
 			<h2
@@ -650,9 +660,9 @@
 					<span>Paused <span class="text-faint tabular-nums">{pausedItems.length}</span></span>
 				{/snippet}
 				{#snippet panel()}
-					<ul class="space-y-2 pb-3">
+					<ul data-rows class="relative flex flex-col gap-2 pb-3">
 						{#each pausedItems as pause (pause.path)}
-							<li animate:flip={rowSlide()} in:fade={rowFade()} out:fade={rowFade()}>
+							<li animate:flip={rowSlide()} in:fade={rowArrive()} out:rowLeave>
 								<PausedFile
 									{pause}
 									cover={activity.covers?.[pause.path]}
