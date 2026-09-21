@@ -8,7 +8,7 @@
 	import Sheet, { SLIDE } from './Sheet.svelte';
 	import Count from '$lib/components/Count.svelte';
 	import { refusalText } from '$lib/api';
-	import { rowFade, rowSlide } from '$lib/motion.svelte';
+	import { keepRowSlots, rowArrive, rowLeave, rowSlide } from '$lib/motion.svelte';
 	import { overlay } from '$lib/overlay';
 	import {
 		QueueChanging,
@@ -43,6 +43,11 @@
 		revision: 0,
 		plans_current: true
 	});
+	let well = $state<HTMLElement>();
+	keepRowSlots(
+		() => well,
+		() => data.items
+	);
 	let selected = $state<Record<string, QueueItem>>({});
 	// Whether a tap on a cover picks rather than opens, as the grid's own mode
 	// works. Off until asked for, so a reader who only wants one file's menu is
@@ -310,10 +315,10 @@
 			onscroll={(event) => (scrolled = event.currentTarget.scrollTop > 0)}
 		>
 			<!-- One well for the whole list, as the overview panel draws its rows. -->
-			<div class="rounded-xl border border-line bg-sunken p-3 sm:p-4">
-				<ul class="space-y-2">
+			<div bind:this={well} class="rounded-xl border border-line bg-sunken p-3 sm:p-4">
+				<ul data-rows class="relative flex flex-col gap-2">
 					{#each data.items as item (queueKey(item))}
-						<li animate:flip={rowSlide()} in:fade={rowFade()} out:fade={rowFade()}>
+						<li animate:flip={rowSlide()} in:fade={rowArrive()} out:rowLeave>
 							<QueueFile
 								{item}
 								cover={data.covers?.[item.path]}

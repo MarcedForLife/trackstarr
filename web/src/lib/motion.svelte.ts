@@ -4,6 +4,7 @@
 // under an open page takes effect.
 
 import { backOut, cubicOut } from 'svelte/easing';
+import type { TransitionConfig } from 'svelte/transition';
 import { display } from '$lib/display.svelte';
 
 // Guarded: the tests run in node, with no window.
@@ -39,12 +40,60 @@ export function rowSlide(): { duration: number; easing: (t: number) => number } 
 	return { duration: still ? 0 : ROW_SLIDE, easing: cubicOut };
 }
 
-/** The fade for something small arriving or leaving in place: a row in one
- * of those lists, or a bar's segment giving way to its fill. Shorter than the
- * slide, so a leaving row has gone before the rows under it land in its
- * place. */
+// Short, since it is only ever one small thing changing in one place.
+const ROW_FADE = 150;
+
+/** The fade for something small giving way to what replaces it, in the place
+ * it already holds. A bar's segment under its fill, or one word swapped for
+ * another. */
 export function rowFade(): { duration: number } {
-	return { duration: still ? 0 : 150 };
+	return { duration: still ? 0 : ROW_FADE };
+}
+
+/** `in:` for a row of a list whose rows are replaced in place. It waits out
+ * the row it succeeds, which shares its place and reads as a smear over it. */
+export function rowArrive(): { duration: number; delay: number } {
+	return { duration: still ? 0 : ROW_FADE, delay: still ? 0 : ROW_FADE };
+}
+
+// Where each row stood before the update that removed it.
+const slots = new WeakMap<HTMLElement, number>();
+
+/** Remember where the rows of every `data-rows` list under `within` stand,
+ * before an update moves them. `rows` is what those lists draw. */
+export function keepRowSlots(within: () => HTMLElement | undefined, rows: () => unknown): void {
+	$effect.pre(() => {
+		rows();
+		for (const list of within()?.querySelectorAll('[data-rows]') ?? []) {
+			for (const row of list.children) {
+				if (row instanceof HTMLElement) slots.set(row, row.offsetTop);
+			}
+		}
+	});
+}
+
+/** `out:` for a row of such a list. It leaves the flow and fades where it
+ * stood, so its replacement arrives in the same frame. Svelte measures a
+ * leaving row only once the arrivals are in, which strands it below them.
+ *
+ * The list has to space its rows with a gap. Under `space-y-*` a leaving row
+ * makes the last row in flow no longer last, which gives it a bottom margin
+ * that collapses out of the list and pushes everything below it down. */
+export function rowLeave(node: HTMLElement): TransitionConfig {
+	const slot = slots.get(node);
+	if (slot !== undefined) {
+		// Svelte has pinned a width of its own, so left and right replace it and
+		// the row still spans the list.
+		Object.assign(node.style, {
+			position: 'absolute',
+			top: `${slot}px`,
+			left: '0',
+			right: '0',
+			width: '',
+			transform: ''
+		});
+	}
+	return { duration: still ? 0 : ROW_FADE, css: (t) => `opacity: ${t}` };
 }
 
 // Long enough for the overshoot to read, on a mark twenty pixels wide.
