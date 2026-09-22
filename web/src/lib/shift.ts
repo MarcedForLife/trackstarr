@@ -11,7 +11,15 @@ function ms(time: string): number {
 	return time.trim().endsWith('ms') ? value : value * 1000;
 }
 
-export function shift(node: HTMLElement, onOpeningDuration?: (duration: number) => void) {
+export type Shifting = {
+	// What the opening run came to, so a chevron turns with it.
+	measured?: (duration: number) => void;
+	// Whether the mount itself is an opening. False for a panel already open at
+	// the first render, which takes its height at once.
+	animate?: boolean;
+};
+
+export function shift(node: HTMLElement, options?: Shifting) {
 	const content = node.firstElementChild;
 	if (!(content instanceof HTMLElement)) return;
 	const inner: HTMLElement = content;
@@ -69,7 +77,7 @@ export function shift(node: HTMLElement, onOpeningDuration?: (duration: number) 
 		closing = false;
 		height = inner.getBoundingClientRect().height;
 		const span = duration(true);
-		onOpeningDuration?.(span);
+		options?.measured?.(span);
 		move(height, span, from);
 	}
 
@@ -96,9 +104,14 @@ export function shift(node: HTMLElement, onOpeningDuration?: (duration: number) 
 		}
 	});
 
-	node.style.marginTop = '0px';
-	node.style.marginBottom = '0px';
-	open(0);
+	if (options?.animate === false) {
+		// Where a finished opening leaves it, so focus rings are not clipped.
+		node.style.overflow = 'visible';
+	} else {
+		node.style.marginTop = '0px';
+		node.style.marginBottom = '0px';
+		open(0);
+	}
 
 	return {
 		destroy() {

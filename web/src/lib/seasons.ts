@@ -48,8 +48,14 @@ function label(number: number | null): string {
 	return number === 0 ? 'Specials' : `Season ${number}`;
 }
 
+// Newest numbered season first, then the files naming no season, specials
+// last. The sheet opens the first group, which should be the show itself.
+function rank(number: number | null): number {
+	return number === 0 ? -2 : (number ?? -1);
+}
+
 /**
- * A title's files by season, latest first, specials and unnumbered files last.
+ * A title's files by season, latest first, unnumbered files then specials last.
  *
  * Null where the grouping would say nothing: a film, or a series in one season.
  */
@@ -71,7 +77,6 @@ export function seasons(files: LibraryFile[]): Season[] | null {
 		),
 		state: worstOf(episodes)
 	}));
-	// Latest first, so a season with no number sorts behind every one that has.
-	grouped.sort((one, two) => (two.number ?? -1) - (one.number ?? -1));
+	grouped.sort((one, two) => rank(two.number) - rank(one.number));
 	return grouped;
 }

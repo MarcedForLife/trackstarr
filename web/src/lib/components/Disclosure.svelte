@@ -83,6 +83,17 @@
 	const half = $derived(turn === 'half');
 	const angle = $derived(open ? (half ? '-rotate-90' : 'rotate-90') : half ? 'rotate-90' : '');
 
+	// A panel open at the first render was never opened by anyone, so it takes
+	// its height at once: growing into it fights whatever is still arriving
+	// around it, such as a sheet mid-slide.
+	// svelte-ignore state_referenced_locally
+	let alreadyOpen = open;
+	function opening() {
+		const first = alreadyOpen;
+		alreadyOpen = false;
+		return !first;
+	}
+
 	// Svelte hands the same node back when a row is opened again before its
 	// close has finished, and only this puts it right.
 	let box = $state<HTMLElement>();
@@ -159,7 +170,7 @@
 		bind:this={box}
 		{id}
 		class={`reveal relative ${panelClass}`}
-		use:shift={(duration) => (openingDuration = duration)}
+		use:shift={{ measured: (duration) => (openingDuration = duration), animate: opening() }}
 		out:fold
 	>
 		<div><div>{@render panel()}</div></div>
