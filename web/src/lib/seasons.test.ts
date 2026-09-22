@@ -32,14 +32,23 @@ describe('seasons', () => {
 		]);
 	});
 
-	test('specials and unnumbered files come last', () => {
+	test('unnumbered files then specials come last', () => {
 		const grouped = seasons([
 			episode(`${SHOW}/Specials/Severance - S00E01 - The Lexington Letter.mkv`),
 			episode(`${SHOW}/Season 01/Severance - S01E01 - Good News.mkv`),
 			episode(`${SHOW}/Extras/trailer.mkv`)
 		]);
 
-		expect(grouped?.map((season) => season.label)).toEqual(['Season 1', 'Specials', 'Other']);
+		expect(grouped?.map((season) => season.label)).toEqual(['Season 1', 'Other', 'Specials']);
+	});
+
+	test('a show of specials and extras opens on the extras, not the specials', () => {
+		const grouped = seasons([
+			episode(`${SHOW}/Specials/Severance - S00E01 - The Lexington Letter.mkv`),
+			episode(`${SHOW}/Extras/trailer.mkv`)
+		]);
+
+		expect(grouped?.map((season) => season.label)).toEqual(['Other', 'Specials']);
 	});
 
 	test('a file named some other way takes the season off its folder', () => {
