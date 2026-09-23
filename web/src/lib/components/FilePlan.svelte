@@ -30,7 +30,8 @@
 			</p>
 		{/if}
 		{#if !data.current}<p class="mt-2">
-				Rules have changed since this check. The plan will be re-evaluated before processing.
+				Settings or version changed. These details may be outdated. The plan will be re-evaluated
+				before processing.
 			</p>{/if}
 		<FileAccount {file} />
 	{:else}

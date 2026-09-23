@@ -656,8 +656,11 @@ def _read_cache() -> sweep_cache.Stored:
     with _lock:
         if _parsed and _parsed[0] == mark:
             return _parsed[1]
-    # Always current: live_view refuses a walk loaded under other rules.
-    stored = sweep_cache.Stored(view[1], True) if view else sweep_cache.read(path, fingerprint)
+    stored = (
+        sweep_cache.Stored(view[1], not any(entry.get("stale") for entry in view[1].values()))
+        if view
+        else sweep_cache.read(path, fingerprint)
+    )
     with _lock:
         _parsed = (mark, stored)
     return stored
@@ -1037,7 +1040,7 @@ def file_detail(path: str, *, card: bool = False) -> dict:
     owners, cards = cards_for_paths([path]) if card else ({}, {})
     return {
         "card": cards.get(owners.get(path, "")),
-        "current": stored.current,
+        "current": not entry or not entry.get("stale", False),
         "file": _file({**entry, "path": path}) if entry is not None else None,
     }
 
@@ -1094,7 +1097,7 @@ def title(title_id: str, *, pages: int = 1) -> dict | None:
         "year": found.year,
         "lang": found.lang,
         "folder": found.folder,
-        "current": stored.current,
+        "current": not any(entry.get("stale") for entry in entries),
         "files": files,
         # So a series past MAX_FILES can say it is showing part of itself.
         "total": len(entries),

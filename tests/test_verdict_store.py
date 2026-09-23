@@ -26,14 +26,15 @@ def test_a_store_that_is_not_an_object_is_refused(tmp_path):
     assert verdict_store.load(store(tmp_path)) is None
 
 
-def test_an_entry_too_old_to_use_is_left_behind(tmp_path):
-    """Its fields are anyone's guess, and the count is reported so a caller can
-    say how much of the library it is about to probe again."""
+def test_an_entry_too_old_to_reuse_is_kept_for_display(tmp_path):
+    """Older verdicts remain visible while waiting for a fresh plan."""
     Path(store(tmp_path)).write_text(
         json.dumps({"format": READS_FROM - 1, "config": RULES, "files": {"/a.mkv": {}}})
     )
     document = verdict_store.load(store(tmp_path))
-    assert document == Document(present=True, dropped=1, fingerprint=RULES)
+    assert document == Document(
+        {"/a.mkv": {"stale": True}}, present=True, dropped=1, fingerprint=RULES
+    )
 
 
 def test_an_entry_says_which_build_wrote_it_rather_than_the_document(tmp_path):
@@ -49,7 +50,7 @@ def test_an_entry_says_which_build_wrote_it_rather_than_the_document(tmp_path):
         )
     )
     document = verdict_store.load(store(tmp_path))
-    assert document.entries == {"/new.mkv": {"format": FORMAT}}
+    assert document.entries == {"/old.mkv": {"stale": True}, "/new.mkv": {"format": FORMAT}}
     assert document.dropped == 1
 
 

@@ -132,7 +132,7 @@ export type Shelf = {
 	titles: Card[];
 	// False when an *arr could not be listed, so titles are missing.
 	complete: boolean;
-	// False when the verdicts were reached under rules since changed.
+	// False when verdicts need a fresh check after settings or version changes.
 	current: boolean;
 	swept: number;
 };

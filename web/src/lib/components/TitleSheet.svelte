@@ -251,7 +251,7 @@
 		return parts.map((part, i) => (i ? { ...part, before: ` · ${part.before ?? ''}` } : part));
 	});
 
-	// The verdict was reached under rules that have since moved on. Not said of
+	// Settings or a newer version may have made the verdict stale. Not said of
 	// a title a run already holds, which is being judged again as it goes.
 	const staleVerdict = $derived(
 		!!detail &&
@@ -473,7 +473,9 @@
 						{:else}{@render holding('w-24')}{/if}
 					</p>
 					{#if staleVerdict}
-						<p class="mt-1 text-[12px] text-dim">Rules have changed since this check.</p>
+						<p class="mt-1 text-[12px] text-dim">
+							Settings or version changed. These details may be outdated.
+						</p>
 					{/if}
 					<!-- Multiple locations share one row. A single path is already visible. -->
 					<div class="mt-1.5 flex min-w-0 gap-1.5 overflow-x-auto">
@@ -655,7 +657,7 @@
 				<p class="sr-only">Reading the verdicts…</p>
 			{:else if !detail.files.length}
 				<p class="mt-6 text-sm text-dim">
-					No sweep has walked this title's files yet, so there is nothing to compare.
+					This title's files have not been checked yet, so there is nothing to compare.
 				</p>
 			{:else}
 				{#if grouped}

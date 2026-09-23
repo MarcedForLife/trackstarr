@@ -21,7 +21,18 @@ from conftest import (
     set_config,
     stub_arrs,
 )
-from trackstarr import config, library, notify, ratings, settings, state, sweep, sweep_cache
+from trackstarr import (
+    config,
+    library,
+    notify,
+    policy,
+    ratings,
+    settings,
+    state,
+    sweep,
+    sweep_cache,
+    verdict_store,
+)
 from trackstarr.policy import Policy
 from trackstarr.status import Status
 from trackstarr.sweep_cache import FileKey, SweepCache, Verdict
@@ -754,6 +765,73 @@ def test_a_title_hands_back_both_states_and_the_reason(media, monkeypatch):
     assert [track["index"] for track in only["tracks"]] == [0, 1]
     assert [track["channels"] for track in only["planned"] if track.get("channels")] == [2, 6]
     assert only["why"]["rules"] == ["downmix"]
+
+
+@pytest.mark.parametrize("change", ["settings", "version", "entry_format", "document_format"])
+def test_title_details_survive_until_each_title_is_replanned(media, monkeypatch, change):
+    dune, arrival = f"{media}/Dune", f"{media}/Arrival"
+    path, other = f"{dune}/Dune.mkv", f"{arrival}/Arrival.mkv"
+    stub_arrs(monkeypatch, [movie(1, "Dune", dune), movie(2, "Arrival", arrival)])
+    cache((path, pending()), (other, pending()))
+    before = library.title("arr:radarr:1")
+    other_before = library.title("arr:radarr:2")
+    cache_file = sweep_cache.cache_path()
+    if change == "settings":
+        set_config(AUDIO_LAYOUTS=("2.0",))
+    elif change == "version":
+        monkeypatch.setattr(policy, "__version__", "next-version")
+    else:
+        with open(cache_file) as stored:
+            document = json.load(stored)
+        document["format"] = verdict_store.READS_FROM - 1
+        for entry in document["files"].values():
+            if change == "entry_format":
+                entry["format"] = verdict_store.READS_FROM - 1
+            else:
+                del entry["format"]
+        state.write_json(cache_file, document)
+    library.forget()
+
+    assert library.title("arr:radarr:1") == {**before, "current": False}
+    assert library.file_detail(path)["current"] is False
+
+    # A user plans one title. Live reads and checkpoints retain its neighbour.
+    fingerprint = Policy.from_config().fingerprint()
+    walk = SweepCache.load(cache_file, fingerprint)
+    key = FileKey(100, 1, 1, "eng")
+    assert walk.lookup(path, key) is None
+    assert walk.failures(path, key) == 0
+    with sweep_cache.live(walk):
+        seed_verdict(walk, path, key, Verdict(Status.CONFORM))
+        walk.publish_view()
+        assert library.title("arr:radarr:1")["state"] == "conform"
+        assert library.title("arr:radarr:1")["current"] is True
+        assert library.title("arr:radarr:2") == {**other_before, "current": False}
+        assert library.shelf()["current"] is False
+        walk.checkpoint()
+        walk.save(within=[dune])
+
+    library.forget()
+    assert library.title("arr:radarr:1")["current"] is True
+    assert library.title("arr:radarr:2") == {**other_before, "current": False}
+    reloaded = SweepCache.load(cache_file, fingerprint)
+    assert reloaded.lookup(path, key) == Verdict(Status.CONFORM)
+    assert reloaded.lookup(other, key) is None
+
+    # Planning outside a sweep refreshes the remaining saved verdict too.
+    os.makedirs(arrival, exist_ok=True)
+    with open(other, "wb") as media_file:
+        media_file.write(b"media")
+    other_key = sweep_cache.cache_key(other, "eng")
+    with sweep_cache.observing(other) as observation:
+        assert sweep_cache.publish(
+            observation, other, other, other_key, Verdict(Status.CONFORM), fingerprint
+        )
+    sweep_cache.flush()
+    assert library.title("arr:radarr:2")["current"] is True
+    assert library.file_detail(other)["current"] is True
+    library.forget()
+    assert library.shelf()["current"] is True
 
 
 def test_a_passed_file_still_says_a_rewrite_made_it_pass(media, monkeypatch):
