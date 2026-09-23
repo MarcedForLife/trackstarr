@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { detail, details, headline, outcome, searchable, type Event } from '$lib/events';
+import { detail, details, headline, measures, outcome, searchable, type Event } from '$lib/events';
 
 function entry(over: Partial<Event> = {}): Event {
 	return {
@@ -9,6 +9,24 @@ function entry(over: Partial<Event> = {}): Event {
 		...over
 	};
 }
+
+test.each(['rules', 'incidental_rules'] as const)(
+	'Dolby Vision removal remains visible in events through %s',
+	(field) => {
+		const removed = entry({
+			event: 'modified',
+			[field]: ['dv_strip'],
+			bytes_before: 100,
+			bytes_after: 90
+		});
+		expect(measures(removed)).toContain('Dolby Vision removed');
+		expect(measures({ ...removed, event: 'pending' })).toContain('Remove Dolby Vision');
+		for (const event of ['failed', 'deferred', 'skipped']) {
+			expect(measures({ ...removed, event })).not.toContain('Dolby Vision removed');
+		}
+		expect(measures(entry({ event: 'modified' }))).not.toContain('Dolby Vision removed');
+	}
+);
 
 describe('a verdict headline', () => {
 	test('uses the library title and keeps the release filename in the details', () => {

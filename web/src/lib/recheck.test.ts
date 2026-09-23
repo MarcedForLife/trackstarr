@@ -1,8 +1,10 @@
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { Snapshot } from '$lib/activity.svelte';
 import { Recheck } from '$lib/recheck.svelte';
 import type { Event, EventPage } from '$lib/events';
 import type { Activity, Run } from '$lib/runs';
+import type { Poller, Watch } from '$lib/poll';
+import { told } from '$lib/stream';
 
 //: The module's own window: how long a run answered for but not yet in any
 //: snapshot is given before a snapshot without it reads as it having ended.
@@ -13,14 +15,29 @@ const WARMING_MS = 5000;
 // test can make the look itself, one at a time and in its own order.
 const harness = vi.hoisted(() => ({
 	watches: [] as { ask: () => Promise<void> }[],
-	prod: vi.fn()
+	prod: vi.fn(),
+	realPolling: false,
+	pollers: [] as Poller[]
 }));
 
-vi.mock('$lib/poll', () => ({
-	poll: (watch: { ask: () => Promise<void> }) => {
-		harness.watches.push(watch);
-		return { prod: harness.prod, now: () => {}, mark: () => {}, stop: () => {} };
-	}
+vi.mock('$lib/poll', async (original) => {
+	const { poll } = await original<typeof import('$lib/poll')>();
+	return {
+		poll: (watch: Watch) => {
+			if (harness.realPolling) {
+				const poller = poll(watch);
+				harness.pollers.push(poller);
+				return poller;
+			}
+			harness.watches.push(watch);
+			return { prod: harness.prod, now: () => {}, mark: () => {}, stop: () => {} };
+		}
+	};
+});
+
+vi.mock('$lib/stream', () => ({
+	told: vi.fn((fallback: number) => fallback),
+	subscribe: () => () => {}
 }));
 
 vi.mock('$lib/runs', () => ({ getActivity: vi.fn(), stopRun: vi.fn() }));
@@ -124,11 +141,53 @@ beforeEach(() => {
 	vi.useFakeTimers();
 	vi.clearAllMocks();
 	harness.watches = [];
+	harness.realPolling = false;
+	vi.mocked(told).mockImplementation((fallback) => fallback);
 	written = 0;
 	done = 0;
 	snapshot([]);
 	vi.mocked(getEvents).mockResolvedValue({ events: [summaryOf()], next: null });
 });
+
+afterEach(() => {
+	for (const poller of harness.pollers.splice(0)) poller.stop();
+	vi.unstubAllGlobals();
+	vi.useRealTimers();
+});
+
+test.each(['report', 'apply'] as const)(
+	'a fast sheet %s run releases its controls with a live event stream',
+	async (mode) => {
+		harness.realPolling = true;
+		vi.stubGlobal('document', {
+			visibilityState: 'visible',
+			addEventListener: () => {},
+			removeEventListener: () => {}
+		});
+		vi.mocked(told).mockReturnValue(120000);
+		vi.mocked(runTitles).mockResolvedValue({ run: 'r1', titles: 1 });
+		const recheck = watching();
+		await recheck.runOne('title-1', mode);
+		expect(recheck.runner.busy).toBe(mode);
+
+		// The whole run finished before the first snapshot. Its last stream
+		// notification is covered by this look, so no more messages are coming.
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(getActivity).toHaveBeenCalledOnce();
+		expect(recheck.runner.starting).toBe(true);
+		await vi.advanceTimersByTimeAsync(4000);
+		expect(recheck.runner.busy).toBe('');
+		expect(recheck.runner.starting).toBe(false);
+		expect(recheck.runner.run).toBeNull();
+		expect(written).toBe(1);
+		expect(done).toBe(1);
+
+		// Once settled, return to the stream's ordinary fallback pace.
+		vi.mocked(getActivity).mockClear();
+		await vi.advanceTimersByTimeAsync(30000);
+		expect(getActivity).not.toHaveBeenCalled();
+	}
+);
 
 test('a run already going when the page loads is adopted', async () => {
 	// A run is the service's, not a tab's, and the verdicts it is about to write

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ruleLabel } from '$lib/format';
 	import { frosted } from '$lib/controls';
 	import { popover } from '$lib/popover.svelte';
 	import type { Change } from '$lib/library';
@@ -75,10 +76,10 @@
 				aria-controls={`${id}-${at}`}
 				class={`${chip.rides ? RIDES : ACTING} min-h-7 hover:bg-raised`}
 			>
-				{chip.rule}
+				{ruleLabel(chip.rule)}
 			</button>
 			<div bind:this={panels[at]} id={`${id}-${at}`} popover="manual" class={PANEL}>
-				<p class="pb-1.5 font-mono text-[10.5px] text-faint">{chip.rule}</p>
+				<p class="pb-1.5 font-mono text-[10.5px] text-faint">{ruleLabel(chip.rule)}</p>
 				<ul class="flex flex-col gap-1">
 					{#each chip.lines as line, row (row)}
 						<li class="flex gap-1.5 text-[12px] text-dim">
@@ -92,7 +93,7 @@
 			</div>
 		{:else}
 			<span class={`${chip.rides ? RIDES : ACTING} inline-flex min-h-7 items-center`}>
-				{chip.rule}
+				{ruleLabel(chip.rule)}
 			</span>
 		{/if}
 	{/each}

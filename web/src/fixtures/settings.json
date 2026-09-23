@@ -20,6 +20,10 @@
 			"default": "never",
 			"summary": "Rebuild the downmixes trackstarr made when their codec or bitrate no longer matches the settings (REGENERATE_SCOPE=generated). With REGENERATE_SCOPE=all, also replace any layout-sized track reported under REGENERATE_BELOW_PERCENT of its layout's rate where a surviving bigger track has more to give. A replacement is a fresh downmix from the best surviving bigger track. REGENERATE_ABOVE_PERCENT re-encodes a track that far over its layout's rate from itself, lossless tracks aside."
 		},
+		"dv_strip": {
+			"default": "never",
+			"summary": "Remove Dolby Vision metadata from HDR10-compatible files. Preserve HDR10 and existing HDR10+. Video is not re-encoded."
+		},
 		"cover_art": {
 			"default": "always",
 			"summary": "Drop embedded cover art."
@@ -381,6 +385,10 @@
 			"env": false
 		},
 		"RULE_REGENERATE": {
+			"value": "never",
+			"env": false
+		},
+		"RULE_DV_STRIP": {
 			"value": "never",
 			"env": false
 		},

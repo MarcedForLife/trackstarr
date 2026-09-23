@@ -223,6 +223,9 @@ export class Recheck {
 	// Read as the chain re-arms, not watched: a reactive read would rebuild the
 	// timer on every answer.
 	#pace(): number {
+		// A fast run can end before any snapshot sees it. Keep checking until
+		// the startup window closes, even if its last stream message has arrived.
+		if (this.warming) return BUSY_MS;
 		if (this.#watching) return told(BUSY_MS);
 		// A run next door is what the controls are waiting on the end of.
 		if (this.otherRun || this.#options.asking()) return told(IDLE_MS);

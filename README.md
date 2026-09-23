@@ -8,7 +8,8 @@
 Trackstarr tidies audio and subtitle tracks in your movie and TV library.
 It processes Radarr and Sonarr imports, removes unwanted tracks, creates missing
 audio downmixes and puts the remaining tracks in your preferred order.
-Video is always copied without re-encoding.
+Video is copied without re-encoding. Optional Dolby Vision removal preserves
+the HDR10 base layer and existing HDR10+ metadata.
 
 - **Audio and language rules:** keep original-language audio and selected dubs,
   add stereo or surround mixes, choose codecs and bitrates, and remove unwanted layouts.

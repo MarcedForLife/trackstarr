@@ -186,3 +186,23 @@ export function soon(ts: string): string {
 	if (days < 7) return `${at.toLocaleDateString(undefined, { weekday: 'long' })} at ${time}`;
 	return `on ${at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
 }
+
+export const DV_REMOVED = 'Dolby Vision removed';
+
+export function videoDetail(track: {
+	dv?: { profile?: number; compatibility?: number; unsupported?: string };
+	dv_removed?: boolean;
+}): string {
+	if (track.dv_removed) return `${DV_REMOVED} · HDR10 preserved`;
+	if (!track.dv) return '';
+	const { profile, compatibility, unsupported } = track.dv;
+	const label =
+		profile === undefined
+			? 'Dolby Vision'
+			: `Dolby Vision profile ${profile}${compatibility === undefined ? '' : ` · compatibility ${compatibility}`}`;
+	return unsupported ? `${label}. ${unsupported}` : `${label} · HDR10 compatible`;
+}
+
+export function ruleLabel(rule: string): string {
+	return rule === 'dv_strip' ? 'Remove Dolby Vision' : rule;
+}

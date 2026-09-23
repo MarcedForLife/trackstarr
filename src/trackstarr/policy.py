@@ -88,6 +88,11 @@ RULES = {
         "best surviving bigger track. REGENERATE_ABOVE_PERCENT re-encodes a track "
         "that far over its layout's rate from itself, lossless tracks aside.",
     ),
+    "dv_strip": Rule(
+        NEVER,
+        "Remove Dolby Vision metadata from HDR10-compatible files. Preserve HDR10 and "
+        "existing HDR10+. Video is not re-encoded.",
+    ),
     "cover_art": Rule(ALWAYS, "Drop embedded cover art."),
     "release_tags": Rule(ALONGSIDE, "Clear release tags from track and container titles."),
     "stray_streams": Rule(ALONGSIDE, "Drop data and timecode streams nothing plays."),

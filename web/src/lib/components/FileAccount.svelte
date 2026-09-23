@@ -19,8 +19,16 @@
 	import Glyph from './Glyph.svelte';
 	import RuleChips from './RuleChips.svelte';
 	import TrackEditor from './TrackEditor.svelte';
-	import { badges, bytesFor, carriesLanguage, describe, rate } from '$lib/format';
-	import { listing, size, verdictLabel, type Track } from '$lib/library';
+	import {
+		badges,
+		bytesFor,
+		carriesLanguage,
+		describe,
+		DV_REMOVED,
+		rate,
+		videoDetail
+	} from '$lib/format';
+	import { CHIP, PLAIN_TONE, listing, size, verdictLabel, type Track } from '$lib/library';
 	import { editable, matching } from '$lib/retag';
 
 	// What a rewrite would do to one file: its tracks as it leaves them, why it is
@@ -121,6 +129,14 @@
 		{@render list(shown.rows)}
 	</div>
 {/if}
+
+{#if file.modified?.dv_removed}
+	<p class="mt-3"><span class={`${CHIP} ${PLAIN_TONE}`}>{DV_REMOVED}</span></p>
+{/if}
+
+{#each file.why.notes ?? [] as note (note)}
+	<p class="mt-3 text-[12px] text-dim">{note}</p>
+{/each}
 
 {#if file.why.skip}
 	<!-- The skip first, or the reasons read as a rewrite that never comes.
@@ -252,6 +268,9 @@
 			{/if}
 		</span>
 	</span>
+	{#if videoDetail(track)}
+		<span class="col-start-2 text-faint">{videoDetail(track)}</span>
+	{/if}
 	{#if track.title || badges(track).length}
 		<span class="col-start-2 flex min-w-0 items-baseline gap-1.5 text-faint">
 			<span class="min-w-0 truncate">{track.title}</span>

@@ -18,10 +18,13 @@ from typing import NamedTuple
 from . import config
 from .langs import named_in
 from .media import (
+    DV_CONTAINERS,
     ProbeError,
     container_title,
+    dolby_vision,
     duration,
     generated_settings,
+    is_chapter_stream,
     is_commentary,
     is_cover_art,
     is_forced,
@@ -95,6 +98,8 @@ class OutStream:
     #: A copied stream's rate when the output container would otherwise lose
     #: it; see :func:`trackstarr.media.unpreserved_bitrate`. None otherwise.
     src_bitrate: int | None = None
+    dv_strip: bool = False
+    video_source: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +134,7 @@ class Plan:
     #: The same changes paired with their rule, which the four lists above lose.
     #: The sheet reads it to file each line under the chip that caused it.
     changes: list[Change] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
     original_lang: str | None = None
     #: policy.languages with ORIGINAL substituted for this title.
     langs: tuple[Lang, ...] = ()
@@ -138,6 +144,7 @@ class Plan:
     #: Source duration at plan time, checked against the rewrite result
     #: before anything is overwritten. Zero when the probe did not carry one.
     src_duration: float = 0.0
+    src_chapter_count: int = 0
     #: Source size and mtime at plan time. A plan waiting on the rewrite lock
     #: goes stale, so apply_plan refuses unless this matches. None when
     #: hand-built.
@@ -178,6 +185,7 @@ def describe(plan: Plan) -> str:
     """
     parts = list(plan.reasons)
     parts += [f"(also {item})" for item in plan.incidental]
+    parts += plan.notes
     if plan.skip:
         return f"{plan.skip}: {' · '.join(parts)}" if parts else plan.skip
     return " · ".join(parts)
@@ -213,6 +221,10 @@ def planned_tracks(plan: Plan) -> list[dict]:
                 "bitrate": source.get("bitrate"),
                 "flags": source.get("flags") or [],
             }
+        if not stream.encode and source.get("dv") is not None and not stream.dv_strip:
+            entry["dv"] = source["dv"]
+        if stream.dv_strip:
+            entry["dv_removed"] = True
         entry |= {"index": position, "src": stream.src, "kind": stream.kind}
         out.append(
             {name: value for name, value in entry.items() if value not in (None, "", [])}
@@ -301,6 +313,7 @@ def why(plan: Plan) -> dict:
     "modified" event records, plus the skip. :func:`describe` is the prose
     form."""
     told = {
+        "notes": plan.notes,
         "skip": plan.skip or "",
         "reasons": plan.reasons,
         "incidental": plan.incidental,
@@ -381,6 +394,7 @@ def plan_from_probe(plan: Plan, info: dict) -> Plan:
         return whole
     # No rewrite, so no ride-alongs happen; what they would have done is still
     # reported, so a title carrying release tags reads as that rather than as conforming.
+    deciding.notes = whole.notes
     deciding.incidental = whole.incidental
     deciding.incidental_rules = whole.incidental_rules
     deciding.changes = [change for change in whole.changes if change.rides]
@@ -407,6 +421,11 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     policy = plan.policy
     streams = info.get("streams") or []
     plan.src_duration = duration(info)
+    plan.src_chapter_count = len(info.get("chapters") or [])
+    if plan.src_chapter_count and os.path.splitext(plan.path)[1].lower() in {".mp4", ".m4v"}:
+        # Chapter mapping regenerates these tracks. They are neither explicit
+        # stream maps nor drops in the UI and history.
+        streams = [stream for stream in streams if not is_chapter_stream(stream)]
     plan.tracks = [track_summary(stream, policy) for stream in streams]
 
     video, audio, subs, tail = _split_streams(plan, streams)
@@ -509,10 +528,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
         key=lambda out: (channel_rank(out.channels, layout_order), not out.encode, out.src)
     )
 
-    ordered = [
-        OutStream(src=stream["index"], kind="video", src_bitrate=unpreserved_bitrate(stream))
-        for stream in video
-    ]
+    ordered = [_video_out(plan, stream) for stream in video]
     ordered += audio_out
     for stream in kept_subs:
         # Matroska has no mov_text; the text converts losslessly to SRT.
@@ -553,6 +569,30 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     plan.streams = ordered
 
     return plan
+
+
+def _video_out(plan: Plan, stream: dict) -> OutStream:
+    out = OutStream(src=stream["index"], kind="video", src_bitrate=unpreserved_bitrate(stream))
+    dv = dolby_vision(stream)
+    if not plan.acts("dv_strip") or dv is None or is_cover_art(stream):
+        return out
+    reason = dv.unsupported
+    if any(
+        os.path.splitext(path)[1].lower() not in DV_CONTAINERS
+        for path in (plan.path, plan.out_path)
+    ):
+        reason = "Dolby Vision removal is not verified for this container"
+    if reason:
+        plan.notes.append(f"video stream {stream['index']}: {reason}")
+        return out
+    out.dv_strip = True
+    out.video_source = stream
+    _record(
+        plan,
+        "dv_strip",
+        f"remove Dolby Vision from video stream {stream['index']} (keep HDR10)",
+    )
+    return out
 
 
 def _split_streams(

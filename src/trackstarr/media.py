@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+from dataclasses import dataclass
 
 from . import config
 from .langs import norm_lang
@@ -32,6 +33,7 @@ def probe(path: str) -> dict:
                 "json",
                 "-show_format",
                 "-show_streams",
+                "-show_chapters",
                 path,
             ],
             capture_output=True,
@@ -209,4 +211,166 @@ def track_summary(stream: dict, policy: Policy) -> dict:
         "bitrate": summary_bitrate(stream),
         "flags": flags,
     }
+    if (dv := dolby_vision(stream)) is not None:
+        summary["dv"] = {
+            name: value
+            for name, value in {
+                "profile": dv.profile,
+                "compatibility": dv.compatibility,
+                "unsupported": dv.unsupported,
+            }.items()
+            if value is not None and value != ""
+        }
     return {name: value for name, value in summary.items() if value not in (None, "", [])}
+
+
+@dataclass(frozen=True)
+class DolbyVision:
+    profile: int | None = None
+    compatibility: int | None = None
+    unsupported: str = ""
+
+    @property
+    def eligible(self) -> bool:
+        return not self.unsupported
+
+
+def dolby_vision(stream: dict) -> DolbyVision | None:
+    """Read eligibility only from a complete, unambiguous DOVI record."""
+    try:
+        side_data = _side_data(stream)
+    except ValueError:
+        return DolbyVision(unsupported="Malformed Dolby Vision metadata")
+    records = [
+        item for item in side_data if item.get("side_data_type") == "DOVI configuration record"
+    ]
+    if not records:
+        if any(
+            "DOVI" in item.get("side_data_type", "")
+            or "Dolby Vision" in item.get("side_data_type", "")
+            for item in side_data
+        ):
+            return DolbyVision(unsupported="Missing Dolby Vision configuration record")
+        return None
+    if len(records) != 1:
+        return DolbyVision(unsupported="Conflicting Dolby Vision configuration records")
+    record = records[0]
+    fields = (
+        "dv_profile",
+        "dv_bl_signal_compatibility_id",
+        "bl_present_flag",
+        "rpu_present_flag",
+        "el_present_flag",
+    )
+    if any(type(record.get(key)) is not int for key in fields):
+        return DolbyVision(unsupported="Incomplete or malformed Dolby Vision configuration")
+    profile, compatibility, base, rpu, enhancement = (record[key] for key in fields)
+    reason = ""
+    if stream.get("codec_type") != "video" or is_cover_art(stream):
+        reason = "Dolby Vision removal does not apply to artwork or non-video streams"
+    elif stream.get("codec_name") != "hevc":
+        reason = "Dolby Vision removal supports HEVC only"
+    elif profile != 8 or compatibility != 1:
+        reason = "Dolby Vision removal supports HDR10-compatible profile 8.1 only"
+    elif (base, rpu, enhancement) != (1, 1, 0):
+        reason = (
+            "Dolby Vision removal requires a base layer and RPU without an enhancement layer"
+        )
+    return DolbyVision(profile, compatibility, reason)
+
+
+# Only these source/output container paths have acceptance coverage.
+DV_CONTAINERS = frozenset({".mkv", ".mp4", ".m4v"})
+FRAME_VIDEO_PROPERTIES = (
+    "width",
+    "height",
+    "pix_fmt",
+    "color_range",
+    "color_space",
+    "color_transfer",
+    "color_primaries",
+)
+VIDEO_PROPERTIES = (
+    "codec_type",
+    "codec_name",
+    "profile",
+    *FRAME_VIDEO_PROPERTIES,
+    "chroma_location",
+    "sample_aspect_ratio",
+    "field_order",
+)
+HDR_TYPES = frozenset(
+    {
+        "Mastering display metadata",
+        "Content light level metadata",
+        "HDR Dynamic Metadata SMPTE2094-40 (HDR10+)",
+    }
+)
+
+
+def _side_data(item: dict) -> list[dict]:
+    sides = item.get("side_data_list", [])
+    if not isinstance(sides, list) or any(
+        not isinstance(side, dict) or not isinstance(side.get("side_data_type", ""), str)
+        for side in sides
+    ):
+        raise ValueError("malformed side data")
+    return sides
+
+
+def hdr_metadata(item: dict) -> list[dict]:
+    return [side for side in _side_data(item) if side.get("side_data_type") in HDR_TYPES]
+
+
+def frame_sample(path: str, stream: int) -> list[dict]:
+    """Decode a bounded prefix, paired by frame order across container timestamp shifts."""
+    timeout = config.current().PROBE_TIMEOUT
+    try:
+        out = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                str(stream),
+                "-read_intervals",
+                "%+#24",
+                "-show_frames",
+                "-of",
+                "json",
+                path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError) as err:
+        raise ProbeError("Dolby Vision frame verification probe failed") from err
+    # Decoding errors can leave a partial sample even when ffprobe exits zero.
+    if out.returncode != 0 or out.stderr.strip():
+        raise ProbeError(f"Dolby Vision frame verification failed: {out.stderr.strip()[:200]}")
+    try:
+        frames = json.loads(out.stdout)["frames"]
+        if (
+            not isinstance(frames, list)
+            or not frames
+            or any(
+                not isinstance(frame, dict) or frame.get("media_type") != "video"
+                for frame in frames
+            )
+        ):
+            raise ValueError("no video frames")
+        for frame in frames:
+            _side_data(frame)
+        return frames
+    except (ValueError, KeyError, TypeError) as err:
+        raise ProbeError("Dolby Vision frame verification returned no usable frames") from err
+
+
+def is_chapter_stream(stream: dict) -> bool:
+    """The QuickTime text track FFmpeg regenerates from mapped chapters."""
+    return (
+        stream.get("codec_type") == "data"
+        and stream.get("codec_name") == "bin_data"
+        and stream.get("codec_tag_string") == "text"
+    )

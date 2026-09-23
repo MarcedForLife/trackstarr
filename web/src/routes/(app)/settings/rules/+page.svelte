@@ -493,6 +493,19 @@
 			})}
 		</Section>
 
+		<Section
+			heading="Video compatibility"
+			note={ruleNote(['dv_strip'])}
+			names={[ruleVar('dv_strip')]}
+		>
+			{@render ruleRow({
+				rule: 'dv_strip',
+				label: 'Remove Dolby Vision',
+				text: 'Remove Dolby Vision metadata from HDR10-compatible files. Preserve HDR10 and existing HDR10+. Video is not re-encoded.',
+				note: 'HEVC profile 8.1 only. Dolby Vision information is discarded.'
+			})}
+		</Section>
+
 		<Section heading="File format" note={containerNote} names={FORMAT_SETTINGS}>
 			<SettingRow
 				name="ALLOWED_EXTS"

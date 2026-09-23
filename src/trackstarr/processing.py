@@ -241,7 +241,9 @@ def _before(plan: Plan) -> dict:
     return {"was": plan.tracks, **changes} if changes and plan.tracks else {}
 
 
-def _modified(plan: Plan, bytes_before: int | None, bytes_after: int | None) -> dict:
+def _modified(
+    plan: Plan, bytes_before: int | None, bytes_after: int | None, *, in_place: bool = False
+) -> dict:
     """What the rewrite did: when, the sizes either side, and the streams it
     moved.
 
@@ -251,6 +253,8 @@ def _modified(plan: Plan, bytes_before: int | None, bytes_after: int | None) -> 
     history page reads them there; a library view has the two track lists.
     """
     record = {"at": events.timestamp(), **_before(plan)}
+    if not in_place and any(stream.dv_strip for stream in plan.streams):
+        record["dv_removed"] = True
     if bytes_before and bytes_after:
         record |= {"bytes_before": bytes_before, "bytes_after": bytes_after}
     return record
@@ -390,7 +394,7 @@ def _tag_in_place(
         job.arr.rescan(job.item_id)
     refresh_servers(job.path)
     key = cache_key(job.path, job.lang)
-    rewrites.record(job.path, key, _modified(plan, bytes_before, bytes_after))
+    rewrites.record(job.path, key, _modified(plan, bytes_before, bytes_after, in_place=True))
     return ProcessResult(Status.MODIFIED, plan, became=_rejudged(job, plan, key))
 
 

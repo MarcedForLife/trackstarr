@@ -18,6 +18,8 @@ export type Track = {
 	title?: string;
 	bitrate?: number;
 	flags?: string[];
+	dv?: { profile?: number; compatibility?: number; unsupported?: string };
+	dv_removed?: boolean;
 	// Only on a planned track: its input stream. A generated downmix names its
 	// source, so two planned entries can share one.
 	src?: number;
@@ -28,6 +30,7 @@ export type Change = { rule: string; text: string };
 
 // Why a file is what it is: the lists a "modified" event records, plus the skip.
 export type Why = {
+	notes?: string[];
 	skip?: string;
 	// Only on a failed rewrite: what broke. The next sweep tries again.
 	failed?: string;
@@ -46,6 +49,7 @@ export type Why = {
 // the tracks it moved are the account. See unify().
 export type Modified = {
 	at: string;
+	dv_removed?: boolean;
 	bytes_before?: number;
 	bytes_after?: number;
 	// The file's tracks before the rewrite, the source indices it dropped and

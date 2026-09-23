@@ -41,6 +41,11 @@ const RULES: Record<string, { default: string; summary: string }> = {
 		summary:
 			"Rebuild the downmixes trackstarr made when their codec or bitrate no longer matches the settings (REGENERATE_SCOPE=generated). With REGENERATE_SCOPE=all, also replace any layout-sized track reported under REGENERATE_BELOW_PERCENT of its layout's rate where a surviving bigger track has more to give."
 	},
+	dv_strip: {
+		default: 'never',
+		summary:
+			'Remove Dolby Vision metadata from HDR10-compatible files. Preserve HDR10 and existing HDR10+. Video is not re-encoded.'
+	},
 	cover_art: { default: 'always', summary: 'Drop embedded cover art.' },
 	release_tags: {
 		default: 'alongside',
