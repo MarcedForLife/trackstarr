@@ -111,7 +111,11 @@ def test_the_rules_a_plan_can_name_are_exactly_the_vocabulary():
     as a name nothing else knows; one in RULE_NAMES that nothing emits
     promises a breakdown the data will never contain."""
     set_rules(
-        regenerate="always", commentary="always", remux="always", tag_original="alongside"
+        regenerate="always",
+        commentary="always",
+        remux="always",
+        tag_original="alongside",
+        dv_strip="always",
     )
     # No mode of their own; the row is the switch.
     set_layouts("2.0", "5.1", "7.1:remove")
@@ -140,6 +144,19 @@ def test_the_rules_a_plan_can_name_are_exactly_the_vocabulary():
     # tagged rather than guessed at again next sweep.
     named |= _named("/w.mkv", video(0), audio(1, 6, None))
 
+    dv = video(0, "hevc") | {
+        "side_data_list": [
+            {
+                "side_data_type": "DOVI configuration record",
+                "dv_profile": 8,
+                "dv_bl_signal_compatibility_id": 1,
+                "bl_present_flag": 1,
+                "rpu_present_flag": 1,
+                "el_present_flag": 0,
+            }
+        ]
+    }
+    named |= _named("/dv.mkv", dv, audio(1, 2))
     assert named == policy.RULE_NAMES
 
 

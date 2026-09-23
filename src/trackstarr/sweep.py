@@ -568,8 +568,6 @@ def remove(paths: Iterable[str], folders: Iterable[str] = ()) -> list[str]:
 
     ``folders`` adds everything stored under a title deleted with its files.
     A path still on disk keeps its verdict: the *arr spoke of its own copy.
-    Verdicts judged under other rules cannot be edited and go with the next
-    sweep.
     """
     fingerprint = Policy.from_config().fingerprint()
     stored = sweep_cache.read(cache_path(), fingerprint).files

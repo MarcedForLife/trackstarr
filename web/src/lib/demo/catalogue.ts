@@ -293,7 +293,7 @@ export function catalogue(): TitleSpec[] {
 			minutes: 10,
 			source: 'Remux-2160p',
 			tracks: [
-				video(48_000_000, 'hevc'),
+				{ ...video(48_000_000, 'hevc'), dv: { profile: 8, compatibility: 1 } },
 				audio(1, 'truehd', 8, 'eng', 4_100_000, DEFAULT),
 				audio(2, 'ac3', 6, 'eng', 640_000),
 				audio(3, 'aac', 2, 'eng', 256_000),

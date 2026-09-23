@@ -178,12 +178,14 @@ export function rewrite(state: State, file: File, at: number): Modified {
 	const dropped = before
 		.map((track) => track.index)
 		.filter((index) => !file.planned.some((track) => track.src === index));
-	const after: Track[] = file.planned.map(({ src: _src, ...track }) => {
+	const after: Track[] = file.planned.map(({ src: _src, dv_removed: _dvRemoved, ...track }) => {
 		void _src;
+		void _dvRemoved;
 		return track;
 	});
 	const made: Modified = {
 		at: stamp(at),
+		...(file.planned.some((track) => track.dv_removed) ? { dv_removed: true } : {}),
 		bytes_before: file.bytes,
 		bytes_after: bytesOf(after, file.runtime),
 		was: before,

@@ -32,6 +32,11 @@ def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
                 # fills a gap; a source's own BPS tag is left alone.
                 args += [f"-metadata:s:{out_index}", f"BPS={out.src_bitrate}"]
 
+    video_streams = (out for out in plan.streams if out.kind == "video")
+    for idx, out in enumerate(video_streams):
+        if out.dv_strip:
+            args += [f"-bsf:v:{idx}", "dovi_rpu=strip=1"]
+
     audio_streams = (out for out in plan.streams if out.kind == "audio")
     for idx, out in enumerate(audio_streams):
         if out.encode:

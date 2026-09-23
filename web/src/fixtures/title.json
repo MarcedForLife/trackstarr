@@ -24,7 +24,11 @@
 				{
 					"index": 0,
 					"kind": "video",
-					"codec": "h264"
+					"codec": "hevc",
+					"dv": {
+						"profile": 8,
+						"compatibility": 1
+					}
 				},
 				{
 					"index": 1,
@@ -75,7 +79,11 @@
 				{
 					"index": 0,
 					"kind": "video",
-					"codec": "h264"
+					"codec": "hevc",
+					"dv": {
+						"profile": 8,
+						"compatibility": 1
+					}
 				},
 				{
 					"index": 1,

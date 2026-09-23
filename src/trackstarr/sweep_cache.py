@@ -1,17 +1,15 @@
 """Remember each file's verdict between sweeps.
 
 Size and mtime are enough to skip re-probing thousands of unchanged files at
-50-200ms each. The whole cache is dropped when
-:meth:`trackstarr.policy.Policy.fingerprint` changes; deleting the file forces
-a full re-probe.
+50-200ms each. A :meth:`trackstarr.policy.Policy.fingerprint` change forces
+a fresh probe while retaining the previous verdicts for display.
 
 Verdicts carry the probed track summaries, so the cache doubles as the library
 index. :func:`publish` lets an import or a ``fix`` book one verdict without a
 walk's bookkeeping, and :func:`live` and :func:`live_view` let the library read
 a running walk's verdicts ahead of its next checkpoint.
 
-Nothing here outlives a rule change. What a rewrite of ours did is history and
-lives in :mod:`trackstarr.rewrites` for that reason.
+Rewrite history lives in :mod:`trackstarr.rewrites`.
 
 Which verdicts are safe to cache is the sweep's call; see
 :data:`trackstarr.sweep.CACHEABLE_STATUSES`.
@@ -88,12 +86,20 @@ class Verdict:
 class Stored:
     """The cache file as a non-sweep reader sees it.
 
-    ``current`` is False when the verdicts were judged under rules that have
-    since changed. Still worth showing, with that said.
+    ``current`` is False when any verdict needs a fresh probe after a rules
+    or format change.
     """
 
     files: dict[str, dict]
     current: bool
+
+
+def _stored(entries: dict[str, dict], same_rules: bool) -> Stored:
+    files = {
+        path: entry if same_rules else {**entry, "stale": True}
+        for path, entry in entries.items()
+    }
+    return Stored(files, same_rules and not any(entry.get("stale") for entry in files.values()))
 
 
 def read(path: str, fingerprint: dict) -> Stored:
@@ -107,11 +113,11 @@ def read(path: str, fingerprint: dict) -> Stored:
     """
     with _batched:
         if (batch := _pending.get(path)) is not None:
-            return Stored(dict(batch.entries), batch.fingerprint == fingerprint)
+            return _stored(batch.entries, batch.fingerprint == fingerprint)
     document = verdict_store.load(path)
     if document is None or not document.present:
         return Stored({}, True)
-    return Stored(document.entries, document.fingerprint == fingerprint)
+    return _stored(document.entries, document.fingerprint == fingerprint)
 
 
 def _count(value: object) -> int:
@@ -491,6 +497,10 @@ def _edit_store(
             return False
         before = dict(entries)
         for live_cache in _live:
+            if live_cache.path == store and live_cache.fingerprint != fingerprint:
+                if fingerprint != Policy.from_config().fingerprint():
+                    return False
+                live_cache._superseded = True
             if (
                 live_cache.path == store
                 and live_cache.fingerprint == fingerprint
@@ -556,31 +566,36 @@ def _for_update(fingerprint: dict, cache_file: str) -> dict[str, dict] | None:
     """The entries as :func:`publish` may change them, or None to leave the
     file alone.
 
-    An unwritten batch is the newest the store has been, so it answers ahead of
-    the file. Another build's format, or verdicts under rules since changed, is
-    a cache the next sweep drops whole; a current verdict cannot be filed among
-    them. Nothing swept yet is an empty set: one verdict is still worth showing.
+    An unwritten batch answers ahead of the file. Older verdicts stay marked
+    stale until each file is judged again.
     """
     with _batched:
         batch = _pending.get(cache_file)
-        if batch is not None and batch.fingerprint == fingerprint:
-            return batch.entries
+        if batch is not None:
+            if (
+                batch.fingerprint != fingerprint
+                and fingerprint != Policy.from_config().fingerprint()
+            ):
+                return None
+            return _stored(batch.entries, batch.fingerprint == fingerprint).files
     document = verdict_store.load(cache_file)
     if document is None:
         return None
     if not document.present:
         return {}
-    if document.fingerprint != fingerprint:
+    if (
+        document.fingerprint != fingerprint
+        and fingerprint != Policy.from_config().fingerprint()
+    ):
         return None
-    return document.entries
+    return _stored(document.entries, document.fingerprint == fingerprint).files
 
 
 def _defer(cache_file: str, fingerprint: dict, entries: dict[str, dict]) -> None:
     """Hold a publication for the coalescing window instead of writing it now.
 
     The caller holds the writer lock, so the batch being replaced is nobody's
-    to read part-way through. A batch judged under other rules is dropped
-    rather than merged: a load would refuse it anyway.
+    to read part-way through. Entries carried from older rules remain stale.
     """
     now = time.monotonic()
     with _batched:
@@ -692,7 +707,7 @@ class SweepCache:
     ``carry`` and :func:`publish` build the next sweep's contents, so unvisited
     entries fall away on ``save``; ``checkpoint`` persists mid-sweep without
     pruning. ``fingerprint`` is the policy the verdicts were judged under, and
-    a mismatch on load drops the cache.
+    a mismatch on load marks the previous verdicts stale.
     """
 
     def __init__(self, path: str, fingerprint: dict):
@@ -721,20 +736,18 @@ class SweepCache:
         cache = cls(path, fingerprint)
         with _batched:
             if (batch := _pending.get(path)) is not None:
-                if batch.fingerprint == fingerprint:
-                    cache._previous = dict(batch.entries)
-                else:
-                    log.info("rule configuration changed, dropping the sweep cache")
+                cache._previous = _stored(batch.entries, batch.fingerprint == fingerprint).files
+                if batch.fingerprint != fingerprint:
+                    log.info("rule configuration changed, verdicts need a fresh probe")
                 return cache
         document = verdict_store.load(path)
         if document is None or not document.present:
             return cache
         if document.fingerprint != fingerprint:
-            log.info("rule configuration changed, dropping the sweep cache")
-            return cache
+            log.info("rule configuration changed, verdicts need a fresh probe")
         if document.dropped:
-            log.info("%d verdicts an older build wrote will be probed again", document.dropped)
-        cache._previous = document.entries
+            log.info("%d stored verdicts need a fresh probe", document.dropped)
+        cache._previous = _stored(document.entries, document.fingerprint == fingerprint).files
         return cache
 
     @_synchronized
@@ -746,7 +759,7 @@ class SweepCache:
         say what went wrong, and an estimate needs the other two.
         """
         entry = self._external.get(path, self._previous.get(path))
-        if key is None or not isinstance(entry, dict):
+        if key is None or not isinstance(entry, dict) or entry.get("stale"):
             return None
         if not asdict(key).items() <= entry.items():
             return None
@@ -772,7 +785,7 @@ class SweepCache:
         """Failed rewrites of this file as it now stands. Keyed like a lookup,
         so a change on disk starts the count over."""
         entry = self._external.get(path, self._previous.get(path))
-        if key is None or not isinstance(entry, dict):
+        if key is None or not isinstance(entry, dict) or entry.get("stale"):
             return 0
         if not asdict(key).items() <= entry.items():
             return 0
@@ -901,8 +914,7 @@ def live(cache: SweepCache) -> Iterator[None]:
         with _update_lock:
             # Loading and registering are separate steps. Pick up any writes that
             # landed in between, plus verdicts other walks have not checkpointed.
-            if latest.current:
-                cache._previous = latest.files
+            cache._previous = latest.files
             cache._superseded = cache.fingerprint != Policy.from_config().fingerprint()
             for other in _live:
                 if other.path == cache.path and not other._superseded:

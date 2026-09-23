@@ -16,7 +16,17 @@ from typing import IO
 
 from . import config
 from .command import ffmpeg_args
-from .media import duration, probe
+from .media import (
+    FRAME_VIDEO_PROPERTIES,
+    VIDEO_PROPERTIES,
+    ProbeError,
+    dolby_vision,
+    duration,
+    frame_sample,
+    hdr_metadata,
+    is_chapter_stream,
+    probe,
+)
 from .planner import Plan, SourceSignature
 from .tracks import downmixed_layouts
 
@@ -327,9 +337,63 @@ def _verify(plan: Plan, out_info: dict) -> str | None:
     drift_allowed = max(DURATION_DRIFT_FLOOR, src_dur * DURATION_DRIFT_RATIO)
     if src_dur and abs(out_dur - src_dur) > drift_allowed:
         return f"duration mismatch: {src_dur:.1f}s -> {out_dur:.1f}s"
-    out_streams = len(out_info.get("streams") or [])
+    if plan.src_chapter_count and len(out_info.get("chapters") or []) != plan.src_chapter_count:
+        return "chapter count mismatch"
+    streams = out_info.get("streams") or []
+    # MP4 generates a chapter track outside the explicit stream maps.
+    if (
+        plan.src_chapter_count
+        and os.path.splitext(plan.out_path)[1].lower() in {".mp4", ".m4v"}
+        and streams
+        and is_chapter_stream(streams[-1])
+    ):
+        streams = streams[:-1]
+    out_streams = len(streams)
     if out_streams != len(plan.streams):
         return f"stream count mismatch: expected {len(plan.streams)}, got {out_streams}"
+    for stream, result in zip(plan.streams, streams, strict=True):
+        if not stream.dv_strip:
+            continue
+        if dolby_vision(result) is not None:
+            return "Dolby Vision configuration remains in output"
+        for key in VIDEO_PROPERTIES:
+            if stream.video_source.get(key) != result.get(key):
+                return f"Dolby Vision removal changed video {key}"
+        if hdr_metadata(stream.video_source) != hdr_metadata(result):
+            return "Dolby Vision removal changed stream HDR metadata"
+    return None
+
+
+@functools.cache
+def dv_filter_available() -> bool:
+    try:
+        out = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-h", "bsf=dovi_rpu"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except OSError, subprocess.SubprocessError:
+        return False
+    return out.returncode == 0 and "-strip " in out.stdout
+
+
+def _verify_dv_frames(plan: Plan, staged: str) -> str | None:
+    for index, stream in enumerate(plan.streams):
+        if not stream.dv_strip:
+            continue
+        before = frame_sample(plan.path, stream.src)
+        after = frame_sample(staged, index)
+        if len(before) != len(after):
+            return "Dolby Vision verification frame count mismatch"
+        for source, result in zip(before, after, strict=True):
+            if dolby_vision(result) is not None:
+                return "Dolby Vision data remains in sampled output frames"
+            if hdr_metadata(source) != hdr_metadata(result):
+                return "Dolby Vision removal changed sampled HDR metadata"
+            for key in FRAME_VIDEO_PROPERTIES:
+                if source.get(key) != result.get(key):
+                    return f"Dolby Vision removal changed sampled video {key}"
     return None
 
 
@@ -371,6 +435,9 @@ def apply_plan(
     if plan.src_signature and SourceSignature.of(src_before) != plan.src_signature:
         return Outcome.DEFERRED, "source changed since it was planned, nothing rewritten"
 
+    if any(stream.dv_strip for stream in plan.streams) and not dv_filter_available():
+        return Outcome.FAILED, "Remove Dolby Vision requires FFmpeg with dovi_rpu strip support"
+
     # Staged after the pre-flight checks, or each return above leaks a file.
     work_dir = config.current().WORK_DIR
     try:
@@ -392,7 +459,7 @@ def apply_plan(
             stderr_tail = stderr.strip()[-_STDERR_TAIL:]
             return Outcome.FAILED, f"ffmpeg failed ({code}): {stderr_tail}"
 
-        problem = _verify(plan, probe(tmp))
+        problem = _verify(plan, probe(tmp)) or _verify_dv_frames(plan, tmp)
         if problem:
             return Outcome.FAILED, f"{problem}, result discarded"
 
@@ -421,6 +488,8 @@ def apply_plan(
                 log.warning("could not remove %s after remux: %s", plan.path, err)
         log.info("rewrote %s", plan.out_path)
         return Outcome.APPLIED, ""
+    except ProbeError as err:
+        return Outcome.FAILED, f"{err}, result discarded"
     except subprocess.TimeoutExpired:
         return Outcome.FAILED, f"ffmpeg timed out after {config.current().FFMPEG_TIMEOUT}s"
     finally:

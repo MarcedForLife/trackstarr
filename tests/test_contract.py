@@ -93,13 +93,13 @@ def track(index: int, kind: str, codec: str, **fields) -> dict:
 
 
 DUNE_TRACKS = [
-    track(0, "video", "hevc"),
+    track(0, "video", "hevc", dv={"profile": 8, "compatibility": 1}),
     track(1, "audio", "truehd", channels=8, lang="eng", flags=["default"]),
     track(2, "audio", "ac3", channels=6, lang="eng", bitrate=640000),
     track(3, "subtitle", "subrip", lang="eng"),
 ]
 DUNE_PLANNED = [
-    track(0, "video", "hevc", src=0),
+    track(0, "video", "hevc", src=0, dv={"profile": 8, "compatibility": 1}),
     track(1, "audio", "truehd", channels=8, lang="eng", flags=["default"], src=1),
     track(2, "audio", "ac3", channels=6, lang="eng", bitrate=640000, src=2),
     track(
@@ -108,7 +108,7 @@ DUNE_PLANNED = [
     track(4, "subtitle", "subrip", lang="eng", src=3),
 ]
 EPISODE_TRACKS = [
-    track(0, "video", "h264"),
+    track(0, "video", "hevc", dv={"profile": 8, "compatibility": 1}),
     track(1, "audio", "eac3", channels=6, lang="eng", flags=["default"]),
     track(2, "audio", "aac", channels=2, lang="eng", title="Stereo", flags=["generated"]),
     track(3, "subtitle", "subrip", lang="eng", flags=["forced"]),

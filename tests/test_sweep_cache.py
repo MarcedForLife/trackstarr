@@ -270,7 +270,7 @@ def test_the_format_is_stamped_on_what_is_written(cache_path, media):
     assert json.loads(Path(cache_path).read_text())["format"] == FORMAT
 
 
-def test_an_older_entry_is_dropped_rather_than_carried(cache_path, media):
+def test_an_older_entry_is_shown_but_not_reused(cache_path, media):
     """carry() moves entries forward byte for byte, so an entry written before a
     field was added keeps its old shape for ever. One too old must miss."""
     key = cache_key(media, "eng")
@@ -280,9 +280,9 @@ def test_an_older_entry_is_dropped_rather_than_carried(cache_path, media):
     Path(cache_path).write_text(json.dumps(stored))
 
     assert SweepCache.load(cache_path, fingerprint()).lookup(media, key) is None
-    # And the library view reads nothing rather than an entry whose shape is
-    # another build's.
-    assert read(cache_path, fingerprint()).files == {}
+    previous = read(cache_path, fingerprint())
+    assert previous.files[media]["status"] == "conform"
+    assert not previous.current
 
 
 def test_an_older_entry_outranks_a_matching_fingerprint(cache_path, media):
@@ -437,10 +437,8 @@ def test_update_with_no_verdict_drops_the_stored_entry(state_cache, media):
     assert read(str(state_cache), fingerprint()).files == {}
 
 
-def test_update_leaves_a_cache_judged_under_other_rules_alone(state_cache, media):
-    """Those verdicts are already flagged as not current, and `current` is one
-    flag for the whole file: there is no honest way to file a fresh verdict
-    among them. The next sweep drops the lot."""
+def test_update_rejects_rules_that_do_not_match_the_observation(state_cache, media):
+    """A verdict may only be published under the rules used to observe it."""
     saved_cache(str(state_cache), (media, cache_key(media, "eng"), CONFORM))
     before = state_cache.read_text()
 
@@ -588,14 +586,14 @@ def test_a_walk_starting_mid_window_takes_the_unwritten_verdicts(state_cache, tm
     assert str(episode) in walk._previous
 
 
-def test_a_walk_under_new_rules_drops_an_unwritten_batch(state_cache, media, caplog):
-    """Same answer as for a file judged under rules that have since moved: the
-    verdicts go, and the walk that noticed says why."""
+def test_new_rules_keep_an_unwritten_batch_for_display(state_cache, media, caplog):
+    """Unwritten verdicts remain visible but cannot skip a fresh plan."""
     publish_verdict(media, cache_key(media, "eng"), CONFORM, fingerprint())
 
     with caplog.at_level("INFO"):
         walk = SweepCache.load(str(state_cache), fingerprint() | {"languages": ["fre:add"]})
-    assert walk._previous == {}
+    assert walk._previous[media]["status"] == "conform"
+    assert walk.lookup(media, cache_key(media, "eng")) is None
     assert "rule configuration changed" in caplog.text
 
 
@@ -609,9 +607,8 @@ def test_a_checkpoint_takes_the_batch_with_it(state_cache, media):
     assert json.loads(state_cache.read_text())["files"][media]["status"] == "conform"
 
 
-def test_a_rule_change_drops_what_the_old_rules_left_unwritten(state_cache, tmp_path):
-    """A load would refuse those verdicts anyway, so the batch goes rather than
-    being merged into one the new rules would keep."""
+def test_a_rule_change_keeps_unwritten_verdicts_until_replanned(state_cache, tmp_path):
+    """A fresh plan replaces only its own file's verdict."""
     old = tmp_path / "old.mkv"
     new = tmp_path / "new.mkv"
     for episode in (old, new):
@@ -622,7 +619,12 @@ def test_a_rule_change_drops_what_the_old_rules_left_unwritten(state_cache, tmp_
     publish_verdict(str(new), cache_key(str(new), "eng"), CONFORM, fingerprint())
     sweep_cache.flush()
 
-    assert list(json.loads(state_cache.read_text())["files"]) == [str(new)]
+    stored = read(str(state_cache), fingerprint())
+    assert set(stored.files) == {str(old), str(new)}
+    assert not stored.current
+    walk = SweepCache.load(str(state_cache), fingerprint())
+    assert walk.lookup(str(old), cache_key(str(old), "eng")) is None
+    assert walk.lookup(str(new), cache_key(str(new), "eng")) == CONFORM
 
 
 def test_clear_takes_the_unwritten_verdicts_with_it(state_cache, media):
@@ -975,13 +977,51 @@ def test_policy_change_cannot_be_undone_by_an_older_walk(state_cache, media):
         assert read(str(state_cache), fingerprint()).current
 
 
-def test_old_disk_policy_is_not_mixed_with_a_current_outside_result(state_cache, media):
+def test_a_user_plan_refreshes_a_verdict_after_a_policy_change(state_cache, media):
     key = cache_key(media, "eng")
     saved_cache(str(state_cache), (media, key, CONFORM))
-    before = state_cache.read_bytes()
     set_config(LANGUAGES=("fre",))
-    publish_verdict(media, key, CONFORM, fingerprint())
-    assert state_cache.read_bytes() == before
+    publish_verdict(media, key, Verdict(Status.PENDING), fingerprint())
+    sweep_cache.flush()
+    stored = read(str(state_cache), fingerprint())
+    assert stored.current
+    assert stored.files[media]["status"] == "pending"
+
+
+def test_a_late_plan_cannot_restore_old_rules(state_cache, media, tmp_path):
+    key = cache_key(media, "eng")
+    walk = saved_cache(str(state_cache), (media, key, CONFORM))
+    previous_rules = fingerprint()
+    other = tmp_path / "other.mkv"
+    other.write_bytes(b"media")
+    with sweep_cache.live(walk), sweep_cache.observing(media) as previous:
+        set_rules(remux="always")
+        publish_verdict(str(other), cache_key(str(other), "eng"), CONFORM, fingerprint())
+        assert not sweep_cache.publish(
+            previous, media, media, key, Verdict(Status.PENDING), previous_rules
+        )
+        walk.keep()
+        walk.save()
+    sweep_cache.flush()
+    stored = read(str(state_cache), fingerprint())
+    assert stored.files[media]["stale"]
+    assert stored.files[media]["status"] == "conform"
+    assert not stored.files[str(other)].get("stale")
+
+
+def test_a_new_walk_fences_an_old_plan_before_its_first_write(state_cache, media):
+    key = cache_key(media, "eng")
+    saved_cache(str(state_cache), (media, key, CONFORM))
+    previous_rules = fingerprint()
+    with sweep_cache.observing(media) as previous:
+        set_rules(remux="always")
+        walk = SweepCache.load(str(state_cache), fingerprint())
+        with sweep_cache.live(walk):
+            assert not sweep_cache.publish(
+                previous, media, media, key, Verdict(Status.PENDING), previous_rules
+            )
+            assert not walk._superseded
+            assert walk._standing()[media]["status"] == "conform"
 
 
 def test_cached_hit_never_restores_a_local_drop_or_older_entry(cache_path, media):

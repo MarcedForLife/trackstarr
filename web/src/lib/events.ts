@@ -3,7 +3,7 @@
 
 import { request } from '$lib/api';
 import type { GlyphName } from '$lib/components/Glyph.svelte';
-import { basename, duration, named, size, titled } from '$lib/format';
+import { basename, duration, DV_REMOVED, named, ruleLabel, size, titled } from '$lib/format';
 // The library's verdict vocabulary, so the history and the library agree on
 // words and colours.
 import { isVerdict, judged, pip, verdictLabel, verdictText, type Card } from '$lib/library';
@@ -313,7 +313,7 @@ const NAMED_CHANGES = 2;
 /** Which rules fired, by their own names with the underscores unpicked. */
 function firedRules(entry: Event): string[] {
 	return [...(entry.rules ?? []), ...(entry.incidental_rules ?? [])].map((rule) =>
-		rule.replace(/_/g, ' ')
+		ruleLabel(rule).replace(/_/g, ' ')
 	);
 }
 
@@ -395,6 +395,9 @@ const PAUSES = new Set(['held', 'item_paused']);
  * away, the container it published under, and what it cost in bytes. */
 export function measures(entry: Event): string[] {
 	const out: string[] = [];
+	const stripped = [...(entry.rules ?? []), ...(entry.incidental_rules ?? [])].includes('dv_strip');
+	if (stripped && entry.event === 'modified') out.push(DV_REMOVED);
+	if (stripped && entry.event === 'pending') out.push('Remove Dolby Vision');
 	if (entry.drops) out.push(`−${entry.drops}`);
 	if (entry.from_path) out.push(`${extension(entry.from_path)} to ${extension(entry.path)}`);
 	if (entry.bytes_before !== undefined && entry.bytes_after !== undefined) {
@@ -452,7 +455,7 @@ export function details(entry: Event, before?: Event): Detail[] {
 			add(entry.event === 'skipped' ? outcome(entry).word : 'Problem', [entry.detail]);
 			add('Reasons', entry.reasons ?? []);
 			add('Additional changes', entry.incidental ?? []);
-			add('Rules', [[...(entry.rules ?? []), ...(entry.incidental_rules ?? [])].join(', ')]);
+			add('Rules', [firedRules(entry).join(', ')]);
 			add('Added', entry.adds ?? []);
 			add('Rebuilt', entry.rebuilds ?? []);
 			add('Dropped', entry.drops ? [count(entry.drops, 'track')] : []);

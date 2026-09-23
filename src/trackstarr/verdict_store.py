@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 #: entry in it. Bump it whenever a field is added, removed or changes meaning,
 #: since :meth:`trackstarr.sweep_cache.SweepCache.carry` moves unchanged
 #: entries forward byte for byte and an added field would never arrive.
-FORMAT = 6
+FORMAT = 7
 
 #: The oldest entry this build will use. Raise it with FORMAT only where an
 #: older entry would be wrong rather than merely thinner, so an update keeps
@@ -33,15 +33,15 @@ READS_FROM = 6
 class Document:
     """The store as one read found it.
 
-    ``entries`` holds only what this build can use, so no caller has to guess
-    which fields another build's entry carries.
+    ``entries`` retains older verdicts for display. Entries marked ``stale``
+    must be probed again before a sweep can reuse them.
     """
 
     entries: dict[str, dict] = field(default_factory=dict)
     #: Whether a store was there to read. Absence is not damage; the first
     #: verdict can still be written.
     present: bool = False
-    #: How many entries this build is too new to use.
+    #: How many entries need a fresh probe.
     dropped: int = 0
     #: The rule fingerprint they were judged under.
     fingerprint: object = None
@@ -64,8 +64,7 @@ def load(path: str) -> Document | None:
     A missing file reads as an empty document: nothing has swept yet. Damaged
     JSON and a library that is not an object are the same refusal, since
     neither says where a verdict would go. An entry older than
-    :data:`READS_FROM` is left behind on its own rather than costing the rest
-    of the store.
+    :data:`READS_FROM` is marked stale so the library can still show it.
     """
     try:
         with open(path) as store_file:
@@ -86,9 +85,9 @@ def load(path: str) -> Document | None:
     for name, entry in entries.items():
         if not isinstance(entry, dict):
             continue
-        if _written_at(entry, document) < READS_FROM:
+        if entry.get("stale") or _written_at(entry, document) < READS_FROM:
             dropped += 1
-            continue
+            entry = {**entry, "stale": True}
         usable[name] = entry
     return Document(usable, present=True, dropped=dropped, fingerprint=data.get("config"))
 

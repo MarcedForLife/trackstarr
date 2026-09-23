@@ -1305,18 +1305,19 @@ def test_a_rename_onto_a_file_a_rewrite_holds_waits_for_the_rewrite(tmp_path):
     assert set(sweep_cache.read(sweep_cache.cache_path(), fingerprint).files) == {old}
 
 
-def test_a_removed_files_verdict_under_old_rules_waits_for_the_next_sweep(tmp_path):
-    """A cache judged under rules since changed is the next sweep's to drop
-    whole. One entry cannot be edited out of it, and the page already says
-    those verdicts are not current."""
+def test_a_removed_file_drops_only_its_own_stale_verdict(tmp_path):
+    """A removal keeps the other titles' previous verdicts visible."""
     gone = str(tmp_path / "gone.mkv")
-    cache((gone, Verdict(Status.PENDING)))
+    other = str(tmp_path / "other.mkv")
+    cache((gone, Verdict(Status.PENDING)), (other, Verdict(Status.CONFORM)))
     set_rules(remux="always")
 
-    assert sweep_mod.remove([gone]) == []
+    assert sweep_mod.remove([gone]) == [gone]
 
     stored = sweep_cache.read(sweep_cache.cache_path(), Policy.from_config().fingerprint())
-    assert gone in stored.files and not stored.current
+    assert set(stored.files) == {other}
+    assert stored.files[other]["status"] == "conform"
+    assert not stored.current
 
 
 def test_a_recheck_replaces_the_verdict_it_re_judged(monkeypatch, tmp_path, clean_registry):

@@ -232,7 +232,27 @@ export function judge(
 		}
 	}
 
+	const stripped = new Set<number>();
+	const notes: string[] = [];
+	for (const track of file.tracks) {
+		if (
+			track.kind !== 'video' ||
+			!track.dv ||
+			mode(settings, 'dv_strip') === 'never' ||
+			track.flags?.includes('cover_art')
+		)
+			continue;
+		if (track.dv.unsupported) notes.push(`video stream ${track.index}: ${track.dv.unsupported}`);
+		else if (
+			track.codec === 'hevc' &&
+			track.dv.profile === 8 &&
+			track.dv.compatibility === 1 &&
+			plan.record('dv_strip', `remove Dolby Vision from video stream ${track.index} (keep HDR10)`)
+		)
+			stripped.add(track.index);
+	}
 	const why: Why = {};
+	if (notes.length) why.notes = notes;
 	if (plan.reasons.length) {
 		why.reasons = plan.reasons;
 		why.rules = plan.rules;
@@ -251,6 +271,8 @@ export function judge(
 		.map((track) => ({
 			...track,
 			src: track.index,
+			dv: stripped.has(track.index) ? undefined : track.dv,
+			...(stripped.has(track.index) ? { dv_removed: true } : {}),
 			title: plan.cleared.has(track.index) ? undefined : track.title
 		}));
 	const planned = ordered([...kept_tracks, ...generated], layouts).map((track, at) => ({
