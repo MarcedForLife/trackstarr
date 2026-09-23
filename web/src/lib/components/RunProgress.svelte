@@ -3,7 +3,7 @@
 	import Bar from '$lib/components/Bar.svelte';
 	import Count from '$lib/components/Count.svelte';
 	import FileProgress from '$lib/components/FileProgress.svelte';
-	import Glyph from '$lib/components/Glyph.svelte';
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { button } from '$lib/controls';
 	import { fraction, measured, percent, progressLabel, type Run } from '$lib/runs';
 
@@ -49,9 +49,10 @@
 		<button
 			onclick={onstop}
 			disabled={stopping || run.stopping}
+			aria-busy={stopping || run.stopping}
 			class={`${button} flex-none self-stretch text-danger`}
 		>
-			<Glyph name="stop" size={9} />
+			<Spinner glyph="stop" size={9} busy={stopping || run.stopping} />
 			{stopping || run.stopping ? 'Stopping…' : 'Stop'}
 		</button>
 	{/if}

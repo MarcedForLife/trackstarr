@@ -7,6 +7,7 @@
 	import { refusalText } from '$lib/api';
 	import { setHold } from '$lib/chrome.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
+	import Spinner from '$lib/components/Spinner.svelte';
 	import Page from '$lib/components/Page.svelte';
 	import PosterCard from '$lib/components/PosterCard.svelte';
 	import Segmented from '$lib/components/Segmented.svelte';
@@ -284,6 +285,8 @@
 	const sweeping = $derived(recheck.otherRun?.type === 'sweep');
 
 	let planning = $state(false);
+	// Covers the gap before a started sweep shows in a snapshot.
+	const SWEEP_WARMING_MS = 5000;
 	let planRefusal = $state('');
 
 	// What the line offers beside the news. A viewer is told nothing they cannot
@@ -299,10 +302,11 @@
 		planRefusal = '';
 		try {
 			await startSweep('report');
+			setTimeout(() => (planning = false), SWEEP_WARMING_MS);
 		} catch (error) {
 			planRefusal = refusalText(error);
-		} finally {
 			planning = false;
+		} finally {
 			// A refusal is nearly always a sweep that started since the last look,
 			// and the line above says so better than a red sentence.
 			recheck.prod();
@@ -358,8 +362,14 @@
 				{clearing}
 			</p>
 			{#if !clearing && admin}
-				<button type="button" onclick={plan} disabled={planning} class={`flex-none ${primary}`}>
-					<Glyph name="doc" />
+				<button
+					type="button"
+					onclick={plan}
+					disabled={planning}
+					aria-busy={planning}
+					class={`flex-none ${primary}`}
+				>
+					<Spinner glyph="doc" busy={planning} />
 					{planning ? 'Planning…' : 'Plan now'}
 				</button>
 			{/if}

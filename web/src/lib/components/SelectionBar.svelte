@@ -5,12 +5,11 @@
 	import { dragDismiss } from '$lib/drag';
 	import { type RunMode } from '$lib/library';
 	import type { Run } from '$lib/runs';
+	import { swapLeave } from '$lib/motion.svelte';
 	import { settle } from '$lib/settle';
 
-	// The bar at the bottom of the library while there is a selection to act on
-	// or a run to watch. One box through four states, moving between them rather
-	// than jumping. It owns standing there: the rise, the grip, the dissolve. The
-	// page owns why it is up.
+	// The library's bottom bar, for a selection or a run. The page decides when
+	// it shows.
 	let {
 		// Whether it stands: a selection, a run, or a receipt.
 		up,
@@ -129,25 +128,10 @@
 		if (bar) bar.style.transform = `translateY(${at + AWAY}px)`;
 		setTimeout(ondismiss, FADE);
 	}
-
-	// A state on its way out, taken out of the flow so the box settles to the
-	// arriving state's height, and faded where it was. The arriving state fades
-	// up over it (`.swap`), so the change is a dissolve.
-	function dissolve(node: HTMLElement) {
-		const top = node.offsetTop;
-		return {
-			duration: 150,
-			css: (t: number) =>
-				`position: absolute; inset-inline: 0; top: ${top}px; opacity: ${t}; pointer-events: none`
-		};
-	}
 </script>
 
-<!-- Sticky rather than fixed, so it stays in this column clear of the sidebar
-     and scrolls away once the grid runs out. The offset carries the safe-area
-     inset as well as --tabbar, like the save bar; --tabbar is the row without
-     its inset, so without it the bar overprinted the tab bar on a phone with
-     gesture navigation. 1rem so the bar floats over the tab bar. -->
+<!-- Sticky, so it stays in this column. The offset clears the tab bar and the
+     safe-area inset. -->
 {#if up}
 	<div
 		bind:this={bar}
@@ -161,18 +145,15 @@
 		     what the leaving state is positioned against. -->
 		<div class="relative flow-root">
 			{#if run}
-				<!-- A run owns the bar; the selection stays underneath to run again.
-				     The only place a whole run is shown, sheet open or not. -->
-				<div class="swap" out:dissolve>
+				<!-- The only place a whole run shows, sheet open or not. -->
+				<div class="swap" out:swapLeave>
 					<RunProgress {run} {stopping} {onstop} />
 				</div>
 			{:else}
-				<!-- The fading state must be this branch's own child: an `out:` on
-				     something nested in a further {#if} never runs. -->
-				<div class="swap" out:dissolve>
-					<!-- No grip while a run is going; Stop is the way out of that.
-					     `touch-none` makes the drag possible: under `manipulation` the
-					     browser took it for a page scroll and cancelled the pointer. -->
+				<!-- An `out:` only runs on the branch's direct child. -->
+				<div class="swap" out:swapLeave>
+					<!-- No grip during a run. `touch-none`, or the browser takes the drag for a
+					     scroll. -->
 					<button
 						type="button"
 						aria-label="Stop picking titles"

@@ -1029,13 +1029,12 @@ def test_a_pause_is_placed_by_path_and_listed_back(listener, fast_scrypt):
     body = {
         "paths": ["/data/media/movies/Dune (2024)"],
         "seconds": 7200,
-        "reason": "watching it",
     }
 
     status, answer, _ = api(listener, "POST", "/api/pauses", body, cookie=cookie)
     assert status == 200
     (placed,) = answer["pauses"]
-    assert (placed["by"], placed["reason"], placed["seconds"]) == ("admin", "watching it", 7200)
+    assert (placed["by"], placed["seconds"]) == ("admin", 7200)
     # The countdown, not a stamp: a browser in another zone reads it the same
     # way this one does.
     assert placed["until"] is not None

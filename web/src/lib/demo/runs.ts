@@ -592,7 +592,9 @@ function judged(
 	}
 	if (run.dry_run || pause) {
 		const detail = pause
-			? `paused: ${pause.reason || 'until resumed'}`
+			? pause.until
+				? `paused until ${pause.until}`
+				: 'paused'
 			: (file.why.reasons ?? []).join(' · ');
 		settle(state, run, active, file, 'pending', detail, now, changed);
 		return;

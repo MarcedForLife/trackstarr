@@ -211,13 +211,12 @@
 				<a
 					href={resolve('/')}
 					aria-label="Overview"
-					class="mark-press -ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-md"
+					class="-ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-md"
 				>
 					<Mark
 						size={19}
 						class="flex-none text-accent-fill"
-						motion={running.current ? 'travel' : 'none'}
-						press
+						motion={running.current ? 'process' : 'none'}
 					/>
 				</a>
 				<h1 class="min-w-0 truncate text-[16px] font-semibold tracking-tight">{data.pageTitle}</h1>

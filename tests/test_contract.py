@@ -425,7 +425,6 @@ def seed_history() -> None:
         SEVERANCE,
         4 * 3600,
         by="admin",
-        reason="watching it",
         title_id=SEVERANCE_ID,
         title_name="Severance",
     )
@@ -498,9 +497,7 @@ def seed_runs(clock: Clock) -> None:
     work.scheduler.submit(SWEEP_RUN, CONTACT, "work", lambda: None)
     # One of the queued files taken off this sweep, and a title paused past it.
     assert work.scheduler.skip_file(SWEEP_RUN, CONTACT)[0] == "waiting"
-    pauses.place(
-        BEAR, 0, by="admin", reason="not until I say", title_id=BEAR_ID, title_name="The Bear"
-    )
+    pauses.place(BEAR, 0, by="admin", title_id=BEAR_ID, title_name="The Bear")
     clock.now = NOW - 1500
     runs.begin(SWEEP_RUN, DUNE_FILE, 9330.0)
     runs.stage(SWEEP_RUN, DUNE_FILE, runs.ENCODING, 9330.0)

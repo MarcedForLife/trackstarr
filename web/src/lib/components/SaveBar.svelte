@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { primary, quiet } from '$lib/controls';
 	import type { SettingsDraft } from '$lib/draft.svelte';
 
@@ -46,13 +47,14 @@
 			<button onclick={() => settings.discard()} disabled={settings.busy} class={quiet}>
 				Discard
 			</button>
-			<!-- Wider than the shape every other control shares, since it is the one
-			     press the bar exists for. -->
+			<!-- Wider than other buttons, as the bar's main action. -->
 			<button
 				onclick={() => settings.save()}
 				disabled={settings.busy}
+				aria-busy={settings.busy}
 				class={`${primary} min-w-24`}
 			>
+				<Spinner busy={settings.busy} />
 				Save
 			</button>
 		</div>

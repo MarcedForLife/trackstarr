@@ -448,7 +448,6 @@ const POST: Route[] = [
 					here,
 					targets.map((item) => item.path),
 					Number(body.seconds) || 0,
-					'',
 					here.account!.name
 				);
 			for (const item of targets) skip(here, item.run, item.path, here.account!.name);
@@ -524,13 +523,7 @@ const POST: Route[] = [
 		handler: (here, _query, body) => {
 			const titles = pauseTargets(here, body);
 			if (!titles.length) return refuse(404, 'no such title or file');
-			placePauses(
-				here,
-				titles,
-				Number(body.seconds) || 0,
-				String(body.reason ?? ''),
-				here.account!.name
-			);
+			placePauses(here, titles, Number(body.seconds) || 0, here.account!.name);
 			return ok({ pauses: pausesNow(here, Date.now()) });
 		}
 	},

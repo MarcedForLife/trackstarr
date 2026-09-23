@@ -11,7 +11,7 @@ export type FileActionAdapter = (
 	standing: FileState,
 	action: 'top' | 'skip' | 'pause' | 'resume',
 	seconds?: number
-) => { current: () => boolean; run: () => Promise<string> };
+) => { current: () => boolean; run: () => Promise<void> };
 
 /** Accepted actions finish against captured targets; feedback belongs to one opening. */
 export class TitleWorkController {
@@ -76,7 +76,7 @@ export class TitleWorkController {
 		return {
 			current,
 			run: async () => {
-				if (!current()) return '';
+				if (!current()) return;
 				try {
 					if (action === 'top') await queueAction('top', waiting);
 					else if (action === 'resume') await resumePause({ paths: [path] });
@@ -84,13 +84,6 @@ export class TitleWorkController {
 						if (action === 'pause') await placePause({ paths: [path] }, seconds ?? 0);
 						await this.cancelWork(waiting, running);
 					}
-					return action === 'resume'
-						? 'Resumed. A later sweep can process this file.'
-						: action === 'skip'
-							? running.length
-								? 'Cancellation requested.'
-								: 'Skipped for this run.'
-							: '';
 				} finally {
 					if (current()) {
 						this.workBusy = false;

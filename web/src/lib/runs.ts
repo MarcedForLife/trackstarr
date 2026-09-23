@@ -2,7 +2,7 @@
 // $lib/events is what happened; this is what is happening.
 
 import type { FileCovers, FilePlans, QueueItem } from '$lib/queue';
-import { request } from '$lib/api';
+import { ApiError, request } from '$lib/api';
 import { mark } from '$lib/clock.svelte';
 import { duration, named, soon, titled } from '$lib/format';
 import type { Pause } from '$lib/pauses';
@@ -150,9 +150,15 @@ export const stopEverything = () =>
 	control('abort') as Promise<{ stopped: number; rewrites: number }>;
 
 // One file taken off a run, and its rewrite killed where a thread already had
-// it. Lasts as long as the run; $lib/pauses is the longer-lived answer.
+// it. Lasts as long as the run; $lib/pauses is the longer-lived answer. A 404
+// means the file already left the run, which counts as skipped.
 export const skipFile = (run: string, path: string) =>
-	control('skip', { run, path }) as Promise<{ where: 'active' | 'waiting'; rewrites: number }>;
+	(
+		control('skip', { run, path }) as Promise<{ where: 'active' | 'waiting'; rewrites: number }>
+	).catch((error) => {
+		if (error instanceof ApiError && error.status === 404) return { where: null, rewrites: 0 };
+		throw error;
+	});
 
 /** A run's name: "Sweep", "Radarr", "Re-check: <title or count>". */
 export function source(run: Run): string {

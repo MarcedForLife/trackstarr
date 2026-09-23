@@ -47,7 +47,6 @@ class Pause:
     #: time.time() when it lapses; 0 for one only a person resumes.
     until: float = 0.0
     by: str = ""
-    reason: str = ""
     #: When it was placed, in the history's ``ts`` format.
     at: str = ""
     #: The library title it was placed on, and that title's name. Labels for
@@ -61,8 +60,7 @@ class Pause:
     def describe(self) -> str:
         """The pause in a phrase, for a run row and for pending.tsv."""
         until = f" until {events.at(self.until)}" if self.until else ""
-        because = f" ({self.reason})" if self.reason else ""
-        return f"paused{until}{because}"
+        return f"paused{until}"
 
     def as_json(self) -> dict:
         return {
@@ -72,7 +70,6 @@ class Pause:
             "seconds": round(max(0.0, self.until - time.time())) if self.until else None,
             "until": events.at(self.until) if self.until else None,
             "by": self.by,
-            "reason": self.reason,
             "at": self.at,
             "title_id": self.title_id,
             "title_name": self.title_name,
@@ -128,12 +125,11 @@ def _disk() -> dict[str, Pause]:
 
 def _pause(path: str, record: dict) -> Pause:
     """One stored record as a pause. A field that will not read takes its
-    default: a damaged reason must not lose the pause itself."""
+    default: a damaged field must not lose the pause itself."""
     return Pause(
         path,
         until=float(record.get("until") or 0.0) if _numeric(record.get("until")) else 0.0,
         by=str(record.get("by") or ""),
-        reason=str(record.get("reason") or ""),
         at=str(record.get("at") or ""),
         title_id=str(record.get("title_id", record.get("title")) or ""),
         title_name=str(record.get("title_name", record.get("name")) or ""),
@@ -174,7 +170,6 @@ def _save(found: dict[str, Pause]) -> None:
             pause.path: {
                 "until": pause.until,
                 "by": pause.by,
-                "reason": pause.reason,
                 "at": pause.at,
                 "title_id": pause.title_id,
                 "title_name": pause.title_name,
@@ -242,7 +237,6 @@ def place_many(
     targets: Sequence[tuple[str, str, str]],
     seconds: float = 0.0,
     by: str = "",
-    reason: str = "",
 ) -> list[Pause]:
     """Atomically place (path, title_id, title_name) targets; last duplicate wins.
 
@@ -265,7 +259,6 @@ def place_many(
                 path,
                 now + seconds if seconds else 0.0,
                 by,
-                reason,
                 events.timestamp(),
                 title_id,
                 title_name,
@@ -284,7 +277,6 @@ def place_many(
             path=pause.path,
             title=pause.title_id or None,
             seconds=round(seconds) or None,
-            reason=reason or None,
             by=by or None,
         )
         log.info("pausing %s: %s", pause.path, pause.describe())
@@ -295,12 +287,11 @@ def place(
     path: str,
     seconds: float = 0.0,
     by: str = "",
-    reason: str = "",
     title_id: str = "",
     title_name: str = "",
 ) -> Pause:
     """Place or extend one pause; delegates to the batch transaction."""
-    return place_many([(path, title_id, title_name)], seconds, by, reason)[0]
+    return place_many([(path, title_id, title_name)], seconds, by)[0]
 
 
 def resume_many(targets: Sequence[str], by: str = "") -> list[Pause]:

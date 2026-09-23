@@ -25,6 +25,7 @@
 </script>
 
 <script lang="ts">
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { onDestroy } from 'svelte';
 	import PathDetails from './PathDetails.svelte';
 	import FileVariants from './FileVariants.svelte';
@@ -47,8 +48,8 @@
 	import { button, control, radius, subtle } from '$lib/controls';
 	import { display } from '$lib/display.svelte';
 	import { tiltField } from '$lib/field';
-	import { duration, named, titled } from '$lib/format';
-	import { forTitle } from '$lib/pauses';
+	import { named, titled } from '$lib/format';
+	import { forTitle, pausedFor } from '$lib/pauses';
 	import {
 		coverUrl,
 		initials,
@@ -60,7 +61,8 @@
 		type Listed,
 		type TitleServer
 	} from '$lib/library';
-	import { moving } from '$lib/motion.svelte';
+	import { fade } from 'svelte/transition';
+	import { moving, rowFade, swapLeave } from '$lib/motion.svelte';
 	import { overlay } from '$lib/overlay';
 	import { summarise, type Outcome, type Summary } from '$lib/retag';
 	import { whenNear } from '$lib/reveal';
@@ -133,7 +135,6 @@
 					(!manyFiles ? pauses.find((item) => item.path === detail?.files[0]?.path) : undefined))
 			: undefined
 	);
-	const left = $derived(pause?.seconds ? `${duration(pause.seconds)} left` : 'until resumed');
 
 	// The track whose language and flags are open for editing: its file and its
 	// stream index there. One at a time, inline under its row. Admins only,
@@ -177,8 +178,8 @@
 	const queued = $derived(work?.queued ?? []);
 	const activeWork = $derived(work?.active ?? []);
 	const involved = $derived(queued.length > 0 || activeWork.length > 0);
-	// Whether the queue has answered for this title, one way or the other. What
-	// the header and the controls say depends on it, so they hold until it has.
+	// Whether the queue has answered for this title. The header and controls
+	// wait on it.
 	const known = $derived(!!work || !!workError);
 	// A file asked to stop. Not its run winding up, which leaves the encode going.
 	const stoppingWork = $derived(activeWork.some((item) => item.skipped));
@@ -264,6 +265,25 @@
 
 	const queueAct = (action: 'top' | 'skip') => actions.queueAct(action, runner?.onrefresh);
 	const keep = (seconds: number) => actions.keep(seconds);
+
+	// The row's Skip or Cancel under way, held until the work and the sheet's
+	// run are both gone. Keeps its label and Prioritise so the row holds still.
+	let cancelling = $state<{ label: string; prioritise: boolean } | null>(null);
+	$effect(() => {
+		if (!involved && !runner?.run && !runner?.starting) cancelling = null;
+	});
+	async function cancel() {
+		cancelling = {
+			label: activeWork.length ? 'Cancelling…' : 'Skipping…',
+			prioritise: showPrioritise
+		};
+		await queueAct('skip');
+		if (pauseError) cancelling = null;
+	}
+
+	// Which buttons the control row holds.
+	const rowState = $derived(!known ? 'reading' : involved || cancelling ? 'working' : 'idle');
+	const showPrioritise = $derived(cancelling ? cancelling.prioritise : queued.length > 0 && !front);
 	const release = () => actions.release(pause);
 
 	onDestroy(() => {
@@ -280,6 +300,7 @@
 
 	export async function open(card: Opening) {
 		sheetSession++;
+		cancelling = null;
 		// Another poster tapped while the last slides out: the sheet stays up.
 		if (emptying !== null) {
 			clearTimeout(emptying);
@@ -311,7 +332,7 @@
 	// Equal shares at every width, as the idle row has. Longer series labels wrap
 	// within their share rather than taking it from the others.
 	const cell = $derived(
-		runner && !involved
+		runner && rowState !== 'working'
 			? 'w-full'
 			: 'min-w-0 w-full !px-2 leading-tight !whitespace-normal sm:!px-3.5'
 	);
@@ -468,7 +489,7 @@
 											/>{/if}{part.after}</span
 									>{/each}
 							{:else}<span class={pause ? 'text-dim' : (verdictText[verdict!] ?? 'text-dim')}
-									>{pause ? 'Paused' : verdictSummary}</span
+									>{pause ? pausedFor(pause) : verdictSummary}</span
 								>{/if}
 						{:else}{@render holding('w-24')}{/if}
 					</p>
@@ -521,109 +542,115 @@
 			<!-- One sunken block, near the thumb, for everything here that does
 			     something. Pause sits with the runs: it answers the same question, and
 			     Process on a paused title rewrites nothing. A run takes the row over. -->
-			{#if acting || pause || involved}
+			{#if acting || involved}
 				<div
 					role="group"
 					aria-label="Title controls"
 					class="mt-4 rounded-xl border border-line bg-sunken p-3"
 				>
-					{#if acting && !known}
-						<!-- Held at the row's height until the queue has answered, since which
-						     buttons the row holds turns on it: the idle pair landing first and
-						     giving way to Prioritise and Skip read as a flash. As many as the
-						     idle row has, which is what most titles come to. -->
-						<div class="grid auto-cols-fr grid-flow-col gap-3" aria-hidden="true">
-							{#each { length: runner ? 3 : 1 }, at (at)}
-								<span class={`${control} ${radius} border border-line bg-raised`}></span>
+					<!-- This title's work. The floating bar shows the run. -->
+					{#if (known || !acting) && activeWork.length}
+						<div class={`space-y-2.5 ${acting ? 'mb-3' : ''}`}>
+							{#each activeWork as file (file.path)}
+								<FileProgress {file} age={workAge} caption={worked(file.path)} />
 							{/each}
 						</div>
-					{:else}
-						<!-- What each worker has. The page's floating bar carries the run
-						     itself, so the panel keeps to this title at every stage. -->
-						{#if activeWork.length}
-							<div class={`space-y-2.5 ${acting ? 'mb-3' : ''}`}>
-								{#each activeWork as file (file.path)}
-									<FileProgress {file} age={workAge} caption={worked(file.path)} />
-								{/each}
-							</div>
-						{/if}
-						{#if acting}
-							<!-- One row at every width. Stacked, the panel pushed the rows below
-							     the fold. Equal columns, since the buttons are one decision and
-							     a narrower Pause read as the lesser of them. -->
-							<div
-								class={runner && !involved
-									? 'grid grid-cols-3 items-center gap-3'
-									: 'grid auto-cols-fr grid-flow-col items-center gap-2 sm:gap-3'}
-							>
-								{#if runner && !involved}
-									<RunButtons
-										columns
-										mayRewrite={runner.mayRewrite}
-										refuses={runner.refuses}
-										disabled={runner.starting || !!runner.run || workBusy || !!workError}
-										busy={runner.busy}
-										onrun={(mode) => opened && runner.onrun(opened.id, mode)}
-									/>
-								{/if}
-								{#if admin && involved}
-									{#if queued.length && !front}<button
-											class={`${cell} ${button}`}
-											disabled={workBusy || !!workError || stoppingWork}
-											onclick={() => queueAct('top')}
-											>{manyFiles ? 'Prioritise all' : 'Prioritise'}</button
-										>{/if}
-									<button
-										class={`${cell} ${button} text-danger`}
-										disabled={workBusy || !!workError || stoppingWork}
-										onclick={() => queueAct('skip')}
-										>{activeWork.length
-											? manyFiles
-												? 'Cancel all'
-												: 'Cancel'
-											: manyFiles
-												? 'Skip all'
-												: 'Skip'}</button
-									>
-								{/if}
-								{#if admin && pause}
-									<button
-										onclick={release}
-										disabled={!!pauseBusy || workBusy || !!workError}
-										class={`${cell} ${button}`}
-									>
-										{pauseBusy === 'resume' ? 'Resuming…' : 'Resume'}
-									</button>
-								{:else if admin}
-									{#key sheetSession}
-										<PauseMenu
-											label={opened.name}
-											onchoose={keep}
-											disabled={!!pauseBusy || workBusy || !!workError}
-											hint={involved
-												? 'Stops this title’s current work. A later sweep can process it after the pause ends.'
-												: 'A later sweep can process this title after the pause ends.'}
-											class={`${cell} ${button}`}
-										/>
-									{/key}
-								{/if}
-							</div>
-						{/if}
+					{/if}
+					{#if acting}
+						<!-- Positioned for the leaving state. -->
+						<div class="relative">
+							{#key rowState}
+								<div out:swapLeave in:fade={rowFade()}>
+									{#if rowState === 'reading'}
+										<!-- Placeholders at the idle row's size until the queue answers, which decides
+										     the buttons. -->
+										<div class="grid auto-cols-fr grid-flow-col gap-3" aria-hidden="true">
+											{#each { length: runner ? 3 : 1 }, at (at)}
+												<span class={`${control} ${radius} border border-line bg-raised`}></span>
+											{/each}
+										</div>
+									{:else}
+										<!-- One row of equal columns at every width. -->
+										<div
+											class={runner && rowState === 'idle'
+												? 'grid grid-cols-3 items-center gap-3'
+												: 'grid auto-cols-fr grid-flow-col items-center gap-2 sm:gap-3'}
+										>
+											{#if runner && rowState === 'idle'}
+												<RunButtons
+													columns
+													mayRewrite={runner.mayRewrite}
+													refuses={runner.refuses}
+													disabled={runner.starting || !!runner.run || workBusy || !!workError}
+													busy={runner.busy}
+													onrun={(mode) => opened && runner.onrun(opened.id, mode)}
+												/>
+											{/if}
+											{#if admin && rowState === 'working'}
+												{#if showPrioritise}<button
+														class={`${cell} ${button}`}
+														disabled={workBusy || !!workError || stoppingWork || !!cancelling}
+														onclick={() => queueAct('top')}
+														>{manyFiles ? 'Prioritise all' : 'Prioritise'}</button
+													>{/if}
+												<button
+													class={`${cell} ${button} text-danger`}
+													disabled={workBusy || !!workError || stoppingWork || !!cancelling}
+													aria-busy={!!cancelling}
+													onclick={cancel}
+												>
+													<Spinner busy={!!cancelling} />
+													{cancelling
+														? cancelling.label
+														: activeWork.length
+															? manyFiles
+																? 'Cancel all'
+																: 'Cancel'
+															: manyFiles
+																? 'Skip all'
+																: 'Skip'}
+												</button>
+											{/if}
+											{#if admin}
+												<div class="relative grid">
+													{#if pause}
+														<button
+															onclick={release}
+															disabled={!!pauseBusy || workBusy || !!workError}
+															aria-busy={pauseBusy === 'resume'}
+															class={`${cell} ${button}`}
+															out:swapLeave
+															in:fade={rowFade()}
+														>
+															<Spinner busy={pauseBusy === 'resume'} />
+															{pauseBusy === 'resume' ? 'Resuming…' : 'Resume'}
+														</button>
+													{:else}
+														<div class="grid" out:swapLeave in:fade={rowFade()}>
+															{#key sheetSession}
+																<PauseMenu
+																	label={opened.name}
+																	onchoose={keep}
+																	disabled={!!pauseBusy || workBusy || !!workError}
+																	hint={involved
+																		? 'Stops this title’s current work. A later sweep can process it after the pause ends.'
+																		: 'A later sweep can process this title after the pause ends.'}
+																	class={`${cell} ${button}`}
+																/>
+															{/key}
+														</div>
+													{/if}
+												</div>
+											{/if}
+										</div>
+									{/if}
+								</div>
+							{/key}
+						</div>
 					{/if}
 
-					<!-- What stands, and what came of the last press. A pause is a state,
-					     so it shows alongside. The rest is one line, the loudest first. -->
-					{#if pause || alarm}
-						<div class={`flex flex-col gap-1 text-[12px] ${acting ? 'mt-2.5' : ''}`}>
-							{#if pause}
-								<!-- Not who placed it: on a library one household runs, the name is
-								     always the reader's own. -->
-								<p class="text-dim">{['Paused', left, pause.reason].filter(Boolean).join(' · ')}</p>
-							{/if}
-							{#if alarm}
-								<p role="alert" class="text-danger">{alarm}</p>
-							{/if}
-						</div>
+					{#if alarm}
+						<p role="alert" class={`text-[12px] text-danger ${acting ? 'mt-2.5' : ''}`}>{alarm}</p>
 					{/if}
 				</div>
 			{/if}
@@ -689,8 +716,10 @@
 						type="button"
 						class={`${button} mt-2`}
 						disabled={loadingMore || workBusy}
+						aria-busy={loadingMore}
 						onclick={loadMore}
 					>
+						<Spinner busy={loadingMore} />
 						{loadingMore ? 'Loading…' : 'Load more files'}
 					</button>
 					{#if moreError}<p role="alert" class="mt-2 text-[12px] text-danger">{moreError}</p>{/if}

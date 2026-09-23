@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { onDestroy, onMount } from 'svelte';
 	import Select from '$lib/components/Select.svelte';
 	import Toggle from '$lib/components/Toggle.svelte';
@@ -196,14 +197,15 @@
 
 	<div class="mt-3 flex justify-end gap-2">
 		<button type="button" onclick={oncancel} disabled={busy} class={button}>Cancel</button>
-		<!-- Names the reach when it is the season, since the switch above is on
-		     by default there. -->
+		<!-- Names the file count when it applies to more than one. -->
 		<button
 			type="button"
 			onclick={apply}
 			disabled={!changed || busy || !targets.length}
+			aria-busy={busy}
 			class={primary}
 		>
+			<Spinner {busy} />
 			{busy ? 'Applying…' : targets.length > 1 ? `Apply to ${targets.length} files` : 'Apply'}
 		</button>
 	</div>

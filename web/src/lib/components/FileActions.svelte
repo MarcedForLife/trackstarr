@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { tick } from 'svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
 	import { SPANS } from '$lib/pauses';
@@ -122,9 +123,11 @@
 			<button
 				onclick={() => choose(span.seconds)}
 				disabled={busy !== null || disabled}
-				class="flex min-h-11 w-full items-center rounded-lg px-2.5 text-[13px] font-medium transition-colors hover:bg-sunken disabled:opacity-(--disabled)"
+				aria-busy={busy === span.seconds}
+				class="flex min-h-11 w-full items-center justify-between rounded-lg px-2.5 text-[13px] font-medium transition-colors hover:bg-sunken disabled:opacity-(--disabled)"
 			>
 				{busy === span.seconds ? 'Pausing…' : span.label}
+				<Spinner busy={busy === span.seconds} />
 			</button>
 		{/each}
 	{:else}

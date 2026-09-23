@@ -43,8 +43,7 @@ const paused: Pause = {
 	seconds: null,
 	until: null,
 	at: '',
-	by: '',
-	reason: ''
+	by: ''
 };
 beforeEach(() => {
 	vi.resetAllMocks();

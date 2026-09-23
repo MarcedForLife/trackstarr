@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { page } from '$app/state';
 	import EventRow from '$lib/components/EventRow.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
@@ -394,7 +395,13 @@
 	<div class="mt-4 flex items-center gap-3">
 		{#if history.cursor !== null}
 			<!-- Says what it does. Under a cut it reads past pages that hold nothing. -->
-			<button onclick={reachBack} disabled={history.busy} class={button}>
+			<button
+				onclick={reachBack}
+				disabled={history.busy}
+				aria-busy={history.busy && !history.refreshing}
+				class={button}
+			>
+				<Spinner busy={history.busy && !history.refreshing} />
 				{history.busy ? 'Loading…' : cutting ? 'Look further back' : 'Load more'}
 			</button>
 		{/if}

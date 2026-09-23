@@ -78,9 +78,9 @@ def test_a_lapsed_inner_pause_does_not_hide_a_standing_outer_one():
 
 
 def test_the_innermost_pause_is_the_one_reported():
-    pauses.place(MOVIES, reason="everything")
-    pauses.place(DUNE, reason="this one")
-    assert pauses.paused(DUNE_FILE).reason == "this one"
+    pauses.place(MOVIES)
+    pauses.place(DUNE)
+    assert pauses.paused(DUNE_FILE).path == DUNE
 
 
 def test_expired_reads_do_not_write_and_next_mutation_collects(monkeypatch):
@@ -96,10 +96,10 @@ def test_expired_reads_do_not_write_and_next_mutation_collects(monkeypatch):
 
 def test_pausing_the_same_thing_again_extends_it():
     """Pressing "another two hours" is the same call, not a second entry."""
-    pauses.place(DUNE, seconds=3600, reason="first")
-    pauses.place(DUNE, seconds=7200, reason="second")
+    pauses.place(DUNE, seconds=3600)
+    pauses.place(DUNE, seconds=7200)
     assert len(pauses.current()) == 1
-    assert pauses.paused(DUNE_FILE).reason == "second"
+    assert pauses.paused(DUNE_FILE).until > _after(3600)
 
 
 def test_resuming_says_whether_there_was_anything_to_resume():
@@ -112,11 +112,11 @@ def test_resuming_says_whether_there_was_anything_to_resume():
 def test_a_pause_survives_a_restart():
     """An evening's pause must not lapse because the container was updated in
     the middle of it."""
-    pauses.place(DUNE, seconds=3600, by="operator", reason="watching it")
+    pauses.place(DUNE, seconds=3600, by="operator")
     pauses.forget()
     found = pauses.paused(DUNE_FILE)
     assert found is not None
-    assert (found.by, found.reason) == ("operator", "watching it")
+    assert found.by == "operator"
 
 
 def test_a_pause_cannot_outlive_the_ceiling():
@@ -130,7 +130,7 @@ def test_a_damaged_record_still_holds_the_file():
     rewrite the file they were watching."""
     os.makedirs(config.STATE_DIR, exist_ok=True)
     with open(store_path(), "w") as store:
-        json.dump({DUNE: {"until": "tomorrow", "reason": ["a", "list"]}}, store)
+        json.dump({DUNE: {"until": "tomorrow", "by": ["a", "list"]}}, store)
     found = pauses.paused(DUNE_FILE)
     assert found is not None
     assert found.until == 0.0, "an unreadable end reads as no end, not as lapsed"
@@ -148,7 +148,7 @@ def test_an_unreadable_store_holds_nothing():
 def test_pausing_and_resuming_are_both_in_the_history():
     """Two people share an install; "why did this not get rewritten" has to be
     answerable."""
-    pauses.place(DUNE, seconds=3600, by="operator", reason="watching it")
+    pauses.place(DUNE, seconds=3600, by="operator")
     pauses.resume(DUNE, by="operator")
     kinds = [(entry["event"], entry.get("by")) for entry in read_events()]
     assert kinds == [("item_paused", "operator"), ("item_resumed", "operator")]

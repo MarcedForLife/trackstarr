@@ -8,7 +8,6 @@ const held: Pause = {
 	seconds: null,
 	until: null,
 	by: 'admin',
-	reason: '',
 	at: ''
 };
 
