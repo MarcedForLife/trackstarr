@@ -59,7 +59,7 @@ vi.mock('svelte', async (original) => ({
 	onDestroy: () => {}
 }));
 
-const { getActivity } = await import('$lib/runs');
+const { getActivity, stopRun } = await import('$lib/runs');
 const { getEvents } = await import('$lib/events');
 const { runTitles } = await import('$lib/library');
 
@@ -219,6 +219,7 @@ test('a run answered for is not ended by a snapshot too early to hold it', async
 	const recheck = watching();
 	await recheck.start(['title-1'], 'report');
 	expect(recheck.warming).toBe(true);
+	expect(recheck.busy).toBe('report');
 
 	// A start answers with the run id while the thread still has two *arr
 	// libraries to list, so an empty snapshot means nothing yet.
@@ -229,6 +230,7 @@ test('a run answered for is not ended by a snapshot too early to hold it', async
 	vi.advanceTimersByTime(WARMING_MS + 1);
 	await look();
 	expect(recheck.warming).toBe(false);
+	expect(recheck.busy).toBe('');
 	expect(written).toBe(1);
 });
 
@@ -341,7 +343,7 @@ test('a service that cannot be reached is a condition, not a refusal', async () 
 });
 
 test.each(['report', 'apply'] as const)(
-	'keeps the title %s status until its run snapshot arrives',
+	'keeps the title %s press busy until its run ends',
 	async (mode) => {
 		vi.mocked(runTitles).mockResolvedValue({ run: 'r1', titles: 1 });
 		const recheck = watching();
@@ -352,9 +354,27 @@ test.each(['report', 'apply'] as const)(
 		await look();
 		expect(recheck.runner.starting).toBe(false);
 		expect(recheck.runner.run?.id).toBe('r1');
+		expect(recheck.runner.busy).toBe(mode);
+		snapshot([]);
+		await look();
+		expect(recheck.runner.run).toBeNull();
 		expect(recheck.runner.busy).toBe('');
 	}
 );
+
+test('a stop stays pending until a snapshot shows the run stopping', async () => {
+	vi.mocked(runTitles).mockResolvedValue({ run: 'r1', titles: 1 });
+	vi.mocked(stopRun).mockResolvedValue({});
+	const recheck = watching();
+	await recheck.start(['title-1'], 'report');
+	snapshot([run()]);
+	await look();
+	await recheck.stop();
+	expect(recheck.stopping).toBe(true);
+	snapshot([run({ stopping: true })]);
+	await look();
+	expect(recheck.stopping).toBe(false);
+});
 
 test('stopping a sheet run requests a fresh snapshot and releases its controls when ended', async () => {
 	vi.mocked(runTitles).mockResolvedValue({ run: 'r1', titles: 1 });

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { named, duration, stamp } from '$lib/format';
 	import type { Pause } from '$lib/pauses';
 	import type { FileCover } from '$lib/queue';
@@ -88,14 +89,15 @@
 					onclick={onresume}
 					{disabled}
 					aria-label={`Resume ${pause.title_name || title.name}`}
-					class={rowWord}>{resuming ? 'Resuming…' : 'Resume'}</button
+					aria-busy={resuming}
+					class={`${rowWord} gap-1.5`}
+					><Spinner busy={resuming} />{resuming ? 'Resuming…' : 'Resume'}</button
 				>{/if}
 		{/snippet}
 		{#snippet panel()}
 			<div
 				class="rounded-lg border border-line bg-sunken px-3 py-2.5 text-[12px] leading-relaxed text-dim"
 			>
-				{#if pause.reason}<p class="mb-2 wrap-anywhere">{pause.reason}</p>{/if}
 				<p>Paused{pause.at ? ` · ${stamp(pause.at)}` : ''}</p>
 				{#if pause.by}<p>By {pause.by}</p>{/if}
 				<p class="mb-3">

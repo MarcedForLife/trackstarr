@@ -2,6 +2,7 @@
 // whole service; this is the one for a single title.
 
 import { request } from '$lib/api';
+import { duration } from '$lib/format';
 
 // One thing left alone, and until when. `seconds` counts down from when the
 // snapshot was read; both it and `until` are null for a pause with no end.
@@ -10,13 +11,17 @@ export type Pause = {
 	seconds: number | null;
 	until: string | null;
 	by: string;
-	reason: string;
 	at: string;
 	// The library title it was placed on, and that title's name. Empty for a
 	// pause placed on one file off a run.
 	title_id: string;
 	title_name: string;
 };
+
+/** "Paused", with the time left when the pause ends. */
+export function pausedFor(pause: Pause): string {
+	return pause.seconds ? `Paused · ${duration(pause.seconds)} left` : 'Paused';
+}
 
 // Optional, and defaulted at every call: a body without the key is an answer
 // the sheet can still draw, where reading `.find` off nothing takes the sheet
@@ -41,12 +46,11 @@ export async function getPauses(fetcher: typeof fetch = fetch): Promise<Pause[]>
 /** Pause titles by id or files by path. Answers with every pause now standing. */
 export async function place(
 	what: { ids?: string[]; paths?: string[] },
-	seconds: number,
-	reason = ''
+	seconds: number
 ): Promise<Pause[]> {
 	const answer = await request<Pauses>('/api/pauses', {
 		method: 'POST',
-		body: JSON.stringify({ ...what, seconds, reason })
+		body: JSON.stringify({ ...what, seconds })
 	});
 	return answer.pauses ?? [];
 }

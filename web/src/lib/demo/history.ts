@@ -262,7 +262,6 @@ export function chronicle(state: State, now: number): Event[] {
 		path: charade.spec.sources[0].folder,
 		title: CHARADE,
 		seconds: 8 * 3600,
-		reason: '',
 		by: story.by
 	});
 	story.lines.push({
@@ -318,7 +317,6 @@ export function chronicle(state: State, now: number): Event[] {
 		path: metropolis.spec.sources[0].folder,
 		title: METROPOLIS,
 		seconds: 3600,
-		reason: '',
 		by: story.by
 	});
 	settingsChange(story, now - 110 * MINUTE_MS, { REWRITE_MODE: { from: 'imports', to: 'all' } });

@@ -142,19 +142,16 @@
 	class={`mobile-drawer fixed inset-y-0 right-0 z-50 flex w-[17rem] flex-none flex-col overflow-x-hidden overflow-y-auto overscroll-contain border-l border-line bg-sunken p-3 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-[calc(0.75rem+env(safe-area-inset-bottom))] duration-300 ease-out lg:visible lg:static lg:z-auto lg:h-dvh lg:translate-x-0 lg:border-r lg:border-l-0 lg:pt-3 lg:transition-[width] ${collapsed ? 'lg:w-16' : 'lg:w-60'}`}
 >
 	<div class={`flex items-center gap-2 pt-1 pb-3 ${collapsed ? 'px-3 lg:justify-center' : 'px-3'}`}>
-		<!-- The mark and name are the way home. The mark presses under the pointer
-		     and beats while a run is on; no background, or a wordmark reads as a
-		     button. Hidden whole on the collapsed rail, or a keyboard lands on an
-		     empty link. -->
+		<!-- The mark and name link home. Hide the whole link on the collapsed
+		     rail so the keyboard cannot land on an empty link. -->
 		<a
 			href={resolve('/')}
-			class={`mark-press -mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 ${hideOnRail}`}
+			class={`-mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 ${hideOnRail}`}
 		>
 			<Mark
 				size={22}
 				class="flex-none text-accent-fill"
-				motion={running.current ? 'travel' : 'none'}
-				press
+				motion={running.current ? 'process' : 'none'}
 			/>
 			<span class="truncate text-[17px] font-semibold tracking-tight whitespace-nowrap">
 				Trackstarr

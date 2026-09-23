@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { resolve } from '$app/paths';
 	import Glyph from './Glyph.svelte';
 	import type { GlyphName } from './Glyph.svelte';
@@ -109,11 +110,8 @@
 			title={choice.label}
 			class={`${iconButton} ${choice.fill} aria-disabled:opacity-(--disabled)`}
 		>
-			<!-- Larger than a glyph in a row of words: here the mark is the whole
-			     control. -->
-			<span class={busy === choice.mode ? 'animate-pulse' : ''}
-				><Glyph name={choice.glyph} size={15} /></span
-			>
+			<!-- Larger, as the glyph is the whole control. -->
+			<Spinner glyph={choice.glyph} size={15} busy={busy === choice.mode} />
 		</button>
 		<div
 			bind:this={sheets[choice.mode]}

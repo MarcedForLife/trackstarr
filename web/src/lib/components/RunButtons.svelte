@@ -1,18 +1,17 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import Glyph from './Glyph.svelte';
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { button, primary } from '$lib/controls';
 	import { REPORT_ONLY_NOTE, type RunMode } from '$lib/library';
 	import { overlay } from '$lib/overlay';
 
-	// The two runs as two buttons, each naming its consequence. Three surfaces
-	// start runs, so the pair lives here.
+	// Plan and Process, shared by the three places that start runs.
 	let {
 		mayRewrite,
 		// Why neither can be pressed now, in the caller's words.
 		refuses = '',
 		disabled = false,
-		// Which of the two is under way, so only that one says so.
+		// Which of the two is under way.
 		busy = '',
 		// Whether the pair fills its width on a phone, and wraps as one.
 		fill = false,
@@ -46,8 +45,7 @@
 
 	const off = $derived(disabled || !!refuses || !!busy);
 
-	// Why Process is dead, opened by pressing it: a touchscreen has no hover for
-	// a title.
+	// Why Process is refused, shown on press since touch has no hover.
 	let why = $state(false);
 	let box = $state<HTMLElement>();
 
@@ -74,19 +72,16 @@
 	onpointerdown={(event) => why && !box?.contains(event.target as Node) && note.lower()}
 />
 
-<!-- Accent on Plan, not Process: the loud one should be safe to press without
-     thinking. -->
+<!-- Accent on Plan, the safe one. -->
 <div
 	class={`relative items-center ${
 		mobileColumns
 			? 'col-span-2 grid min-w-0 grid-cols-2 gap-3 sm:flex'
 			: columns
-				? // Two of the caller's columns, split by the caller's gap, so each button
-					// comes out the width of a column beside them.
+				? // Two of the caller's grid columns.
 					'col-span-2 grid grid-cols-2 gap-3'
 				: fill
-					? // The caller's own gap, so a pair that has wrapped under another pair
-						// lines up with it column for column instead of by a few pixels.
+					? // The caller's gap, so wrapped pairs line up.
 						'flex min-w-fit flex-1 gap-3 sm:min-w-0 sm:flex-initial'
 					: 'flex min-w-0 gap-2 sm:gap-3'
 	}`}
@@ -96,10 +91,11 @@
 		type="button"
 		onclick={() => press('report')}
 		disabled={off}
+		aria-busy={busy === 'report'}
 		title="Reads every file and records what needs doing. Changes nothing."
 		class={`${spread} ${primary}`}
 	>
-		<Glyph name="doc" />
+		<Spinner glyph="doc" busy={busy === 'report'} />
 		{busy === 'report' ? 'Planning…' : 'Plan'}
 	</button>
 	<button
@@ -107,13 +103,14 @@
 		onclick={() => press('apply')}
 		disabled={mayRewrite && off}
 		aria-disabled={!mayRewrite || undefined}
+		aria-busy={busy === 'apply'}
 		aria-expanded={mayRewrite ? undefined : why}
 		title={mayRewrite
 			? 'Reads every file and applies the rules. Changes files on disk.'
 			: REPORT_ONLY_NOTE}
 		class={`${spread} ${button} aria-disabled:opacity-(--disabled)`}
 	>
-		<Glyph name="play" />
+		<Spinner glyph="play" busy={busy === 'apply'} />
 		{busy === 'apply' ? 'Processing…' : 'Process'}
 	</button>
 

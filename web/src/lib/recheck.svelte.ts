@@ -53,18 +53,19 @@ export class Recheck {
 	/** A stop already sent, which the next snapshot has yet to confirm. */
 	stopping = $state(false);
 
-	// The run being watched. Seeded from the load and adopted as snapshots land,
-	// which is what makes the bar survive a reload.
+	// The run being watched, seeded from the load and adopted from snapshots.
 	#watching = $state<string | null>(null);
 	// When it was picked up, for the warming window.
 	#watchedAt = Date.now();
 	#starting = $state(false);
 	#requestedMode = $state<RunMode>('report');
-	// Whether the watched run was started from a title's sheet, which decides
-	// where its progress and result show.
+	// The run a press here started.
+	#launched = $state<string | null>(null);
+	// Whether the watched run started from a title's sheet, which decides where
+	// it shows.
 	#fromSheet = $state(false);
-	// What the summary event does not carry: the run's label and whether it
-	// rewrote. Taken off the snapshot, since the service decides both.
+	// The run's label and whether it rewrote, from the snapshot. The summary
+	// event lacks both.
 	#ranLabel = $state('');
 	#ranDry = $state(true);
 	#options: Options;
@@ -114,17 +115,19 @@ export class Recheck {
 	/** A service pause still prevents new title runs. Other walks can coexist. */
 	refuses = $derived(this.paused ? 'Processing is paused. Resume it first.' : '');
 
-	/** Which press the bar shows as going. Only where the run was started from
-	 * says so. */
-	busy = $derived<'' | RunMode>(this.#fromSheet ? '' : this.started);
+	/** The press under way, until the run it started ends. */
+	#going = $derived<'' | RunMode>(
+		this.started || (this.#launched && this.#launched === this.#watching ? this.#requestedMode : '')
+	);
 
-	/** Everything a title's sheet shows and does about running that title, as
-	 * one prop. Whether to offer it at all is the page's call. */
+	/** The bar's press under way. Empty for a sheet run. */
+	busy = $derived<'' | RunMode>(this.#fromSheet ? '' : this.#going);
+
+	/** A title sheet's run controls and state, as one prop. */
 	runner = $derived({
 		mayRewrite: this.mayRewrite,
 		refuses: this.refuses,
-		busy: (this.#fromSheet ? this.started || (this.warming ? this.#requestedMode : '') : '') as
-			'' | RunMode,
+		busy: this.#fromSheet ? this.#going : '',
 		starting: this.#fromSheet && (this.#starting || this.warming),
 		error: this.#fromSheet ? this.refusal : '',
 		run: this.#fromSheet ? this.running : null,
@@ -176,12 +179,11 @@ export class Recheck {
 		try {
 			await stopRun(this.#watching);
 			this.refusal = '';
+			// `stopping` clears once a snapshot shows the run stopping.
 			this.#snapshot.prod();
 		} catch (error) {
-			// Usually the run finished between the look and the press. Shown in
-			// the service's words rather than silently.
+			// Usually the run ended between the look and the press.
 			this.refusal = refusalText(error);
-		} finally {
 			this.stopping = false;
 		}
 	}
@@ -208,6 +210,7 @@ export class Recheck {
 		try {
 			const answer = paths ? await runFiles(paths, mode) : await runTitles(ids, mode);
 			this.#watching = answer.run;
+			this.#launched = answer.run;
 			this.#watchedAt = Date.now();
 			// Fetch the snapshot now rather than at the next idle look; `warming`
 			// covers the gap.
@@ -247,6 +250,7 @@ export class Recheck {
 				mine = loose;
 			}
 		}
+		if (this.stopping && (!mine || mine.stopping)) this.stopping = false;
 		const before = this.otherRun;
 		this.otherRun = activity.runs.find((run) => this.#rival(run)) ?? null;
 		// A rival run just ended, having written the grid's verdicts.

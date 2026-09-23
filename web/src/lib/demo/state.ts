@@ -561,7 +561,6 @@ export function placePauses(
 	state: State,
 	titles: (Title | string)[],
 	seconds: number,
-	reason: string,
 	by: string,
 	now = Date.now()
 ): void {
@@ -572,7 +571,6 @@ export function placePauses(
 			seconds: seconds || null,
 			until: seconds ? stamp(now + seconds * 1000) : null,
 			by,
-			reason,
 			at: stamp(now),
 			title_id: id,
 			title_name: name
@@ -582,7 +580,6 @@ export function placePauses(
 			path: folder,
 			title: id,
 			...(seconds ? { seconds } : {}),
-			reason,
 			by
 		});
 	}

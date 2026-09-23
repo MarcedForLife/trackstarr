@@ -1,6 +1,6 @@
 import { request } from '$lib/api';
 import type { Verdict } from '$lib/library';
-import type { Pause } from '$lib/pauses';
+import { pausedFor, type Pause } from '$lib/pauses';
 import type { ActiveFile } from '$lib/runs';
 
 export type FileCover = { id: string; name: string };
@@ -159,7 +159,7 @@ export function fileState(work: TitleWork | undefined, path: string): FileState 
 				: 'Waiting for a worker'
 			: paused
 				? paused.path === path
-					? 'Paused'
+					? pausedFor(paused)
 					: 'Title paused'
 				: place
 					? 'Queued'

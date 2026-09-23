@@ -981,7 +981,7 @@ def test_an_applying_sweep_leaves_a_paused_title_where_the_walk_found_it(monkeyp
     rewrite would latch to report anyway, having spent a slot and a second
     probe getting there."""
     _library(tmp_path, 3)
-    pauses.place(str(tmp_path / "library"), by="operator", reason="watching one of them")
+    pauses.place(str(tmp_path / "library"), by="operator")
     monkeypatch.setattr(
         "trackstarr.sweep.process",
         lambda job, dry_run, source="sweep", policy=None, cancel=None, observation=None: (
@@ -991,10 +991,10 @@ def test_an_applying_sweep_leaves_a_paused_title_where_the_walk_found_it(monkeyp
     counts = sweep(dry_run=False)
     assert counts[Status.PENDING] == 3
     assert counts[Status.MODIFIED] == 0, "nothing reached the rewrite pool"
-    # The reason on every row, including the ones a warm cache answered, which
+    # The pause on every row, including the ones a warm cache answered, which
     # never pass through process() to say it themselves.
     rows = (Path(config.STATE_DIR) / "pending.tsv").read_text().splitlines()[1:]
-    assert all("paused (watching one of them)" in row for row in rows)
+    assert all("paused" in row for row in rows)
 
 
 def test_a_file_skipped_mid_sweep_keeps_the_verdict_the_walk_gave_it(monkeypatch, tmp_path):

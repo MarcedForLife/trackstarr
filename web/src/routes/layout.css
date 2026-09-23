@@ -694,6 +694,11 @@ body {
 	}
 }
 
+/* A busy button keeps full opacity. Unlayered, so it beats the `disabled:` utility. */
+button[aria-busy='true']:disabled {
+	opacity: 1;
+}
+
 /* The disclosure's height is animated by $lib/shift. Its clip and the
    surrounding row share that one layout edge in both directions. */
 .reveal {

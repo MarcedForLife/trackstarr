@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { resolve } from '$app/paths';
 	import DirList from '$lib/components/DirList.svelte';
 	import Page from '$lib/components/Page.svelte';
@@ -333,9 +334,11 @@
 							onclick={fetchScores}
 							disabled={readOnly || fetching || !scoresOn || scoresPending}
 							class={button}
+							aria-busy={fetching}
 							aria-labelledby={labelledBy}
 							aria-describedby={describedBy}
 						>
+							<Spinner busy={fetching} />
 							{fetching ? 'Fetching…' : 'Fetch'}
 						</button>
 						{#if fetchNote}
@@ -373,8 +376,10 @@
 							<button
 								onclick={clear}
 								disabled={readOnly || clearing || (!stored && !arming)}
+								aria-busy={clearing}
 								class={danger}
 							>
+								<Spinner busy={clearing} />
 								{clearing
 									? 'Clearing…'
 									: arming

@@ -16,7 +16,15 @@
 	import Reveal from '$lib/components/Reveal.svelte';
 	import RunFile from '$lib/components/RunFile.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
-	import { keepRowSlots, rowArrive, rowFade, rowLeave, rowSlide } from '$lib/motion.svelte';
+	import Spinner from '$lib/components/Spinner.svelte';
+	import {
+		keepRowSlots,
+		rowArrive,
+		rowFade,
+		rowLeave,
+		rowSlide,
+		swapLeave
+	} from '$lib/motion.svelte';
 	import SweepButtons from '$lib/components/SweepButtons.svelte';
 	import type { Landed, Snapshot } from '$lib/activity.svelte';
 	import { refusalText } from '$lib/api';
@@ -83,6 +91,10 @@
 	const holding = $derived(activity.paused);
 	// Encoding this second, which is the only way to tell a rewrite from a probe.
 	const rewriting = $derived(activity.rewrites > 0);
+	// Every run winding down, unless a rewrite is still going.
+	const stoppingAll = $derived(
+		busy === 'abort' || (activity.runs.every((run) => run.stopping) && !rewriting)
+	);
 	// Zero on a build that did not send it, which draws no readout.
 	const slots = $derived(activity.slots ?? 0);
 
@@ -221,11 +233,16 @@
 	const BUSY_MS = 2000;
 	const IDLE_MS = 15000;
 
-	// How long a run this page started counts as running before it appears in a
-	// snapshot: a start answers before the sweep has listed the *arrs.
-	// Self-clearing, so a failed start fast-polls for one window.
+	// Fast polling after a start, which answers before the sweep lists the
+	// *arrs.
 	const SETTLE_MS = 30000;
 	let expecting = 0;
+
+	// A sweep started here but not yet in a snapshot. Dropped after WARMING_MS,
+	// since a short sweep may never show.
+	const WARMING_MS = 5000;
+	let launched = $state<'' | RunMode>('');
+	let launchedAt = 0;
 
 	// Read as the chain re-arms, not watched: a reactive read would rebuild the
 	// timer on every answer.
@@ -233,13 +250,14 @@
 		return told(snapshot.current.runs.length || Date.now() < expecting ? BUSY_MS : IDLE_MS);
 	}
 
-	// News about a run, not a tick of one: the rows draw clocks and bars from the
-	// last snapshot and its age.
+	// Each landed snapshot.
 	function saw({ now: fresh, before }: Landed) {
 		lastUpdated = new Date().toISOString();
+		const shown = fresh.runs.some((run) => run.type === 'sweep');
+		if (launched && (shown || Date.now() - launchedAt > WARMING_MS)) launched = '';
 		const alive = new Set(fresh.runs.map((run) => run.id));
-		// Refresh Activity promptly when a run ends, including one replaced by
-		// another between snapshots. Short deliveries are caught by normal polls.
+		// Refresh Activity when a run ends, including one replaced between
+		// snapshots.
 		onmoved(before.runs.some((run) => !alive.has(run.id)));
 	}
 
@@ -309,16 +327,21 @@
 		act(`resume-${pause.path}`, () => resumeItem({ paths: [pause.path] }));
 	}
 
-	// Both are asked for in the pair's own popover before they reach here.
-	const run = (mode: RunMode) => act(`start-${mode}`, () => startSweep(mode));
+	// Both are confirmed in the pair's popover first.
+	const run = (mode: RunMode) =>
+		act(`start-${mode}`, async () => {
+			const answer = await startSweep(mode);
+			launched = mode;
+			launchedAt = Date.now();
+			return answer;
+		});
 	const abortNow = () => act('abort', stopEverything);
 
 	const starting = $derived<'' | RunMode>(
-		busy === 'start-report' ? 'report' : busy === 'start-apply' ? 'apply' : ''
+		busy === 'start-report' ? 'report' : busy === 'start-apply' ? 'apply' : launched
 	);
 
-	// The question leaves with its reason, since the last run ending takes the
-	// button it hangs from.
+	// The confirmation closes when the last run ends, which takes its button.
 	$effect(() => {
 		if (confirm.open && !activity.runs.length) confirm.lower();
 	});
@@ -393,16 +416,17 @@
 					>{/if}
 			</h2>
 			{#if admin && !sweeping && !holding}
-				<SweepButtons
-					mayRewrite={activity.may_rewrite}
-					disabled={!!busy}
-					busy={starting}
-					onrun={run}
-				/>
+				<div class="flex-none" transition:fade={rowFade()}>
+					<SweepButtons
+						mayRewrite={activity.may_rewrite}
+						disabled={!!busy || !!launched}
+						busy={starting}
+						onrun={run}
+					/>
+				</div>
 			{/if}
 		</div>
-		<!-- The line goes as the run starts, so it leaves on its own height rather
-		     than dropping the progress that replaces it. -->
+		<!-- Collapses as the run starts, before the progress replaces it. -->
 		<Reveal when={!!sub || (!activity.runs.length && !holding)}>
 			{#if sub}
 				<!-- Keyed inside the region, not round it: a live region has to be
@@ -470,7 +494,7 @@
 	</Reveal>
 
 	<div
-		class="flex flex-wrap items-center gap-2 px-4 pb-1.5 sm:px-5"
+		class="relative flex flex-wrap items-center gap-2 px-4 pb-1.5 sm:px-5"
 		aria-label="Processing controls"
 	>
 		{#if admin}
@@ -478,22 +502,28 @@
 				<button
 					onclick={() => act('resume', resume)}
 					disabled={!!busy}
+					aria-busy={busy === 'resume'}
 					class={`min-w-0 !text-[12px] ${primary}`}
+					out:swapLeave
+					in:fade={rowFade()}
 				>
-					{#if busy !== 'resume'}<Glyph name="play" />{/if}
+					<Spinner glyph="play" busy={busy === 'resume'} />
 					{busy === 'resume' ? 'Resuming…' : 'Resume'}
 				</button>
 			{:else}
 				<button
 					onclick={() => act('pause', pause)}
 					disabled={!!busy}
+					aria-busy={busy === 'pause'}
 					aria-label={activity.runs.length ? 'Pause' : 'Suspend'}
 					title={activity.runs.length
 						? 'Pause. Files already started finish and nothing new starts.'
 						: 'Prevent new processing from starting until you resume.'}
 					class={`${rowButton} gap-2 px-2 text-dim hover:bg-sunken sm:px-3`}
+					out:swapLeave
+					in:fade={rowFade()}
 				>
-					<Glyph name="pause" />
+					<Spinner glyph="pause" busy={busy === 'pause'} />
 					<span>
 						{#if activity.runs.length}
 							{busy === 'pause' ? 'Pausing…' : 'Pause'}
@@ -509,21 +539,20 @@
 				<button
 					bind:this={stopButton}
 					onclick={() => stopButton && stopPanel && confirm.toggle(stopButton, stopPanel)}
-					disabled={!!busy || (activity.runs.every((run) => run.stopping) && !rewriting)}
+					disabled={!!busy || stoppingAll}
 					aria-expanded={confirm.open}
 					aria-controls="stop-confirmation"
+					aria-busy={stoppingAll}
 					class={`${rowButton} gap-2 px-3 text-danger hover:bg-danger/10`}
+					transition:fade={rowFade()}
 				>
-					<Glyph name="stop" size={9} />
-					{busy === 'abort' || (activity.runs.every((run) => run.stopping) && !rewriting)
-						? 'Stopping…'
-						: 'Stop all'}
+					<Spinner glyph="stop" size={9} busy={stoppingAll} />
+					{stoppingAll ? 'Stopping…' : 'Stop all'}
 				</button>
 			{/if}
 		{/if}
 	</div>
-	<!-- Always drawn, since a popover is hidden until shown and one that mounts on
-	     the press has nothing to hang from. -->
+	<!-- Always mounted. A popover mounted on the press has nothing to anchor to. -->
 	<div
 		bind:this={stopPanel}
 		id="stop-confirmation"

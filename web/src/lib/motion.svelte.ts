@@ -43,15 +43,24 @@ export function rowSlide(): { duration: number; easing: (t: number) => number } 
 // Short, since it is only ever one small thing changing in one place.
 const ROW_FADE = 150;
 
-/** The fade for something small giving way to what replaces it, in the place
- * it already holds. A bar's segment under its fill, or one word swapped for
- * another. */
+/** Fade for a small element replaced in place. */
 export function rowFade(): { duration: number } {
 	return { duration: still ? 0 : ROW_FADE };
 }
 
-/** `in:` for a row of a list whose rows are replaced in place. It waits out
- * the row it succeeds, which shares its place and reads as a smear over it. */
+/** `out:` for a state giving way to a sibling in its place. It leaves the flow
+ * and fades where it stood. Needs a positioned parent. */
+export function swapLeave(node: HTMLElement): TransitionConfig {
+	const { offsetTop: top, offsetLeft: left, offsetWidth: width } = node;
+	return {
+		duration: still ? 0 : ROW_FADE,
+		css: (t) =>
+			`position: absolute; top: ${top}px; left: ${left}px; width: ${width}px; ` +
+			`opacity: ${t}; pointer-events: none`
+	};
+}
+
+/** `in:` for a list row replaced in place. Waits for the leaving row to fade. */
 export function rowArrive(): { duration: number; delay: number } {
 	return { duration: still ? 0 : ROW_FADE, delay: still ? 0 : ROW_FADE };
 }

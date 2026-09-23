@@ -66,9 +66,6 @@ export type Event = {
 	index?: number;
 	kind?: string;
 	by?: string;
-	// Why a title was paused. `seconds` is how long the pause was placed for, and
-	// is absent on one with no end.
-	reason?: string;
 	// Where a skipped file was: `active` with a worker, `waiting` in line.
 	// Absent on older lines.
 	where?: string;
@@ -347,9 +344,7 @@ export function detail(entry: Event): string {
 			return '';
 		case 'held': // Events written before pause terminology.
 		case 'item_paused':
-			return [entry.seconds ? `For ${duration(entry.seconds)}` : 'Until resumed', entry.reason]
-				.filter(Boolean)
-				.join(' · ');
+			return entry.seconds ? `For ${duration(entry.seconds)}` : 'Until resumed';
 		case 'skipped':
 			// Older lines have no words for where the file was.
 			return entry.detail ?? 'skipped for this run';
@@ -508,7 +503,6 @@ export function details(entry: Event, before?: Event): Detail[] {
 		case 'item_resumed':
 			// A pause on a whole title is on its folder.
 			add('Path', [entry.path], true);
-			add('Reason', [entry.reason]);
 			add('By', [entry.by]);
 			break;
 		case 'retagged':

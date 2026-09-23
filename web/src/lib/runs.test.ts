@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test } from 'vitest';
 import {
 	fileReadout,
 	fileRows,
@@ -6,7 +6,8 @@ import {
 	fileWorking,
 	progressed,
 	progressLabel,
-	remaining
+	remaining,
+	skipFile
 } from '$lib/runs';
 import type { ActiveFile, Run } from '$lib/runs';
 
@@ -235,5 +236,29 @@ describe('fileRows', () => {
 
 		expect(rows).toHaveLength(1);
 		expect(rows[0].verdict).toBe('modified');
+	});
+});
+
+describe('skipFile', () => {
+	const real = globalThis.fetch;
+	afterEach(() => (globalThis.fetch = real));
+
+	const answering = (status: number) =>
+		(globalThis.fetch = (() =>
+			Promise.resolve(
+				new Response(JSON.stringify({ status: 'refused' }), {
+					status,
+					headers: { 'content-type': 'application/json' }
+				})
+			)) as typeof fetch);
+
+	test('a file the run has already left counts as skipped', async () => {
+		answering(404);
+		await expect(skipFile('r1', '/movies/a.mkv')).resolves.toEqual({ where: null, rewrites: 0 });
+	});
+
+	test('any other refusal still reaches the caller', async () => {
+		answering(409);
+		await expect(skipFile('r1', '/movies/a.mkv')).rejects.toThrow();
 	});
 });

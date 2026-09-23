@@ -91,10 +91,6 @@ def _queue_status(workload: tuple[int, int] | None = None) -> dict:
     }
 
 
-#: Longest reason kept with a pause. A sentence, not a note.
-_REASON_MAX = 120
-
-
 def _pause_targets(body: dict) -> tuple[list[tuple[str, str, str]], tuple[int, str] | None]:
     """What a pause request names, as (path, title id, name), or the refusal.
 
@@ -1084,9 +1080,8 @@ def _place_pause(handler: Handler, signed_in: users.Account) -> None:
     if refusal:
         handler.reply(*refusal)
         return
-    reason = str(body.get("reason") or "")[:_REASON_MAX]
     try:
-        pauses.place_many(targets, float(seconds), signed_in.name, reason)
+        pauses.place_many(targets, float(seconds), signed_in.name)
     except pauses.CapacityError:
         handler.reply(409, f"{pauses.MAX_PAUSES} things are already paused. Resume one first")
         return
