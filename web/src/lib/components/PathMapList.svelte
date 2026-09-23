@@ -1,19 +1,17 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
-	import { removeButton } from '$lib/controls';
+	import { field, removeButton } from '$lib/controls';
 	import type { SettingsDraft } from '$lib/draft.svelte';
 
-	// The paths a media server spells differently, as pairs: ours left, theirs
-	// right. Owns the rows, since a half-typed pair is not a value; the setting
-	// is rewritten from the rows on every keystroke, and the rows rebuilt when
-	// the draft is replaced.
+	// The paths a media server spells differently, as pairs, ours first. Owns the
+	// rows, since a half-typed pair is not a value; the setting is rewritten from
+	// the rows on every keystroke, and the rows rebuilt when the draft is
+	// replaced. The row above holds the Add button, so an empty list draws nothing.
 	let {
 		settings,
 		name,
 		label,
-		entry,
-		entryRow,
 		gutter,
 		labelledBy,
 		describedBy
@@ -23,10 +21,7 @@
 		name: string;
 		// The service, which names the right-hand field.
 		label: string;
-		// The card's field, row and remove-slot classes, so a pair lands on the
-		// same grid as the address above it.
-		entry: string;
-		entryRow: string;
+		// The card's remove slot, so a pair ends where the address above it does.
 		gutter: string;
 		// The SettingRow's paragraphs, which describe the list as a whole.
 		labelledBy: string;
@@ -59,8 +54,12 @@
 			.map((pair) => `${pair.local.trim()}=${pair.remote.trim()}`);
 	}
 
-	function addPair() {
+	let firstFields = $state<HTMLInputElement[]>([]);
+
+	export async function add() {
 		pairs = [...pairs, { local: '', remote: '' }];
+		await tick();
+		firstFields[pairs.length - 1]?.focus();
 	}
 
 	function removePair(index: number) {
@@ -69,65 +68,56 @@
 	}
 </script>
 
-<div
-	role="group"
-	aria-labelledby={labelledBy}
-	aria-describedby={describedBy}
-	class="flex w-full flex-col gap-2.5 sm:w-auto sm:gap-2"
->
-	{#each pairs as pair, index (index)}
-		<!-- Side by side from sm up, stacked on a phone. The arrow turns with them. -->
-		<div class={entryRow}>
-			<div
-				class="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-none sm:flex-row sm:items-center sm:gap-2"
-			>
-				<input
-					bind:value={pair.local}
-					oninput={sync}
-					placeholder="/data/media"
-					autocapitalize="none"
-					autocorrect="off"
-					spellcheck="false"
-					aria-label={`Our path, pair ${index + 1}`}
-					disabled={locked}
-					class={entry}
-				/>
-				<span class="flex-none rotate-90 self-center text-faint sm:rotate-0">
-					<Glyph name="arrow" size={14} />
-				</span>
-				<input
-					bind:value={pair.remote}
-					oninput={sync}
-					placeholder="/srv/media"
-					autocapitalize="none"
-					autocorrect="off"
-					spellcheck="false"
-					aria-label={`${label}'s path, pair ${index + 1}`}
-					disabled={locked}
-					class={entry}
-				/>
+{#if pairs.length}
+	<div
+		role="group"
+		aria-labelledby={labelledBy}
+		aria-describedby={describedBy}
+		class="mt-3 flex flex-col gap-6 sm:gap-2"
+	>
+		{#each pairs as pair, index (index)}
+			<!-- Side by side from sm up, stacked on a phone. The arrow turns with them,
+			     and fills the gap so a pair sits closer than its neighbours. -->
+			<div class="flex items-center gap-2">
+				<div class="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+					<input
+						bind:this={firstFields[index]}
+						bind:value={pair.local}
+						oninput={sync}
+						placeholder="/data/media"
+						autocapitalize="none"
+						autocorrect="off"
+						spellcheck="false"
+						aria-label={`Our path, pair ${index + 1}`}
+						disabled={locked}
+						class={`${field} min-w-0 sm:flex-1`}
+					/>
+					<span class="-my-1 flex-none rotate-90 self-center text-faint sm:my-0 sm:rotate-0">
+						<Glyph name="arrow" size={14} />
+					</span>
+					<input
+						bind:value={pair.remote}
+						oninput={sync}
+						placeholder="/srv/media"
+						autocapitalize="none"
+						autocorrect="off"
+						spellcheck="false"
+						aria-label={`${label}'s path, pair ${index + 1}`}
+						disabled={locked}
+						class={`${field} min-w-0 sm:flex-1`}
+					/>
+				</div>
+				<div class={gutter}>
+					<button
+						aria-label={`Remove pair ${index + 1}`}
+						disabled={locked}
+						onclick={() => removePair(index)}
+						class={removeButton}
+					>
+						<Glyph name="cross" />
+					</button>
+				</div>
 			</div>
-			<div class={gutter}>
-				<button
-					aria-label={`Remove pair ${index + 1}`}
-					disabled={locked}
-					onclick={() => removePair(index)}
-					class={removeButton}
-				>
-					<Glyph name="cross" />
-				</button>
-			</div>
-		</div>
-	{/each}
-	<!-- Under the right-hand field, whose column it adds to. -->
-	<div class={entryRow}>
-		<button
-			onclick={addPair}
-			disabled={locked}
-			class="-my-1 flex h-11 items-center px-2 text-[13px] font-medium text-faint hover:text-fg disabled:opacity-(--disabled) sm:my-0 sm:ml-auto sm:h-8 sm:pr-0"
-		>
-			+ Add a pair
-		</button>
-		<div class={gutter}></div>
+		{/each}
 	</div>
-</div>
+{/if}

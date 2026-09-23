@@ -9,6 +9,7 @@
 	// `box` is the tile, `size` the mark. A pair rather than a ratio: a small tile
 	// wants proportionally less padding.
 	let { name, size = 20, box = 32 }: { name: MarkName; size?: number; box?: number } = $props();
+	const id = $props.id();
 
 	// The corner scales with the tile, as in controls.ts.
 	const radius = $derived(Math.round(box * 0.3));
@@ -75,9 +76,9 @@
 				></path>
 			</g>
 		{:else}
-			<!-- Prefixed ids, or two <defs> called `a` on one page share a gradient. -->
+			<!-- Each icon needs its own gradients, including icons in hidden menus. -->
 			<linearGradient
-				id="jellyfin-inner"
+				id={`${id}-jellyfin-inner`}
 				x1="97.508"
 				x2="522.069"
 				y1="308.135"
@@ -89,7 +90,7 @@
 				<stop offset="1" style="stop-color:#00a4dc" />
 			</linearGradient>
 			<linearGradient
-				id="jellyfin-outer"
+				id={`${id}-jellyfin-outer`}
 				x1="94.193"
 				x2="518.754"
 				y1="302.394"
@@ -102,11 +103,11 @@
 			</linearGradient>
 			<path
 				d="M256 196.2c-22.4 0-94.8 131.3-83.8 153.4s156.8 21.9 167.7 0-61.3-153.4-83.9-153.4"
-				fill="url(#jellyfin-inner)"
+				fill={`url(#${id}-jellyfin-inner)`}
 			></path>
 			<path
 				d="M256 0C188.3 0-29.8 395.4 3.4 462.2s472.3 66 505.2 0S323.8 0 256 0m165.6 404.3c-21.6 43.2-309.3 43.8-331.1 0S211.7 101.4 256 101.4 443.2 361 421.6 404.3"
-				fill="url(#jellyfin-outer)"
+				fill={`url(#${id}-jellyfin-outer)`}
 			></path>
 		{/if}
 	</svg>

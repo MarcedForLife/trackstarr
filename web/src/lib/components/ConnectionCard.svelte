@@ -76,6 +76,7 @@
 
 	// A card just added starts in its address, the one field it cannot do without.
 	let addressInput = $state<HTMLInputElement>();
+	let pathMap = $state<PathMapList>();
 	onMount(async () => {
 		if (!opened) return;
 		await tick();
@@ -224,8 +225,7 @@
 		return `${state}. Trackstarr registers it on save.`;
 	}
 
-	// The shut card's line: what is wrong, what is nearly wrong, where it lives,
-	// what it is for.
+	// The shut card's line shows a connection problem or its address.
 	const line = $derived.by(() => {
 		if (result && !result.ok) return { text: result.detail, class: 'text-danger', mono: false };
 		if (result?.ok && result.webhook && result.webhook !== 'connected') {
@@ -237,7 +237,7 @@
 		}
 		const address = (draft[service.url] as string) ?? '';
 		if (address) return { text: address, class: 'text-dim', mono: true };
-		return { text: service.lead, class: 'text-faint', mono: false };
+		return { text: '', class: 'text-faint', mono: false };
 	});
 
 	// One field width, and a 28px slot for the clear button whether or not the
@@ -272,11 +272,13 @@
 						<span class="sr-only">Unsaved changes</span>
 					{/if}
 				</span>
-				<span
-					class={`mt-0.5 block truncate text-[12.5px] ${line.class} ${line.mono ? 'font-mono' : ''}`}
-				>
-					{line.text}
-				</span>
+				{#if line.text}
+					<span
+						class={`mt-0.5 block truncate text-[12.5px] ${line.class} ${line.mono ? 'font-mono' : ''}`}
+					>
+						{line.text}
+					</span>
+				{/if}
 				{#if result?.paths === 'attention' || result?.paths === 'unknown'}
 					<span class="mt-1 block text-[12px] text-accent">
 						{result.paths === 'attention'
@@ -291,27 +293,11 @@
 
 		{#snippet panel()}
 			<div class="border-t border-line px-3 pb-1">
-				<div class="flex items-start justify-between gap-3 py-3">
-					<p class="text-[13px] leading-snug text-pretty text-dim">{service.lead}</p>
-					<!-- Held wide, so Checking does not shift it. -->
-					<button
-						type="button"
-						onclick={() => test(600)}
-						disabled={readOnly || !configured || checking}
-						aria-label={checking ? `Checking ${service.label}` : `Test ${service.label}`}
-						aria-busy={checking}
-						class={`min-w-28 flex-none ${button}`}
-					>
-						<span class="flex" class:turning={checking}><Glyph name="refresh" /></span>
-						<span role="status">{checking ? 'Checking…' : 'Test'}</span>
-					</button>
-				</div>
-
 				{#if result}
 					<!-- Dimmed while a fresh answer is on its way, so a repeat press
 					     landing on the same words still reads as having run. -->
 					<div
-						class={`mb-3 ${noteBox} transition-opacity duration-150 ${result.ok ? 'text-dim' : 'text-danger'} ${checking ? 'opacity-(--disabled)' : ''}`}
+						class={`my-3 ${noteBox} transition-opacity duration-150 ${result.ok ? 'text-dim' : 'text-danger'} ${checking ? 'opacity-(--disabled)' : ''}`}
 					>
 						<p>{result.detail}</p>
 						{#if result.ok && webhookNote(result)}
@@ -466,30 +452,48 @@
 
 				{#if service.map}
 					{@const name = service.map}
-					<!-- A list, so it drops below the description. -->
 					<SettingRow
 						{name}
 						label="Path map"
-						desc={`Only needed when ${service.label} sees the library at a different path. Ours on the left.`}
-						full
+						desc={`Only needed when ${service.label} sees the library at a different path. Ours first.`}
 					>
-						{#snippet children({ labelledBy, describedBy })}
+						<button
+							type="button"
+							onclick={() => pathMap?.add()}
+							disabled={settings.envLocked(name)}
+							aria-label={`Add a ${service.label} path pair`}
+							class={button}
+						>
+							<Glyph name="plus" /> Add
+						</button>
+						{#snippet below({ labelledBy, describedBy })}
 							<PathMapList
+								bind:this={pathMap}
 								{settings}
 								{name}
 								label={service.label}
 								{labelledBy}
 								{describedBy}
-								{entry}
-								{entryRow}
 								{gutter}
 							/>
 						{/snippet}
 					</SettingRow>
 				{/if}
 
-				{#if onremove}
-					<div class="flex justify-end py-3">
+				<div class="flex justify-end gap-2 py-3">
+					<!-- Held wide, so Checking does not shift it. -->
+					<button
+						type="button"
+						onclick={() => test(600)}
+						disabled={readOnly || !configured || checking}
+						aria-label={checking ? `Checking ${service.label}` : `Test ${service.label}`}
+						aria-busy={checking}
+						class={`min-w-28 flex-none ${button}`}
+					>
+						<span class="flex" class:turning={checking}><Glyph name="refresh" /></span>
+						<span role="status">{checking ? 'Checking…' : 'Test'}</span>
+					</button>
+					{#if onremove}
 						<button
 							type="button"
 							class={button}
@@ -497,8 +501,8 @@
 							onclick={onremove}
 							aria-label={`Remove ${service.label}`}>Remove</button
 						>
-					</div>
-				{/if}
+					{/if}
+				</div>
 			</div>
 		{/snippet}
 	</Disclosure>
