@@ -93,9 +93,12 @@
 				loading="lazy"
 				decoding="async"
 				draggable="false"
-				onload={(event) => {
-					palette = coverPalette(event.currentTarget as HTMLImageElement);
+				onload={() => {
 					cover = arrival(src!);
+					const asked = src!;
+					void coverPalette(asked).then((found) => {
+						if (src === asked) palette = found;
+					});
 				}}
 				onerror={() => (missing = true)}
 				class="invisible h-full w-full object-cover"

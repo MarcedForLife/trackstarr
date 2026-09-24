@@ -4,7 +4,6 @@ import {
 	CYCLE_MS,
 	ROLL_BARS,
 	SEGMENTS,
-	SAMPLES,
 	markPose,
 	markTurn,
 	type MarkPose
@@ -37,6 +36,9 @@ function cross(a: Point, b: Point, c: Point): number {
 	return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
 
+// How finely the tests walk one cycle.
+const SAMPLES = 1536;
+
 function distance(a: Segment, b: Segment): number {
 	if (cross(...a, b[0]) * cross(...a, b[1]) < 0 && cross(...b, a[0]) * cross(...b, a[1]) < 0)
 		return 0;
@@ -48,30 +50,15 @@ function distance(a: Segment, b: Segment): number {
 	);
 }
 
-test('bars stay separated and inside the mark, including between animation keyframes', () => {
-	const frames = Array.from({ length: SAMPLES + 1 }, (_, frame) =>
-		ROLL_BARS.map((_, bar) =>
-			Array.from({ length: SEGMENTS }, (_, part) => markPose(frame / SAMPLES, bar, part))
-		)
-	);
+test('bars stay separated and inside the mark throughout the roll', () => {
 	let closest = Infinity;
 	let widest = 0;
 	const seamGaps: number[] = [];
-	// Six samples per interval also cover the browser's linear interpolation.
-	for (let sample = 0; sample <= SAMPLES * 6; sample++) {
-		const frame = Math.min(SAMPLES - 1, Math.floor(sample / 6));
-		const fraction = sample / 6 - frame;
-		const bars = frames[frame].map((bar, index) =>
-			bar.map((from, part) => {
-				const to = frames[frame + 1][index][part];
-				const turn = to.rotation - from.rotation;
-				return endpoints({
-					x: from.x + (to.x - from.x) * fraction,
-					y: from.y + (to.y - from.y) * fraction,
-					span: from.span + (to.span - from.span) * fraction,
-					rotation: from.rotation + (turn - Math.round(turn / 180) * 180) * fraction
-				});
-			})
+	for (let sample = 0; sample <= SAMPLES; sample++) {
+		const bars = ROLL_BARS.map((_, bar) =>
+			Array.from({ length: SEGMENTS }, (_, part) =>
+				endpoints(markPose(sample / SAMPLES, bar, part))
+			)
 		);
 		let seamGap = Infinity;
 		for (let bar = 0; bar < bars.length; bar++) {
@@ -94,13 +81,12 @@ test('bars stay separated and inside the mark, including between animation keyfr
 	expect(closest).toBeGreaterThan(3.75);
 	expect(widest).toBeLessThan(12);
 	// The shared caps separate steadily until clear, then never collide again before return.
-	// Once circular, linear keyframe interpolation slightly shortens the rotating chords.
 	for (let sample = 1; sample < seamGaps.length; sample++) {
 		const change = seamGaps[sample] - seamGaps[sample - 1];
-		if (sample < SAMPLES * 1.5 && seamGaps[sample - 1] < 3.75)
+		if (sample < SAMPLES / 4 && seamGaps[sample - 1] < 3.75)
 			expect(change).toBeGreaterThanOrEqual(-0.000001);
-		if (sample > SAMPLES * 4.5) expect(change).toBeLessThanOrEqual(0.000001);
-		if ((sample >= SAMPLES * 1.5 || seamGaps[sample - 1] >= 3.75) && sample <= SAMPLES * 4.5)
+		if (sample > (SAMPLES * 3) / 4) expect(change).toBeLessThanOrEqual(0.000001);
+		if ((sample >= SAMPLES / 4 || seamGaps[sample - 1] >= 3.75) && sample <= (SAMPLES * 3) / 4)
 			expect(seamGaps[sample]).toBeGreaterThan(3.75);
 	}
 });

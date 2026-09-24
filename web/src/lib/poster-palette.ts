@@ -54,27 +54,42 @@ export function posterPalette(pixels: ArrayLike<number>): PosterPalette {
 	return { ...primary, accentHue: secondary.hue, accentSaturation: secondary.saturation };
 }
 
-const cache = new Map<string, ReturnType<typeof posterPalette>>();
+// Pending ones too, so two cards showing one cover decode it once.
+const cache = new Map<string, Promise<PosterPalette>>();
 
-/** A loaded same-origin cover (or the settings preview's data URL). */
-export function coverPalette(image: HTMLImageElement): ReturnType<typeof posterPalette> {
-	const key = image.currentSrc || image.src;
-	const cached = cache.get(key);
-	if (cached) return cached;
-	let palette = { ...NEUTRAL_PALETTE };
+// The thumbnail the sampler reads.
+const THUMB = { width: 16, height: 24 };
+
+/** A same-origin cover, read back from the HTTP cache. A blob decodes off the
+ * main thread, where drawing the <img> decoded it in place. */
+export function coverPalette(src: string): Promise<PosterPalette> {
+	let palette = cache.get(src);
+	if (!palette) {
+		if (cache.size >= 512) cache.delete(cache.keys().next().value!);
+		palette = sample(src);
+		cache.set(src, palette);
+	}
+	return palette;
+}
+
+async function sample(src: string): Promise<PosterPalette> {
 	try {
+		const blob = await (await fetch(src)).blob();
+		const bitmap = await createImageBitmap(blob, {
+			resizeWidth: THUMB.width,
+			resizeHeight: THUMB.height,
+			resizeQuality: 'medium'
+		});
 		const canvas = document.createElement('canvas');
-		canvas.width = 16;
-		canvas.height = 24;
+		canvas.width = THUMB.width;
+		canvas.height = THUMB.height;
 		const context = canvas.getContext('2d', { willReadFrequently: true });
-		if (context) {
-			context.drawImage(image, 0, 0, 16, 24);
-			palette = posterPalette(context.getImageData(0, 0, 16, 24).data);
-		}
+		// Sized here too, for a browser that ignores the resize.
+		context?.drawImage(bitmap, 0, 0, THUMB.width, THUMB.height);
+		bitmap.close();
+		if (context) return posterPalette(context.getImageData(0, 0, THUMB.width, THUMB.height).data);
 	} catch {
 		// Unreadable or cross-origin artwork keeps a neutral metallic finish.
 	}
-	if (cache.size >= 512) cache.delete(cache.keys().next().value!);
-	cache.set(key, palette);
-	return palette;
+	return { ...NEUTRAL_PALETTE };
 }
