@@ -19,7 +19,6 @@ export const ROLL_BARS = [
 ];
 
 export const SEGMENTS = 8;
-export const SAMPLES = 256;
 export const CYCLE_MS = 6400;
 const ROLL_IN_MS = 1400;
 const REFORMATION_MS = 1800;
