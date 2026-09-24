@@ -52,7 +52,6 @@ export type Service = {
 	// The display name. Only a source has one.
 	nameField?: string;
 	keyLabel: string;
-	lead: string;
 	placeholder: string;
 };
 
@@ -67,7 +66,6 @@ export const SERVICES: Service[] = [
 		publicUrl: 'arr:radarr:public_url',
 		nameField: 'arr:radarr:name',
 		keyLabel: 'API key',
-		lead: 'Calls the webhook on each film import, supplies original languages, and is where films open from the library.',
 		placeholder: 'http://radarr:7878'
 	},
 	{
@@ -79,7 +77,6 @@ export const SERVICES: Service[] = [
 		publicUrl: 'arr:sonarr:public_url',
 		nameField: 'arr:sonarr:name',
 		keyLabel: 'API key',
-		lead: 'Calls the same webhook for episodes. A season import arrives as one call with many files. Series open here from the library.',
 		placeholder: 'http://sonarr:8989'
 	},
 	{
@@ -91,7 +88,6 @@ export const SERVICES: Service[] = [
 		map: 'PLEX_PATH_MAP',
 		publicUrl: 'PLEX_PUBLIC_URL',
 		keyLabel: 'Token',
-		lead: 'Asked to rescan the folder of each rewritten file. Titles open here from the library.',
 		placeholder: 'http://plex:32400'
 	},
 	{
@@ -103,7 +99,6 @@ export const SERVICES: Service[] = [
 		map: 'JELLYFIN_PATH_MAP',
 		publicUrl: 'JELLYFIN_PUBLIC_URL',
 		keyLabel: 'API key',
-		lead: 'Rescans the same way, by file rather than folder. Emby speaks this API too.',
 		placeholder: 'http://jellyfin:8096'
 	}
 ];

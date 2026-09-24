@@ -15,7 +15,8 @@
 		full = false,
 		nested = false,
 		dim = false,
-		children
+		children,
+		below
 	}: {
 		// The setting this row is for. The ENV badge, the unsaved dot and the
 		// sentence about the environment all follow from it, so the row says it
@@ -36,6 +37,8 @@
 		// The governing row is off. Dimmed; the caller disables the control.
 		dim?: boolean;
 		children: Snippet<[{ labelledBy: string; describedBy: string }]>;
+		// A list the control adds to, full width under the row.
+		below?: Snippet<[{ labelledBy: string; describedBy: string }]>;
 	} = $props();
 
 	// Every settings page provides its draft, so a named row reads its own state
@@ -103,4 +106,9 @@
 	<div class={controlClass}>
 		{@render children({ labelledBy, describedBy })}
 	</div>
+	{#if below}
+		<div class="col-span-2 col-start-1 row-start-3 min-w-0">
+			{@render below({ labelledBy, describedBy })}
+		</div>
+	{/if}
 </div>

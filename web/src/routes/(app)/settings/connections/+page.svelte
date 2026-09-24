@@ -278,7 +278,7 @@
 		<div class="mt-7">
 			<p class="text-[13px] font-semibold">Libraries</p>
 			<p class="mt-0.5 text-[13px] leading-snug text-pretty text-dim">
-				The media servers told to rescan what was rewritten. Most installs have one, not both.
+				The media servers told to rescan what was rewritten.
 			</p>
 		</div>
 		<div class="mt-3 flex flex-col gap-2">
@@ -323,7 +323,7 @@
 			<SettingRow
 				name="SKIP_HARDLINKS"
 				label="Leave seeding files alone"
-				desc="Leave a file alone while the download client still hard-links it. Rewriting breaks the link, so the file takes disk twice until the torrent is removed."
+				desc="Leave a file alone while the download client still hard-links it. Rewriting breaks the link."
 			>
 				{#snippet children({ labelledBy, describedBy })}
 					<Toggle
