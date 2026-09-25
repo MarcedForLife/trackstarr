@@ -106,7 +106,7 @@
 	const overviewNote = $derived(label(SORTS, order.strip));
 </script>
 
-<Page eyebrow="Settings" lead="How the web UI looks and what it opens on, in this browser.">
+<Page lead="How the web UI looks and what it opens on, in this browser.">
 	<Section heading="Colours" note={themeNote} spaced open>
 		<SettingRow label="Theme" desc="System follows the operating system." stack>
 			{#snippet children({ labelledBy, describedBy })}

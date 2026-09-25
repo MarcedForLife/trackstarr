@@ -22,6 +22,8 @@
 		glide = file,
 		// A finished run, the one time the fill is not the accent.
 		done = false,
+		// The groove, which must differ from the ground under the bar.
+		track = 'bg-sunken',
 		class: extra = ''
 	}: {
 		fill?: number;
@@ -32,6 +34,7 @@
 		file?: boolean;
 		glide?: boolean;
 		done?: boolean;
+		track?: string;
 		class?: string;
 	} = $props();
 </script>
@@ -43,7 +46,7 @@
 	aria-valuemax={indeterminate ? undefined : max}
 	aria-valuenow={indeterminate ? undefined : now}
 	aria-valuetext={text}
-	class={`relative overflow-hidden rounded-full bg-sunken ${
+	class={`relative overflow-hidden rounded-full ${track} ${
 		file ? 'h-[3px] min-w-0 flex-1' : 'h-1'
 	} ${extra}`}
 >

@@ -176,10 +176,7 @@
 	const cronNote = `${id}-cron`;
 </script>
 
-<Page
-	eyebrow="Settings"
-	lead="The walk over the whole library, catching files that arrived without a webhook."
->
+<Page lead="The walk over the whole library, catching files that arrived without a webhook.">
 	<!-- Inert while a save is in flight, so the response cannot land on a
 	     keystroke it never carried. min-w-0, or a fieldset will not shrink. -->
 	<fieldset disabled={settings.busy} class="min-w-0">

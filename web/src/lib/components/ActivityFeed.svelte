@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import EventRow from '$lib/components/EventRow.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
+	import { fileRow } from '$lib/controls';
 	import { key, type Event } from '$lib/events';
 	import type { Card } from '$lib/library';
 
@@ -31,17 +32,26 @@
 	const hasMore = $derived(entries.length > ROWS + extra);
 </script>
 
-<section class="min-w-0" aria-labelledby="activity-heading">
-	<h2 id="activity-heading" class="text-[11px] font-semibold tracking-wider text-faint uppercase">
-		Activity
-	</h2>
-	<!-- No label of its own inside the card: the heading above it already says
-	     what these lines are. -->
-	<div class="mt-2.5 overflow-hidden rounded-xl border border-line bg-raised">
+<section class="min-w-0" aria-labelledby="events-heading">
+	<div class="flex items-center gap-3 px-3 pb-3 sm:px-4">
+		<h2
+			id="events-heading"
+			class="min-w-0 flex-1 text-[17px] leading-tight font-semibold tracking-tight"
+		>
+			Events
+		</h2>
+		<a
+			href={resolve('/events')}
+			class="relative -mr-1.5 flex-none rounded px-1.5 py-1.5 text-[12px] font-medium text-accent after:absolute after:-inset-2 after:content-[''] hover:underline"
+		>
+			View events
+		</a>
+	</div>
+	<div class="rounded-2xl border border-line bg-sunken p-3 sm:p-4">
 		{#if rows.length}
-			<ol class="divide-y divide-line">
+			<ol class="flex flex-col gap-2">
 				{#each rows as { entry, id }, at (id)}
-					<li class="relative px-4 py-3 transition-[background-color] hover:bg-sunken/50">
+					<li class={`event-tile relative ${fileRow()} py-3`}>
 						<EventRow
 							compact
 							{entry}
@@ -55,31 +65,40 @@
 				{/each}
 			</ol>
 		{:else}
-			<p class="px-4 py-6 text-[12.5px] text-dim">
-				No activity yet. Every sweep, import and rewrite appears here.
+			<p class="py-3 text-[12.5px] text-dim">
+				No events yet. Every sweep, import and rewrite appears here.
 			</p>
 		{/if}
-		<!-- More of the same list on the left, the way off it on the right. The
-		     link holds that edge whether or not there is more to show. -->
-		<div class="flex items-center gap-3 border-t border-line px-4 py-2">
-			{#if hasMore}
-				<button
-					type="button"
-					onclick={() => (extra += MORE)}
-					class="inline-flex min-h-10 items-center gap-1 text-[12.5px] font-medium text-dim hover:text-fg"
-				>
-					Show more
-					<!-- Turned down, or two right-pointing chevrons in one foot read as
-					     two ways off the page. -->
-					<span class="inline-flex rotate-90"><Glyph name="chevron" size={11} /></span>
-				</button>
-			{/if}
-			<a
-				href={resolve('/events')}
-				class="ml-auto inline-flex min-h-10 items-center gap-1 text-[12.5px] font-medium text-accent hover:underline"
+		{#if hasMore}
+			<button
+				type="button"
+				onclick={() => (extra += MORE)}
+				class="mt-2 -mb-1.5 flex min-h-10 w-full items-center justify-center gap-1 text-[12.5px] font-medium text-dim hover:text-fg"
 			>
-				All events <Glyph name="next" size={11} />
-			</a>
-		</div>
+				Show more
+				<span class="inline-flex rotate-90"><Glyph name="chevron" size={11} /></span>
+			</button>
+		{/if}
 	</div>
 </section>
+
+<style>
+	/* The processing rows' lift, so every tile on the overview answers a
+	   pointer the same way. */
+	@media (hover: hover) and (pointer: fine) {
+		.event-tile:hover {
+			z-index: 10;
+			translate: 0 -2px;
+			box-shadow:
+				0 3px 6px rgb(0 0 0 / 0.16),
+				0 14px 28px rgb(0 0 0 / 0.22);
+			border-color: var(--line-strong);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.event-tile:hover {
+			translate: none;
+		}
+	}
+</style>

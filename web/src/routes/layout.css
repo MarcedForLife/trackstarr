@@ -233,12 +233,15 @@
 [data-theme='dark'] {
 	color-scheme: dark;
 	--float-shadow: 0 12px 32px rgba(0, 0, 0, 0.62), 0 3px 10px rgba(0, 0, 0, 0.45);
+	/* The tray rim's shadow on covers scrolling under it. */
+	--rim-shadow: rgb(0 0 0 / 0.75);
 	--disabled: 0.5;
 	--demo: #a898f0;
 }
 [data-theme='light'] {
 	color-scheme: light;
 	--float-shadow: 0 12px 28px rgba(24, 20, 12, 0.16), 0 3px 8px rgba(24, 20, 12, 0.08);
+	--rim-shadow: rgb(24 20 12 / 0.24);
 	/* Fading toward white costs more contrast than fading toward black, so the
 	   same 0.5 read two steps lighter here. 0.6 matches the dark fade. */
 	--disabled: 0.6;

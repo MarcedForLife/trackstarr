@@ -11,12 +11,15 @@
 		hint = '',
 		disabled = false,
 		class: shape = '',
+		// The trigger edge the menu aligns to, read once.
+		edge = 'left',
 		onchoose
 	}: {
 		label: string;
 		hint?: string;
 		disabled?: boolean;
 		class?: string;
+		edge?: 'left' | 'right';
 		onchoose: (seconds: number) => Promise<void>;
 	} = $props();
 
@@ -25,7 +28,8 @@
 	let menu: HTMLDivElement;
 	let busy = $state<number | null>(null);
 	let error = $state('');
-	const chooser = popover({ edge: 'left' });
+	// svelte-ignore state_referenced_locally
+	const chooser = popover({ edge });
 
 	function toggle() {
 		if (!chooser.open) error = '';

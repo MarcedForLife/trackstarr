@@ -143,7 +143,7 @@
 				disabled={busy !== null || disabled || runDisabled || !!refuses}
 				aria-disabled={!mayRewrite || undefined}
 				class="flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[13px] font-medium hover:bg-sunken disabled:opacity-(--disabled) aria-disabled:opacity-(--disabled)"
-				><Glyph name="play" /> Process</button
+				><Glyph name="bolt" /> Process</button
 			>
 			{#if refuses}<p class="px-2.5 py-2 text-[12px] text-faint">{refuses}</p>{/if}
 		{/if}

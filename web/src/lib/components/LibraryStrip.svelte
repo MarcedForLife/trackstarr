@@ -3,7 +3,6 @@
 	import { resolve } from '$app/paths';
 	import { fade } from 'svelte/transition';
 	import Count from '$lib/components/Count.svelte';
-	import Glyph from '$lib/components/Glyph.svelte';
 	import PosterCard from '$lib/components/PosterCard.svelte';
 	import { display } from '$lib/display.svelte';
 	import { dragScroll } from '$lib/dragscroll';
@@ -90,6 +89,34 @@
 		};
 	});
 
+	// Which ends have covers under the rim, for its shadow. Measured in script
+	// since Firefox has no scroll timelines.
+	let underStart = $state(false);
+	let underEnd = $state(false);
+
+	function measureEdges() {
+		if (!strip) return;
+		underStart = strip.scrollLeft > 1;
+		underEnd = strip.scrollLeft < strip.scrollWidth - strip.clientWidth - 1;
+	}
+
+	$effect(() => {
+		const row = strip;
+		if (!row) return;
+		const resized = new ResizeObserver(measureEdges);
+		resized.observe(row);
+		row.addEventListener('scroll', measureEdges, { passive: true });
+		return () => {
+			resized.disconnect();
+			row.removeEventListener('scroll', measureEdges);
+		};
+	});
+
+	// The cards set the row's scroll width.
+	$effect(() => {
+		if (library?.head) tick().then(measureEdges);
+	});
+
 	// Back to the front once the new row is laid out. Twice, since the browser
 	// may move the row at layout, after tick().
 	async function toStart() {
@@ -131,26 +158,38 @@
 </script>
 
 {#if library?.titles}
-	<section class="min-w-0">
-		<h2 class="text-[11px] font-semibold tracking-wider text-faint uppercase">Library</h2>
-		<div class="mt-2.5 rounded-xl border border-line bg-raised p-4">
-			<div class="flex items-baseline gap-2.5">
-				<p class="min-w-0 flex-1 text-[13.5px] font-medium">
+	<section class="min-w-0" aria-labelledby="library-heading">
+		<div class="flex items-center gap-3 px-3 pb-3 sm:px-4">
+			<div class="min-w-0 flex-1">
+				<h2 id="library-heading" class="text-[17px] leading-tight font-semibold tracking-tight">
+					Library
+				</h2>
+				<p class="mt-1 text-[12.5px] text-dim">
 					<Count value={library.titles} />
-					{library.titles === 1 ? 'title' : 'titles'}
-				</p>
-				<p class={`flex-none text-[12px] font-medium ${pending ? 'text-accent' : 'text-faint'}`}>
-					{#if pending}<Count value={pending} /> pending{:else}nothing pending{/if}
+					{library.titles === 1 ? 'title' : 'titles'} ·
+					<span class={pending ? 'font-medium text-accent' : ''}
+						>{#if pending}<Count value={pending} /> pending{:else}nothing pending{/if}</span
+					>
 				</p>
 			</div>
+			<a
+				href={resolve('/library')}
+				class="relative -mr-1.5 flex-none rounded px-1.5 py-1.5 text-[12px] font-medium text-accent after:absolute after:-inset-2 after:content-[''] hover:underline"
+			>
+				View library
+			</a>
+		</div>
 
-			<!-- This browser's strip order, not the shelf's worst-first, which put
-			     the same stuck titles under the dashboard every day. No scroll snap:
-			     a snapped container does not fling, and a flick that carried 700px
-			     free carried 250 snapped. $lib/dragscroll settles a cursor drag by
-			     hand. The vertical padding gives a raised card's shadow somewhere to
-			     go, since a scroll container clips at its padding box. -->
-			{#if library.head.length}
+		{#if library.head.length}
+			<div
+				class="shelf relative overflow-hidden rounded-2xl border border-line bg-sunken"
+				class:under-start={underStart}
+				class:under-end={underEnd}
+			>
+				<!-- This browser's strip order, since worst-first put the same stuck titles
+				     up front every day. No scroll snap, since a snapped strip does not
+				     fling. The vertical padding leaves room for a raised card's shadow,
+				     since a scroller clips at its padding box. -->
 				<ul
 					use:tiltField={{
 						active: moving,
@@ -160,7 +199,7 @@
 					}}
 					use:dragScroll
 					bind:this={strip}
-					class="strip -mx-1 -my-3 flex gap-2 overflow-x-auto px-1 py-3"
+					class="strip flex gap-2 overflow-x-auto p-3 sm:p-4"
 				>
 					{#each library.head as title (title.id)}
 						<!-- Bigger art where there is room. Twelve at 8.5rem still
@@ -172,16 +211,8 @@
 						</li>
 					{/each}
 				</ul>
-			{/if}
-
-			<a
-				href={resolve('/library')}
-				class="mt-2.5 inline-flex items-center gap-1 text-[12.5px] font-medium text-dim hover:text-fg"
-			>
-				See the library
-				<Glyph name="next" size={11} />
-			</a>
-		</div>
+			</div>
+		{/if}
 	</section>
 {/if}
 
@@ -196,5 +227,53 @@
 
 	.strip::-webkit-scrollbar {
 		display: none;
+	}
+
+	/* The rim's shadow on covers under it, a quarter of a card wide. */
+	.shelf {
+		isolation: isolate;
+	}
+
+	/* Over a raised card's z-index of 1. */
+	.shelf::before,
+	.shelf::after {
+		content: '';
+		position: absolute;
+		inset-block: 0;
+		z-index: 2;
+		width: 1.25rem;
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 150ms ease-out;
+	}
+
+	.shelf::before {
+		left: 0;
+		background: linear-gradient(to right, var(--rim-shadow), 30%, transparent);
+	}
+
+	.shelf::after {
+		right: 0;
+		background: linear-gradient(to left, var(--rim-shadow), 30%, transparent);
+	}
+
+	.under-start::before,
+	.under-end::after {
+		opacity: 1;
+	}
+
+	/* The cards' lg and xl widths. */
+	@media (min-width: 64rem) {
+		.shelf::before,
+		.shelf::after {
+			width: 1.75rem;
+		}
+	}
+
+	@media (min-width: 80rem) {
+		.shelf::before,
+		.shelf::after {
+			width: 2rem;
+		}
 	}
 </style>

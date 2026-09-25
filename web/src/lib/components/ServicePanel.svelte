@@ -28,7 +28,7 @@
 	import SweepButtons from '$lib/components/SweepButtons.svelte';
 	import type { Landed, Snapshot } from '$lib/activity.svelte';
 	import { refusalText } from '$lib/api';
-	import { button, danger, frosted, primary, rowButton } from '$lib/controls';
+	import { button, danger, frosted, mark, markAccent, markDanger, markQuiet } from '$lib/controls';
 	import { soon, stamp } from '$lib/format';
 	import { resume as resumeItem, place, type Pause } from '$lib/pauses';
 	import type { RunMode } from '$lib/library';
@@ -49,7 +49,7 @@
 	} from '$lib/runs';
 	import { told } from '$lib/stream';
 
-	// Current work and controls. Completed work belongs in Activity.
+	// Current work and controls. Completed work belongs in Events.
 	let {
 		snapshot,
 		admin = false,
@@ -76,9 +76,8 @@
 	let refusal = $state('');
 	let busy = $state('');
 
-	// Stop all asks before it goes, in a panel hung off the button as the sweep's
-	// pair does. Left-hung, since the button sits at the left of its row.
-	const confirm = popover({ edge: 'left' });
+	// Stop all confirms first, in a panel hung off the button's right edge.
+	const confirm = popover();
 	let stopButton = $state<HTMLButtonElement>();
 	let stopPanel = $state<HTMLDivElement>();
 
@@ -87,6 +86,11 @@
 	const capacity = popover({ edge: 'right' });
 	let slotsButton = $state<HTMLButtonElement>();
 	let slotsPanel = $state<HTMLDivElement>();
+
+	// The schedule, hung left off the idle state that starts its row.
+	const nextCheck = popover({ edge: 'left' });
+	let stateButton = $state<HTMLButtonElement>();
+	let schedulePanel = $state<HTMLDivElement>();
 
 	const holding = $derived(activity.paused);
 	// Encoding this second, which is the only way to tell a rewrite from a probe.
@@ -181,6 +185,7 @@
 	const completion = $derived(totalCount ? Math.min(1, processed / totalCount) : 0);
 
 	const waiting = $derived(Math.max(activity.queue, queuedFiles.length));
+	const hasWork = $derived(!!activity.runs.length || !!activeFiles.length || !!waiting);
 	const processingState = $derived(
 		snapshot.offline
 			? 'Connection lost'
@@ -194,9 +199,9 @@
 						? 'Stopping'
 						: 'Working'
 	);
-	// The dot breathes only while something really is being worked on, which is
-	// what tells Working from Paused at a glance.
-	const live = $derived(processingState === 'Working');
+	const tone = $derived(
+		snapshot.offline ? 'text-danger' : holding || activity.runs.length ? 'text-accent' : 'text-dim'
+	);
 	let queueOpen = $state(false);
 	let pausedOpen = $state(false);
 	let opened = $state<Record<string, boolean>>({});
@@ -215,7 +220,7 @@
 		activity.runs.some((run) => run.type === 'sweep' || run.type === 'recheck')
 	);
 
-	// Paused workers finishing, or the next scheduled check while idle.
+	// Paused workers finishing, or the wait for a lost connection.
 	const sub = $derived.by(() => {
 		if (snapshot.offline)
 			return `Showing the last update from ${stamp(lastUpdated)}. Reconnecting…`;
@@ -223,10 +228,18 @@
 			return activeFiles.length
 				? 'Files already started will finish. Nothing new starts until you resume.'
 				: 'Nothing new starts until you resume.';
-		return !activity.runs.length && activity.next_sweep
-			? `Next scheduled check ${soon(activity.next_sweep)}.`
-			: '';
+		return '';
 	});
+
+	// The next sweep, told by the idle state since a line under it crowded the
+	// marks on a phone.
+	const schedule = $derived(
+		processingState !== 'Idle'
+			? ''
+			: activity.next_sweep
+				? `Next scheduled check ${soon(activity.next_sweep)}.`
+				: 'No sweep is scheduled.'
+	);
 
 	// The fallback poll rate this panel asks the snapshot for. A run is a readout
 	// being watched; an idle service is a page left on a desk.
@@ -256,7 +269,7 @@
 		const shown = fresh.runs.some((run) => run.type === 'sweep');
 		if (launched && (shown || Date.now() - launchedAt > WARMING_MS)) launched = '';
 		const alive = new Set(fresh.runs.map((run) => run.id));
-		// Refresh Activity when a run ends, including one replaced between
+		// Refresh Events when a run ends, including one replaced between
 		// snapshots.
 		onmoved(before.runs.some((run) => !alive.has(run.id)));
 	}
@@ -345,15 +358,20 @@
 	$effect(() => {
 		if (confirm.open && !activity.runs.length) confirm.lower();
 	});
+
+	// The schedule closes once the service leaves idle.
+	$effect(() => {
+		if (nextCheck.open && !schedule) nextCheck.lower();
+	});
 </script>
 
 <svelte:window
 	onpointerdown={(event) => {
-		for (const held of [confirm, capacity])
+		for (const held of [confirm, capacity, nextCheck])
 			if (held.open && held.outside(event.target as Node)) held.lower();
 	}}
 	onresize={() => {
-		for (const held of [confirm, capacity]) if (held.open) held.lower();
+		for (const held of [confirm, capacity, nextCheck]) if (held.open) held.lower();
 	}}
 />
 
@@ -389,169 +407,255 @@
 	</ul>
 {/snippet}
 
-<section
-	bind:this={panelRoot}
-	aria-labelledby="now"
-	class="mt-6 rounded-xl border border-line bg-raised"
->
-	<div class="px-4 py-5 sm:px-5">
-		<div class="flex items-center justify-between gap-3">
-			<h2
-				id="now"
-				class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1 text-[23px] leading-tight font-semibold tracking-tight"
+<section bind:this={panelRoot} aria-labelledby="now" class="mt-4">
+	<div class="px-3 pb-3 sm:px-4">
+		<h2 id="now" class="text-[17px] leading-tight font-semibold tracking-tight">Activity</h2>
+	</div>
+	<div class="rounded-2xl border border-line bg-sunken">
+		<div class="flex min-h-11 items-center justify-between gap-3 py-2 pr-2 pl-3 sm:pr-3 sm:pl-4">
+			<p
+				class={`flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1 text-[17px] leading-tight font-semibold tracking-tight transition-colors duration-500 ${tone}`}
 			>
-				<span
-					aria-hidden="true"
-					class:live
-					class={`h-2 w-2 flex-none rounded-full transition-colors duration-500 ${snapshot.offline ? 'bg-danger' : holding || activity.runs.length ? 'bg-accent-fill' : 'bg-line-strong'}`}
-				></span>
 				<!-- Keyed, so a state change reads as one word replacing another
 				     rather than a redraw. -->
-				{#key processingState}<span in:fade={rowFade()}>{processingState}</span>{/key}
+				{#key processingState}
+					{#if schedule}
+						<!-- A press shows the schedule where there is no hover. -->
+						<button
+							bind:this={stateButton}
+							type="button"
+							title={schedule}
+							aria-expanded={nextCheck.open}
+							aria-controls="next-check"
+							onclick={() =>
+								stateButton && schedulePanel && nextCheck.toggle(stateButton, schedulePanel)}
+							class="-my-2 rounded-lg py-2 text-left"
+							in:fade={rowFade()}>{processingState}</button
+						>
+					{:else}
+						<span in:fade={rowFade()}>{processingState}</span>
+					{/if}
+				{/key}
 				{#if failed}<a
 						href={resolve('/events?filter=issues')}
-						title="View issues in activity"
+						title="View issues in events"
 						class="inline-flex min-h-11 items-center rounded-lg px-2 text-[12px] font-medium tracking-normal text-danger underline underline-offset-2 hover:bg-danger/10"
 						>{failed} failed</a
 					>{/if}
-			</h2>
-			{#if admin && !sweeping && !holding}
-				<div class="flex-none" transition:fade={rowFade()}>
-					<SweepButtons
-						mayRewrite={activity.may_rewrite}
-						disabled={!!busy || !!launched}
-						busy={starting}
-						onrun={run}
-					/>
+			</p>
+			{#if admin}
+				<div class="relative flex flex-none items-center gap-2" aria-label="Processing controls">
+					{#if holding}
+						<button
+							onclick={() => act('resume', resume)}
+							disabled={!!busy}
+							aria-busy={busy === 'resume'}
+							aria-label="Resume"
+							title="Resume. Queued files start again."
+							class={`${mark} ${markAccent}`}
+							out:swapLeave
+							in:fade={rowFade()}
+						>
+							<Spinner glyph="play" size={14} busy={busy === 'resume'} />
+							<span class="hidden sm:inline">Resume</span>
+						</button>
+					{:else}
+						<button
+							onclick={() => act('pause', pause)}
+							disabled={!!busy}
+							aria-busy={busy === 'pause'}
+							aria-label={activity.runs.length ? 'Pause' : 'Suspend'}
+							title={activity.runs.length
+								? 'Pause. Files already started finish and nothing new starts.'
+								: 'Suspend. Nothing new starts until you resume.'}
+							class={`${mark} ${markQuiet}`}
+							out:swapLeave
+							in:fade={rowFade()}
+						>
+							<Spinner glyph="pause" size={12} busy={busy === 'pause'} />
+							<span class="hidden sm:inline">{activity.runs.length ? 'Pause' : 'Suspend'}</span>
+						</button>
+					{/if}
+					{#if activity.runs.length}
+						<button
+							bind:this={stopButton}
+							onclick={() => stopButton && stopPanel && confirm.toggle(stopButton, stopPanel)}
+							disabled={!!busy || stoppingAll}
+							aria-label="Stop all"
+							title="Stop all processing"
+							aria-expanded={confirm.open}
+							aria-controls="stop-confirmation"
+							aria-busy={stoppingAll}
+							class={`${mark} ${markDanger}`}
+							transition:fade={rowFade()}
+						>
+							<Spinner glyph="stop" size={10} busy={stoppingAll} />
+							<span class="hidden sm:inline">Stop</span>
+						</button>
+					{/if}
+					{#if !sweeping && !holding}
+						<div class="flex-none" transition:fade={rowFade()}>
+							<SweepButtons
+								mayRewrite={activity.may_rewrite}
+								disabled={!!busy || !!launched}
+								busy={starting}
+								onrun={run}
+							/>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>
-		<!-- Collapses as the run starts, before the progress replaces it. -->
-		<Reveal when={!!sub || (!activity.runs.length && !holding)}>
-			{#if sub}
-				<!-- Keyed inside the region, not round it: a live region has to be
-				     there before its words change or nothing is announced. -->
-				<p role="status" class="mt-2 text-[12.5px] text-dim">
-					{#key sub}<span in:fade={rowFade()}>{sub}</span>{/key}
-				</p>
-			{:else}
-				<p class="mt-2 text-[12.5px] text-dim">
-					No sweep is scheduled.
-					{#if admin}
-						<a
-							href={resolve('/settings/sweep')}
-							class="text-accent underline underline-offset-2 hover:text-fg"
-						>
-							Schedule one
-						</a>
-					{/if}
-				</p>
-			{/if}
+		<Reveal when={!!sub}>
+			<!-- Keyed inside the live region, which must exist before its words change
+			     for them to be announced. -->
+			<p role="status" class="px-3 pb-3 text-[12.5px] text-dim sm:px-4">
+				{#key sub}<span in:fade={rowFade()}>{sub}</span>{/key}
+			</p>
+		</Reveal>
+		<!-- The service's own words, kept until the next button is pressed. -->
+		{#if refusal}
+			<p role="alert" class="px-3 pb-3 text-[12.5px] text-danger sm:px-4">{refusal}</p>
+		{:else if snapshot.offline}
+			<p role="status" class="px-3 pb-3 text-[12.5px] text-danger sm:px-4">{snapshot.offline}</p>
+		{/if}
+		<Reveal when={hasWork}>
+			<div class="px-3 pt-1.5 pb-3 sm:px-4 sm:pb-4">
+				<Reveal when={!!activity.runs.length}>
+					<div aria-label="Overall processing progress">
+						{#if totalCount}
+							<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+								<span class="text-[28px] leading-none font-semibold tracking-tight"
+									><Count value={completedCount} /></span
+								>
+								<span class="text-[12px] text-dim"
+									>of <Count value={totalCount} />
+									{totalCount === 1 ? 'file' : 'files'} processed</span
+								>
+								<span
+									class="ml-auto inline-flex items-baseline gap-2 text-[12px] whitespace-nowrap tabular-nums"
+								>
+									{#if estimates.length === 1}<span
+											aria-label="Estimated time remaining"
+											class="text-dim">{estimates[0]}</span
+										>{/if}
+									{#if !listing}
+										{#if estimates.length === 1}<span aria-hidden="true" class="text-faint">·</span
+											>{/if}
+										<span class="font-medium text-accent"
+											><Count value={Math.floor(completion * 100)} />%</span
+										>
+									{/if}
+								</span>
+							</div>
+							{#if !listing}<Bar
+									class="mt-3 !h-1.5"
+									track="bg-raised"
+									fill={completion}
+									glide={rewriting}
+									now={completedCount}
+									max={totalCount}
+									text={`${completedCount} of ${totalCount} files processed across active runs`}
+								/>{/if}
+						{/if}
+						{#if listing}<p class="mt-2 text-[12px] text-dim">
+								Discovering files{totalCount ? ' · totals may grow' : ''}…
+								{#if !totalCount && estimates.length === 1}<span
+										aria-label="Estimated time remaining"
+										class="ml-2 whitespace-nowrap tabular-nums">{estimates[0]}</span
+									>{/if}
+							</p>{/if}
+					</div>
+				</Reveal>
+				<Reveal when={!!activeFiles.length || !!waiting} class={activity.runs.length ? 'pt-5' : ''}>
+					<div class={waiting && activeFiles.length ? 'grid gap-6 lg:grid-cols-2 lg:gap-8' : ''}>
+						{#if activeFiles.length}
+							<!-- A grid cell keeps its content's width by default, and row names do
+							     not wrap. -->
+							<div class="min-w-0">
+								<div class="flex flex-wrap items-baseline justify-between gap-2">
+									<h3 class="text-[13px] font-semibold">
+										Processing <span class="ml-1 text-faint tabular-nums">{activeFiles.length}</span
+										>
+									</h3>
+									{#if slots}
+										<button
+											bind:this={slotsButton}
+											onclick={() =>
+												slotsButton && slotsPanel && capacity.toggle(slotsButton, slotsPanel)}
+											aria-expanded={capacity.open}
+											aria-controls="rewrite-threads"
+											class="-my-1.5 -mr-1.5 rounded px-1.5 py-1.5 text-[11.5px] text-faint tabular-nums hover:text-fg"
+										>
+											{slots} rewrite {slots === 1 ? 'thread' : 'threads'}
+										</button>
+										<div
+											bind:this={slotsPanel}
+											id="rewrite-threads"
+											popover="manual"
+											class={`fixed m-0 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong ${frosted} p-3.5 text-fg shadow-lg`}
+										>
+											<h4 class="text-[13px] font-semibold">Rewrite threads</h4>
+											<p class="mt-1.5 text-[12.5px] leading-relaxed text-dim">
+												How many files can be rewritten in parallel. Strains the CPU and disk.
+											</p>
+											{#if admin}
+												<a
+													href={resolve('/settings')}
+													class="mt-2.5 inline-flex min-h-8 items-center text-[12px] font-medium text-accent underline underline-offset-2 hover:text-fg"
+												>
+													Change it in settings
+												</a>
+											{/if}
+										</div>
+									{/if}
+								</div>
+								<div class="mt-3">
+									{@render fileList(activeFiles)}
+								</div>
+							</div>
+						{/if}
+						{#if waiting}
+							<div class="min-w-0">
+								<div class="flex flex-wrap items-baseline justify-between gap-2">
+									<h3 class="text-[13px] font-semibold">
+										Waiting <span class="ml-1 text-faint tabular-nums"
+											>{waiting.toLocaleString()}</span
+										>
+									</h3>
+									<!-- The target comes from `after`, or its height would set the row's. -->
+									<button
+										class="relative -my-1.5 -mr-1.5 rounded px-1.5 py-1.5 text-[12px] font-medium text-accent after:absolute after:-inset-2 after:content-[''] hover:underline"
+										onclick={() => (queueOpen = true)}>View queue</button
+									>
+								</div>
+								<div class="mt-3">{@render fileList(shownQueue)}</div>
+							</div>
+						{/if}
+					</div>
+				</Reveal>
+			</div>
 		</Reveal>
 	</div>
 
-	<Reveal when={!!activity.runs.length} class="px-4 pb-4 sm:px-5">
-		<div aria-label="Overall processing progress">
-			{#if totalCount}
-				<div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-					<span class="text-[28px] leading-none font-semibold tracking-tight"
-						><Count value={completedCount} /></span
-					>
-					<span class="text-[12px] text-dim"
-						>of <Count value={totalCount} /> {totalCount === 1 ? 'file' : 'files'} processed</span
-					>
-					<span
-						class="ml-auto inline-flex items-baseline gap-2 text-[12px] whitespace-nowrap tabular-nums"
-					>
-						{#if estimates.length === 1}<span aria-label="Estimated time remaining" class="text-dim"
-								>{estimates[0]}</span
-							>{/if}
-						{#if !listing}
-							{#if estimates.length === 1}<span aria-hidden="true" class="text-faint">·</span>{/if}
-							<span class="font-medium text-accent"
-								><Count value={Math.floor(completion * 100)} />%</span
-							>
-						{/if}
-					</span>
-				</div>
-				{#if !listing}<Bar
-						class="mt-3 !h-1.5"
-						fill={completion}
-						glide={rewriting}
-						now={completedCount}
-						max={totalCount}
-						text={`${completedCount} of ${totalCount} files processed across active runs`}
-					/>{/if}
-			{/if}
-			{#if listing}<p class="mt-2 text-[12px] text-dim">
-					Discovering files{totalCount ? ' · totals may grow' : ''}…
-					{#if !totalCount && estimates.length === 1}<span
-							aria-label="Estimated time remaining"
-							class="ml-2 whitespace-nowrap tabular-nums">{estimates[0]}</span
-						>{/if}
-				</p>{/if}
-		</div>
-	</Reveal>
-
+	<!-- Always mounted, like the confirmation below. -->
 	<div
-		class="relative flex flex-wrap items-center gap-2 px-4 pb-1.5 sm:px-5"
-		aria-label="Processing controls"
+		bind:this={schedulePanel}
+		id="next-check"
+		popover="manual"
+		class={`fixed m-0 w-max max-w-[min(22rem,calc(100vw-1.5rem))] rounded-xl border border-line-strong ${frosted} p-3.5 text-fg shadow-lg`}
 	>
+		<p class="text-[12.5px] leading-relaxed text-dim">{schedule}</p>
 		{#if admin}
-			{#if holding}
-				<button
-					onclick={() => act('resume', resume)}
-					disabled={!!busy}
-					aria-busy={busy === 'resume'}
-					class={`min-w-0 !text-[12px] ${primary}`}
-					out:swapLeave
-					in:fade={rowFade()}
-				>
-					<Spinner glyph="play" busy={busy === 'resume'} />
-					{busy === 'resume' ? 'Resuming…' : 'Resume'}
-				</button>
-			{:else}
-				<button
-					onclick={() => act('pause', pause)}
-					disabled={!!busy}
-					aria-busy={busy === 'pause'}
-					aria-label={activity.runs.length ? 'Pause' : 'Suspend'}
-					title={activity.runs.length
-						? 'Pause. Files already started finish and nothing new starts.'
-						: 'Prevent new processing from starting until you resume.'}
-					class={`${rowButton} gap-2 px-2 text-dim hover:bg-sunken sm:px-3`}
-					out:swapLeave
-					in:fade={rowFade()}
-				>
-					<Spinner glyph="pause" busy={busy === 'pause'} />
-					<span>
-						{#if activity.runs.length}
-							{busy === 'pause' ? 'Pausing…' : 'Pause'}
-						{:else if busy === 'pause'}
-							Suspending…
-						{:else}
-							Suspend
-						{/if}
-					</span>
-				</button>
-			{/if}
-			{#if activity.runs.length}
-				<button
-					bind:this={stopButton}
-					onclick={() => stopButton && stopPanel && confirm.toggle(stopButton, stopPanel)}
-					disabled={!!busy || stoppingAll}
-					aria-expanded={confirm.open}
-					aria-controls="stop-confirmation"
-					aria-busy={stoppingAll}
-					class={`${rowButton} gap-2 px-3 text-danger hover:bg-danger/10`}
-					transition:fade={rowFade()}
-				>
-					<Spinner glyph="stop" size={9} busy={stoppingAll} />
-					{stoppingAll ? 'Stopping…' : 'Stop all'}
-				</button>
-			{/if}
+			<a
+				href={resolve('/settings/sweep')}
+				class="mt-2.5 inline-flex min-h-8 items-center text-[12px] font-medium text-accent underline underline-offset-2 hover:text-fg"
+			>
+				{activity.next_sweep ? 'Change the schedule' : 'Schedule one'}
+			</a>
 		{/if}
 	</div>
+
 	<!-- Always mounted. A popover mounted on the press has nothing to anchor to. -->
 	<div
 		bind:this={stopPanel}
@@ -588,94 +692,10 @@
 			>
 		</div>
 	</div>
-
-	<!-- The service's own words, kept until the next button is pressed. -->
-	{#if refusal}
-		<p role="alert" class="border-t border-line px-4 py-2.5 text-[12.5px] text-danger">
-			{refusal}
-		</p>
-	{:else if snapshot.offline}
-		<p role="status" class="border-t border-line px-4 py-2.5 text-[12.5px] text-danger">
-			{snapshot.offline}
-		</p>
-	{/if}
-
-	<!-- The rows sit in a well inset from the panel, so the raised ground shows
-	     round it: the sunken step alone was too small a difference to read. The
-	     frame is 6px at every width, enough for the ground to show without
-	     costing the rows room. -->
-	<Reveal when={!!activeFiles.length || !!waiting} class="px-1.5 pb-1.5">
-		<div
-			class={`rounded-xl border border-line bg-sunken p-3 sm:p-4 ${waiting && activeFiles.length ? 'grid gap-6 lg:grid-cols-2 lg:gap-8' : ''}`}
-		>
-			{#if activeFiles.length}
-				<!-- A grid cell holds its content's width by default, and a row's
-				     name no longer wraps. -->
-				<div class="min-w-0">
-					<div class="flex flex-wrap items-baseline justify-between gap-2">
-						<h3 class="text-[13px] font-semibold">
-							Processing <span class="ml-1 text-faint tabular-nums">{activeFiles.length}</span>
-						</h3>
-						{#if slots}
-							<button
-								bind:this={slotsButton}
-								onclick={() =>
-									slotsButton && slotsPanel && capacity.toggle(slotsButton, slotsPanel)}
-								aria-expanded={capacity.open}
-								aria-controls="rewrite-threads"
-								class="-my-1.5 -mr-1.5 rounded px-1.5 py-1.5 text-[11.5px] text-faint tabular-nums hover:text-fg"
-							>
-								{slots} rewrite {slots === 1 ? 'thread' : 'threads'}
-							</button>
-							<div
-								bind:this={slotsPanel}
-								id="rewrite-threads"
-								popover="manual"
-								class={`fixed m-0 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong ${frosted} p-3.5 text-fg shadow-lg`}
-							>
-								<h4 class="text-[13px] font-semibold">Rewrite threads</h4>
-								<p class="mt-1.5 text-[12.5px] leading-relaxed text-dim">
-									How many files can be rewritten in parallel. Strains the CPU and disk.
-								</p>
-								{#if admin}
-									<a
-										href={resolve('/settings')}
-										class="mt-2.5 inline-flex min-h-8 items-center text-[12px] font-medium text-accent underline underline-offset-2 hover:text-fg"
-									>
-										Change it in settings
-									</a>
-								{/if}
-							</div>
-						{/if}
-					</div>
-					<div class="mt-3">
-						{@render fileList(activeFiles)}
-					</div>
-				</div>
-			{/if}
-			{#if waiting}
-				<div class="min-w-0">
-					<div class="flex flex-wrap items-baseline justify-between gap-2">
-						<h3 class="text-[13px] font-semibold">
-							Waiting <span class="ml-1 text-faint tabular-nums">{waiting.toLocaleString()}</span>
-						</h3>
-						<!-- The heading counts them, so the button is only the verb. Its
-						     target comes off `after`, or its height would set the row's. -->
-						<button
-							class="relative -my-1.5 -mr-1.5 rounded px-1.5 py-1.5 text-[12px] font-medium text-accent after:absolute after:-inset-2 after:content-[''] hover:underline"
-							onclick={() => (queueOpen = true)}>View queue</button
-						>
-					</div>
-					<div class="mt-3">{@render fileList(shownQueue)}</div>
-				</div>
-			{/if}
-		</div>
-	</Reveal>
-
 	<!-- Explicit pauses apply to titles and future work. A disclosure rather than
 	     a `<details>`, which has no way to open on the blind the rows use. -->
-	<Reveal when={!!pausedItems.length}>
-		<div class="mx-1.5 mb-1.5 rounded-xl border border-line bg-sunken px-3 text-[12.5px] sm:px-4">
+	<Reveal when={!!pausedItems.length} class="pt-2">
+		<div class="rounded-2xl border border-line bg-sunken px-3 text-[12.5px] sm:px-4">
 			<Disclosure
 				id="paused-files"
 				open={pausedOpen}
@@ -722,16 +742,3 @@
 			onpressed();
 		}}
 	/>{/if}
-
-<style>
-	/* A run going, said by the dot the heading leads with. */
-	.live {
-		animation: breathe 2.4s ease-in-out infinite;
-	}
-
-	@keyframes breathe {
-		50% {
-			opacity: 0.4;
-		}
-	}
-</style>
