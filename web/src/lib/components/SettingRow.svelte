@@ -13,10 +13,10 @@
 		align = 'center',
 		stack = false,
 		full = false,
-		nested = false,
 		dim = false,
 		children,
-		below
+		below,
+		nested
 	}: {
 		// The setting this row is for. The ENV badge, the unsaved dot and the
 		// sentence about the environment all follow from it, so the row says it
@@ -32,13 +32,13 @@
 		stack?: boolean;
 		// A list control, too wide for the right column at any width.
 		full?: boolean;
-		// A setting the row above governs, indented behind a rule.
-		nested?: boolean;
 		// The governing row is off. Dimmed; the caller disables the control.
 		dim?: boolean;
 		children: Snippet<[{ labelledBy: string; describedBy: string }]>;
 		// A list the control adds to, full width under the row.
 		below?: Snippet<[{ labelledBy: string; describedBy: string }]>;
+		// The rows this one governs, in a tray under its control.
+		nested?: Snippet;
 	} = $props();
 
 	// Every settings page provides its draft, so a named row reads its own state
@@ -78,9 +78,7 @@
 		// One control column from sm, so every description wraps at one width
 		// rather than at whatever sits beside it. Below sm a stacked control has
 		// its own row and an inline one needs the room.
-		'grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_1fr] items-center gap-x-4 border-t border-line py-4 sm:grid-cols-[minmax(0,1fr)_21rem] sm:gap-x-8 sm:py-3.5',
-		// The left rule is the row's own border, so nested rows join into one line.
-		nested && 'border-l pl-3.5 sm:pl-5',
+		'grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_1fr] items-center gap-x-4 border-t border-line py-4 sm:grid-cols-[minmax(0,1fr)_var(--control-column,21rem)] sm:gap-x-8 sm:py-3.5',
 		dim && 'opacity-50'
 	]}
 >
@@ -109,6 +107,15 @@
 	{#if below}
 		<div class="col-span-2 col-start-1 row-start-3 min-w-0">
 			{@render below({ labelledBy, describedBy })}
+		</div>
+	{/if}
+	<!-- The control column is narrower by the tray's inset, so it lines up with
+	     the page's. -->
+	{#if nested}
+		<div
+			class="col-span-2 col-start-1 row-start-4 mt-4 min-w-0 rounded-xl border border-line bg-sunken px-3.5 [--control-column:calc(21rem-1rem-1px)] sm:mt-3.5 sm:px-4 [&>*:first-child]:border-t-0"
+		>
+			{@render nested()}
 		</div>
 	{/if}
 </div>

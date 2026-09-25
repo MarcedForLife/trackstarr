@@ -125,7 +125,7 @@
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
-					<div class="flex w-full flex-col gap-2 sm:w-72">
+					<div class="flex w-full flex-col gap-2">
 						<Segmented
 							fill
 							options={MODES}
@@ -153,7 +153,7 @@
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
-					<div class="flex w-full flex-col gap-2 sm:w-72">
+					<div class="flex w-full flex-col gap-2">
 						<!-- A datalist: 600 zones is no select. -->
 						<input
 							value={(draft.TZ as string) ?? ''}

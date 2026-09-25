@@ -153,28 +153,27 @@
 					onchange={(value) => setTilt(value as Tilt)}
 				/>
 			{/snippet}
-		</SettingRow>
-
-		<SettingRow
-			label="Tilt spread"
-			desc="How far the lean spreads to neighbouring posters. Narrow turns the next ones a little. Wide moves the whole row."
-			nested
-			dim={display.tilt === 'off'}
-			stack
-		>
-			{#snippet children({ labelledBy, describedBy })}
-				<Segmented
-					fill
-					options={spreadOptions}
-					{labelledBy}
-					{describedBy}
-					value={display.spread}
-					disabled={display.tilt === 'off'}
-					onchange={(value) => setSpread(value as Spread)}
-				/>
+			{#snippet nested()}
+				<SettingRow
+					label="Tilt spread"
+					desc="How far the lean spreads to neighbouring posters. Narrow turns the next ones a little. Wide moves the whole row."
+					dim={display.tilt === 'off'}
+					stack
+				>
+					{#snippet children({ labelledBy, describedBy })}
+						<Segmented
+							fill
+							options={spreadOptions}
+							{labelledBy}
+							{describedBy}
+							value={display.spread}
+							disabled={display.tilt === 'off'}
+							onchange={(value) => setSpread(value as Spread)}
+						/>
+					{/snippet}
+				</SettingRow>
 			{/snippet}
 		</SettingRow>
-
 		<SettingRow
 			label="Sheen"
 			desc="How much light a poster catches under a passing pointer. Off keeps the artwork plain. Rare is a collector's card turned under a lamp."
@@ -189,29 +188,28 @@
 					onchange={(value) => setLustre(value as Lustre)}
 				/>
 			{/snippet}
-		</SettingRow>
-
-		<!-- The preview above shows each one; the words do not try to. -->
-		<SettingRow
-			label="Finish"
-			desc="What the light plays on. The coloured ones take their hues from each poster."
-			nested
-			dim={display.lustre === 'off'}
-			stack
-		>
-			{#snippet children({ labelledBy, describedBy })}
-				<Segmented
-					fill
-					options={sheenOptions}
-					{labelledBy}
-					{describedBy}
-					value={display.sheen}
-					disabled={display.lustre === 'off'}
-					onchange={(value) => setSheen(value as Sheen)}
-				/>
+			{#snippet nested()}
+				<!-- The preview shows each finish, so the description does not. -->
+				<SettingRow
+					label="Finish"
+					desc="What the light plays on. The coloured ones take their hues from each poster."
+					dim={display.lustre === 'off'}
+					stack
+				>
+					{#snippet children({ labelledBy, describedBy })}
+						<Segmented
+							fill
+							options={sheenOptions}
+							{labelledBy}
+							{describedBy}
+							value={display.sheen}
+							disabled={display.lustre === 'off'}
+							onchange={(value) => setSheen(value as Sheen)}
+						/>
+					{/snippet}
+				</SettingRow>
 			{/snippet}
 		</SettingRow>
-
 		<SettingRow
 			label="Cover art"
 			desc="Hidden draws each title as its initials, so the library loads without hundreds of images."
@@ -296,23 +294,23 @@
 					onchange={(value) => setGridOrder(value as Sort)}
 				/>
 			{/snippet}
-		</SettingRow>
-
-		<SettingRow
-			label="Direction"
-			desc="Which way that order runs. Descending leads with the most of whatever it sorts on: the newest, the biggest, the worst. Changing Library order resets this to that order's default."
-			nested
-			stack
-		>
-			{#snippet children({ labelledBy, describedBy })}
-				<Segmented
-					fill
-					options={flowOptions}
-					{labelledBy}
-					{describedBy}
-					value={order.gridFlow}
-					onchange={(value) => setGridFlow(value as Flow)}
-				/>
+			{#snippet nested()}
+				<SettingRow
+					label="Direction"
+					desc="Which way that order runs. Descending leads with the most of whatever it sorts on: the newest, the biggest, the worst. Changing Library order resets this to that order's default."
+					stack
+				>
+					{#snippet children({ labelledBy, describedBy })}
+						<Segmented
+							fill
+							options={flowOptions}
+							{labelledBy}
+							{describedBy}
+							value={order.gridFlow}
+							onchange={(value) => setGridFlow(value as Flow)}
+						/>
+					{/snippet}
+				</SettingRow>
 			{/snippet}
 		</SettingRow>
 	</Section>

@@ -308,7 +308,7 @@
 						aria-labelledby={labelledBy}
 						aria-describedby={describedBy}
 						disabled={envLocked('WEBHOOK_URL')}
-						class={`${field} sm:w-64`}
+						class={field}
 					/>
 				{/snippet}
 			</SettingRow>
@@ -333,27 +333,28 @@
 						onchange={(on) => (draft.SKIP_HARDLINKS = on)}
 					/>
 				{/snippet}
-			</SettingRow>
-			<SettingRow
-				name="HARDLINK_RECHECK"
-				label="Recheck every"
-				align="start"
-				desc="How often a waiting file is checked again, so it is rewritten shortly after seeding ends."
-				note={recheckNote}
-				nested
-				dim={!draft.SKIP_HARDLINKS}
-			>
-				{#snippet children({ labelledBy, describedBy })}
-					<NumberField
-						value={text('HARDLINK_RECHECK')}
-						onchange={(value) => (draft.HARDLINK_RECHECK = value)}
-						{labelledBy}
-						{describedBy}
-						unit="seconds"
-						problem={recheckProblem()}
-						note={wholeUnits(Number(text('HARDLINK_RECHECK')))}
-						disabled={envLocked('HARDLINK_RECHECK')}
-					/>
+				{#snippet nested()}
+					<SettingRow
+						name="HARDLINK_RECHECK"
+						label="Recheck every"
+						align="start"
+						desc="How often a waiting file is checked again, so it is rewritten shortly after seeding ends."
+						note={recheckNote}
+						dim={!draft.SKIP_HARDLINKS}
+					>
+						{#snippet children({ labelledBy, describedBy })}
+							<NumberField
+								value={text('HARDLINK_RECHECK')}
+								onchange={(value) => (draft.HARDLINK_RECHECK = value)}
+								{labelledBy}
+								{describedBy}
+								unit="seconds"
+								problem={recheckProblem()}
+								note={wholeUnits(Number(text('HARDLINK_RECHECK')))}
+								disabled={envLocked('HARDLINK_RECHECK')}
+							/>
+						{/snippet}
+					</SettingRow>
 				{/snippet}
 			</SettingRow>
 		</section>

@@ -32,7 +32,7 @@
 	const along = $derived(last > 0 ? index / last : 0);
 </script>
 
-<div class="w-full sm:w-72" style={`--along: ${along}`}>
+<div class="w-full" style={`--along: ${along}`}>
 	<!-- The stop's name, above the track and still. -->
 	<p class="text-[13px] font-semibold">{current?.label}</p>
 
