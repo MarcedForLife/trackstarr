@@ -12,7 +12,7 @@ export { duration, named, titled };
 
 // What the thread holding a file is doing. A bar at zero means something
 // different for a file queued behind a slot than for one encoding.
-export type Stage = 'working' | 'waiting' | 'encoding';
+export type Stage = 'working' | 'waiting' | 'encoding' | 'finishing';
 
 // One file a thread has picked up. Once its encode starts: the running time,
 // how much is written, and the speed as a multiple of realtime.
@@ -223,13 +223,16 @@ const NEARLY_A_FILE = 0.99;
  * Files finished, plus how far the rewrites under way have written.
  *
  * A long encode otherwise holds the count still for minutes. Only an encode
- * counts, since a probe has no measured progress.
+ * counts, since a probe has no measured progress. A file past its encode keeps
+ * its credit through the verify, or the bar falls back.
  */
 export function progressed(run: Run, age = 0): number {
-	return run.active.reduce(
-		(count, file) => count + (fileBar(file) ? Math.min(fileFraction(file, age), NEARLY_A_FILE) : 0),
-		run.done
-	);
+	return run.active.reduce((count, file) => count + credit(file, age), run.done);
+}
+
+function credit(file: ActiveFile, age: number): number {
+	if (file.stage === 'finishing') return NEARLY_A_FILE;
+	return fileBar(file) ? Math.min(fileFraction(file, age), NEARLY_A_FILE) : 0;
 }
 
 // Under this many files the count says it all; a percentage adds nothing.
@@ -396,7 +399,7 @@ export function fileBar(file: ActiveFile): boolean {
  * plans it, or the verify after an encode. Not a wait for a slot, where
  * nothing is happening. */
 export function fileWorking(file: ActiveFile): boolean {
-	return file.stage === 'working';
+	return file.stage === 'working' || file.stage === 'finishing';
 }
 
 // Past ten times realtime the decimal is noise, and a remux runs at hundreds.

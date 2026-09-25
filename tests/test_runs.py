@@ -375,6 +375,18 @@ def test_a_file_in_hand_reports_how_far_into_it_the_rewrite_is():
     assert (file["done"], file["speed"]) == (0.0, 0.0)
 
 
+def test_settle_keeps_a_finished_encode_finishing():
+    lifecycle.open_run("r#1", runs.SWEEP)
+    runs.begin("r#1", "/data/a.mkv")
+    runs.begin("r#1", "/data/b.mkv")
+    runs.stage("r#1", "/data/a.mkv", runs.FINISHING)
+    runs.stage("r#1", "/data/b.mkv", runs.ENCODING, 60.0)
+    runs.settle("r#1", "/data/a.mkv")
+    runs.settle("r#1", "/data/b.mkv")
+    stages = {file["path"]: file["stage"] for file in runs.snapshot()["runs"][0]["active"]}
+    assert stages == {"/data/a.mkv": runs.FINISHING, "/data/b.mkv": runs.WORKING}
+
+
 def test_progress_for_a_file_nobody_is_holding_is_ignored():
     """The readout arrives from ffmpeg's own thread, which can outlive the
     rename by a moment; a run with no such file is a no-op, not a crash."""

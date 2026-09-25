@@ -117,6 +117,7 @@ describe('fileWorking', () => {
 	// The one that draws a crossing segment rather than a bar or nothing.
 	test('tells work with nothing to measure from a wait and an encode', () => {
 		expect(fileWorking(file({ stage: 'working' }))).toBe(true);
+		expect(fileWorking(file({ stage: 'finishing' }))).toBe(true);
 		expect(fileWorking(file({ stage: 'waiting' }))).toBe(false);
 		expect(fileWorking(file({ duration: 3600, done: 900, speed: 2 }))).toBe(false);
 	});
@@ -184,6 +185,10 @@ describe('progressed', () => {
 	test('carries a file forward at its speed between snapshots', () => {
 		const encoding = run({ total: 10, done: 4, active: [file({ duration: 3600, speed: 2 })] });
 		expect(progressed(encoding, 180)).toBeCloseTo(4.1);
+	});
+
+	test('keeps a finished encode nearly a file through its verify', () => {
+		expect(progressed(run({ done: 0, active: [file({ stage: 'finishing' })] }))).toBeCloseTo(0.99);
 	});
 
 	test('counts nothing for a probe, which has no measured progress', () => {

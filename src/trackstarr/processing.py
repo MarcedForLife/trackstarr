@@ -516,7 +516,7 @@ def process(
                     functools.partial(runs.progress, job.run, job.path),
                     # Verify and publish are not the encode; a bar left at full
                     # would say the file is still being written.
-                    functools.partial(runs.stage, job.run, job.path, runs.WORKING),
+                    functools.partial(runs.stage, job.run, job.path, runs.FINISHING),
                     cancel,
                     _claim(observation, plan, cancel),
                 )
@@ -526,7 +526,7 @@ def process(
         outcome, detail = Outcome.FAILED, str(err)
     finally:
         # For the paths that never reached on_encoded.
-        runs.stage(job.run, job.path, runs.WORKING)
+        runs.settle(job.run, job.path)
     event_fields = _event_fields(job, plan, source, time.monotonic() - started, waited)
     if outcome is Outcome.APPLIED:
         bytes_after = _file_size(plan.out_path)
