@@ -83,6 +83,7 @@ def test_malformed_record_never_qualifies(field, value):
         {"dv_profile": 5},
         {"dv_profile": 7},
         {"dv_profile": 9},
+        {"dv_profile": 7, "dv_bl_signal_compatibility_id": 6},
         {"dv_bl_signal_compatibility_id": 0},
         {"dv_bl_signal_compatibility_id": 2},
         {"dv_bl_signal_compatibility_id": 4},
@@ -102,6 +103,12 @@ def test_unsupported_dv_does_not_block_other_rules(record):
     assert plan.tracks[1]["dv"]["unsupported"]
     settled = plan_for(dv_video(**record), audio(1, 2))
     assert not settled.needed and not settled.incidental
+
+
+def test_uhd_blu_ray_compatibility_qualifies():
+    set_rules(dv_strip="always")
+    plan = plan_for(dv_video(dv_bl_signal_compatibility_id=6), audio(1, 2))
+    assert plan.streams[0].dv_strip and plan.rules == {"dv_strip"}
 
 
 def test_missing_conflicting_and_non_video_metadata():

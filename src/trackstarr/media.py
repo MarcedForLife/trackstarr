@@ -271,8 +271,9 @@ def dolby_vision(stream: dict) -> DolbyVision | None:
         reason = "Dolby Vision removal does not apply to artwork or non-video streams"
     elif stream.get("codec_name") != "hevc":
         reason = "Dolby Vision removal supports HEVC only"
-    elif profile != 8 or compatibility != 1:
-        reason = "Dolby Vision removal supports HDR10-compatible profile 8.1 only"
+    # 6 is the UHD Blu-ray ID a profile 7 conversion keeps, over the same HDR10 base.
+    elif profile != 8 or compatibility not in (1, 6):
+        reason = "Dolby Vision removal supports HDR10-compatible profile 8.1 and 8.6 only"
     elif (base, rpu, enhancement) != (1, 1, 0):
         reason = (
             "Dolby Vision removal requires a base layer and RPU without an enhancement layer"

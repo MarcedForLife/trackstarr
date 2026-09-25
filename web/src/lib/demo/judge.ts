@@ -245,7 +245,7 @@ export function judge(
 		if (
 			track.codec === 'hevc' &&
 			track.dv.profile === 8 &&
-			track.dv.compatibility === 1 &&
+			(track.dv.compatibility === 1 || track.dv.compatibility === 6) &&
 			plan.record('dv_strip', `remove Dolby Vision from video stream ${track.index} (keep HDR10)`)
 		)
 			stripped.add(track.index);
