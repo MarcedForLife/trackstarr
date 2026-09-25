@@ -23,19 +23,32 @@ export function shift(node: HTMLElement, options?: Shifting) {
 	const content = node.firstElementChild;
 	if (!(content instanceof HTMLElement)) return;
 	const inner: HTMLElement = content;
-	const style = getComputedStyle(node);
-	const closeSpan = ms(style.getPropertyValue('--reveal-span'));
-	const easing = style.getPropertyValue('--reveal-ease').trim();
-	const marginTop = style.marginTop;
-	const marginBottom = style.marginBottom;
-	let height = inner.getBoundingClientRect().height;
+	// Read on first use, so mounting open forces no style pass. That use is at
+	// rest, so the margins are the resting ones.
+	let resting:
+		{ closeSpan: number; easing: string; marginTop: string; marginBottom: string } | undefined;
+	function rest() {
+		if (!resting) {
+			const style = getComputedStyle(node);
+			resting = {
+				closeSpan: ms(style.getPropertyValue('--reveal-span')),
+				easing: style.getPropertyValue('--reveal-ease').trim(),
+				marginTop: style.marginTop,
+				marginBottom: style.marginBottom
+			};
+		}
+		return resting;
+	}
+	// Null until the observer's first report, for a panel mounted open.
+	let height: number | null = null;
 	let closing = false;
 	let motion: Animation | undefined;
 
 	function duration(opening: boolean): number {
 		if (reduced()) return 0;
+		const { closeSpan } = rest();
 		return opening
-			? Math.round(closeSpan + Math.min(60, Math.max(0, height - 120) / 6))
+			? Math.round(closeSpan + Math.min(60, Math.max(0, (height ?? 0) - 120) / 6))
 			: closeSpan;
 	}
 
@@ -49,6 +62,7 @@ export function shift(node: HTMLElement, options?: Shifting) {
 		};
 		motion?.cancel();
 		node.style.overflow = 'hidden';
+		const { easing, marginTop, marginBottom } = rest();
 		const end = {
 			height: `${to}px`,
 			marginTop: closing ? '0px' : marginTop,
@@ -83,6 +97,11 @@ export function shift(node: HTMLElement, options?: Shifting) {
 
 	const watch = new ResizeObserver(() => {
 		const now = inner.getBoundingClientRect().height;
+		// The first report on a panel mounted open is its size, not a change.
+		if (height === null) {
+			height = now;
+			return;
+		}
 		if (Math.abs(now - height) < 1) return;
 		// At rest, layout has already adopted the new content height. Start
 		// from the previous height; in flight, take over the animated height.
@@ -108,6 +127,7 @@ export function shift(node: HTMLElement, options?: Shifting) {
 		// Where a finished opening leaves it, so focus rings are not clipped.
 		node.style.overflow = 'visible';
 	} else {
+		rest();
 		node.style.marginTop = '0px';
 		node.style.marginBottom = '0px';
 		open(0);

@@ -29,7 +29,7 @@
 	let busy = $state<number | null>(null);
 	let error = $state('');
 	// svelte-ignore state_referenced_locally
-	const chooser = popover({ edge });
+	const chooser = popover({ edge, lightDismiss: true });
 
 	function toggle() {
 		if (!chooser.open) error = '';
@@ -49,12 +49,6 @@
 		}
 	}
 </script>
-
-<svelte:window
-	onpointerdown={(event) =>
-		chooser.open && chooser.outside(event.target as Node) && chooser.lower()}
-	onresize={() => chooser.open && chooser.lower()}
-/>
 
 <button
 	bind:this={trigger}

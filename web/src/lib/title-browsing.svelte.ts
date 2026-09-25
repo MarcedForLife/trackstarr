@@ -1,10 +1,48 @@
-import { getLinks, getTitle, type Card, type TitleDetail, type TitleLink } from '$lib/library';
+import {
+	getLinks,
+	getTitle,
+	type Card,
+	type LibraryFile,
+	type TitleDetail,
+	type TitleLink
+} from '$lib/library';
 import { fileGroups } from '$lib/variants';
 import { poll, type Poller } from '$lib/poll';
 import { seasons, type Season } from '$lib/seasons';
 
 export type Opening = Pick<Card, 'id' | 'name'> & Partial<Card>;
 export const FILE_PAGE = 12;
+
+// Each file's JSON, so a reread can tell which files changed.
+const spelled = new WeakMap<LibraryFile, string>();
+function spelling(file: LibraryFile): string {
+	let text = spelled.get(file);
+	if (text === undefined) {
+		text = JSON.stringify(file);
+		spelled.set(file, text);
+	}
+	return text;
+}
+
+/** `after` with unchanged files swapped for their old objects, so only changed
+ * rows redraw. Returns `before` when nothing changed. */
+export function kept(before: TitleDetail, after: TitleDetail): TitleDetail {
+	// A plain lookup, never rendered.
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity
+	const known = new Map(before.files.map((file) => [file.path, file]));
+	let same = before.files.length === after.files.length;
+	const files = after.files.map((file, at) => {
+		const old = known.get(file.path);
+		if (!old || spelling(old) !== spelling(file)) {
+			same = false;
+			return file;
+		}
+		if (before.files[at] !== old) same = false;
+		return old;
+	});
+	const rest = (detail: TitleDetail) => JSON.stringify({ ...detail, files: null });
+	return same && rest(before) === rest(after) ? before : { ...after, files };
+}
 
 /** One opening of one library, shared with work and editor completions. */
 export type TitleSession = {
@@ -29,9 +67,11 @@ function initialReading(): ReadingState {
  * survive a retry of the same title, but never another title, a close or
  * disposal. */
 export class TitleBrowsing {
-	opened = $state<Opening | null>(null);
-	detail = $state<TitleDetail | null>(null);
-	links = $state<TitleLink[] | null>(null);
+	// Raw, since it is only replaced whole and every row would read through a
+	// proxy over hundreds of files.
+	opened = $state.raw<Opening | null>(null);
+	detail = $state.raw<TitleDetail | null>(null);
+	links = $state.raw<TitleLink[] | null>(null);
 	loading = $state(false);
 	failure = $state('');
 	loadingMore = $state(false);
@@ -59,13 +99,8 @@ export class TitleBrowsing {
 		return this.opened?.kind ?? this.detail?.kind ?? '';
 	}
 
-	get grouped() {
-		return this.detail ? seasons(this.detail.files) : null;
-	}
-
-	get groups() {
-		return fileGroups(this.detail?.files ?? [], this.kind);
-	}
+	readonly grouped = $derived(this.detail ? seasons(this.detail.files) : null);
+	readonly groups = $derived(fileGroups(this.detail?.files ?? [], this.kind));
 
 	async open(card: Opening) {
 		if (this.disposed) return;
@@ -189,7 +224,7 @@ export class TitleBrowsing {
 	}
 
 	private accept(found: TitleDetail) {
-		this.detail = found;
+		this.detail = this.detail?.id === found.id ? kept(this.detail, found) : found;
 		this.failure = '';
 		this.refreshError = '';
 	}

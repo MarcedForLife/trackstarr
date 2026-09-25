@@ -49,7 +49,7 @@
 	const id = $props.id();
 	let triggers = $state<HTMLButtonElement[]>([]);
 	let panels = $state<HTMLDivElement[]>([]);
-	const chooser = popover({ edge: 'left' });
+	const chooser = popover({ edge: 'left', lightDismiss: true });
 
 	// Sized for the longest line one carries, a cleared release title, without
 	// running to the window edge on a phone.
@@ -58,12 +58,6 @@
 	const ACTING = `${CHIP} bg-accent-soft text-accent`;
 	const RIDES = `${CHIP} text-faint`;
 </script>
-
-<svelte:window
-	onpointerdown={(event) =>
-		chooser.open && chooser.outside(event.target as Node) && chooser.lower()}
-	onresize={() => chooser.open && chooser.lower()}
-/>
 
 <div class="mt-3 flex flex-wrap gap-1.5">
 	{#each chips as chip, at (chip.rule)}

@@ -1057,6 +1057,18 @@ def _variant_key(path: str, kind: str) -> str:
     return episode[0].upper() if kind == "series" and episode else path
 
 
+def _within(entries: dict[str, dict], folders: Iterable[str]) -> dict[str, dict]:
+    """Entries at or under any of ``folders``. A prefix test, since walking each
+    path up its parents cost every caller ~30ms."""
+    exact = set(folders)
+    under = tuple(f"{folder.rstrip('/')}/" for folder in exact)
+    return {
+        path: entry
+        for path, entry in entries.items()
+        if path in exact or path.startswith(under)
+    }
+
+
 def title(title_id: str, *, pages: int = 1) -> dict | None:
     """One title with its files, or None for an unknown id.
 
@@ -1069,12 +1081,12 @@ def title(title_id: str, *, pages: int = 1) -> dict | None:
         return None
     folders = _folders([found])
     sources = {source.folder: source for source in found.sources}
-    made = rewrites.against(stored.files)
-    rollup = _tally(stored.files, folders, made).get(found.id, Rollup())
+    held = _within(stored.files, folders)
+    made = rewrites.against(held)
+    rollup = _tally(held, folders, made).get(found.id, Rollup())
     entries = [
         {**entry, "path": path, **({"modified": made[path]} if path in made else {})}
-        for path, entry in stored.files.items()
-        if innermost(folders, path) is not None
+        for path, entry in held.items()
     ]
     entries.sort(key=_file_rank)
     # Keep every alternative with its episode across page boundaries.
@@ -1228,11 +1240,12 @@ def cards_for_paths(paths: Iterable[str]) -> tuple[dict[str, str], dict[str, dic
     }
     if not owners:
         return {}, {}
-    # The grid's own rollups, so a poster raised from the feed matches the
-    # library's.
-    rollups = _tally(stored.files, folders, rewrites.against(stored.files))
-    cards = {
-        title_id: _card(found.index[title_id], rollups.get(title_id))
-        for title_id in set(owners.values())
-    }
+    # The grid's own rollups over only these titles' files, so a poster raised
+    # from the feed matches the library's.
+    owned = {title_id: found.index[title_id] for title_id in set(owners.values())}
+    held = _within(
+        stored.files, (folder for title in owned.values() for folder in title.folders)
+    )
+    rollups = _tally(held, folders, rewrites.against(held))
+    cards = {title_id: _card(title, rollups.get(title_id)) for title_id, title in owned.items()}
     return owners, cards

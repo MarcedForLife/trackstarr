@@ -19,19 +19,13 @@
 	const id = $props.id();
 	let trigger: HTMLButtonElement;
 	let menu: HTMLDivElement;
-	const chooser = popover({ edge: 'left' });
+	const chooser = popover({ edge: 'left', lightDismiss: true });
 
 	function pick(name: ServiceName) {
 		chooser.lower();
 		onpick(name);
 	}
 </script>
-
-<svelte:window
-	onpointerdown={(event) =>
-		chooser.open && chooser.outside(event.target as Node) && chooser.lower()}
-	onresize={() => chooser.open && chooser.lower()}
-/>
 
 <button
 	bind:this={trigger}

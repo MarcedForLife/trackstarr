@@ -254,7 +254,8 @@
 			</button>
 		</div>
 
-		<div class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+		<!-- The scroller a long list grows against, see $lib/reveal. -->
+		<div data-scroller class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
 			{@render children()}
 		</div>
 	</div>
