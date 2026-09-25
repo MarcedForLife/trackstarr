@@ -3,7 +3,7 @@
 
 import { request } from '$lib/api';
 import type { GlyphName } from '$lib/components/Glyph.svelte';
-import { basename, duration, DV_REMOVED, named, ruleLabel, size, titled } from '$lib/format';
+import { basename, dated, duration, DV_REMOVED, named, ruleLabel, size, titled } from '$lib/format';
 // The library's verdict vocabulary, so the history and the library agree on
 // words and colours.
 import { isVerdict, judged, pip, verdictLabel, verdictText, type Card } from '$lib/library';
@@ -286,6 +286,106 @@ export function marker(entry: Event): string {
  * puts under a title. */
 export function release(entry: Event): string {
 	return entry.path ? named(entry.path).detail : '';
+}
+
+// Events about one file's rewrite.
+const FILE_EVENTS = new Set(['modified', 'pending', 'failed', 'deferred', 'skipped']);
+const TITLED = new Set([
+	...FILE_EVENTS,
+	'held',
+	'item_paused',
+	'lifted',
+	'item_resumed',
+	'retagged'
+]);
+
+// How many of a run's verdicts its line names before counting the rest.
+const NAMED_VERDICTS = 2;
+
+/** An event split into the parts its row draws. */
+export type EventParts = {
+	title: string;
+	aside: string;
+	meta: string[];
+	// The outcome word, in its colour.
+	status?: { word: string; text: string };
+	// A run's verdict counts, the ones asking for a look in their colour.
+	counts: { text: string; tone: string }[];
+	// Why, where the outcome needs it.
+	reason: string;
+	// About one file, whose release words truncate first.
+	file: boolean;
+};
+
+/** `title` is the library's name for the title, where the page has its card. */
+export function parts(entry: Event, title = ''): EventParts {
+	// A webhook for one file is about that file, for several about the delivery.
+	const single = entry.event === 'webhook' && entry.paths?.length === 1 ? entry.paths[0] : '';
+	const path = single || (TITLED.has(entry.event) ? entry.path : '');
+	if (path) {
+		const file = named(path);
+		const { year, words } = dated(file.detail);
+		const base = {
+			title: title || file.name,
+			aside: file.episode || year,
+			meta: [words, ...notes(entry)].filter(Boolean),
+			counts: [],
+			reason: '',
+			file: true
+		};
+		switch (entry.event) {
+			case 'held': // Events written before pause terminology.
+			case 'item_paused':
+				return {
+					...base,
+					status: { word: 'Paused', text: 'text-accent' },
+					reason: detail(entry).toLowerCase()
+				};
+			case 'lifted':
+			case 'item_resumed':
+				return { ...base, status: { word: 'Resumed', text: 'text-dim' } };
+			case 'retagged':
+				return {
+					...base,
+					status: { word: 'Edited tags', text: 'text-dim' },
+					reason: [stream(entry), ...retagged(entry)].join(' · ')
+				};
+			case 'webhook':
+				return {
+					...base,
+					status: { word: `Queued by ${entry.arr_label || 'an import'}`, text: 'text-dim' }
+				};
+			default:
+				return { ...base, status: outcome(entry), reason: detail(entry) };
+		}
+	}
+	// A run or the service. A finished run's count moves under the headline, a
+	// stopped run's stays in it.
+	const said = headline(entry, title);
+	const [lead, counted] = said.split(' · ');
+	const rows =
+		entry.event === 'sweep' || entry.event === 'recheck' ? tally(entry.counts ?? {}) : [];
+	const shown = rows.slice(0, NAMED_VERDICTS).map((row) => ({
+		text: phrase(row),
+		tone:
+			(row.state === 'pending' || row.trouble) && isVerdict(row.state) ? verdictText[row.state] : ''
+	}));
+	const rest = rows.slice(NAMED_VERDICTS).reduce((sum, row) => sum + row.count, 0);
+	const counts = rest ? [...shown, { text: `${rest.toLocaleString()} other`, tone: '' }] : shown;
+	const lines =
+		entry.event === 'sweep'
+			? [counted ?? '', ...notes(entry)]
+			: entry.event === 'recheck'
+				? [...(entry.titles === undefined ? [] : [count(entry.files, 'file')]), ...notes(entry)]
+				: [detail(entry), ...notes(entry)];
+	return {
+		title: lead,
+		aside: '',
+		meta: lines.filter(Boolean),
+		counts,
+		reason: '',
+		file: false
+	};
 }
 
 /** How long ago, as a person says it rather than as a clock does. */

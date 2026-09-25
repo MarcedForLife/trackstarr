@@ -155,6 +155,22 @@ export function named(path: string | undefined): Named {
 	return { name: whole.slice(0, at), episode: '', detail: whole.slice(at + 1) };
 }
 
+/** Splits a film's detail into its year and release words. */
+export function dated(detail: string): { year: string; words: string } {
+	const found = detail.match(/^\(((?:19|20)\d\d)\)\s*/);
+	return found
+		? { year: found[1], words: detail.slice(found[0].length) }
+		: { year: '', words: detail };
+}
+
+/** A queue position as a word, Next for the head and ordinals after. */
+export function placeWord(place: number): string {
+	if (place === 1) return 'Next';
+	const tens = place % 100;
+	const suffix = tens >= 11 && tens <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][place % 10] ?? 'th');
+	return `${place.toLocaleString()}${suffix}`;
+}
+
 /** Every part as one, for somewhere with room for all of them. */
 export function titled(path: string | undefined): string {
 	const { name, episode, detail } = named(path);

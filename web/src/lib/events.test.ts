@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'vitest';
-import { detail, details, headline, measures, outcome, searchable, type Event } from '$lib/events';
+import {
+	detail,
+	details,
+	headline,
+	measures,
+	outcome,
+	parts,
+	searchable,
+	type Event
+} from '$lib/events';
 
 function entry(over: Partial<Event> = {}): Event {
 	return {
@@ -196,4 +205,44 @@ test('a file re-check receipt counts files rather than zero titles', () => {
 	expect(headline(run)).toBe('Re-checked 1 file');
 	expect(details(run).some((row) => row.label === 'Titles')).toBe(false);
 	expect(headline({ ...run, titles: 1 })).toBe('Re-checked 1 title');
+});
+
+describe('a row leads with the title', () => {
+	const path = '/movies/Sintel (2010)/Sintel (2010) Bluray-1080p.mkv';
+
+	test('a rewrite keeps its year by the title and its release words under it', () => {
+		const line = parts(entry({ event: 'modified', path, seconds: 60 }), 'Sintel');
+		expect(line).toMatchObject({ title: 'Sintel', aside: '2010', file: true });
+		expect(line.meta).toEqual(['Bluray-1080p', '1m']);
+		expect(line.status?.word).toBe('Modified');
+	});
+
+	test('a hold says how long on its status line', () => {
+		const line = parts(entry({ event: 'item_paused', path, seconds: 3600 }));
+		expect(line.title).toBe('Sintel');
+		expect(line.status?.word).toBe('Paused');
+		expect(line.reason).toBe('for 1h');
+	});
+
+	test('a delivery of one file is about that file', () => {
+		const one = entry({ event: 'webhook', arr_label: 'Radarr', files: 1, paths: [path] });
+		expect(parts(one).title).toBe('Sintel');
+		expect(parts(one).status?.word).toBe('Queued by Radarr');
+		const two = { ...one, files: 2, paths: [path, path.replace('Sintel', 'Spring')] };
+		expect(parts(two)).toMatchObject({ title: 'Radarr queued 2 files', file: false });
+	});
+
+	test('a run moves its file count under the headline and counts past two verdicts', () => {
+		const run = entry({
+			event: 'sweep',
+			dry_run: true,
+			files: 30,
+			seconds: 120,
+			counts: { pending: 8, conform: 20, skip: 1, unsupported: 1 }
+		});
+		const line = parts(run);
+		expect(line.title).toBe('Plan complete');
+		expect(line.meta).toEqual(['30 files', '2m', 'dry run']);
+		expect(line.counts.map((part) => part.text)).toEqual(['8 pending', '20 passed', '2 other']);
+	});
 });

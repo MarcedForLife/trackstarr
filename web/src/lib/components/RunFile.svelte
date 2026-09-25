@@ -3,15 +3,16 @@
 	import FilePoster from './FilePoster.svelte';
 	import Glyph from './Glyph.svelte';
 	import PlanLine from './PlanLine.svelte';
-	import QueuePlace from './QueuePlace.svelte';
 	import RunLog from './RunLog.svelte';
 	import type { FileChanges, FileCover } from '$lib/queue';
 	import Bar from '$lib/components/Bar.svelte';
 	import FileActions from '$lib/components/FileActions.svelte';
 	import Disclosure from '$lib/components/Disclosure.svelte';
-	import { fileRow, rowMenu } from '$lib/controls';
+	import { dotted, fileRow, rowMenu } from '$lib/controls';
+	import { dated, placeWord } from '$lib/format';
 	import { verdictHint, verdictLabel } from '$lib/library';
 	import { reduced } from '$lib/motion.svelte';
+	import { tint, tintOf } from '$lib/tint';
 	import { warm } from '$lib/plans.svelte';
 	import {
 		duration,
@@ -84,6 +85,7 @@
 	const waiting = $derived(!ended && !!row.waiting);
 	const active = $derived(live && row.live?.stage !== 'waiting');
 	const shown = $derived(named(row.path));
+	const release = $derived(dated(shown.detail));
 	const status = $derived(live && row.live ? fileStatus(row.live, age) : '');
 	const bar = $derived(live && !!row.live && fileBar(row.live));
 	const far = $derived(bar && row.live ? fileFraction(row.live, age) : 0);
@@ -169,7 +171,7 @@
 {#snippet poster()}<FilePoster {cover} name={shown.name} prominent={active} {onopen} />{/snippet}
 
 <!-- The `<li>` is the caller's, which is where the list animates it from. -->
-<div class={`overview-row ${fileRow()} py-3 text-[12px]`}>
+<div class={`row-lift ${fileRow()} py-3 text-[12px]`} use:tint={tintOf(cover?.id)}>
 	<Disclosure
 		{id}
 		{open}
@@ -181,37 +183,39 @@
 		align="start"
 		beside={poster}
 	>
-		{#snippet summary(chevron)}
-			<span class="flex items-start gap-3">
-				<span class="min-w-0 flex-1">
-					<!-- The title alone, on one line, so a list stands to one height.
-					     Its year and release words go on the line under it. -->
-					<span
-						class={`flex items-baseline gap-1.5 leading-snug font-medium text-fg ${active ? 'text-[15px]' : 'text-[13px]'}`}
-					>
-						<span class="truncate" title={shown.name}>{shown.name}</span>
-						{#if shown.episode}<span class="flex-none text-dim">{shown.episode}</span>{/if}
+		{#snippet summary()}
+			<span class="block min-w-0">
+				<span
+					class={`flex items-baseline gap-1.5 leading-snug font-medium text-fg ${active ? 'text-[15px]' : 'text-[14px]'}`}
+				>
+					<span class="truncate" title={shown.name}>{shown.name}</span>
+					{#if shown.episode || release.year}<span
+							class="flex-none text-[12.5px] font-normal text-faint tabular-nums"
+							>{shown.episode || release.year}</span
+						>{/if}
+				</span>
+				<!-- The release words truncate before the origin. -->
+				{#if release.words || origin}
+					<span class={`mt-0.5 text-[12px] text-dim ${dotted}`}>
+						{#if release.words}<span class="min-w-0 truncate">{release.words}</span>{/if}
+						{#if origin}<span class="flex-none">{origin}</span>{/if}
 					</span>
-					<!-- One line: the release words truncate rather than wrap. -->
-					<span class="mt-1 flex items-center gap-x-2 overflow-hidden text-[11.5px] text-dim">
-						<!-- Left out rather than left empty: an empty flex item still
-						     indents the line by a gap. -->
-						{#if waiting && place}<QueuePlace {place} class="flex-none" />{/if}
-						{#if standing}<span
-								title={row.verdict ? verdictHint(row.verdict) : undefined}
-								class={`flex-none ${row.verdict === 'failed' ? 'font-medium text-danger' : ''}`}
-								>{standing}</span
-							>{/if}
-						{#if origin}<span class="flex-none text-faint">{origin}</span>{/if}
-						{#if clock}<span class="flex-none text-faint tabular-nums">{clock}</span>{/if}
-						<!-- Last, so it is the part that gives way. -->
-						{#if shown.detail}<span class="min-w-0 truncate text-faint">{shown.detail}</span>{/if}
-					</span>
-					<!-- The plan keeps its line once a worker picks the file up. The
-					     cover runs the height of whatever that leaves. -->
+				{/if}
+				<span class={`mt-0.5 text-[12px] text-dim ${dotted}`}>
+					{#if waiting && place}<span
+							class={`flex-none ${place === 1 ? 'font-medium text-accent' : ''}`}
+							>{placeWord(place)}</span
+						>{/if}
+					{#if standing}<span
+							title={row.verdict ? verdictHint(row.verdict) : undefined}
+							class={`flex-none ${row.verdict === 'failed' ? 'font-medium text-danger' : ''}`}
+							>{standing}</span
+						>{/if}
+					{#if clock}<span class="flex-none tabular-nums">{waiting ? `takes ${clock}` : clock}</span
+						>{/if}
+					<!-- The plan keeps its place once a worker picks the file up. -->
 					{#if waiting || live}<PlanLine {plan} {current} chipsOnly={live} />{/if}
 				</span>
-				{@render chevron()}
 			</span>
 		{/snippet}
 
@@ -300,25 +304,3 @@
 		<RunLog path={row.path} {lines} {failure} onclose={() => (logging = false)} />
 	{/if}
 </div>
-
-<style>
-	/* The overview previews work: lift on hover to invite opening its details.
-	   Queue management keeps its press gesture for selecting files. */
-	@media (hover: hover) and (pointer: fine) {
-		.overview-row:hover {
-			position: relative;
-			z-index: 10;
-			translate: 0 -2px;
-			box-shadow:
-				0 3px 6px rgb(0 0 0 / 0.16),
-				0 14px 28px rgb(0 0 0 / 0.22);
-			border-color: var(--line-strong);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.overview-row:hover {
-			translate: none;
-		}
-	}
-</style>

@@ -46,7 +46,7 @@ export const removeButton =
 export const noteBox = 'rounded-lg border border-line bg-sunken px-3 py-2 text-[12.5px]';
 
 const rowShape =
-	'rounded-lg border px-2.5 transition-[translate,box-shadow] duration-150 ease-out sm:px-3.5';
+	'rounded-lg border px-2.5 transition-[translate,box-shadow,background-color] duration-150 ease-out sm:px-3.5';
 
 // One whole shadow each rather than a raise stacked on the rest: two arbitrary
 // shadows are the same utility, and the stylesheet's order decides which wins.
@@ -152,6 +152,11 @@ export const markWorded = `${markShape} h-11 rounded-lg px-3 text-[12.5px] font-
 export const markQuiet = 'text-dim hover:bg-raised hover:text-fg active:bg-raised';
 export const markAccent = 'text-accent hover:bg-accent-soft active:bg-accent-soft';
 export const markDanger = 'text-danger hover:bg-danger/10 active:bg-danger/10';
+
+// A line of short facts with drawn dots between them, so an omitted item
+// takes its dot with it.
+export const dotted =
+	"flex min-w-0 items-baseline gap-x-1.5 overflow-hidden whitespace-nowrap [&>*+*]:before:mr-1.5 [&>*+*]:before:text-faint [&>*+*]:before:content-['·']";
 
 // What every popover is made of. The tray rather than the card, since most of
 // these open over a card and raised over raised cannot read as glass at any

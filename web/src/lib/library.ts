@@ -721,12 +721,14 @@ export const PLAIN_CHIP = `${CHIP} ${PLAIN_TONE}`;
 export function changed(plan: {
 	adds?: string[];
 	rebuilds?: string[];
-}): { chip: string; tone: string; label: string }[] {
+}): { chip: string; tone: string; ink: string; label: string }[] {
 	const chips = [];
 	if (plan.adds?.length) {
 		chips.push({
 			chip: `+${plan.adds.length}`,
 			tone: 'bg-ok/90 text-on-ok',
+			// The same colour as text, for a row's line.
+			ink: 'text-ok',
 			label: `Adds ${plan.adds.length}: ${plan.adds.join(', ')}`
 		});
 	}
@@ -734,6 +736,7 @@ export function changed(plan: {
 		chips.push({
 			chip: `~${plan.rebuilds.length}`,
 			tone: 'bg-accent-fill/90 text-on-accent',
+			ink: 'text-accent',
 			label: `Rebuilds ${plan.rebuilds.length}: ${plan.rebuilds.join(', ')}`
 		});
 	}

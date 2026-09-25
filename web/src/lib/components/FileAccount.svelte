@@ -172,11 +172,10 @@
 		{/each}
 	</ul>
 {/if}
-{#if idle && !file.why.skip && !file.why.failed}
+<!-- Any other file's status already says whether it changes. -->
+{#if idle && file.status === 'unchecked' && !file.why.skip && !file.why.failed}
 	<p class="mt-3 text-[12px] text-faint">
-		{file.status === 'unchecked'
-			? 'No plan yet. This file will be checked before processing.'
-			: 'Nothing to change.'}
+		No plan yet. This file will be checked before processing.
 	</p>
 {/if}
 

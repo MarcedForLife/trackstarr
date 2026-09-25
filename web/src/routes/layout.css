@@ -63,6 +63,22 @@
 	initial-value: 50%;
 }
 
+/* A row's glow from rest at 0 to hover at 1. Registered so the gradient can
+   transition. */
+@property --tint-grow {
+	syntax: '<number>';
+	inherits: false;
+	initial-value: 0;
+}
+
+/* A row's glow colour. Registered so a late colour fades in instead of
+   snapping on. */
+@property --tint {
+	syntax: '<color>';
+	inherits: true;
+	initial-value: transparent;
+}
+
 /* Registered as <color> so the theme swap animates: a registered property
    interpolates, and every element reading it eases on its own. The initial
    values are the default dark palette. */
@@ -236,6 +252,10 @@
 	/* The tray rim's shadow on covers scrolling under it. */
 	--rim-shadow: rgb(0 0 0 / 0.75);
 	--disabled: 0.5;
+	/* A row's glow strength at rest and on hover. A dark card needs more before
+	   the colour shows. */
+	--tint-rest: 32%;
+	--tint-lift: 48%;
 	--demo: #a898f0;
 }
 [data-theme='light'] {
@@ -245,6 +265,8 @@
 	/* Fading toward white costs more contrast than fading toward black, so the
 	   same 0.5 read two steps lighter here. 0.6 matches the dark fade. */
 	--disabled: 0.6;
+	--tint-rest: 22%;
+	--tint-lift: 34%;
 	--demo: #5a43c0;
 }
 
@@ -700,6 +722,87 @@ body {
 /* A busy button keeps full opacity. Unlayered, so it beats the `disabled:` utility. */
 button[aria-busy='true']:disabled {
 	opacity: 1;
+}
+
+/* Rows that open lift on hover. The queue skips it for its press-to-pick
+   gesture. Unlayered, so it beats the resting shadow. */
+@media (hover: hover) and (pointer: fine) {
+	.row-lift:hover {
+		position: relative;
+		z-index: 10;
+		translate: 0 -2px;
+		box-shadow:
+			0 3px 6px rgb(0 0 0 / 0.16),
+			0 14px 28px rgb(0 0 0 / 0.22);
+		border-color: var(--line-strong);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.row-lift:hover {
+		translate: none;
+	}
+}
+
+/* A row's glow from its cover, set by $lib/tint and gone by the middle or
+   16rem. A pseudo-element so a picked row's tint still shows, unlayered so
+   the hover shade beats bg-raised. */
+[data-tint] {
+	position: relative;
+	isolation: isolate;
+}
+
+[data-tint]::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	border-radius: inherit;
+	pointer-events: none;
+	background: linear-gradient(
+		to right,
+		color-mix(
+			in oklab,
+			var(--tint) calc(var(--tint-rest) + (var(--tint-lift) - var(--tint-rest)) * var(--tint-grow)),
+			transparent
+		),
+		transparent min(60% + 15% * var(--tint-grow), 16rem + 6rem * var(--tint-grow))
+	);
+	/* --tint-grow matches the row's lift. */
+	transition:
+		--tint-grow 150ms ease-out,
+		--tint 600ms ease-out;
+}
+
+@media (hover: hover) and (pointer: fine) {
+	[data-tint]:hover {
+		background-color: color-mix(in oklab, var(--raised) 94%, var(--fg));
+	}
+
+	[data-tint]:hover::before {
+		--tint-grow: 1;
+	}
+}
+
+/* An accent ring on a row's cover button, drawn on the artwork inside so the
+   button's padding leaves it room. */
+@media (hover: hover) and (pointer: fine) {
+	.cover-button:hover > span {
+		box-shadow:
+			0 0 0 2px var(--accent-fill),
+			0 0 18px color-mix(in srgb, var(--accent-fill) 45%, transparent);
+		scale: 1.04;
+	}
+}
+
+.cover-button:focus-visible > span {
+	box-shadow: 0 0 0 2px var(--accent-fill);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.cover-button > span {
+		scale: none;
+	}
 }
 
 /* The disclosure's height is animated by $lib/shift. Its clip and the

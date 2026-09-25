@@ -2,27 +2,13 @@
 	import Disclosure from '$lib/components/Disclosure.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
 	import TitleThumb from '$lib/components/TitleThumb.svelte';
-	import {
-		ago,
-		badge,
-		detail,
-		details,
-		dot,
-		headline,
-		layouts,
-		marker,
-		measures,
-		notes,
-		outcome,
-		release,
-		type Event
-	} from '$lib/events';
-	import { named, stamp } from '$lib/format';
-	import { changed, CHIP, PLAIN_TONE } from '$lib/library';
+	import { dotted } from '$lib/controls';
+	import { ago, badge, details, dot, layouts, measures, parts, type Event } from '$lib/events';
+	import { stamp } from '$lib/format';
+	import { changed } from '$lib/library';
 	import type { Card } from '$lib/library';
 
-	// One line of history, opening to the full record. On the events page's list,
-	// and in the overview's activity panel.
+	// One line of history, opening to the full record.
 	let {
 		entry,
 		open = false,
@@ -32,7 +18,7 @@
 		// does nothing is worse than none.
 		card,
 		onopen,
-		compact = false,
+		// Ties the button to its panel, unique within the page.
 		id,
 		ontoggle
 	}: {
@@ -41,15 +27,11 @@
 		before?: Event;
 		card?: Card;
 		onopen?: (card: Card) => void;
-		// The overview shows a short preview; the events page keeps the full line.
-		compact?: boolean;
-		// Ties the button to the panel it opens; unique within the page.
 		id: string;
 		ontoggle: () => void;
 	} = $props();
 
-	// Lines about one file, which name it the way a queue row does, and of those
-	// the ones whose plan the chips carry.
+	// Events about one file's rewrite.
 	const FILES = new Set(['modified', 'pending', 'failed', 'deferred', 'skipped']);
 	const REWRITES = new Set(['modified', 'pending']);
 
@@ -60,44 +42,28 @@
 	// mark, so the list can be read down the column.
 	const mark = $derived(poster ? '' : badge(entry));
 
-	// What became of the file is named beside the chips.
-	const ending = $derived(FILES.has(entry.event) ? outcome(entry) : undefined);
+	// The card's name where there is one, since the *arr names the folder.
+	const shape = $derived(parts(entry, card?.name));
 
-	// The chips say what the rewrite changed, the layouts it wrote in the
-	// library's colour and what it cost in the plain one.
-	const marks = $derived([
-		...changed(layouts(entry)),
-		...measures(entry).map((chip) => ({
-			chip,
-			tone: PLAIN_TONE,
-			label:
-				chip === `−${entry.drops}`
-					? `Drops ${entry.drops} track${entry.drops === 1 ? '' : 's'}`
-					: chip
-		}))
-	]);
-
-	// A line about a file leads with what the file is. A rewrite's words only
-	// repeat the chips beside them, so they go; a problem's say why the row is
-	// here, and a plan the chips cannot carry keeps its own.
-	const said = $derived.by(() => {
-		if (!FILES.has(entry.event)) return detail(entry);
-		const words = marks.length && REWRITES.has(entry.event) ? '' : detail(entry);
-		return [release(entry), words].filter(Boolean).join(' · ');
-	});
-	// How long and under what terms ride the end of it, as a file row's clock does.
-	const line = $derived([said, ...notes(entry)].filter(Boolean).join(' · '));
-	const episode = $derived(marker(entry));
-	// File outcomes have their own label below, leaving the title easy to scan.
-	const name = $derived(
-		FILES.has(entry.event) ? card?.name || named(entry.path).name : headline(entry, card?.name)
+	const marks = $derived(
+		FILES.has(entry.event)
+			? [
+					...changed(layouts(entry)),
+					...measures(entry).map((chip) => ({
+						chip,
+						ink: 'text-dim',
+						label:
+							chip === `−${entry.drops}`
+								? `Drops ${entry.drops} track${entry.drops === 1 ? '' : 's'}`
+								: chip
+					}))
+				]
+			: []
 	);
-
-	const lineClass = $derived(
-		compact
-			? 'mt-1 line-clamp-2 text-[12px] leading-relaxed text-dim sm:line-clamp-1'
-			: 'mt-1 line-clamp-2 text-[12px] leading-relaxed wrap-anywhere text-dim sm:line-clamp-1'
-	);
+	// A rewrite's reason only repeats its counts.
+	const reason = $derived(marks.length && REWRITES.has(entry.event) ? '' : shape.reason);
+	// The second line's item that truncates first.
+	const gives = $derived(shape.file ? 0 : shape.meta.length - 1);
 </script>
 
 {#snippet thumb()}
@@ -105,23 +71,14 @@
 		{#if poster && onopen}
 			<TitleThumb card={poster} {onopen} />
 		{:else if mark}
-			<!-- Round, and as wide as a poster: it fills the column so the headlines
-			     line up, and its shape says a mark rather than a cover that failed
-			     to load, which an empty slot of the same size did. Centred against
-			     the lines, since a run's line carries chips under it and half a
-			     poster's height left the mark stranded at the top of them.
-
-			     It opens the line, like the summary beside it, since a mark sitting
-			     next to something that opens looks as though it should. Out of the
-			     tab order and hidden from a reader who is told: the summary already
-			     carries this action and says what it does, so a second stop here
-			     would be the same press twice. -->
+			<!-- Opens the line like the summary beside it. Out of the tab order and
+			     hidden from screen readers, since the summary carries the same action. -->
 			<button
 				type="button"
 				tabindex="-1"
 				aria-hidden="true"
 				onclick={ontoggle}
-				class="relative z-10 flex h-11 w-11 flex-none items-center justify-center self-center rounded-full border border-line bg-sunken text-dim transition-colors hover:border-line-strong hover:text-fg active:bg-raised"
+				class="relative z-10 flex min-h-11 w-10 flex-none items-center justify-center self-stretch rounded-md bg-sunken text-dim transition-colors hover:text-fg"
 			>
 				<Glyph name={mark} size={14} />
 			</button>
@@ -139,7 +96,7 @@
 	panelClass="mt-3"
 	beside={poster || mark ? thumb : undefined}
 >
-	{#snippet summary(chevron)}
+	{#snippet summary()}
 		<span class="flex w-full items-baseline gap-2">
 			<!-- A fallback mark for an event without a poster or service icon.
 			     Nudged up, since a 6px circle on the baseline sits low. -->
@@ -149,46 +106,49 @@
 					class={`h-1.5 w-1.5 flex-none translate-y-[-2px] rounded-full ${dot(entry)}`}
 				></span>
 			{/if}
-			<!-- One column, as a file row has: the line under the title starts where
-			     the title does rather than under the dot. -->
-			<span class="min-w-0 flex-1">
-				<!-- The title alone, truncating, with the episode kept whole beside it
-				     and the time on the same line. The card's name where there is one:
-				     a title's folder is named for the *arr that made it. -->
-				<span class="flex items-baseline gap-1.5 text-[13px] font-medium text-fg">
-					<span class="truncate" title={name}>{name}</span>
-					{#if episode}
-						<span class="flex-none text-faint tabular-nums">{episode}</span>
+			<span class="block min-w-0 flex-1">
+				<span class="flex items-baseline gap-1.5 text-[14px] leading-snug font-medium text-fg">
+					<span class="truncate" title={shape.title}>{shape.title}</span>
+					{#if shape.aside}
+						<span class="flex-none text-[12.5px] font-normal text-faint tabular-nums"
+							>{shape.aside}</span
+						>
 					{/if}
 					<time
 						datetime={entry.ts}
 						title={stamp(entry.ts)}
-						class="ml-auto flex-none text-[11px] whitespace-nowrap text-faint"
+						class="ml-auto flex-none pl-2 text-[11.5px] font-normal whitespace-nowrap text-faint"
 					>
 						{ago(entry.ts)}
 					</time>
-					<!-- On the clock's line, not centred against the row. Words and chips
-					     under the title leave a centred chevron adrift from the time. -->
-					{@render chevron()}
 				</span>
-				{#if line}
-					<span class={lineClass} title={line}>{line}</span>
+				{#if shape.meta.length}
+					<span class={`mt-0.5 text-[12px] text-dim ${dotted}`} title={shape.meta.join(' · ')}>
+						{#each shape.meta as part, at (at)}
+							<span class={at === gives ? 'min-w-0 truncate' : 'flex-none'}>{part}</span>
+						{/each}
+					</span>
 				{/if}
-				{#if marks.length || ending}
-					<span class="mt-2 flex flex-wrap items-center gap-1.5">
-						{#if ending}
-							<span
-								class={`mr-1 inline-flex items-center gap-1.5 text-[11px] font-medium ${ending.text}`}
-							>
-								<span aria-hidden="true" class={`h-1.5 w-1.5 rounded-full ${dot(entry)}`}></span>
-								{ending.word}
+				{#if shape.status || shape.counts.length || marks.length || reason}
+					<span class={`mt-0.5 text-[12px] text-dim ${dotted}`}>
+						{#if shape.status}
+							<span class={`flex-none font-medium ${shape.status.text}`}>{shape.status.word}</span>
+						{/if}
+						{#each shape.counts as part (part.text)}
+							<span class={`flex-none ${part.tone}`}>{part.text}</span>
+						{/each}
+						{#if marks.length}
+							<span class="flex-none [&>*+*]:ml-1.5">
+								{#each marks as change (change.chip)}
+									<span
+										class={`${/^[+−~]/.test(change.chip) ? 'font-mono text-[11.5px] tracking-tight' : ''} ${change.ink}`}
+										title={change.label}
+										aria-label={change.label}>{change.chip}</span
+									>
+								{/each}
 							</span>
 						{/if}
-						{#each marks as change (change.chip)}
-							<span class={`${CHIP} ${change.tone}`} title={change.label} aria-label={change.label}
-								>{change.chip}</span
-							>
-						{/each}
+						{#if reason}<span class="min-w-0 truncate" title={reason}>{reason}</span>{/if}
 					</span>
 				{/if}
 			</span>

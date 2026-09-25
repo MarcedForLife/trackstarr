@@ -26,10 +26,10 @@
 	type="button"
 	onclick={() => onopen(card)}
 	aria-label={`${card.name}${card.year ? ` (${card.year})` : ''} — ${verdictLabel(card.state)}`}
-	class="thumb relative z-10 -m-1 block flex-none self-start p-1"
+	class="thumb cover-button relative z-10 -m-1 block flex-none self-start p-1"
 >
 	<span
-		class="relative block aspect-[2/3] w-11 overflow-hidden rounded-md border border-line bg-sunken shadow-[0_1px_2px_rgb(0_0_0/0.25)]"
+		class="relative block aspect-[2/3] w-10 overflow-hidden rounded-md border border-line bg-sunken shadow-[0_1px_2px_rgb(0_0_0/0.25)] transition-[box-shadow,scale] duration-150 ease-out"
 	>
 		<!-- The initials until the cover lands, and instead of one that never
 		     does: the picture fades in over them, so a cover that fails to load

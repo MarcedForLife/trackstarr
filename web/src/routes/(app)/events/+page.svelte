@@ -9,12 +9,13 @@
 	import TitleSheet from '$lib/components/TitleSheet.svelte';
 	import { Snapshot } from '$lib/activity.svelte';
 	import { ago, count, CUSTOM, key, said, searchable, SPANS, type Event } from '$lib/events';
-	import { button, control, quiet, radius } from '$lib/controls';
+	import { button, control, fileRow, quiet, radius } from '$lib/controls';
 	import { History } from '$lib/history.svelte';
 	import type { Card } from '$lib/library';
 	import { Recheck } from '$lib/recheck.svelte';
 	import { matches, terms } from '$lib/search';
 	import { whenNear } from '$lib/reveal';
+	import { tint, tintOf } from '$lib/tint';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -360,16 +361,12 @@
 						<h2 class="text-[12px] font-medium text-dim">{group.label}</h2>
 						<span class="h-px flex-1 bg-line" aria-hidden="true"></span>
 					</div>
-					<ol class="divide-y divide-line overflow-hidden rounded-xl border border-line bg-raised">
+					<ol class="flex flex-col gap-2 rounded-2xl border border-line bg-sunken p-3 sm:p-4">
 						{#each group.rows as { entry, at, id } (id)}
-							<!-- Rows off screen are skipped whole. 6rem is the guess for an unseen
-				     row. -->
+							<!-- Offscreen rows skip rendering. 5.5rem estimates an unseen row. -->
 							<li
-								class="relative px-3 py-4 transition-[background-color] [contain-intrinsic-size:auto_6rem] [content-visibility:auto] hover:bg-sunken/50 sm:px-5 {open[
-									id
-								]
-									? 'bg-sunken/50'
-									: ''}"
+								class={`row-lift relative ${fileRow()} py-3 [contain-intrinsic-size:auto_5.5rem] [content-visibility:auto]`}
+								use:tint={tintOf(entry.title ? history.titles[entry.title]?.id : undefined)}
 							>
 								<EventRow
 									{entry}

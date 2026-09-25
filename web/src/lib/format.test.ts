@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import { bytesFor, describe as line, named, titled, wholeUnits } from '$lib/format';
+import {
+	bytesFor,
+	dated,
+	describe as line,
+	named,
+	placeWord,
+	titled,
+	wholeUnits
+} from '$lib/format';
 
 describe('named', () => {
 	test('an episode is said apart from the series it truncates with', () => {
@@ -149,4 +157,27 @@ describe('bytesFor', () => {
 		expect(bytesFor(undefined, 3600)).toBe(0);
 		expect(bytesFor(640_000, 0)).toBe(0);
 	});
+});
+
+describe('dated', () => {
+	test('takes the year off the release words', () => {
+		expect(dated('(2010) Bluray-1080p')).toEqual({ year: '2010', words: 'Bluray-1080p' });
+		expect(dated('Bluray-1080p')).toEqual({ year: '', words: 'Bluray-1080p' });
+		expect(dated('')).toEqual({ year: '', words: '' });
+	});
+});
+
+test('a queue place reads as next, then by its order', () => {
+	expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 103].map(placeWord)).toEqual([
+		'Next',
+		'2nd',
+		'3rd',
+		'4th',
+		'11th',
+		'12th',
+		'13th',
+		'21st',
+		'22nd',
+		'103rd'
+	]);
 });

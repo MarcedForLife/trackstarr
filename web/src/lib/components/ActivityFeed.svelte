@@ -3,6 +3,7 @@
 	import EventRow from '$lib/components/EventRow.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
 	import { fileRow } from '$lib/controls';
+	import { tint, tintOf } from '$lib/tint';
 	import { key, type Event } from '$lib/events';
 	import type { Card } from '$lib/library';
 
@@ -51,9 +52,11 @@
 		{#if rows.length}
 			<ol class="flex flex-col gap-2">
 				{#each rows as { entry, id }, at (id)}
-					<li class={`event-tile relative ${fileRow()} py-3`}>
+					<li
+						class={`row-lift relative ${fileRow()} py-3`}
+						use:tint={tintOf(entry.title ? titles[entry.title]?.id : undefined)}
+					>
 						<EventRow
-							compact
 							{entry}
 							id={`activity-${at}`}
 							open={!!opened[id]}
@@ -81,24 +84,3 @@
 		{/if}
 	</div>
 </section>
-
-<style>
-	/* The processing rows' lift, so every tile on the overview answers a
-	   pointer the same way. */
-	@media (hover: hover) and (pointer: fine) {
-		.event-tile:hover {
-			z-index: 10;
-			translate: 0 -2px;
-			box-shadow:
-				0 3px 6px rgb(0 0 0 / 0.16),
-				0 14px 28px rgb(0 0 0 / 0.22);
-			border-color: var(--line-strong);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.event-tile:hover {
-			translate: none;
-		}
-	}
-</style>
