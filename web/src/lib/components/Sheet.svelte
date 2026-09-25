@@ -144,6 +144,19 @@
 	// content usually lands inside.
 	const GROWTH = 260;
 
+	// Whether a box inside animates its own height, as a folding panel does. The
+	// edge then follows it frame by frame, since easing each step made it lag.
+	function sizing(box: HTMLElement): boolean {
+		return box
+			.getAnimations({ subtree: true })
+			.some(
+				(run) =>
+					run.playState === 'running' &&
+					run.effect instanceof KeyframeEffect &&
+					run.effect.getKeyframes().some((frame) => 'height' in frame)
+			);
+	}
+
 	$effect(() => {
 		const box = panel;
 		if (!box) return;
@@ -157,7 +170,7 @@
 			height = measured;
 			if (!open || dragging || reduced()) filling = true;
 			else if (filling && covered) filling = false;
-			else if (Math.abs(grew) >= 1) {
+			else if (Math.abs(grew) >= 1 && !sizing(box)) {
 				filling = false;
 				const at = performance.now();
 				const rising = motion !== null && at < motion.at + motion.span;

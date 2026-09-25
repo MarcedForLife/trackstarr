@@ -6,11 +6,12 @@
 	let {
 		path,
 		label,
-		prominent = false
+		// Only the glyph, beside a name the caller already shows.
+		glyph = false
 	}: {
 		path: string;
 		label?: string;
-		prominent?: boolean;
+		glyph?: boolean;
 	} = $props();
 	const name = $derived(label || path.split('/').filter(Boolean).at(-1) || path);
 	const id = $props.id();
@@ -42,14 +43,15 @@
 	aria-haspopup="dialog"
 	aria-expanded={location.open}
 	aria-controls={id}
-	class={`flex min-h-8 max-w-full min-w-0 items-center gap-1.5 rounded text-left ${prominent ? 'text-[13px] font-medium text-fg hover:text-accent' : 'shrink-0 rounded-md border border-line px-2 text-[11px] text-dim hover:bg-raised hover:text-fg'}`}
+	class={glyph
+		? "relative -my-0.5 ml-1 inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-faint transition-colors after:absolute after:-inset-1 after:content-[''] hover:bg-raised hover:text-fg"
+		: 'flex min-h-8 max-w-full min-w-0 shrink-0 items-center gap-1.5 rounded-md border border-line px-2 text-left text-[11px] text-dim hover:bg-raised hover:text-fg'}
 >
-	{#if !prominent}
+	{#if glyph}
+		<Glyph name="doc" size={14} />
+	{:else}
 		<span class="flex-none text-faint"><Glyph name="folder" /></span>
-	{/if}
-	<span class="min-w-0 truncate">{name}</span>
-	{#if prominent}
-		<span class="flex-none text-faint"><Glyph name="doc" size={14} /></span>
+		<span class="min-w-0 truncate">{name}</span>
 	{/if}
 </button>
 <div
@@ -61,7 +63,7 @@
 	class={`fixed m-0 w-96 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong ${frosted} p-3 text-fg shadow-lg`}
 >
 	<div class="mb-2 flex items-center justify-between gap-3">
-		<p class="text-[12px] font-medium">{prominent ? 'File path' : name}</p>
+		<p class="text-[12px] font-medium">{glyph ? 'File path' : name}</p>
 		<button
 			type="button"
 			onclick={() => location.lower()}

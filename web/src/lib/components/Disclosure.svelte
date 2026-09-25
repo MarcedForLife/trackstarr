@@ -45,6 +45,8 @@
 		// control within a control is neither valid nor reachable by keyboard.
 		// Given the chevron, for a row that wants it pressable on its own.
 		after,
+		// A control right after the summary, which then takes only its own width.
+		trail,
 		panel
 	}: {
 		id: string;
@@ -64,6 +66,7 @@
 		aside?: Snippet;
 		beside?: Snippet;
 		after?: Snippet<[Snippet<[boolean?]>]>;
+		trail?: Snippet;
 		panel?: Snippet;
 	} = $props();
 
@@ -139,14 +142,22 @@
 	{/if}
 {/snippet}
 
+{#snippet line()}
+	{#if trail}
+		<div class="flex min-w-0 items-center">{@render toggle()}{@render trail()}</div>
+	{:else}
+		{@render toggle()}
+	{/if}
+{/snippet}
+
 {#snippet row()}
 	{#if after}
 		<div class={`flex gap-3 ${align === 'start' ? 'items-start' : 'items-center'}`}>
-			<div class="min-w-0 flex-1">{@render toggle()}</div>
+			<div class="min-w-0 flex-1">{@render line()}</div>
 			{@render after(chevron)}
 		</div>
 	{:else}
-		{@render toggle()}
+		{@render line()}
 	{/if}
 	{@render aside?.()}
 {/snippet}

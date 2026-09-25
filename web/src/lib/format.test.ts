@@ -16,7 +16,12 @@ describe('named', () => {
 			named(
 				'/tv/House of the Dragon/Season 2/House of the Dragon (2022) - S02E05 - Regent [WEBRip-2160p][HDR10][AAC 2.0][h265]-HODL..mkv'
 			)
-		).toEqual({ name: 'House of the Dragon', episode: 'S02E05', detail: '' });
+		).toEqual({
+			name: 'House of the Dragon',
+			episode: 'S02E05',
+			detail: '',
+			episodeName: 'Regent'
+		});
 	});
 
 	test('two rewrites of one series differ where the line cannot cut', () => {
@@ -28,6 +33,13 @@ describe('named', () => {
 
 	test('a double counts as one episode', () => {
 		expect(named('Lost (2004) - S01E01-E02 - Pilot [Bluray-1080p].mkv').episode).toBe('S01E01-E02');
+	});
+
+	test("an episode's own title comes apart from its number", () => {
+		expect(
+			named('Heroes (2006) - S04E01-E02 - Orientation and Jump Push Fall [Bluray-1080p].mkv')
+		).toMatchObject({ episode: 'S04E01-E02', episodeName: 'Orientation and Jump Push Fall' });
+		expect(named('Doctor Who (2005) - S01E01.mkv').episodeName).toBeUndefined();
 	});
 
 	// A film has nothing but its year to be told apart by, so it keeps it,
@@ -52,7 +64,8 @@ describe('named', () => {
 		expect(named('9-1-1 (2018) - S01E01 - Pilot [WEBDL-1080p].mkv')).toEqual({
 			name: '9-1-1',
 			episode: 'S01E01',
-			detail: ''
+			detail: '',
+			episodeName: 'Pilot'
 		});
 		expect(named('Doctor Who (2005) - S01E01 [HDTV-720p].mkv')).toEqual({
 			name: 'Doctor Who',

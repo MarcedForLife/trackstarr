@@ -137,23 +137,19 @@
 			: undefined
 	);
 
-	// The track whose language and flags are open for editing: its file and its
-	// stream index there. One at a time, inline under its row. Admins only,
-	// since it writes to the file.
+	// The track open for editing, by file and stream index. Admins only, since it
+	// writes to the file.
 	let editing = $state<{ path: string; stream: number } | null>(null);
-	// The row button that opened it, so closing hands focus back rather than
-	// dropping it on the body: everything outside the sheet is inert, and the
-	// next Tab would start over at Close.
-	let opener: HTMLElement | null = null;
-	// Escape closes it ahead of the sheet; no history entry, since a form inside
-	// a sheet should not cost a back press.
-	const editor = overlay({
-		close: () => {
-			editing = null;
-			if (up && opener?.isConnected) opener.focus();
-			opener = null;
-		}
-	});
+	// The editor's pencil. Focus returns there, or the next Tab would restart at
+	// Close.
+	let opener = $state.raw<HTMLElement | null>(null);
+	// Every close except Escape and a press outside, which the popover handles.
+	function closeEditor() {
+		const pencil = opener;
+		editing = null;
+		opener = null;
+		if (up && pencil?.isConnected) pencil.focus();
+	}
 	// The language names for its menu, fetched the first time one opens.
 	let languages = $state<Record<string, string> | null>(null);
 	// What the last edit came to, under the row it was made from, until the
@@ -322,7 +318,7 @@
 		up = true;
 		const loaded = browsing.open(card);
 		actions.open(browsing.session!);
-		editor.lower();
+		closeEditor();
 		retagged = null;
 		await loaded;
 	}
@@ -351,7 +347,7 @@
 		up = false;
 		actions.close();
 		browsing.close();
-		editor.lower();
+		closeEditor();
 		retagged = null;
 		emptying = setTimeout(() => {
 			emptying = null;
@@ -368,7 +364,7 @@
 
 	$effect(() => {
 		if (editing && detail && !detail.files.some((file) => file.path === editing?.path))
-			editor.lower();
+			closeEditor();
 	});
 
 	// Whether the box has buttons, not just a line saying what stands: a reader
@@ -378,12 +374,11 @@
 	function edit(file: LibraryFile, row: Listed, pressed: HTMLElement) {
 		const at = editing;
 		if ((at?.path === file.path && at.stream === row.stream) || row.stream === null) {
-			editor.lower();
+			closeEditor();
 			return;
 		}
 		editing = { path: file.path, stream: row.stream };
 		opener = pressed;
-		editor.raise();
 		if (!languages) {
 			// A menu without names is still a menu of codes.
 			getSettings()
@@ -406,7 +401,7 @@
 			)
 				return;
 			retagged = { path: file.path, stream: row.stream, ...summarise(outcomes) };
-			editor.lower();
+			closeEditor();
 			// The rows around it are a verdict out of date.
 			void session.reload();
 		};
@@ -425,7 +420,8 @@
 					languages,
 					open: edit,
 					done: completion(),
-					cancel: () => editor.lower()
+					cancel: closeEditor,
+					trigger: opener
 				}
 			: null
 	);
@@ -632,7 +628,7 @@
 								selections={browsing.reading.selectedPaths}
 								{group}
 								disabled={workBusy}
-								onchange={() => editor.lower()}
+								onchange={closeEditor}
 								children={card}
 							/>
 						{/each}
@@ -823,7 +819,7 @@
 							selections={browsing.reading.selectedPaths}
 							{group}
 							disabled={workBusy}
-							onchange={() => editor.lower()}
+							onchange={closeEditor}
 							children={card}
 						/>
 					{/each}

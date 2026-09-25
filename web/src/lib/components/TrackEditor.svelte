@@ -1,10 +1,11 @@
 <script lang="ts">
 	import Spinner from '$lib/components/Spinner.svelte';
 	import { onDestroy, onMount } from 'svelte';
+	import { popover } from '$lib/popover.svelte';
 	import Select from '$lib/components/Select.svelte';
 	import Toggle from '$lib/components/Toggle.svelte';
 	import { refusalText } from '$lib/api';
-	import { button, primary } from '$lib/controls';
+	import { button, frosted, primary } from '$lib/controls';
 	import { describe } from '$lib/format';
 	import type { Track } from '$lib/library';
 	import {
@@ -19,12 +20,11 @@
 		type Target
 	} from '$lib/retag';
 
-	// One track's language and flags, open for changing. Inline under its row
-	// rather than over the rows below: a reader is editing this one and reads
-	// the rest after. The edit is sent for every twin named, which is how a
-	// season's untagged original track is fixed in one press.
+	// One track's language and flags. The edit goes to every twin named, which
+	// fixes a season's untagged original track in one press.
 	let {
 		track,
+		trigger,
 		twins,
 		languages,
 		many = false,
@@ -32,6 +32,7 @@
 		oncancel
 	}: {
 		track: Track;
+		trigger: HTMLElement | null;
 		// Every file in the title carrying this track, this file first.
 		twins: Target[];
 		// ISO 639-2/B code to display name, or null while it is being fetched.
@@ -109,17 +110,41 @@
 		}
 	}
 
-	// Into view where it opened under a row near the bottom of the sheet, or
-	// the press seems to do nothing.
+	// Any close is the sheet's cancel.
 	let root: HTMLElement;
-	onMount(() => root.scrollIntoView({ block: 'nearest' }));
+	const form = popover({ edge: 'right', onclose: () => oncancel() });
+	onMount(() => {
+		if (!trigger) return;
+		void form.raise(trigger, root).then(() => root.querySelector('select')?.focus());
+	});
+
+	// Light dismiss on click rather than touch, so a finger landing to scroll
+	// keeps a half-made edit. Never while saving.
+	function outside(event: MouseEvent) {
+		if (form.open && !busy && form.outside(event.target as Node)) form.lower();
+	}
+
+	// Follows the pencil as the sheet scrolls.
+	$effect(() => {
+		const follow = () => form.place();
+		window.addEventListener('scroll', follow, true);
+		return () => window.removeEventListener('scroll', follow, true);
+	});
 
 	const ids = $props.id();
 </script>
 
-<!-- Its own text colour: the row above is faint for a dropped track, and this
-     is a form. -->
-<div bind:this={root} class="rounded-xl border border-line-strong bg-raised p-3 text-fg shadow-lg">
+<svelte:window onclick={outside} onresize={() => form.place()} />
+
+<!-- Resets font and colour, since the row it hangs from is mono and faint
+     when dropped. -->
+<div
+	bind:this={root}
+	popover="manual"
+	role="dialog"
+	aria-label={`Edit tags on ${describe(track)}`}
+	class={`fixed m-0 w-96 max-w-[calc(100vw-1.5rem)] rounded-xl border border-line-strong ${frosted} p-3.5 font-sans text-fg shadow-lg`}
+>
 	<p class="text-[12px] font-medium">
 		Edit tags
 		<span class="ml-1 font-mono text-[11px] font-normal text-faint">{describe(track)}</span>
@@ -196,7 +221,8 @@
 	{/if}
 
 	<div class="mt-3 flex justify-end gap-2">
-		<button type="button" onclick={oncancel} disabled={busy} class={button}>Cancel</button>
+		<button type="button" onclick={() => form.lower()} disabled={busy} class={button}>Cancel</button
+		>
 		<!-- Names the file count when it applies to more than one. -->
 		<button
 			type="button"

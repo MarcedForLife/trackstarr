@@ -124,7 +124,7 @@ const PROVIDER_ID = /(?: \{[^{}]*\})+$/;
 
 /** A file as a truncating line names it: what it is, which one of a series,
  * and the year and release words that go on a line of their own. */
-export type Named = { name: string; episode: string; detail: string };
+export type Named = { name: string; episode: string; detail: string; episodeName?: string };
 
 /**
  * A release file name as a person says it.
@@ -148,8 +148,11 @@ export function named(path: string | undefined): Named {
 	// Nothing but tags: the file name beats an empty line.
 	if (!whole) return { name: base, episode: '', detail: '' };
 	const found = whole.match(EPISODE);
-	if (found)
-		return { name: whole.slice(0, found.index).replace(YEAR, ''), episode: found[1], detail: '' };
+	if (found) {
+		const name = whole.slice(0, found.index).replace(YEAR, '');
+		const episodeName = whole.slice((found.index ?? 0) + found[0].length).trim();
+		return { name, episode: found[1], detail: '', ...(episodeName && { episodeName }) };
+	}
 	const at = whole.match(RELEASE)?.index;
 	if (at === undefined) return { name: whole, episode: '', detail: '' };
 	return { name: whole.slice(0, at), episode: '', detail: whole.slice(at + 1) };

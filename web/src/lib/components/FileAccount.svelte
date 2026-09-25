@@ -2,9 +2,8 @@
 	import type { LibraryFile, Listed } from '$lib/library';
 	import type { Outcome, Summary } from '$lib/retag';
 
-	/** Inline tag editing as the title sheet runs it. Which row is open stays up
-	 * there, so Escape and focus are the sheet's to handle. Null in every other
-	 * panel, which is what keeps their rows shut. */
+	/** Tag editing, run by the title sheet so it can hand focus back. Null
+	 * elsewhere, which keeps the rows shut. */
 	export type Editing = {
 		at: { path: string; stream: number } | null;
 		told: ({ path: string; stream: number } & Summary) | null;
@@ -12,6 +11,8 @@
 		open: (file: LibraryFile, row: Listed, pressed: HTMLElement) => void;
 		done: (file: LibraryFile, row: Listed, outcomes: Outcome[]) => void;
 		cancel: () => void;
+		// The open editor's pencil.
+		trigger: HTMLElement | null;
 	};
 </script>
 
@@ -205,16 +206,17 @@
 				{#if open}
 					{@const track = onDisk(row)}
 					{@const done = editing?.done}
-					<div class="mt-1 font-sans">
-						<TrackEditor
-							{track}
-							twins={matching(siblings, file, track)}
-							languages={editing?.languages ?? null}
-							many={series}
-							ondone={(outcomes) => done?.(file, row, outcomes)}
-							oncancel={() => editing?.cancel()}
-						/>
-					</div>
+					<!-- Only while this row is open, since a press on another pencil opens
+					     that row before this editor sees it as outside. -->
+					<TrackEditor
+						{track}
+						trigger={editing?.trigger ?? null}
+						twins={matching(siblings, file, track)}
+						languages={editing?.languages ?? null}
+						many={series}
+						ondone={(outcomes) => done?.(file, row, outcomes)}
+						oncancel={() => openedFor(row) && editing?.cancel()}
+					/>
 				{:else if told}
 					<!-- What the edit came to, where the form was: the row above already
 					     reads as the file now does, and this says how many others
@@ -260,8 +262,9 @@
 					type="button"
 					onclick={(event) => editing?.open(file, row, event.currentTarget)}
 					aria-expanded={openedFor(row)}
+					aria-haspopup="dialog"
 					aria-label={`Edit tags on ${describe(track)}`}
-					class="-my-1.5 -mr-1 inline-flex min-h-8 min-w-8 items-center justify-center self-center rounded transition-colors hover:bg-raised"
+					class="-my-1.5 -mr-1 inline-flex h-8 w-8 items-center justify-center self-center rounded-full transition-colors hover:bg-raised"
 				>
 					<Glyph name="pencil" size={11} />
 				</button>
