@@ -602,9 +602,10 @@ function pauseFolders(targets: (Title | string)[]) {
 
 export function resumePauses(state: State, titles: (Title | string)[], by: string): void {
 	for (const { folder, id } of pauseFolders(titles)) {
-		if (!state.pauses.some((pause) => pause.path === folder)) continue;
-		state.pauses = state.pauses.filter((pause) => pause.path !== folder);
-		record(state, { event: 'item_resumed', path: folder, title: id, by });
+		const pause = state.pauses.find((pause) => pause.path === folder);
+		if (!pause) continue;
+		state.pauses = state.pauses.filter((other) => other !== pause);
+		record(state, { event: 'item_resumed', path: folder, title: id, paused_at: pause.at, by });
 	}
 	publish('runs');
 	publish('events');

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { capitalized } from '$lib/format';
 	import { changed } from '$lib/library';
 	import type { FileChanges } from '$lib/queue';
 
@@ -36,7 +37,7 @@
 		if (plan?.adds.length) parts.push(`adds ${plan.adds.join(', ')}`);
 		if (plan?.rebuilds.length) parts.push(`rebuilds ${plan.rebuilds.join(', ')}`);
 		if (plan?.drops) parts.push(`drops ${plan.drops} track${plan.drops === 1 ? '' : 's'}`);
-		return parts.join(', ');
+		return capitalized(parts.join(', '));
 	});
 </script>
 

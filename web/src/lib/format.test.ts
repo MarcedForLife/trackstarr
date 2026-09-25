@@ -5,6 +5,7 @@ import {
 	describe as line,
 	named,
 	placeWord,
+	shortTime,
 	titled,
 	wholeUnits
 } from '$lib/format';
@@ -180,4 +181,20 @@ test('a queue place reads as next, then by its order', () => {
 		'22nd',
 		'103rd'
 	]);
+});
+
+test('a moment is as short as its distance from another allows', () => {
+	const from = new Date(2026, 8, 8, 19, 30);
+	const time = (at: Date) =>
+		at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+	const later = new Date(2026, 8, 8, 22, 40);
+	expect(shortTime(later, from)).toBe(time(later));
+	const nextDay = new Date(2026, 8, 9, 3, 30);
+	expect(shortTime(nextDay, from)).toBe(
+		`${nextDay.toLocaleDateString(undefined, { weekday: 'short' })} ${time(nextDay)}`
+	);
+	const weeks = new Date(2026, 8, 22, 3, 30);
+	expect(shortTime(weeks, from)).toBe(
+		weeks.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+	);
 });

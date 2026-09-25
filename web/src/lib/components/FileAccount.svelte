@@ -22,6 +22,7 @@
 	import {
 		badges,
 		bytesFor,
+		capitalized,
 		carriesLanguage,
 		describe,
 		DV_REMOVED,
@@ -167,7 +168,7 @@
 	<ul class="mt-3 list-disc space-y-1 pl-4 text-[12px] text-dim">
 		{#each unpaired as line, at (at)}
 			<li class={line.rides ? 'text-faint' : undefined}>
-				{line.text}{line.rides ? ' (with rewrite)' : ''}
+				{capitalized(line.text)}{line.rides ? ' (with rewrite)' : ''}
 			</li>
 		{/each}
 	</ul>

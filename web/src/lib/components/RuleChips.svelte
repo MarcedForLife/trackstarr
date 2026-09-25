@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ruleLabel } from '$lib/format';
+	import { capitalized, ruleLabel } from '$lib/format';
 	import { frosted } from '$lib/controls';
 	import { popover } from '$lib/popover.svelte';
 	import type { Change } from '$lib/library';
@@ -86,7 +86,7 @@
 							<!-- Marks our fonts carry; see Glyph.svelte. Fixed width so every
 							     line starts on one column whichever mark it takes. -->
 							<span class="w-2 flex-none text-center">{changeMark(line)}</span>
-							<span class="min-w-0">{line}</span>
+							<span class="min-w-0">{capitalized(line)}</span>
 						</li>
 					{/each}
 				</ul>

@@ -203,6 +203,21 @@ export function soon(ts: string): string {
 	return `on ${at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
 }
 
+/** Capitalizes the app's own words. Never a name, a file's words or an error. */
+export function capitalized(text: string): string {
+	return text ? text[0].toUpperCase() + text.slice(1) : text;
+}
+
+/** `at` as briefly as its distance from `from` allows. */
+export function shortTime(at: Date, from: Date): string {
+	if (isNaN(at.getTime())) return '';
+	const time = at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+	const days = Math.abs(Math.round((startOfDay(at) - startOfDay(from)) / DAY_MS));
+	if (days === 0) return time;
+	if (days < 7) return `${at.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
+	return at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
 export const DV_REMOVED = 'Dolby Vision removed';
 
 export function videoDetail(track: {

@@ -4,6 +4,7 @@ import json
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -103,8 +104,12 @@ def test_pausing_twice_changes_nothing_and_says_so():
 def test_the_history_records_who_paused_and_resumed():
     lifecycle.pause("operator")
     lifecycle.resume("operator")
-    kinds = [(entry["event"], entry.get("by")) for entry in read_events()]
+    lines = read_events()
+    kinds = [(entry["event"], entry.get("by")) for entry in lines]
     assert kinds == [("paused", "operator"), ("resumed", "operator")]
+    # Whole seconds, stamped just before the line itself.
+    began = datetime.fromisoformat(lines[1]["paused_at"])
+    assert 0 <= (datetime.fromisoformat(lines[0]["ts"]) - began).total_seconds() <= 1
 
 
 def test_a_stopped_run_tells_its_threads_to_give_up():

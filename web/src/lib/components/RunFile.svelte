@@ -211,7 +211,8 @@
 							class={`flex-none ${row.verdict === 'failed' ? 'font-medium text-danger' : ''}`}
 							>{standing}</span
 						>{/if}
-					{#if clock}<span class="flex-none tabular-nums">{waiting ? `takes ${clock}` : clock}</span
+					{#if clock}<span class="flex-none tabular-nums"
+							>{waiting ? `${place || standing ? 'takes' : 'Takes'} ${clock}` : clock}</span
 						>{/if}
 					<!-- The plan keeps its place once a worker picks the file up. -->
 					{#if waiting || live}<PlanLine {plan} {current} chipsOnly={live} />{/if}

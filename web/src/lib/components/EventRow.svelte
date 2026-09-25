@@ -129,12 +129,12 @@
 						{/each}
 					</span>
 				{/if}
-				{#if shape.status || shape.counts.length || marks.length || reason}
+				{#if shape.status || shape.facts.length || marks.length || reason}
 					<span class={`mt-0.5 text-[12px] text-dim ${dotted}`}>
 						{#if shape.status}
 							<span class={`flex-none font-medium ${shape.status.text}`}>{shape.status.word}</span>
 						{/if}
-						{#each shape.counts as part (part.text)}
+						{#each shape.facts as part (part.text)}
 							<span class={`flex-none ${part.tone}`}>{part.text}</span>
 						{/each}
 						{#if marks.length}

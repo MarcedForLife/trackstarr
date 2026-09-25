@@ -1104,10 +1104,14 @@ export function stopRun(state: State, id: string): Refused | { status: string } 
 }
 
 export function setPaused(state: State, on: boolean, by: string, now = Date.now()): void {
+	const began = state.pausedAt;
 	state.paused = on;
 	state.pausedBy = on ? by : '';
 	state.pausedAt = on ? stamp(now) : '';
-	record(state, { event: on ? 'paused' : 'resumed', by });
+	record(
+		state,
+		on ? { event: 'paused', by } : { event: 'resumed', paused_at: began || undefined, by }
+	);
 	publish('runs');
 	publish('events');
 }
