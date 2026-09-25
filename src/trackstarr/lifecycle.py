@@ -117,6 +117,7 @@ def _set_paused(on: bool, by: str) -> bool:
         with work.scheduler.condition:
             if not work.scheduler.set_paused(on):
                 return False
+            ended = _pause
             _pause = Pause(by, events.timestamp()) if on else Pause()
             record = {"paused": on, "by": _pause.by, "at": _pause.at}
             work.scheduler.condition.notify_all()
@@ -129,7 +130,7 @@ def _set_paused(on: bool, by: str) -> bool:
         if on:
             events.record("paused", by=by or None)
         else:
-            events.record("resumed", by=by or None)
+            events.record("resumed", paused_at=ended.at or None, by=by or None)
         notify.publish(notify.RUNS)
     log.log(
         logging.WARNING if on else logging.INFO,

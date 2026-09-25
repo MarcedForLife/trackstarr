@@ -23,7 +23,7 @@
 	const id = $props.id();
 	let trigger: HTMLButtonElement;
 	let panel: HTMLDivElement;
-	const menu = popover();
+	const menu = popover({ lightDismiss: true });
 
 	// Custom date fields can grow a menu after it opens. Keep it in the viewport.
 	function fit(node: HTMLElement) {
@@ -34,11 +34,6 @@
 		return { destroy: () => observer.disconnect() };
 	}
 </script>
-
-<svelte:window
-	onpointerdown={(event) => menu.open && menu.outside(event.target as Node) && menu.lower()}
-	onresize={() => menu.open && menu.lower()}
-/>
 
 <button
 	bind:this={trigger}

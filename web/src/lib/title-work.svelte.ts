@@ -15,11 +15,12 @@ export type FileActionAdapter = (
 
 /** Accepted actions finish against captured targets; feedback belongs to one opening. */
 export class TitleWorkController {
-	work = $state<TitleWork>();
+	// Raw, since it is replaced whole on every read.
+	work = $state.raw<TitleWork>();
 	workSeen = $state(0);
 	workError = $state('');
 	workBusy = $state(false);
-	pauses = $state<Pause[]>([]);
+	pauses = $state.raw<Pause[]>([]);
 	pauseBusy = $state('');
 	pauseError = $state('');
 	private workTicket = 0;

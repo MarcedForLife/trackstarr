@@ -63,7 +63,7 @@
 {#snippet artwork()}
 	<span
 		aria-hidden="true"
-		class={`relative block aspect-[2/3] shrink-0 self-center overflow-hidden rounded-md border border-line bg-sunken ${shape}`}
+		class={`relative block aspect-[2/3] shrink-0 self-center overflow-hidden rounded-md border border-line bg-sunken transition-[box-shadow,scale] duration-150 ease-out ${shape}`}
 	>
 		<span
 			class="absolute inset-0 flex items-center justify-center text-[11px] font-medium text-faint"
@@ -101,7 +101,7 @@
 		tabindex={picking ? -1 : undefined}
 		aria-hidden={picking ? 'true' : undefined}
 		aria-label={picking ? undefined : `View ${cover?.name || name} details`}
-		class="poster relative z-10 -m-1 flex shrink-0 rounded-lg p-1 disabled:opacity-(--disabled)"
+		class="poster cover-button relative z-10 -m-1 flex shrink-0 rounded-lg p-1 disabled:opacity-(--disabled)"
 	>
 		{@render artwork()}
 	</button>

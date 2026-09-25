@@ -107,7 +107,7 @@
 	{/each}
 </datalist>
 
-<Page eyebrow="Settings" lead="Settings that apply to the whole service.">
+<Page lead="Settings that apply to the whole service.">
 	<!-- Inert while a save is in flight, so the response cannot land on a
 	     keystroke it never carried. min-w-0, or a fieldset will not shrink. -->
 	<fieldset disabled={settings.busy} class="min-w-0">
@@ -125,7 +125,7 @@
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
-					<div class="flex w-full flex-col gap-2 sm:w-72">
+					<div class="flex w-full flex-col gap-2">
 						<Segmented
 							fill
 							options={MODES}
@@ -153,7 +153,7 @@
 				stack
 			>
 				{#snippet children({ labelledBy, describedBy })}
-					<div class="flex w-full flex-col gap-2 sm:w-72">
+					<div class="flex w-full flex-col gap-2">
 						<!-- A datalist: 600 zones is no select. -->
 						<input
 							value={(draft.TZ as string) ?? ''}

@@ -40,6 +40,7 @@
 			"ts": "2026-03-01T11:15:00+13:00",
 			"event": "resumed",
 			"version": "0.0.0",
+			"paused_at": "2026-03-01T11:13:00+13:00",
 			"by": "admin"
 		},
 		{
@@ -95,6 +96,7 @@
 			"version": "0.0.0",
 			"path": "/data/media/tv/Severance",
 			"title": "arr:sonarr:12",
+			"paused_at": "2026-03-01T11:08:00+13:00",
 			"by": "admin"
 		},
 		{

@@ -2,8 +2,6 @@
 // the row through the browser, and would fight this and lose: the compositor
 // scrolls without the main thread. Mouse only.
 
-import { reduced } from '$lib/motion.svelte';
-
 // How far a cursor may move before a click becomes a drag. The cards' tap slop.
 const SLOP = 6;
 
@@ -35,22 +33,6 @@ export function dragScroll(node: HTMLElement) {
 	// one the ease never reaches.
 	let span = 0;
 	let frame = 0;
-
-	// Where the nearest card starts, in the row's scroll coordinates.
-	function nearestCard() {
-		const port = node.getBoundingClientRect().left + node.clientLeft;
-		let best = node.scrollLeft;
-		let closest = Infinity;
-		for (const child of node.children) {
-			const target = node.scrollLeft + (child.getBoundingClientRect().left - port);
-			const away = Math.abs(target - node.scrollLeft);
-			if (away < closest) {
-				closest = away;
-				best = target;
-			}
-		}
-		return Math.min(span, Math.max(0, best));
-	}
 
 	function apply() {
 		frame = 0;
@@ -101,23 +83,10 @@ export function dragScroll(node: HTMLElement) {
 			frame = 0;
 			shown = want;
 			node.scrollLeft = want;
-			// Then glide onto the nearest card, in place of the coast a finger gets.
-			settle();
 		}
 		dragging = false;
 		node.style.cursor = '';
 		node.style.userSelect = '';
-	}
-
-	function settle() {
-		const target = nearestCard();
-		if (target === node.scrollLeft) return;
-		// A reader who asked for less motion gets the jump.
-		if (reduced()) {
-			node.scrollLeft = target;
-			return;
-		}
-		node.scrollTo({ left: target, behavior: 'smooth' });
 	}
 
 	// The click after a drag lands on whatever poster the cursor stopped over.

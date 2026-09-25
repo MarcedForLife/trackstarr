@@ -53,16 +53,6 @@
 		}
 	}
 
-	// What the scheduled sweep does is General's mode setting. Shown here, since
-	// it is what anyone reads this page for.
-	const mode = $derived(((baseline.REWRITE_MODE?.value as string) ?? 'imports').trim());
-
-	const MODE_NOTE: Record<string, string> = {
-		report: 'plans every file and writes /config/pending.tsv, rewriting nothing',
-		imports: 'plans every file and writes /config/pending.tsv, rewriting nothing',
-		all: 'rewrites what it finds'
-	};
-
 	// Admin-only: a viewer would collect a 403 per keystroke.
 	let checked = $state<ScheduleCheck | null>(null);
 	let checking = $state(false);
@@ -176,10 +166,7 @@
 	const cronNote = `${id}-cron`;
 </script>
 
-<Page
-	eyebrow="Settings"
-	lead="The walk over the whole library, catching files that arrived without a webhook."
->
+<Page lead="The walk over the whole library, catching files that arrived without a webhook.">
 	<!-- Inert while a save is in flight, so the response cannot land on a
 	     keystroke it never carried. min-w-0, or a fieldset will not shrink. -->
 	<fieldset disabled={settings.busy} class="min-w-0">
@@ -210,86 +197,81 @@
 						onchange={setScheduled}
 					/>
 				{/snippet}
-			</SettingRow>
-			<SettingRow
-				name="SWEEP_AT"
-				label="Runs at"
-				align="start"
-				desc="A five-field cron schedule: minute, hour, day of month, month, day of week. Pick one from the list or write your own."
-				nested
-				dim={!scheduled}
-				stack
-			>
-				{#snippet children({ labelledBy, describedBy })}
-					<!-- Two controls for one setting, each named, both described by the
-					     row's sentence. -->
-					{@const answered =
-						scheduled && !readOnly && (checked ? !checked.ok || !!checked.runs.length : checking)}
-					{@const said = answered ? `${describedBy} ${cronNote}` : describedBy}
-					<div
-						role="group"
-						aria-labelledby={labelledBy}
-						aria-describedby={describedBy}
-						class="flex w-full flex-col gap-2 sm:w-72"
+				{#snippet nested()}
+					<SettingRow
+						name="SWEEP_AT"
+						label="Runs at"
+						align="start"
+						desc="A five-field cron schedule: minute, hour, day of month, month, day of week. Pick one from the list or write your own."
+						dim={!scheduled}
+						stack
 					>
-						<!-- Common schedules by name. Custom is shown, never picked. -->
-						<select
-							value={schedule}
-							onchange={(event) => (draft.SWEEP_AT = event.currentTarget.value)}
-							aria-label="Common schedules"
-							aria-describedby={describedBy}
-							disabled={envLocked('SWEEP_AT') || !scheduled}
-							class={picker}
-						>
-							{#if !preset}
-								<!-- Carries the expression, so picking it again is a no-op. -->
-								<option value={schedule}>{schedule ? 'Custom' : ''}</option>
-							{/if}
-							{#each PRESETS as option (option.value)}
-								<option value={option.value}>{option.label}</option>
-							{/each}
-						</select>
-						<input
-							value={(draft.SWEEP_AT as string) ?? ''}
-							oninput={(event) => (draft.SWEEP_AT = event.currentTarget.value)}
-							placeholder="0 4 * * *"
-							inputmode="text"
-							autocapitalize="none"
-							autocorrect="off"
-							spellcheck="false"
-							aria-label="Sweep schedule"
-							aria-describedby={said}
-							disabled={envLocked('SWEEP_AT') || !scheduled}
-							class={field}
-						/>
-						<!-- From the service, with the scheduler's parser and clock. -->
-						{#if scheduled && !readOnly}
-							{#if checked && !checked.ok}
-								<p id={cronNote} class={`${noteBox} text-danger`}>{checked.error}</p>
-							{:else if checked?.runs.length}
-								<div id={cronNote} class={`${noteBox} text-dim`}>
-									<p class="text-faint">
-										Next runs{checked.zone ? `, ${checked.zone}` : ''}
-									</p>
-									{#each checked.runs as run (run)}
-										<p class="mt-0.5 font-mono">{runLabel(run)}</p>
+						{#snippet children({ labelledBy, describedBy })}
+							<!-- Two controls for one setting, each named, both described by the
+							     row's sentence. -->
+							{@const answered =
+								scheduled &&
+								!readOnly &&
+								(checked ? !checked.ok || !!checked.runs.length : checking)}
+							{@const said = answered ? `${describedBy} ${cronNote}` : describedBy}
+							<div
+								role="group"
+								aria-labelledby={labelledBy}
+								aria-describedby={describedBy}
+								class="flex w-full flex-col gap-2"
+							>
+								<!-- Common schedules by name. Custom is shown, never picked. -->
+								<select
+									value={schedule}
+									onchange={(event) => (draft.SWEEP_AT = event.currentTarget.value)}
+									aria-label="Common schedules"
+									aria-describedby={describedBy}
+									disabled={envLocked('SWEEP_AT') || !scheduled}
+									class={picker}
+								>
+									{#if !preset}
+										<!-- Carries the expression, so picking it again is a no-op. -->
+										<option value={schedule}>{schedule ? 'Custom' : ''}</option>
+									{/if}
+									{#each PRESETS as option (option.value)}
+										<option value={option.value}>{option.label}</option>
 									{/each}
-								</div>
-							{:else if checking}
-								<p id={cronNote} class={`${noteBox} text-faint`}>Checking…</p>
-							{/if}
-						{/if}
-					</div>
+								</select>
+								<input
+									value={(draft.SWEEP_AT as string) ?? ''}
+									oninput={(event) => (draft.SWEEP_AT = event.currentTarget.value)}
+									placeholder="0 4 * * *"
+									inputmode="text"
+									autocapitalize="none"
+									autocorrect="off"
+									spellcheck="false"
+									aria-label="Sweep schedule"
+									aria-describedby={said}
+									disabled={envLocked('SWEEP_AT') || !scheduled}
+									class={field}
+								/>
+								<!-- From the service, with the scheduler's parser and clock. -->
+								{#if scheduled && !readOnly}
+									{#if checked && !checked.ok}
+										<p id={cronNote} class={`${noteBox} text-danger`}>{checked.error}</p>
+									{:else if checked?.runs.length}
+										<div id={cronNote} class={`${noteBox} text-dim`}>
+											<p class="text-faint">
+												Next runs{checked.zone ? `, ${checked.zone}` : ''}
+											</p>
+											{#each checked.runs as run (run)}
+												<p class="mt-0.5 font-mono">{runLabel(run)}</p>
+											{/each}
+										</div>
+									{:else if checking}
+										<p id={cronNote} class={`${noteBox} text-faint`}>Checking…</p>
+									{/if}
+								{/if}
+							</div>
+						{/snippet}
+					</SettingRow>
 				{/snippet}
 			</SettingRow>
-			{#if scheduled}
-				<p class={`mt-3 ${noteBox} text-dim`}>
-					A scheduled sweep {MODE_NOTE[mode] ?? MODE_NOTE.imports}, which is
-					<a href={resolve('/settings')} class="text-accent underline underline-offset-2">
-						what gets rewritten under General
-					</a>.
-				</p>
-			{/if}
 		</section>
 
 		<section class="mt-8">
@@ -325,26 +307,28 @@
 						onchange={(on) => (draft.IMDB_RATINGS = on)}
 					/>
 				{/snippet}
-			</SettingRow>
-			<!-- For the minutes after switching it on. -->
-			<SettingRow label="Fetch now" desc={scoresNote} align="start" nested dim={!scoresOn}>
-				{#snippet children({ labelledBy, describedBy })}
-					<div class="flex flex-col items-start gap-2 sm:items-end">
-						<button
-							onclick={fetchScores}
-							disabled={readOnly || fetching || !scoresOn || scoresPending}
-							class={button}
-							aria-busy={fetching}
-							aria-labelledby={labelledBy}
-							aria-describedby={describedBy}
-						>
-							<Spinner busy={fetching} />
-							{fetching ? 'Fetching…' : 'Fetch'}
-						</button>
-						{#if fetchNote}
-							<p class="max-w-72 text-[12.5px] text-dim sm:text-right">{fetchNote}</p>
-						{/if}
-					</div>
+				{#snippet nested()}
+					<!-- For the minutes after switching it on. -->
+					<SettingRow label="Fetch now" desc={scoresNote} align="start" dim={!scoresOn}>
+						{#snippet children({ labelledBy, describedBy })}
+							<div class="flex flex-col items-start gap-2 sm:items-end">
+								<button
+									onclick={fetchScores}
+									disabled={readOnly || fetching || !scoresOn || scoresPending}
+									class={button}
+									aria-busy={fetching}
+									aria-labelledby={labelledBy}
+									aria-describedby={describedBy}
+								>
+									<Spinner busy={fetching} />
+									{fetching ? 'Fetching…' : 'Fetch'}
+								</button>
+								{#if fetchNote}
+									<p class="max-w-72 text-[12.5px] text-dim sm:text-right">{fetchNote}</p>
+								{/if}
+							</div>
+						{/snippet}
+					</SettingRow>
 				{/snippet}
 			</SettingRow>
 		</section>

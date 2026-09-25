@@ -2,7 +2,7 @@
 	import Glyph from '$lib/components/Glyph.svelte';
 	import ServiceIcon from '$lib/components/ServiceIcon.svelte';
 	import { SERVICES, type ServiceName } from '$lib/connections';
-	import { button, frosted } from '$lib/controls';
+	import { frosted, markAccent, markWorded } from '$lib/controls';
 	import { popover } from '$lib/popover.svelte';
 
 	// The four services a card can be made for. An *arr can be added again as a
@@ -19,7 +19,7 @@
 	const id = $props.id();
 	let trigger: HTMLButtonElement;
 	let menu: HTMLDivElement;
-	const chooser = popover({ edge: 'left' });
+	const chooser = popover({ edge: 'left', lightDismiss: true });
 
 	function pick(name: ServiceName) {
 		chooser.lower();
@@ -27,19 +27,13 @@
 	}
 </script>
 
-<svelte:window
-	onpointerdown={(event) =>
-		chooser.open && chooser.outside(event.target as Node) && chooser.lower()}
-	onresize={() => chooser.open && chooser.lower()}
-/>
-
 <button
 	bind:this={trigger}
 	type="button"
 	onclick={() => chooser.toggle(trigger, menu)}
 	aria-expanded={chooser.open}
 	aria-controls={id}
-	class={button}
+	class={`${markWorded} ${markAccent}`}
 >
 	<Glyph name="plus" /> New connection
 </button>

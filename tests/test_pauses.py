@@ -10,6 +10,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -150,8 +151,12 @@ def test_pausing_and_resuming_are_both_in_the_history():
     answerable."""
     pauses.place(DUNE, seconds=3600, by="operator")
     pauses.resume(DUNE, by="operator")
-    kinds = [(entry["event"], entry.get("by")) for entry in read_events()]
+    lines = read_events()
+    kinds = [(entry["event"], entry.get("by")) for entry in lines]
     assert kinds == [("item_paused", "operator"), ("item_resumed", "operator")]
+    # Whole seconds, stamped just before the line itself.
+    began = datetime.fromisoformat(lines[1]["paused_at"])
+    assert 0 <= (datetime.fromisoformat(lines[0]["ts"]) - began).total_seconds() <= 1
 
 
 def test_nothing_is_paused_by_default():

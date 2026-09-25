@@ -20,7 +20,12 @@ export type Pause = {
 
 /** "Paused", with the time left when the pause ends. */
 export function pausedFor(pause: Pause): string {
-	return pause.seconds ? `Paused · ${duration(pause.seconds)} left` : 'Paused';
+	return pauseParts(pause).join(' · ');
+}
+
+/** The same in parts, for a line that draws its own dots. */
+export function pauseParts(pause: Pause): string[] {
+	return pause.seconds ? ['Paused', `${duration(pause.seconds)} left`] : ['Paused'];
 }
 
 // Optional, and defaulted at every call: a body without the key is an answer

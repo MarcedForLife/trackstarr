@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'vitest';
-import { bytesFor, describe as line, named, titled, wholeUnits } from '$lib/format';
+import {
+	bytesFor,
+	dated,
+	describe as line,
+	named,
+	placeWord,
+	shortTime,
+	titled,
+	wholeUnits
+} from '$lib/format';
 
 describe('named', () => {
 	test('an episode is said apart from the series it truncates with', () => {
@@ -7,7 +16,12 @@ describe('named', () => {
 			named(
 				'/tv/House of the Dragon/Season 2/House of the Dragon (2022) - S02E05 - Regent [WEBRip-2160p][HDR10][AAC 2.0][h265]-HODL..mkv'
 			)
-		).toEqual({ name: 'House of the Dragon', episode: 'S02E05', detail: '' });
+		).toEqual({
+			name: 'House of the Dragon',
+			episode: 'S02E05',
+			detail: '',
+			episodeName: 'Regent'
+		});
 	});
 
 	test('two rewrites of one series differ where the line cannot cut', () => {
@@ -19,6 +33,13 @@ describe('named', () => {
 
 	test('a double counts as one episode', () => {
 		expect(named('Lost (2004) - S01E01-E02 - Pilot [Bluray-1080p].mkv').episode).toBe('S01E01-E02');
+	});
+
+	test("an episode's own title comes apart from its number", () => {
+		expect(
+			named('Heroes (2006) - S04E01-E02 - Orientation and Jump Push Fall [Bluray-1080p].mkv')
+		).toMatchObject({ episode: 'S04E01-E02', episodeName: 'Orientation and Jump Push Fall' });
+		expect(named('Doctor Who (2005) - S01E01.mkv').episodeName).toBeUndefined();
 	});
 
 	// A film has nothing but its year to be told apart by, so it keeps it,
@@ -43,7 +64,8 @@ describe('named', () => {
 		expect(named('9-1-1 (2018) - S01E01 - Pilot [WEBDL-1080p].mkv')).toEqual({
 			name: '9-1-1',
 			episode: 'S01E01',
-			detail: ''
+			detail: '',
+			episodeName: 'Pilot'
 		});
 		expect(named('Doctor Who (2005) - S01E01 [HDTV-720p].mkv')).toEqual({
 			name: 'Doctor Who',
@@ -149,4 +171,43 @@ describe('bytesFor', () => {
 		expect(bytesFor(undefined, 3600)).toBe(0);
 		expect(bytesFor(640_000, 0)).toBe(0);
 	});
+});
+
+describe('dated', () => {
+	test('takes the year off the release words', () => {
+		expect(dated('(2010) Bluray-1080p')).toEqual({ year: '2010', words: 'Bluray-1080p' });
+		expect(dated('Bluray-1080p')).toEqual({ year: '', words: 'Bluray-1080p' });
+		expect(dated('')).toEqual({ year: '', words: '' });
+	});
+});
+
+test('a queue place reads as next, then by its order', () => {
+	expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 103].map(placeWord)).toEqual([
+		'Next',
+		'2nd',
+		'3rd',
+		'4th',
+		'11th',
+		'12th',
+		'13th',
+		'21st',
+		'22nd',
+		'103rd'
+	]);
+});
+
+test('a moment is as short as its distance from another allows', () => {
+	const from = new Date(2026, 8, 8, 19, 30);
+	const time = (at: Date) =>
+		at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+	const later = new Date(2026, 8, 8, 22, 40);
+	expect(shortTime(later, from)).toBe(time(later));
+	const nextDay = new Date(2026, 8, 9, 3, 30);
+	expect(shortTime(nextDay, from)).toBe(
+		`${nextDay.toLocaleDateString(undefined, { weekday: 'short' })} ${time(nextDay)}`
+	);
+	const weeks = new Date(2026, 8, 22, 3, 30);
+	expect(shortTime(weeks, from)).toBe(
+		weeks.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+	);
 });

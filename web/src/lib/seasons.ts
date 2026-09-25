@@ -20,25 +20,23 @@ const NUMBERED = /^S(\d{1,3})E(\d{1,3})/i;
 const FOLDER = /\/Season[ ._-]*(\d{1,3})\//i;
 const SPECIALS = /\/Specials?\//i;
 
-function seasonOf(file: LibraryFile): number | null {
+// A file's place in its show. An extra's -1 sorts it after the numbered
+// episodes.
+function placed(file: LibraryFile): { season: number | null; episode: number } {
 	const found = named(file.name).episode.match(NUMBERED);
-	if (found) return Number(found[1]);
+	if (found) return { season: Number(found[1]), episode: Number(found[2]) };
 	const folder = file.path.match(FOLDER);
-	if (folder) return Number(folder[1]);
-	return SPECIALS.test(file.path) ? 0 : null;
-}
-
-function episodeOf(file: LibraryFile): number {
-	const found = named(file.name).episode.match(NUMBERED);
-	// An extra belongs behind the numbered episodes, not ahead of them.
-	return found ? Number(found[2]) : -1;
+	const season = folder ? Number(folder[1]) : SPECIALS.test(file.path) ? 0 : null;
+	return { season, episode: -1 };
 }
 
 /** Match the service's file order before pagination, including a single season. */
 export function newestFirst(one: LibraryFile, two: LibraryFile): number {
+	const first = placed(one);
+	const second = placed(two);
 	return (
-		(seasonOf(two) ?? -1) - (seasonOf(one) ?? -1) ||
-		episodeOf(two) - episodeOf(one) ||
+		(second.season ?? -1) - (first.season ?? -1) ||
+		second.episode - first.episode ||
 		one.path.localeCompare(two.path)
 	);
 }
@@ -60,23 +58,22 @@ function rank(number: number | null): number {
  * Null where the grouping would say nothing: a film, or a series in one season.
  */
 export function seasons(files: LibraryFile[]): Season[] | null {
-	const held = new Map<number | null, LibraryFile[]>();
+	const held = new Map<number | null, { file: LibraryFile; episode: number }[]>();
 	for (const file of files) {
-		const number = seasonOf(file);
-		const kept = held.get(number);
-		if (kept) kept.push(file);
-		else held.set(number, [file]);
+		const { season, episode } = placed(file);
+		const kept = held.get(season);
+		if (kept) kept.push({ file, episode });
+		else held.set(season, [{ file, episode }]);
 	}
 	if (held.size < 2) return null;
-	const grouped = [...held].map(([number, episodes]) => ({
-		number,
-		label: label(number),
+	const grouped = [...held].map(([number, entries]) => {
 		// Keep the latest episodes first inside each season.
-		files: episodes.sort(
-			(one, two) => episodeOf(two) - episodeOf(one) || one.name.localeCompare(two.name)
-		),
-		state: worstOf(episodes)
-	}));
+		entries.sort(
+			(one, two) => two.episode - one.episode || one.file.name.localeCompare(two.file.name)
+		);
+		const episodes = entries.map((entry) => entry.file);
+		return { number, label: label(number), files: episodes, state: worstOf(episodes) };
+	});
 	grouped.sort((one, two) => rank(two.number) - rank(one.number));
 	return grouped;
 }

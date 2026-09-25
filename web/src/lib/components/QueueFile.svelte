@@ -1,14 +1,14 @@
 <script lang="ts">
-	import { named, duration } from '$lib/format';
-	import { fileRow, rowGlyph, rowMark, rowMenu } from '$lib/controls';
+	import { dated, named, duration, placeWord } from '$lib/format';
+	import { dotted, fileRow, rowGlyph, rowMark, rowMenu } from '$lib/controls';
 	import type { FileChanges, FileCover, QueueItem } from '$lib/queue';
 	import { warm } from '$lib/plans.svelte';
+	import { tint, tintOf } from '$lib/tint';
 	import FilePlan from './FilePlan.svelte';
 	import PlanLine from './PlanLine.svelte';
 	import Disclosure from './Disclosure.svelte';
 	import FileActions from './FileActions.svelte';
 	import FilePoster from './FilePoster.svelte';
-	import QueuePlace from './QueuePlace.svelte';
 	import Tick from './Tick.svelte';
 
 	let {
@@ -53,6 +53,7 @@
 	const warming = $derived(item.path);
 	$effect(() => warm(warming));
 	const title = $derived(named(item.path));
+	const release = $derived(dated(title.detail));
 	const shown = $derived(cover?.name || title.name);
 	const label = $derived(`${title.name}${title.episode ? ` ${title.episode}` : ''}`);
 	let open = $state(false);
@@ -79,7 +80,10 @@
 {/snippet}
 
 <!-- The `<li>` is the caller's, which is where the list animates it from. -->
-<div class={`${fileRow({ picked: selected, held, armed })} relative py-3`}>
+<div
+	class={`${fileRow({ picked: selected, held, armed })} relative py-3`}
+	use:tint={tintOf(cover?.id)}
+>
 	<Disclosure
 		{id}
 		{open}
@@ -96,52 +100,46 @@
 		onpress={(on) => (held = on)}
 	>
 		{#snippet summary()}
-			<span class="flex items-start gap-2 sm:gap-3">
-				<span class="min-w-0 flex-1">
-					<!-- One line, so a list stands to one height. -->
-					<span class="block truncate text-[13px] leading-snug font-medium" title={shown}
-						>{shown}</span
+			<span class="block min-w-0">
+				<span class="flex items-baseline gap-1.5 text-[14px] leading-snug font-medium">
+					<span class="truncate" title={shown}>{shown}</span>
+					{#if title.episode || release.year}<span
+							class="flex-none text-[12.5px] font-normal text-faint tabular-nums"
+							>{title.episode || release.year}</span
+						>{/if}
+				</span>
+				{#if release.words}<span class={`mt-0.5 text-[12px] text-dim ${dotted}`}
+						><span class="min-w-0 truncate">{release.words}</span></span
+					>{/if}
+				<span class={`mt-0.5 text-[12px] text-dim ${dotted}`}>
+					<!-- The position in the whole queue, not in this filtered page. -->
+					<span class={`flex-none ${item.position === 1 ? 'font-medium text-accent' : ''}`}
+						>{placeWord(item.position)}</span
 					>
-					<!-- One line: the release words truncate rather than wrap. -->
-					<span class="mt-1 flex items-baseline gap-x-2 overflow-hidden">
-						<!-- Where it sits in the whole queue, which is not its place in
-						     this page once a search has cut one. -->
-						<QueuePlace place={item.position} class="flex-none text-[11px]" />
-						{#if title.episode}<span class="flex-none font-mono text-[12px] font-medium text-dim"
-								>{title.episode}</span
-							>{/if}
-						{#if item.expected}<span class="flex-none text-[11px] text-faint"
-								>~{duration(item.expected)}</span
-							>{/if}
-						<!-- Which file of this title, where it has more than one. -->
-						{#if title.detail}<span class="min-w-0 truncate text-[11px] text-faint"
-								>{title.detail}</span
-							>{/if}
-					</span>
-					<!-- The plan takes a line of its own. The cover runs the height of
-					     whatever that leaves. -->
+					{#if item.expected}<span class="flex-none tabular-nums"
+							>takes ~{duration(item.expected)}</span
+						>{/if}
 					<PlanLine {plan} {current} />
 				</span>
 			</span>
 		{/snippet}
 		{#snippet after(chevron)}
-			<!-- The mark, the chevron and the menu in three equal boxes, so the
-			     corner is evenly spaced whatever it holds. Deaf to presses, since a
-			     mark that took one would swallow the hold that raised it. -->
+			<!-- The chevron shows only while picking, when a press on the row picks.
+			     Deaf to presses, or the mark would swallow the hold that raised it. -->
 			<span class="pointer-events-none flex flex-none items-start gap-1">
 				{#if picking || armed}
 					<span class={rowMark}><Tick on={selected || armed} /></span>
 				{/if}
-				<button
-					type="button"
-					onclick={() => (open = !open)}
-					aria-expanded={open}
-					aria-controls={id}
-					aria-hidden={picking ? undefined : 'true'}
-					tabindex={picking ? undefined : -1}
-					aria-label={picking ? `Details for ${label}` : undefined}
-					class={`group pointer-events-auto ${rowGlyph}`}>{@render chevron(true)}</button
-				>
+				{#if picking}
+					<button
+						type="button"
+						onclick={() => (open = !open)}
+						aria-expanded={open}
+						aria-controls={id}
+						aria-label={`Details for ${label}`}
+						class={`group pointer-events-auto ${rowGlyph}`}>{@render chevron(true)}</button
+					>
+				{/if}
 				{#if admin}
 					<FileActions
 						{label}

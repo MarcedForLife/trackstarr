@@ -109,7 +109,7 @@
 
 	<!-- One column at every width: side by side the two read as half-empty boxes
 	     and the shelf was cut to five posters. -->
-	<div class="mt-6 flex flex-col gap-6 lg:gap-8">
+	<div class="mt-8 flex flex-col gap-10 lg:gap-12">
 		<LibraryStrip bind:this={strip} seed={data.library} onopen={look} />
 		<ActivityFeed entries={recent} {titles} onopen={look} />
 	</div>

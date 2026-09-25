@@ -265,11 +265,12 @@ export function chronicle(state: State, now: number): Event[] {
 		by: story.by
 	});
 	story.lines.push({
-		ts: stamp(dayAt(now, 6, 21, 0)),
+		ts: stamp(dayAt(now, 7, 22, 40)),
 		event: 'item_resumed',
 		version,
 		path: charade.spec.sources[0].folder,
 		title: CHARADE,
+		paused_at: stamp(dayAt(now, 7, 19, 30)),
 		by: story.by
 	});
 	story.lines.push({
@@ -288,7 +289,13 @@ export function chronicle(state: State, now: number): Event[] {
 	});
 
 	story.lines.push({ ts: stamp(dayAt(now, 2, 8, 0)), event: 'paused', version, by: story.by });
-	story.lines.push({ ts: stamp(dayAt(now, 2, 8, 41)), event: 'resumed', version, by: story.by });
+	story.lines.push({
+		ts: stamp(dayAt(now, 2, 8, 41)),
+		event: 'resumed',
+		version,
+		paused_at: stamp(dayAt(now, 2, 8, 0)),
+		by: story.by
+	});
 
 	// A re-check of one film, to see what the narrowing would do to it.
 	const recheckAt = dayAt(now, 1, 17, 30);

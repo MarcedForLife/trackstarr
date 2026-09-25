@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ruleLabel } from '$lib/format';
+	import { capitalized, ruleLabel } from '$lib/format';
 	import { frosted } from '$lib/controls';
 	import { popover } from '$lib/popover.svelte';
 	import type { Change } from '$lib/library';
@@ -49,7 +49,7 @@
 	const id = $props.id();
 	let triggers = $state<HTMLButtonElement[]>([]);
 	let panels = $state<HTMLDivElement[]>([]);
-	const chooser = popover({ edge: 'left' });
+	const chooser = popover({ edge: 'left', lightDismiss: true });
 
 	// Sized for the longest line one carries, a cleared release title, without
 	// running to the window edge on a phone.
@@ -58,12 +58,6 @@
 	const ACTING = `${CHIP} bg-accent-soft text-accent`;
 	const RIDES = `${CHIP} text-faint`;
 </script>
-
-<svelte:window
-	onpointerdown={(event) =>
-		chooser.open && chooser.outside(event.target as Node) && chooser.lower()}
-	onresize={() => chooser.open && chooser.lower()}
-/>
 
 <div class="mt-3 flex flex-wrap gap-1.5">
 	{#each chips as chip, at (chip.rule)}
@@ -86,7 +80,7 @@
 							<!-- Marks our fonts carry; see Glyph.svelte. Fixed width so every
 							     line starts on one column whichever mark it takes. -->
 							<span class="w-2 flex-none text-center">{changeMark(line)}</span>
-							<span class="min-w-0">{line}</span>
+							<span class="min-w-0">{capitalized(line)}</span>
 						</li>
 					{/each}
 				</ul>

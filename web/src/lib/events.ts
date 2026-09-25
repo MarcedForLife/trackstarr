@@ -3,7 +3,19 @@
 
 import { request } from '$lib/api';
 import type { GlyphName } from '$lib/components/Glyph.svelte';
-import { basename, duration, DV_REMOVED, named, ruleLabel, size, titled } from '$lib/format';
+import {
+	basename,
+	capitalized,
+	dated,
+	duration,
+	DV_REMOVED,
+	named,
+	ruleLabel,
+	size,
+	shortTime,
+	stamp,
+	titled
+} from '$lib/format';
 // The library's verdict vocabulary, so the history and the library agree on
 // words and colours.
 import { isVerdict, judged, pip, verdictLabel, verdictText, type Card } from '$lib/library';
@@ -66,6 +78,8 @@ export type Event = {
 	index?: number;
 	kind?: string;
 	by?: string;
+	// When a resumed pause began. Absent on older lines.
+	paused_at?: string;
 	// Where a skipped file was: `active` with a worker, `waiting` in line.
 	// Absent on older lines.
 	where?: string;
@@ -288,6 +302,124 @@ export function release(entry: Event): string {
 	return entry.path ? named(entry.path).detail : '';
 }
 
+// Events about one file's rewrite.
+const FILE_EVENTS = new Set(['modified', 'pending', 'failed', 'deferred', 'skipped']);
+const TITLED = new Set([
+	...FILE_EVENTS,
+	'held',
+	'item_paused',
+	'lifted',
+	'item_resumed',
+	'retagged'
+]);
+
+// How many of a run's verdicts its line names before counting the rest.
+const NAMED_VERDICTS = 2;
+
+/** An event split into the parts its row draws. */
+export type EventParts = {
+	title: string;
+	aside: string;
+	meta: string[];
+	// The outcome word, in its colour.
+	status?: { word: string; text: string };
+	// Short items after the status that never truncate, such as verdict counts or
+	// a pause's length.
+	facts: { text: string; tone: string }[];
+	// Why, where the outcome needs it.
+	reason: string;
+	// About one file, whose release words truncate first.
+	file: boolean;
+};
+
+/** `title` is the library's name for the title, where the page has its card. */
+export function parts(entry: Event, title = ''): EventParts {
+	// A webhook for one file is about that file, for several about the delivery.
+	const single = entry.event === 'webhook' && entry.paths?.length === 1 ? entry.paths[0] : '';
+	const path = single || (TITLED.has(entry.event) ? entry.path : '');
+	if (path) {
+		const file = named(path);
+		const { year, words } = dated(file.detail);
+		const base = {
+			title: title || file.name,
+			aside: file.episode || year,
+			meta: words ? [words, ...notes(entry)] : opening(notes(entry)),
+			facts: [],
+			reason: '',
+			file: true
+		};
+		switch (entry.event) {
+			case 'held': // Events written before pause terminology.
+			case 'item_paused':
+			case 'lifted':
+			case 'item_resumed':
+				return {
+					...base,
+					status: PAUSES.has(entry.event)
+						? { word: 'Paused', text: 'text-accent' }
+						: { word: 'Resumed', text: 'text-dim' },
+					facts: pauseFacts(entry).map((text) => ({ text, tone: '' }))
+				};
+			case 'retagged':
+				return {
+					...base,
+					status: { word: 'Edited tags', text: 'text-dim' },
+					reason: [stream(entry), ...retagged(entry)].join(' · ')
+				};
+			case 'webhook':
+				return {
+					...base,
+					status: { word: `Queued by ${entry.arr_label || 'an import'}`, text: 'text-dim' }
+				};
+			default:
+				return { ...base, status: outcome(entry), reason: detail(entry) };
+		}
+	}
+	// A run or the service. A finished run's count moves under the headline, a
+	// stopped run's stays in it.
+	const said = headline(entry, title);
+	const [lead, counted] = said.split(' · ');
+	const rows =
+		entry.event === 'sweep' || entry.event === 'recheck' ? tally(entry.counts ?? {}) : [];
+	const shown = rows.slice(0, NAMED_VERDICTS).map((row) => ({
+		text: phrase(row),
+		tone:
+			(row.state === 'pending' || row.trouble) && isVerdict(row.state) ? verdictText[row.state] : ''
+	}));
+	const rest = rows.slice(NAMED_VERDICTS).reduce((sum, row) => sum + row.count, 0);
+	const facts = rest ? [...shown, { text: `${rest.toLocaleString()} other`, tone: '' }] : shown;
+	return {
+		title: lead,
+		aside: '',
+		meta: under(entry, counted),
+		facts,
+		reason: '',
+		file: false
+	};
+}
+
+/** The line under a run's or the service's headline. */
+function under(entry: Event, counted = ''): string[] {
+	// The service's pause knows no end or length, only when it began.
+	if (entry.event === 'paused') return opening([shortTime(new Date(entry.ts), new Date())]);
+	if (PAUSES.has(entry.event) || RESUMES.has(entry.event)) return opening(pauseFacts(entry));
+	const first =
+		entry.event === 'sweep'
+			? counted
+			: entry.event === 'recheck'
+				? entry.titles === undefined
+					? ''
+					: count(entry.files, 'file')
+				: detail(entry);
+	return first ? [first, ...notes(entry)] : opening(notes(entry));
+}
+
+/** Capitalizes the first item, which leads its line. */
+function opening(items: string[]): string[] {
+	const [first, ...rest] = items;
+	return first ? [capitalized(first), ...rest] : [];
+}
+
 /** How long ago, as a person says it rather than as a clock does. */
 export function ago(ts: string, now = Date.now()): string {
 	const seconds = Math.max(0, (now - new Date(ts).getTime()) / 1000);
@@ -339,12 +471,11 @@ export function detail(entry: Event): string {
 			].join(' · ');
 		case 'paused':
 		case 'resumed':
-		case 'lifted':
-		case 'item_resumed':
-			return '';
 		case 'held': // Events written before pause terminology.
 		case 'item_paused':
-			return entry.seconds ? `For ${duration(entry.seconds)}` : 'Until resumed';
+		case 'lifted':
+		case 'item_resumed':
+			return pauseFacts(entry).join(' · ');
 		case 'skipped':
 			// Older lines have no words for where the file was.
 			return entry.detail ?? 'skipped for this run';
@@ -383,8 +514,32 @@ export function layouts(entry: Event): { adds?: string[]; rebuilds?: string[] } 
 	return { adds: entry.adds, rebuilds: entry.rebuilds };
 }
 
-// Events whose line already spells out how long the pause was placed for.
-const PAUSES = new Set(['held', 'item_paused']);
+// Events placing a pause on a title or the service, and events lifting one.
+const PAUSES = new Set(['held', 'item_paused', 'paused']);
+const RESUMES = new Set(['lifted', 'item_resumed', 'resumed']);
+// Only a title's pause may have an end, so only it says until resumed.
+const OPEN_ENDED = new Set(['held', 'item_paused']);
+
+/** A pause's start, end and length, as far as its event knows. */
+function span(entry: Event): { from?: Date; to?: Date; seconds?: number } {
+	const at = new Date(entry.ts);
+	if (PAUSES.has(entry.event)) {
+		const seconds = entry.seconds || undefined;
+		return { from: at, to: seconds ? new Date(at.getTime() + seconds * 1000) : undefined, seconds };
+	}
+	const from = entry.paused_at ? new Date(entry.paused_at) : undefined;
+	if (!from || isNaN(from.getTime())) return { to: at };
+	return { from, to: at, seconds: Math.max(0, (at.getTime() - from.getTime()) / 1000) };
+}
+
+/** How long a pause ran and its other end, for the row's status line. */
+function pauseFacts(entry: Event): string[] {
+	const { from, to, seconds = 0 } = span(entry);
+	if (!from || !to) return OPEN_ENDED.has(entry.event) ? ['until resumed'] : [];
+	return PAUSES.has(entry.event)
+		? [`for ${duration(seconds)}`, `until ${shortTime(to, from)}`]
+		: [`after ${duration(seconds)}`, `paused ${shortTime(from, to)}`];
+}
 
 /** What the rewrite moved, as chips beside the layouts: the tracks it took
  * away, the container it published under, and what it cost in bytes. */
@@ -430,6 +585,13 @@ function changed(now: Event, before: Event): string[] {
 		.map((field) => `${field}: ${spell(previous[field])} to ${spell(after[field])}`);
 }
 
+// Event sources, named as the overview names runs.
+const SOURCES: Record<string, string> = {
+	sweep: 'Sweep',
+	webhook: 'Import',
+	cli: 'Command line'
+};
+
 /** The rows an opened event shows. `before` is the previous config event;
  * without it a `config` line shows the settings whole. */
 export function details(entry: Event, before?: Event): Detail[] {
@@ -446,10 +608,13 @@ export function details(entry: Event, before?: Event): Detail[] {
 		case 'skipped':
 			add('File', [entry.path], true);
 			add('Replaced', [entry.from_path], true);
-			// A skip's words say where the file was, not what went wrong.
-			add(entry.event === 'skipped' ? outcome(entry).word : 'Problem', [entry.detail]);
-			add('Reasons', entry.reasons ?? []);
-			add('Additional changes', entry.incidental ?? []);
+			// A skip's detail is the app's own words. A failure's is the tool's
+			// message, spelled as it came.
+			if (entry.event === 'skipped')
+				add(outcome(entry).word, [entry.detail && capitalized(entry.detail)]);
+			else add('Problem', [entry.detail]);
+			add('Reasons', (entry.reasons ?? []).map(capitalized));
+			add('Additional changes', (entry.incidental ?? []).map(capitalized));
 			add('Rules', [firedRules(entry).join(', ')]);
 			add('Added', entry.adds ?? []);
 			add('Rebuilt', entry.rebuilds ?? []);
@@ -489,30 +654,41 @@ export function details(entry: Event, before?: Event): Detail[] {
 			}
 			break;
 		}
-		case 'paused':
-		case 'resumed':
-			add('By', [entry.by]);
-			break;
 		case 'settings':
 			add('Changed', moved(entry));
 			add('By', [entry.by]);
 			break;
+		case 'paused':
+		case 'resumed':
 		case 'held': // Events written before pause terminology.
 		case 'item_paused':
 		case 'lifted':
-		case 'item_resumed':
-			// A pause on a whole title is on its folder.
+		case 'item_resumed': {
+			// A title-wide pause's path is its folder. The service's has none.
 			add('Path', [entry.path], true);
+			const pause = span(entry);
+			add('Paused', [pause.from && stamp(pause.from.toISOString())]);
+			add(PAUSES.has(entry.event) ? 'Until' : 'Resumed', [
+				pause.to && stamp(pause.to.toISOString())
+			]);
+			add('Length', [
+				pause.seconds !== undefined
+					? duration(pause.seconds)
+					: OPEN_ENDED.has(entry.event)
+						? 'Until resumed'
+						: undefined
+			]);
 			add('By', [entry.by]);
 			break;
+		}
 		case 'retagged':
 			add('File', [entry.path], true);
 			add('Track', [stream(entry)]);
-			add('Changed', retagged(entry));
+			add('Changed', retagged(entry).map(capitalized));
 			add('By', [entry.by]);
 			break;
 	}
-	add('Source', [entry.source]);
+	add('Source', [entry.source && (SOURCES[entry.source] ?? capitalized(entry.source))]);
 	add('Run', [entry.run], true);
 	add('Settings id', [entry.config_id], true);
 	add('Version', [entry.version], true);

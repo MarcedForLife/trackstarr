@@ -46,18 +46,18 @@ export const removeButton =
 export const noteBox = 'rounded-lg border border-line bg-sunken px-3 py-2 text-[12.5px]';
 
 const rowShape =
-	'rounded-lg border px-2.5 transition-[translate,box-shadow] duration-150 ease-out sm:px-3.5';
+	'rounded-lg border px-2.5 transition-[translate,box-shadow,background-color] duration-150 ease-out sm:px-3.5';
 
 // One whole shadow each rather than a raise stacked on the rest: two arbitrary
 // shadows are the same utility, and the stylesheet's order decides which wins.
-const rowRest = 'shadow-[0_1px_2px_rgb(0_0_0/0.1),0_3px_8px_rgb(0_0_0/0.08)]';
+// The inset line catches light on a dark tile and vanishes on a white one.
+const rowRest =
+	'shadow-[inset_0_1px_0_rgb(255_255_255/0.05),0_1px_2px_rgb(0_0_0/0.1),0_3px_8px_rgb(0_0_0/0.08)]';
 const rowHeld =
 	'relative z-10 -translate-y-0.5 shadow-[0_3px_6px_rgb(0_0_0/0.16),0_14px_28px_rgb(0_0_0/0.22)]';
 
-/** One file lifted off the sunken tray its list sits in, so a row reads as an
- * object rather than a table rule. Picked tints over the fill rather than
- * replacing it, held comes up off the tray with its edge, since a dark shadow
- * on a dark tray says nothing, and armed takes the grid's accent edge. */
+/** A file row lifted off its sunken tray. Held gains an edge, since a dark
+ * shadow on a dark tray shows nothing. */
 export const fileRow = ({ picked = false, held = false, armed = false } = {}) =>
 	`${rowShape} ${held ? rowHeld : rowRest} bg-raised ` +
 	(armed
@@ -66,7 +66,7 @@ export const fileRow = ({ picked = false, held = false, armed = false } = {}) =>
 			? 'border-accent-fill/55'
 			: held
 				? 'border-line-strong'
-				: 'border-line') +
+				: 'border-transparent') +
 	(picked ? ' bg-[linear-gradient(var(--accent-soft),var(--accent-soft))]' : '');
 
 // A control at a file row's corner, its target off `after`: tall, and wide
@@ -139,15 +139,24 @@ export const quietInline =
 export const rowButton =
 	'inline-flex min-h-11 items-center justify-center rounded-lg text-[12px] font-medium disabled:opacity-(--disabled)';
 
-// A button that is only its glyph, as Pause is on a phone. A 44px square with
-// 12px corners reads as a knocked-off box, so it goes round; the word and the
-// corner come back at sm.
-export const glyph = `${control} inline-flex w-11 items-center justify-center gap-2 rounded-full border border-line-strong bg-raised text-[13px] font-medium whitespace-nowrap transition-colors active:bg-sunken disabled:opacity-(--disabled) sm:w-auto sm:rounded-[10px] sm:px-3.5`;
+// Glyph only and round on a phone, worded from sm. Its own height, since
+// `control`'s sm height would fight this one. The caller adds a tone.
+const markShape =
+	'inline-flex flex-none items-center justify-center gap-1.5 whitespace-nowrap transition-colors disabled:opacity-(--disabled)';
+export const mark = `${markShape} h-11 w-11 rounded-full sm:h-9 sm:w-auto sm:rounded-lg sm:px-3 sm:text-[12.5px] sm:font-medium`;
 
-// A button that is only its glyph at every width, as the sweep's pair is: round
-// on a phone, squared off beside other controls from sm up. The caller adds the
-// fill, since these come in weights like the worded buttons do.
-export const iconButton = `${control} inline-flex w-11 flex-none items-center justify-center rounded-full transition-colors disabled:opacity-(--disabled) sm:w-10 sm:rounded-[11px]`;
+// Worded at every width, for rows with room.
+export const markWorded = `${markShape} h-11 rounded-lg px-3 text-[12.5px] font-medium sm:h-9`;
+
+// Mark tones. No face, since the tray around them is the frame.
+export const markQuiet = 'text-dim hover:bg-raised hover:text-fg active:bg-raised';
+export const markAccent = 'text-accent hover:bg-accent-soft active:bg-accent-soft';
+export const markDanger = 'text-danger hover:bg-danger/10 active:bg-danger/10';
+
+// A line of short facts with drawn dots between them, so an omitted item
+// takes its dot with it.
+export const dotted =
+	"flex min-w-0 items-baseline gap-x-1.5 overflow-hidden whitespace-nowrap [&>*+*]:before:mr-1.5 [&>*+*]:before:text-faint [&>*+*]:before:content-['·']";
 
 // What every popover is made of. The tray rather than the card, since most of
 // these open over a card and raised over raised cannot read as glass at any

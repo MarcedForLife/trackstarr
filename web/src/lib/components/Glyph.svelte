@@ -4,6 +4,7 @@
 	export type GlyphName =
 		| 'play'
 		| 'pause'
+		| 'bolt'
 		| 'stop'
 		| 'doc'
 		| 'folder'
@@ -19,20 +20,20 @@
 		| 'list'
 		| 'log'
 		| 'calendar'
-		| 'plus';
+		| 'plus'
+		| 'top'
+		| 'skip';
 </script>
 
 <script lang="ts">
-	// Small marks. The transport three are filled: at 12px a stroked triangle is
-	// a smudge. `doc` is stroked so Plan reads apart from Process beside it.
-	// `next` and `arrow` are drawn because neither font carries U+2192. `cross`
-	// empties a field or drops a row; `chevron` is `next` a shade lighter, for a
-	// row that opens. `refresh` is an arc left open where its tick goes, since a
-	// closed ring with an arrowhead on it is a blot this small. `sliders` says
-	// settings without a gear, whose teeth are mud at 12px. `pencil` marks a
-	// row whose tags open for editing. `list` is a queue, its last line short
-	// for the files still to come. `log` is a prompt and the line it wrote,
-	// since a page of text is `doc` already. `plus` adds a card.
+	// Small marks. The transport three and `skip` are filled, since at 12px a
+	// stroked triangle is a smudge. `bolt` is Process, since a play mark beside
+	// Suspend read as Resume. `doc` is stroked to tell Plan from Process. `next`
+	// and `arrow` are drawn because neither font carries U+2192. `chevron` is
+	// `next` a shade lighter. `refresh` leaves its arc open where the tick goes,
+	// since a closed ring with an arrowhead is a blot this small. `sliders` says
+	// settings without a gear, whose teeth blur at 12px. `log` is a prompt and
+	// its output, since `doc` is taken.
 	let { name, size = 12 }: { name: GlyphName; size?: number } = $props();
 </script>
 
@@ -47,6 +48,13 @@
 	{#if name === 'play'}
 		<!-- Stroked with round joins too, or the corners spike. -->
 		<path d="M5.6 3.9v8.2L12.7 8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"
+		></path>
+	{:else if name === 'bolt'}
+		<path
+			d="M9.5 1.8 4.2 9h3.4l-1 5.2L11.8 7H8.4z"
+			stroke="currentColor"
+			stroke-width="1.2"
+			stroke-linejoin="round"
 		></path>
 	{:else if name === 'pause'}
 		<rect x="3.6" y="3" width="3.2" height="10" rx="1.1"></rect>
@@ -185,6 +193,22 @@
 			<rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
 			<path d="M5 2v3M11 2v3M2.5 7h11" />
 		</g>
+	{:else if name === 'top'}
+		<g
+			fill="none"
+			stroke="currentColor"
+			stroke-width="1.6"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+		>
+			<path d="M3.4 2.6h9.2"></path>
+			<path d="M8 13.4V6.8"></path>
+			<path d="M4.8 9.2 8 6l3.2 3.2"></path>
+		</g>
+	{:else if name === 'skip'}
+		<path d="M3.6 3.9v8.2L9.6 8z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"
+		></path>
+		<rect x="10.6" y="3.2" width="2.4" height="9.6" rx="0.9"></rect>
 	{:else if name === 'cross'}
 		<!-- Half the box, centred: six pixels of stroke at 12px. -->
 		<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">

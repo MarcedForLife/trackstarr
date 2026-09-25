@@ -10,9 +10,19 @@
 		nameProblem as validateName,
 		testConnection,
 		type ConnectionResult,
-		type Service
+		type Service,
+		type ServiceName
 	} from '$lib/connections';
-	import { button, field, noteBox, removeButton } from '$lib/controls';
+	import {
+		button,
+		dotted,
+		field,
+		fileRow,
+		markDanger,
+		markWorded,
+		removeButton,
+		rowMenu
+	} from '$lib/controls';
 	import type { SettingsDraft } from '$lib/draft.svelte';
 
 	// One service: shut, a line saying whether it answers; open, its fields. Owns
@@ -186,19 +196,21 @@
 
 	const callbackEdited = $derived(service.group === 'source' && settings.changed('WEBHOOK_URL'));
 
-	const pill = $derived.by(() => {
-		if (checking) return { label: 'Checking', class: 'text-faint' };
-		if (!configured) return { label: 'Not set', class: 'text-faint' };
-		if (!result) return { label: 'Configured', class: 'text-dim' };
-		if (!result.ok) return { label: 'No answer', class: 'text-danger' };
+	// Held through a re-test, so the glow does not blink off while checking.
+	const answered = $derived.by(() => {
+		if (!configured) return { label: 'Not set', class: 'text-faint', glow: '' };
+		if (!result) return { label: 'Configured', class: 'text-dim', glow: '' };
+		const danger = { class: 'text-danger', glow: 'var(--danger)' };
+		const partly = { label: 'API connected', class: 'text-accent', glow: 'var(--accent)' };
+		if (!result.ok) return { label: 'No answer', ...danger };
 		// A green Connected on an *arr that cannot call back is the lie this
 		// check exists to catch.
-		if (callbackEdited) return { label: 'API connected', class: 'text-accent' };
-		if (result.webhook === 'unreachable') return { label: 'No webhook', class: 'text-danger' };
-		if (service.group === 'source' && result.webhook !== 'connected')
-			return { label: 'API connected', class: 'text-accent' };
-		return { label: 'Connected', class: 'text-ok' };
+		if (callbackEdited) return partly;
+		if (result.webhook === 'unreachable') return { label: 'No webhook', ...danger };
+		if (service.group === 'source' && result.webhook !== 'connected') return partly;
+		return { label: 'Connected', class: 'text-ok', glow: 'var(--ok)' };
 	});
+	const pill = $derived(checking ? { label: 'Checking', class: 'text-faint' } : answered);
 
 	// What an *arr holding the wrong connection, or none, means for the reader.
 	const WEBHOOK_STATE: Record<string, string> = {
@@ -225,79 +237,88 @@
 		return `${state}. Trackstarr registers it on save.`;
 	}
 
-	// The shut card's line shows a connection problem or its address.
-	const line = $derived.by(() => {
-		if (result && !result.ok) return { text: result.detail, class: 'text-danger', mono: false };
-		if (result?.ok && result.webhook && result.webhook !== 'connected') {
-			return {
-				text: WEBHOOK_STATE[result.webhook] ?? '',
-				class: result.webhook === 'unreachable' ? 'text-danger' : 'text-accent',
-				mono: false
-			};
-		}
-		const address = (draft[service.url] as string) ?? '';
-		if (address) return { text: address, class: 'text-dim', mono: true };
-		return { text: '', class: 'text-faint', mono: false };
+	const address = $derived(((draft[service.url] as string) ?? '').trim());
+	const kind = $derived(service.type ?? (service.name as ServiceName));
+
+	// The second line's words after the address.
+	const told = $derived.by(() => {
+		if (!result || checking) return [];
+		const words: { text: string; tone: string }[] = [];
+		if (!result.ok) words.push({ text: result.detail, tone: 'text-danger' });
+		else if (result.webhook && result.webhook !== 'connected')
+			words.push({ text: WEBHOOK_STATE[result.webhook] ?? '', tone: '' });
+		else words.push({ text: result.detail, tone: '' });
+		if (result.paths === 'attention')
+			words.push({ text: 'Paths need attention', tone: 'text-accent' });
+		if (result.paths === 'unknown') words.push({ text: 'Paths not checked', tone: 'text-accent' });
+		return words.filter((word) => word.text);
 	});
 
-	// One field width, and a 28px slot for the clear button whether or not the
-	// row has one, so every box ends on the same line.
-	const entry = `${field} sm:w-64`;
-	const entryRow = 'flex w-full items-center gap-2 sm:w-auto';
+	// A slot for the clear button on every row, so the boxes end in line.
+	const entryRow = 'flex w-full items-center gap-2';
 	const gutter = 'flex w-7 flex-none items-center justify-end';
 </script>
 
-<div class="overflow-hidden rounded-xl border border-line bg-raised">
-	<!-- The whole row is the control. Shut, the fields unmount; the values live
-	     in `draft`. -->
+<div class={`${fileRow()} relative py-3`} data-tint style:--tint={answered.glow || undefined}>
 	<Disclosure
 		id={`${service.name}-fields`}
 		{open}
 		ontoggle={() => (open = !open)}
-		class="group relative flex w-full items-center gap-3 overflow-hidden px-3 py-3 text-left"
-		mark={15}
-		turn="half"
-		press
-		panelClass=""
+		class="group flex w-full items-start text-left after:absolute after:inset-0 after:content-['']"
+		align="start"
+		panelClass="mt-3"
+		beside={logo}
 	>
-		{#snippet summary(chevron)}
-			<ServiceIcon
-				name={service.type ?? (service.name as import('$lib/connections').ServiceName)}
-			/>
-			<span class="min-w-0 flex-1">
-				<span class="flex items-center gap-2">
-					<span class="text-sm font-semibold">{service.label}</span>
+		{#snippet summary()}
+			<span class="block min-w-0 flex-1">
+				<span class="flex items-baseline gap-1.5 text-[14px] leading-snug font-medium">
+					<span class="truncate">{service.label}</span>
+					{#if address}
+						<span class={`flex-none text-[12.5px] ${pill.class}`}>{pill.label}</span>
+					{/if}
 					{#if edited}
-						<span class="h-1.5 w-1.5 flex-none rounded-full bg-accent-fill"></span>
+						<span class="h-1.5 w-1.5 flex-none self-center rounded-full bg-accent-fill"></span>
 						<span class="sr-only">Unsaved changes</span>
 					{/if}
 				</span>
-				{#if line.text}
-					<span
-						class={`mt-0.5 block truncate text-[12.5px] ${line.class} ${line.mono ? 'font-mono' : ''}`}
-					>
-						{line.text}
-					</span>
-				{/if}
-				{#if result?.paths === 'attention' || result?.paths === 'unknown'}
-					<span class="mt-1 block text-[12px] text-accent">
-						{result.paths === 'attention'
-							? 'Library paths need attention'
-							: 'Library paths could not be checked'}
-					</span>
-				{/if}
+				<span class={`mt-0.5 text-[12px] text-dim ${dotted}`}>
+					<!-- The address truncates only once it fills the line alone. -->
+					{#if address}
+						<span class="max-w-full flex-none truncate">{address}</span>
+					{:else}
+						<span class={pill.class}>{pill.label}</span>
+					{/if}
+					{#each told as word, at (at)}
+						<span class={`min-w-0 truncate ${word.tone}`}>{word.text}</span>
+					{/each}
+				</span>
 			</span>
-			<span class={`flex-none text-[11px] font-medium ${pill.class}`}>{pill.label}</span>
-			{@render chevron()}
+		{/snippet}
+
+		{#snippet after()}
+			<button
+				type="button"
+				onclick={() => !checking && test(600)}
+				disabled={readOnly || !configured}
+				aria-label={checking ? `Checking ${service.label}` : `Test ${service.label}`}
+				aria-busy={checking}
+				title="Test"
+				class={rowMenu}
+			>
+				<span class="flex" class:turning={checking}><Glyph name="refresh" size={14} /></span>
+			</button>
 		{/snippet}
 
 		{#snippet panel()}
-			<div class="border-t border-line px-3 pb-1">
+			<!-- The page's control column less the tray, row and box insets. -->
+			<div
+				class="rounded-lg border border-line bg-sunken px-3 [--control-column:calc(21rem-49px)] sm:px-4 [&>*:first-child]:border-t-0"
+			>
 				{#if result}
 					<!-- Dimmed while a fresh answer is on its way, so a repeat press
 					     landing on the same words still reads as having run. -->
 					<div
-						class={`my-3 ${noteBox} transition-opacity duration-150 ${result.ok ? 'text-dim' : 'text-danger'} ${checking ? 'opacity-(--disabled)' : ''}`}
+						class={`border-t border-line py-3 text-[12.5px] transition-opacity duration-150 ${result.ok ? 'text-dim' : 'text-danger'} ${checking ? 'opacity-(--disabled)' : ''}`}
 					>
 						<p>{result.detail}</p>
 						{#if result.ok && webhookNote(result)}
@@ -340,7 +361,7 @@
 								aria-label={`${service.label} address`}
 								aria-describedby={describedBy}
 								disabled={settings.envLocked(service.url)}
-								class={entry}
+								class={field}
 							/>
 							<div class={gutter}></div>
 						</div>
@@ -372,7 +393,7 @@
 								aria-label={`${service.label} ${service.keyLabel.toLowerCase()}`}
 								aria-describedby={describedBy}
 								disabled={settings.envLocked(service.key)}
-								class={entry}
+								class={field}
 							/>
 							<div class={gutter}>
 								{#if kept}
@@ -410,7 +431,7 @@
 									aria-describedby={describedBy}
 									aria-invalid={!!nameProblem}
 									disabled={settings.envLocked(name)}
-									class={entry}
+									class={field}
 								/>
 								<div class={gutter}></div>
 							</div>
@@ -442,7 +463,7 @@
 									aria-label={`${service.label} public address`}
 									aria-describedby={describedBy}
 									disabled={settings.envLocked(name)}
-									class={entry}
+									class={field}
 								/>
 								<div class={gutter}></div>
 							</div>
@@ -480,30 +501,22 @@
 					</SettingRow>
 				{/if}
 
-				<div class="flex justify-end gap-2 py-3">
-					<!-- Held wide, so Checking does not shift it. -->
-					<button
-						type="button"
-						onclick={() => test(600)}
-						disabled={readOnly || !configured || checking}
-						aria-label={checking ? `Checking ${service.label}` : `Test ${service.label}`}
-						aria-busy={checking}
-						class={`min-w-28 flex-none ${button}`}
-					>
-						<span class="flex" class:turning={checking}><Glyph name="refresh" /></span>
-						<span role="status">{checking ? 'Checking…' : 'Test'}</span>
-					</button>
-					{#if onremove}
+				{#if onremove}
+					<div class="-mr-3 flex justify-end border-t border-line py-2 sm:-mr-4">
 						<button
 							type="button"
-							class={button}
+							class={`${markWorded} ${markDanger}`}
 							disabled={readOnly}
 							onclick={onremove}
 							aria-label={`Remove ${service.label}`}>Remove</button
 						>
-					{/if}
-				</div>
+					</div>
+				{/if}
 			</div>
 		{/snippet}
 	</Disclosure>
 </div>
+
+{#snippet logo()}
+	<ServiceIcon name={kind} box={40} size={24} />
+{/snippet}

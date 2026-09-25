@@ -16,7 +16,9 @@ export function whenNear(node: HTMLElement, grow: () => void) {
 			// on the next frame so the render has landed.
 			requestAnimationFrame(rearm);
 		},
-		{ rootMargin: AHEAD }
+		// The enclosing scroller, which clips before a viewport margin counts. Found
+		// by a marker, since reading styles here would force them.
+		{ root: node.closest<HTMLElement>('[data-scroller]'), rootMargin: AHEAD }
 	);
 
 	// Terminates when the caller's `{#if}` unmounts the sentinel.

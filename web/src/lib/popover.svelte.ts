@@ -15,6 +15,8 @@ type Options = {
 	edge?: 'left' | 'right';
 	/** Run as it closes, for a caller keeping its own record of what is up. */
 	onclose?: () => void;
+	/** Close on a press elsewhere or a resize. */
+	lightDismiss?: boolean;
 };
 
 export type Popover = {
@@ -30,7 +32,7 @@ export type Popover = {
 	outside: (target: Node) => boolean;
 };
 
-export function popover({ edge = 'right', onclose }: Options = {}): Popover {
+export function popover({ edge = 'right', onclose, lightDismiss = false }: Options = {}): Popover {
 	let open = $state(false);
 	let trigger = $state<HTMLElement | null>(null);
 	let panel = $state<HTMLElement | null>(null);
@@ -45,6 +47,23 @@ export function popover({ edge = 'right', onclose }: Options = {}): Popover {
 			onclose?.();
 		}
 	});
+
+	// Listens only while open, since a season has two per episode.
+	if (lightDismiss)
+		$effect(() => {
+			if (!open) return;
+			const press = (event: PointerEvent) => {
+				const target = event.target as Node;
+				if (!panel?.contains(target) && !trigger?.contains(target)) held.lower();
+			};
+			const resize = () => held.lower();
+			window.addEventListener('pointerdown', press);
+			window.addEventListener('resize', resize);
+			return () => {
+				window.removeEventListener('pointerdown', press);
+				window.removeEventListener('resize', resize);
+			};
+		});
 
 	function place() {
 		if (!trigger || !panel) return;

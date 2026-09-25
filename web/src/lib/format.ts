@@ -124,7 +124,7 @@ const PROVIDER_ID = /(?: \{[^{}]*\})+$/;
 
 /** A file as a truncating line names it: what it is, which one of a series,
  * and the year and release words that go on a line of their own. */
-export type Named = { name: string; episode: string; detail: string };
+export type Named = { name: string; episode: string; detail: string; episodeName?: string };
 
 /**
  * A release file name as a person says it.
@@ -148,11 +148,30 @@ export function named(path: string | undefined): Named {
 	// Nothing but tags: the file name beats an empty line.
 	if (!whole) return { name: base, episode: '', detail: '' };
 	const found = whole.match(EPISODE);
-	if (found)
-		return { name: whole.slice(0, found.index).replace(YEAR, ''), episode: found[1], detail: '' };
+	if (found) {
+		const name = whole.slice(0, found.index).replace(YEAR, '');
+		const episodeName = whole.slice((found.index ?? 0) + found[0].length).trim();
+		return { name, episode: found[1], detail: '', ...(episodeName && { episodeName }) };
+	}
 	const at = whole.match(RELEASE)?.index;
 	if (at === undefined) return { name: whole, episode: '', detail: '' };
 	return { name: whole.slice(0, at), episode: '', detail: whole.slice(at + 1) };
+}
+
+/** Splits a film's detail into its year and release words. */
+export function dated(detail: string): { year: string; words: string } {
+	const found = detail.match(/^\(((?:19|20)\d\d)\)\s*/);
+	return found
+		? { year: found[1], words: detail.slice(found[0].length) }
+		: { year: '', words: detail };
+}
+
+/** A queue position as a word, Next for the head and ordinals after. */
+export function placeWord(place: number): string {
+	if (place === 1) return 'Next';
+	const tens = place % 100;
+	const suffix = tens >= 11 && tens <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][place % 10] ?? 'th');
+	return `${place.toLocaleString()}${suffix}`;
 }
 
 /** Every part as one, for somewhere with room for all of them. */
@@ -185,6 +204,21 @@ export function soon(ts: string): string {
 	if (days === 1) return `tomorrow at ${time}`;
 	if (days < 7) return `${at.toLocaleDateString(undefined, { weekday: 'long' })} at ${time}`;
 	return `on ${at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+}
+
+/** Capitalizes the app's own words. Never a name, a file's words or an error. */
+export function capitalized(text: string): string {
+	return text ? text[0].toUpperCase() + text.slice(1) : text;
+}
+
+/** `at` as briefly as its distance from `from` allows. */
+export function shortTime(at: Date, from: Date): string {
+	if (isNaN(at.getTime())) return '';
+	const time = at.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+	const days = Math.abs(Math.round((startOfDay(at) - startOfDay(from)) / DAY_MS));
+	if (days === 0) return time;
+	if (days < 7) return `${at.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
+	return at.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
 export const DV_REMOVED = 'Dolby Vision removed';

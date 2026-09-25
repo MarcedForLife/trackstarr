@@ -239,12 +239,22 @@ export function paletteFromHue(hue: number): Derived {
 	return { light: light(whole), dark: dark(whole) };
 }
 
+// Each theme's track, cached since the settings page redrew it every visit.
+const spectra = new Map<string, string[]>();
+
 /** The accent fill around the wheel, for the hue slider's track. */
 export function spectrum(theme: Theme, stops = 12): string[] {
-	return Array.from({ length: stops + 1 }, (_, index) => {
-		const hue = (index * 360) / stops;
-		return paletteFromHue(hue)[theme]['--accent-fill'];
-	});
+	const key = `${theme}:${stops}`;
+	let track = spectra.get(key);
+	if (!track) {
+		const palette = theme === 'light' ? light : dark;
+		track = Array.from(
+			{ length: stops + 1 },
+			(_, index) => palette(wrapHue((index * 360) / stops))['--accent-fill']
+		);
+		spectra.set(key, track);
+	}
+	return track;
 }
 
 /** The tokens as one inline style, for an element painting itself. */

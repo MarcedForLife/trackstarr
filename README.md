@@ -70,8 +70,8 @@ services:
    automatically.
 
 Mount media at the same paths as Radarr and Sonarr, and include those roots in `MEDIA_DIRS`. Set
-`WEBHOOK_URL` if they cannot reach `http://trackstarr:5120`. Use **Test** on each connection to
-check its API, webhook callback and visible library roots.
+`WEBHOOK_URL` if they cannot reach `http://trackstarr:5120`. Each connection's refresh button tests
+its API, webhook callback and visible library roots.
 
 `REWRITE_MODE=imports` is the default. It rewrites new imports and reports changes for library
 sweeps. Use `report` to preview all changes or `all` to rewrite during sweeps too. Review

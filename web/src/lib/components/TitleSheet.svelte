@@ -26,6 +26,7 @@
 
 <script lang="ts">
 	import Spinner from '$lib/components/Spinner.svelte';
+	import Glyph from '$lib/components/Glyph.svelte';
 	import { onDestroy } from 'svelte';
 	import PathDetails from './PathDetails.svelte';
 	import FileVariants from './FileVariants.svelte';
@@ -45,11 +46,11 @@
 	import PosterArt from '$lib/components/PosterArt.svelte';
 	import Sheet, { SLIDE } from '$lib/components/Sheet.svelte';
 	import { MARKS, type MarkName } from '$lib/connections';
-	import { button, control, radius, subtle } from '$lib/controls';
+	import { button, markAccent, markDanger, markQuiet, markWorded, subtle } from '$lib/controls';
 	import { display } from '$lib/display.svelte';
 	import { tiltField } from '$lib/field';
 	import { named, titled } from '$lib/format';
-	import { forTitle, pausedFor } from '$lib/pauses';
+	import { forTitle, pauseParts } from '$lib/pauses';
 	import {
 		coverUrl,
 		initials,
@@ -136,23 +137,19 @@
 			: undefined
 	);
 
-	// The track whose language and flags are open for editing: its file and its
-	// stream index there. One at a time, inline under its row. Admins only,
-	// since it writes to the file.
+	// The track open for editing, by file and stream index. Admins only, since it
+	// writes to the file.
 	let editing = $state<{ path: string; stream: number } | null>(null);
-	// The row button that opened it, so closing hands focus back rather than
-	// dropping it on the body: everything outside the sheet is inert, and the
-	// next Tab would start over at Close.
-	let opener: HTMLElement | null = null;
-	// Escape closes it ahead of the sheet; no history entry, since a form inside
-	// a sheet should not cost a back press.
-	const editor = overlay({
-		close: () => {
-			editing = null;
-			if (up && opener?.isConnected) opener.focus();
-			opener = null;
-		}
-	});
+	// The editor's pencil. Focus returns there, or the next Tab would restart at
+	// Close.
+	let opener = $state.raw<HTMLElement | null>(null);
+	// Every close except Escape and a press outside, which the popover handles.
+	function closeEditor() {
+		const pencil = opener;
+		editing = null;
+		opener = null;
+		if (up && pencil?.isConnected) pencil.focus();
+	}
 	// The language names for its menu, fetched the first time one opens.
 	let languages = $state<Record<string, string> | null>(null);
 	// What the last edit came to, under the row it was made from, until the
@@ -247,9 +244,20 @@
 				parts.push({ key: 'count', value: queueCount, after: noun, tone: 'text-dim' });
 			}
 		}
-		// The separators ride on the parts: a template drops a space at a
-		// block's edge.
-		return parts.map((part, i) => (i ? { ...part, before: ` · ${part.before ?? ''}` } : part));
+		return parts;
+	});
+
+	const stateParts = $derived.by((): Part[] => {
+		if (workStatus.length) return workStatus;
+		if (pause)
+			return pauseParts(pause).map((before, at) => ({
+				key: `pause-${at}`,
+				before,
+				tone: 'text-dim'
+			}));
+		if (verdict)
+			return [{ key: 'verdict', before: verdictSummary, tone: verdictText[verdict] ?? 'text-dim' }];
+		return [];
 	});
 
 	// Settings or a newer version may have made the verdict stale. Not said of
@@ -281,8 +289,8 @@
 		if (pauseError) cancelling = null;
 	}
 
-	// Which buttons the control row holds.
-	const rowState = $derived(!known ? 'reading' : involved || cancelling ? 'working' : 'idle');
+	const rowState = $derived(involved || cancelling ? 'working' : 'idle');
+	const trayMode = $derived(activeWork.length ? 'bar' : !known ? 'reading' : rowState);
 	const showPrioritise = $derived(cancelling ? cancelling.prioritise : queued.length > 0 && !front);
 	const release = () => actions.release(pause);
 
@@ -310,7 +318,7 @@
 		up = true;
 		const loaded = browsing.open(card);
 		actions.open(browsing.session!);
-		editor.lower();
+		closeEditor();
 		retagged = null;
 		await loaded;
 	}
@@ -329,14 +337,6 @@
 	// The services the header offers, whether they have been asked yet or not.
 	const offered = $derived(links ?? detail?.servers ?? []);
 
-	// Equal shares at every width, as the idle row has. Longer series labels wrap
-	// within their share rather than taking it from the others.
-	const cell = $derived(
-		runner && rowState !== 'working'
-			? 'w-full'
-			: 'min-w-0 w-full !px-2 leading-tight !whitespace-normal sm:!px-3.5'
-	);
-
 	// Every close goes through the entry, or the next back would raise the sheet
 	// again. The entry going is what shuts it; see $lib/overlay.
 	export function close() {
@@ -347,7 +347,7 @@
 		up = false;
 		actions.close();
 		browsing.close();
-		editor.lower();
+		closeEditor();
 		retagged = null;
 		emptying = setTimeout(() => {
 			emptying = null;
@@ -364,7 +364,7 @@
 
 	$effect(() => {
 		if (editing && detail && !detail.files.some((file) => file.path === editing?.path))
-			editor.lower();
+			closeEditor();
 	});
 
 	// Whether the box has buttons, not just a line saying what stands: a reader
@@ -374,12 +374,11 @@
 	function edit(file: LibraryFile, row: Listed, pressed: HTMLElement) {
 		const at = editing;
 		if ((at?.path === file.path && at.stream === row.stream) || row.stream === null) {
-			editor.lower();
+			closeEditor();
 			return;
 		}
 		editing = { path: file.path, stream: row.stream };
 		opener = pressed;
-		editor.raise();
 		if (!languages) {
 			// A menu without names is still a menu of codes.
 			getSettings()
@@ -402,7 +401,7 @@
 			)
 				return;
 			retagged = { path: file.path, stream: row.stream, ...summarise(outcomes) };
-			editor.lower();
+			closeEditor();
 			// The rows around it are a verdict out of date.
 			void session.reload();
 		};
@@ -421,7 +420,8 @@
 					languages,
 					open: edit,
 					done: completion(),
-					cancel: () => editor.lower()
+					cancel: closeEditor,
+					trigger: opener
 				}
 			: null
 	);
@@ -477,21 +477,12 @@
 								.join(' · ')}
 						{:else}{@render holding('w-40')}{/if}
 					</p>
-					<p class="mt-2 text-[13px] font-medium">
-						{#if known && (workStatus.length || pause || verdict)}
-							{#if workStatus.length}
-								{#each workStatus as part (part.key)}<span class={part.tone}
-										>{part.before}{#if part.place}<QueuePlace
-												place={part.place}
-												size={12}
-											/>{:else if part.value !== undefined}<Count
-												value={part.value}
-											/>{/if}{part.after}</span
-									>{/each}
-							{:else}<span class={pause ? 'text-dim' : (verdictText[verdict!] ?? 'text-dim')}
-									>{pause ? pausedFor(pause) : verdictSummary}</span
-								>{/if}
-						{:else}{@render holding('w-24')}{/if}
+					<p
+						class="mt-2 text-[13px] font-medium [&>*+*]:before:mx-1 [&>*+*]:before:text-faint [&>*+*]:before:content-['·']"
+					>
+						{#if known && stateParts.length}{@render said(stateParts, 12)}{:else}{@render holding(
+								'w-24'
+							)}{/if}
 					</p>
 					{#if staleVerdict}
 						<p class="mt-1 text-[12px] text-dim">
@@ -539,118 +530,57 @@
 				{/if}
 			</div>
 
-			<!-- One sunken block, near the thumb, for everything here that does
-			     something. Pause sits with the runs: it answers the same question, and
-			     Process on a paused title rewrites nothing. A run takes the row over. -->
-			{#if acting || involved}
+			<!-- Pause sits with the runs, since Process on a paused title rewrites
+			     nothing. -->
+			{#if acting || activeWork.length}
 				<div
 					role="group"
 					aria-label="Title controls"
-					class="mt-4 rounded-xl border border-line bg-sunken p-3"
+					class="relative mt-4 rounded-xl border border-line bg-sunken"
 				>
+					{#key trayMode}
+						<div out:swapLeave in:fade={rowFade()}>
+							{#if trayMode === 'bar'}
+								<!-- Pulled left by their padding, so wrapped marks line up with the state
+								     and one line uses it as the gap. -->
+								<div
+									class={`flex min-h-11 flex-wrap items-center gap-x-3 pr-2 pl-3 sm:pr-3 sm:pl-4 ${acting ? 'py-1 sm:py-2' : 'py-3 sm:py-2'}`}
+								>
+									<p
+										class={`min-w-0 flex-auto text-[17px] leading-tight font-semibold tracking-tight [&>*+*]:before:mx-1.5 [&>*+*]:before:text-faint [&>*+*]:before:content-['·'] ${acting ? 'py-2.5 sm:py-0' : ''}`}
+									>
+										{@render said(workStatus, 15)}
+									</p>
+									{#if acting}
+										<div class="-ml-3 flex flex-none items-center gap-2">
+											{@render controls('')}
+										</div>
+									{/if}
+								</div>
+							{:else}
+								<div class="grid auto-cols-fr grid-flow-col gap-1.5 p-1.5">
+									{#if trayMode === 'reading'}
+										<!-- Holds the row's height until the queue answers. -->
+										<span class="h-11 sm:h-9" aria-hidden="true"></span>
+									{:else}
+										{@render controls(
+											'w-full min-w-0 !px-2 text-center leading-tight !whitespace-normal'
+										)}
+									{/if}
+								</div>
+							{/if}
+						</div>
+					{/key}
+					{#if alarm}
+						<p role="alert" class="px-3 pb-3 text-[12.5px] text-danger sm:px-4">{alarm}</p>
+					{/if}
 					<!-- This title's work. The floating bar shows the run. -->
-					{#if (known || !acting) && activeWork.length}
-						<div class={`space-y-2.5 ${acting ? 'mb-3' : ''}`}>
+					{#if activeWork.length}
+						<div class="space-y-2.5 px-3 pt-1.5 pb-3 sm:px-4 sm:pb-4">
 							{#each activeWork as file (file.path)}
 								<FileProgress {file} age={workAge} caption={worked(file.path)} />
 							{/each}
 						</div>
-					{/if}
-					{#if acting}
-						<!-- Positioned for the leaving state. -->
-						<div class="relative">
-							{#key rowState}
-								<div out:swapLeave in:fade={rowFade()}>
-									{#if rowState === 'reading'}
-										<!-- Placeholders at the idle row's size until the queue answers, which decides
-										     the buttons. -->
-										<div class="grid auto-cols-fr grid-flow-col gap-3" aria-hidden="true">
-											{#each { length: runner ? 3 : 1 }, at (at)}
-												<span class={`${control} ${radius} border border-line bg-raised`}></span>
-											{/each}
-										</div>
-									{:else}
-										<!-- One row of equal columns at every width. -->
-										<div
-											class={runner && rowState === 'idle'
-												? 'grid grid-cols-3 items-center gap-3'
-												: 'grid auto-cols-fr grid-flow-col items-center gap-2 sm:gap-3'}
-										>
-											{#if runner && rowState === 'idle'}
-												<RunButtons
-													columns
-													mayRewrite={runner.mayRewrite}
-													refuses={runner.refuses}
-													disabled={runner.starting || !!runner.run || workBusy || !!workError}
-													busy={runner.busy}
-													onrun={(mode) => opened && runner.onrun(opened.id, mode)}
-												/>
-											{/if}
-											{#if admin && rowState === 'working'}
-												{#if showPrioritise}<button
-														class={`${cell} ${button}`}
-														disabled={workBusy || !!workError || stoppingWork || !!cancelling}
-														onclick={() => queueAct('top')}
-														>{manyFiles ? 'Prioritise all' : 'Prioritise'}</button
-													>{/if}
-												<button
-													class={`${cell} ${button} text-danger`}
-													disabled={workBusy || !!workError || stoppingWork || !!cancelling}
-													aria-busy={!!cancelling}
-													onclick={cancel}
-												>
-													<Spinner busy={!!cancelling} />
-													{cancelling
-														? cancelling.label
-														: activeWork.length
-															? manyFiles
-																? 'Cancel all'
-																: 'Cancel'
-															: manyFiles
-																? 'Skip all'
-																: 'Skip'}
-												</button>
-											{/if}
-											{#if admin}
-												<div class="relative grid">
-													{#if pause}
-														<button
-															onclick={release}
-															disabled={!!pauseBusy || workBusy || !!workError}
-															aria-busy={pauseBusy === 'resume'}
-															class={`${cell} ${button}`}
-															out:swapLeave
-															in:fade={rowFade()}
-														>
-															<Spinner busy={pauseBusy === 'resume'} />
-															{pauseBusy === 'resume' ? 'Resuming…' : 'Resume'}
-														</button>
-													{:else}
-														<div class="grid" out:swapLeave in:fade={rowFade()}>
-															{#key sheetSession}
-																<PauseMenu
-																	label={opened.name}
-																	onchoose={keep}
-																	disabled={!!pauseBusy || workBusy || !!workError}
-																	hint={involved
-																		? 'Stops this title’s current work. A later sweep can process it after the pause ends.'
-																		: 'A later sweep can process this title after the pause ends.'}
-																	class={`${cell} ${button}`}
-																/>
-															{/key}
-														</div>
-													{/if}
-												</div>
-											{/if}
-										</div>
-									{/if}
-								</div>
-							{/key}
-						</div>
-					{/if}
-
-					{#if alarm}
-						<p role="alert" class={`text-[12px] text-danger ${acting ? 'mt-2.5' : ''}`}>{alarm}</p>
 					{/if}
 				</div>
 			{/if}
@@ -698,7 +628,7 @@
 								selections={browsing.reading.selectedPaths}
 								{group}
 								disabled={workBusy}
-								onchange={() => editor.lower()}
+								onchange={closeEditor}
 								children={card}
 							/>
 						{/each}
@@ -739,6 +669,92 @@
 	{@const logo = mark(server.server)}
 	{#if logo}<ServiceIcon name={logo} box={20} size={14} />{/if}
 	<span class="sr-only">Open in </span>{server.label}
+{/snippet}
+
+<!-- `shape` makes each mark a column of the caller's row. -->
+{#snippet controls(shape: string)}
+	{#if runner && rowState === 'idle'}
+		<RunButtons
+			marks
+			mayRewrite={runner.mayRewrite}
+			refuses={runner.refuses}
+			disabled={runner.starting || !!runner.run || workBusy || !!workError}
+			busy={runner.busy}
+			onrun={(mode) => opened && runner.onrun(opened.id, mode)}
+		/>
+	{/if}
+	{#if admin && rowState === 'working'}
+		{#if showPrioritise}<button
+				class={`${markWorded} ${markQuiet} ${shape}`}
+				disabled={workBusy || !!workError || stoppingWork || !!cancelling}
+				onclick={() => queueAct('top')}
+				><Glyph name="top" size={13} />{manyFiles ? 'Prioritise all' : 'Prioritise'}</button
+			>{/if}
+		<button
+			class={`${markWorded} ${markDanger} ${shape}`}
+			disabled={workBusy || !!workError || stoppingWork || !!cancelling}
+			aria-busy={!!cancelling}
+			onclick={cancel}
+		>
+			<Spinner
+				glyph={activeWork.length ? 'stop' : 'skip'}
+				size={activeWork.length ? 10 : 12}
+				busy={!!cancelling}
+			/>
+			{cancelling
+				? cancelling.label
+				: activeWork.length
+					? manyFiles
+						? 'Cancel all'
+						: 'Cancel'
+					: manyFiles
+						? 'Skip all'
+						: 'Skip'}
+		</button>
+	{/if}
+	{#if admin}
+		<div class="relative grid">
+			{#if pause}
+				<button
+					onclick={release}
+					disabled={!!pauseBusy || workBusy || !!workError}
+					aria-busy={pauseBusy === 'resume'}
+					class={`${markWorded} ${markAccent} ${shape}`}
+					out:swapLeave
+					in:fade={rowFade()}
+				>
+					<Spinner glyph="play" size={14} busy={pauseBusy === 'resume'} />
+					{pauseBusy === 'resume' ? 'Resuming…' : 'Resume'}
+				</button>
+			{:else}
+				<div class="grid" out:swapLeave in:fade={rowFade()}>
+					{#key sheetSession}
+						<PauseMenu
+							label={opened?.name ?? 'this title'}
+							onchoose={keep}
+							edge="right"
+							disabled={!!pauseBusy || workBusy || !!workError}
+							hint={involved
+								? 'Stops this title’s current work. A later sweep can process it after the pause ends.'
+								: 'A later sweep can process this title after the pause ends.'}
+							class={`${markWorded} ${markQuiet} ${shape}`}
+						/>
+					{/key}
+				</div>
+			{/if}
+		</div>
+	{/if}
+{/snippet}
+
+<!-- One span per part, so the line draws its dots. Typed dots at 17px read
+     6 · 1 as 6.1. -->
+{#snippet said(parts: Part[], placeSize: number)}
+	{#each parts as part (part.key)}<span class={part.tone}
+			>{part.before}{#if part.place}<QueuePlace
+					place={part.place}
+					size={placeSize}
+				/>{:else if part.value !== undefined}<Count value={part.value} />{/if}{part.after}</span
+		>{/each}
 {/snippet}
 
 <!-- A line the title's own read has still to fill in, held at its height so the
@@ -803,7 +819,7 @@
 							selections={browsing.reading.selectedPaths}
 							{group}
 							disabled={workBusy}
-							onchange={() => editor.lower()}
+							onchange={closeEditor}
 							children={card}
 						/>
 					{/each}

@@ -11,7 +11,7 @@
 		type Service,
 		type ServiceName
 	} from '$lib/connections';
-	import { button, field } from '$lib/controls';
+	import { field, fileRow, markQuiet, markWorded, rowWord } from '$lib/controls';
 	import ConnectionCard from '$lib/components/ConnectionCard.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
 	import NewConnection from '$lib/components/NewConnection.svelte';
@@ -200,37 +200,42 @@
 
 {#snippet card(service: Service)}
 	{#if removed[service.name]}
-		<div class="rounded-xl border border-line bg-raised p-3">
-			<p class="text-sm font-semibold">{removed[service.name].service.label}</p>
-			<p role="status" class="mt-1 text-[13px] text-dim">
-				{service.group === 'source'
-					? 'Will be removed on save. Imports from this connection will no longer be accepted.'
-					: 'Will be removed on save. It will no longer be asked to rescan.'}
-			</p>
+		<li class={`${fileRow()} flex items-start gap-3 py-3`}>
+			<div class="min-w-0 flex-1">
+				<p class="text-[14px] leading-snug font-medium text-dim line-through">
+					{removed[service.name].service.label}
+				</p>
+				<p role="status" class="mt-0.5 text-[12px] text-dim">
+					{service.group === 'source'
+						? 'Removed on save. Imports from it will no longer be accepted.'
+						: 'Removed on save. It will no longer be asked to rescan.'}
+				</p>
+			</div>
 			<button
 				type="button"
-				class={`${button} mt-2`}
+				class={`${rowWord} mt-0`}
 				onclick={() => undoRemoval(service.name)}
 				aria-label={`Undo removal of ${removed[service.name].service.label}`}>Undo</button
 			>
-		</div>
+		</li>
 	{:else}
-		<ConnectionCard
-			bind:this={cards[service.name]}
-			{service}
-			{settings}
-			{readOnly}
-			cleared={!!cleared[service.key]}
-			onclear={(yes) => (cleared[service.key] = yes)}
-			opened={!!opened[service.name]}
-			onname={service.nameField ? (typed) => rename(service, typed) : undefined}
-			onremove={removable(service) ? () => remove(service) : undefined}
-		/>
+		<li>
+			<ConnectionCard
+				bind:this={cards[service.name]}
+				{service}
+				{settings}
+				{readOnly}
+				cleared={!!cleared[service.key]}
+				onclear={(yes) => (cleared[service.key] = yes)}
+				opened={!!opened[service.name]}
+				onname={service.nameField ? (typed) => rename(service, typed) : undefined}
+				onremove={removable(service) ? () => remove(service) : undefined}
+			/>
+		</li>
 	{/if}
 {/snippet}
 
 <Page
-	eyebrow="Settings"
 	lead="The services trackstarr talks to, and how imports are handled. Changes apply without a restart."
 >
 	<!-- Inert while a save is in flight, so the response cannot land on a
@@ -253,7 +258,7 @@
 				disabled={readOnly || testingAll}
 				aria-label={testingAll ? 'Checking every connection' : 'Test every connection'}
 				aria-busy={testingAll}
-				class={`min-w-30 flex-none ${button}`}
+				class={`min-w-28 ${markWorded} ${markQuiet}`}
 			>
 				<span class="flex" class:turning={testingAll}><Glyph name="refresh" /></span>
 				<span role="status">{testingAll ? 'Checking…' : 'Test all'}</span>
@@ -267,13 +272,13 @@
 				save.
 			</p>
 		</div>
-		<div class="mt-3 flex flex-col gap-2">
+		<ul class="mt-3 flex flex-col gap-2 rounded-2xl border border-line bg-sunken p-3 sm:p-4">
 			{#each SOURCES as service (service.name)}
 				{@render card(service)}
 			{:else}
-				<p class="text-[13px] text-faint">None yet.</p>
+				<li class="px-1 py-2 text-[13px] text-faint">None yet.</li>
 			{/each}
-		</div>
+		</ul>
 
 		<div class="mt-7">
 			<p class="text-[13px] font-semibold">Libraries</p>
@@ -281,13 +286,13 @@
 				The media servers told to rescan what was rewritten.
 			</p>
 		</div>
-		<div class="mt-3 flex flex-col gap-2">
+		<ul class="mt-3 flex flex-col gap-2 rounded-2xl border border-line bg-sunken p-3 sm:p-4">
 			{#each LIBRARIES as service (service.name)}
 				{@render card(service)}
 			{:else}
-				<p class="text-[13px] text-faint">None yet.</p>
+				<li class="px-1 py-2 text-[13px] text-faint">None yet.</li>
 			{/each}
-		</div>
+		</ul>
 
 		<section class="mt-8">
 			<p class="pb-2 text-[13px] font-semibold">Callback</p>
@@ -309,7 +314,7 @@
 						aria-labelledby={labelledBy}
 						aria-describedby={describedBy}
 						disabled={envLocked('WEBHOOK_URL')}
-						class={`${field} sm:w-64`}
+						class={field}
 					/>
 				{/snippet}
 			</SettingRow>
@@ -334,27 +339,28 @@
 						onchange={(on) => (draft.SKIP_HARDLINKS = on)}
 					/>
 				{/snippet}
-			</SettingRow>
-			<SettingRow
-				name="HARDLINK_RECHECK"
-				label="Recheck every"
-				align="start"
-				desc="How often a waiting file is checked again, so it is rewritten shortly after seeding ends."
-				note={recheckNote}
-				nested
-				dim={!draft.SKIP_HARDLINKS}
-			>
-				{#snippet children({ labelledBy, describedBy })}
-					<NumberField
-						value={text('HARDLINK_RECHECK')}
-						onchange={(value) => (draft.HARDLINK_RECHECK = value)}
-						{labelledBy}
-						{describedBy}
-						unit="seconds"
-						problem={recheckProblem()}
-						note={wholeUnits(Number(text('HARDLINK_RECHECK')))}
-						disabled={envLocked('HARDLINK_RECHECK')}
-					/>
+				{#snippet nested()}
+					<SettingRow
+						name="HARDLINK_RECHECK"
+						label="Recheck every"
+						align="start"
+						desc="How often a waiting file is checked again, so it is rewritten shortly after seeding ends."
+						note={recheckNote}
+						dim={!draft.SKIP_HARDLINKS}
+					>
+						{#snippet children({ labelledBy, describedBy })}
+							<NumberField
+								value={text('HARDLINK_RECHECK')}
+								onchange={(value) => (draft.HARDLINK_RECHECK = value)}
+								{labelledBy}
+								{describedBy}
+								unit="seconds"
+								problem={recheckProblem()}
+								note={wholeUnits(Number(text('HARDLINK_RECHECK')))}
+								disabled={envLocked('HARDLINK_RECHECK')}
+							/>
+						{/snippet}
+					</SettingRow>
 				{/snippet}
 			</SettingRow>
 		</section>

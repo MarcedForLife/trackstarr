@@ -499,7 +499,7 @@ describe('the refusals', () => {
 		expect(radarr.hint).toContain('/data/media/movies:');
 		expect(radarr.hint).toContain('inside MEDIA_DIRS');
 		const plex = await post<ConnectionResult>('/api/connections/test', { service: 'plex' });
-		expect(plex).toMatchObject({ ok: true, detail: 'Plex, 2 libraries on tower', webhook: '' });
+		expect(plex).toMatchObject({ ok: true, detail: 'Plex, 2 libraries on Yggdrasil', webhook: '' });
 	});
 
 	test('checks a sweep path the way the service checks it', async () => {

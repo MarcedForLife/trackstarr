@@ -314,7 +314,7 @@
 	{@const problem = shareProblem(value, share)}
 	{@const note = problem ? '' : shareNote(value, share, rated)}
 	{@const line = shareLine(name)}
-	<SettingRow {name} {label} align="start" {desc} nested stack dim={off}>
+	<SettingRow {name} {label} align="start" {desc} stack dim={off}>
 		{#snippet children({ labelledBy, describedBy })}
 			<div class="flex w-full flex-col items-start gap-1.5 sm:items-end">
 				<div class="flex items-center gap-2">
@@ -342,7 +342,7 @@
 	</SettingRow>
 {/snippet}
 
-<Page eyebrow="Settings" lead="What a rewrite keeps, drops and generates.">
+<Page lead="What a rewrite keeps, drops and generates.">
 	<!-- Inert while a save is in flight, so the response cannot land on a
 	     keystroke it never carried. min-w-0, or a fieldset will not shrink. -->
 	<fieldset disabled={settings.busy} class="min-w-0">
@@ -423,30 +423,31 @@
 						onchange={(value) => (draft[ruleVar('regenerate')] = value)}
 					/>
 				{/snippet}
-			</SettingRow>
-			<SettingRow
-				name="REGENERATE_SCOPE"
-				label="Rebuild which tracks"
-				desc="Generated rebuilds a downmix trackstarr made once its codec or bitrate no longer matches its layout. All also replaces any other layout-sized track reporting under the low-bitrate share. Either way a replacement is a fresh downmix from a surviving bigger track."
-				nested
-				stack
-				dim={!ruleOn('regenerate')}
-			>
-				{#snippet children({ labelledBy, describedBy })}
-					<Segmented
-						fill
-						options={scopeOptions}
-						{labelledBy}
-						{describedBy}
-						value={draft.REGENERATE_SCOPE as string}
-						disabled={envLocked('REGENERATE_SCOPE') || !ruleOn('regenerate')}
-						onchange={(value) => (draft.REGENERATE_SCOPE = value)}
-					/>
+				{#snippet nested()}
+					<SettingRow
+						name="REGENERATE_SCOPE"
+						label="Rebuild which tracks"
+						desc="Generated rebuilds a downmix trackstarr made once its codec or bitrate no longer matches its layout. All also replaces any other layout-sized track reporting under the low-bitrate share. Either way a replacement is a fresh downmix from a surviving bigger track."
+						stack
+						dim={!ruleOn('regenerate')}
+					>
+						{#snippet children({ labelledBy, describedBy })}
+							<Segmented
+								fill
+								options={scopeOptions}
+								{labelledBy}
+								{describedBy}
+								value={draft.REGENERATE_SCOPE as string}
+								disabled={envLocked('REGENERATE_SCOPE') || !ruleOn('regenerate')}
+								onchange={(value) => (draft.REGENERATE_SCOPE = value)}
+							/>
+						{/snippet}
+					</SettingRow>
+					{#each shares as share (share.name)}
+						{@render shareRow(share)}
+					{/each}
 				{/snippet}
 			</SettingRow>
-			{#each shares as share (share.name)}
-				{@render shareRow(share)}
-			{/each}
 			{@render ruleRow({
 				rule: 'commentary',
 				label: 'Commentary',

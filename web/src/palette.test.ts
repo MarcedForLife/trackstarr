@@ -50,9 +50,12 @@ const themed = new Map<string, Record<string, string>>(
 	)
 );
 
+/** Registered colours a row sets on itself, which no palette touches. */
+const ROW_OWN = new Set(['--tint']);
+
 /** The registered colours the palettes are answerable for. */
 const paletteInitial = new Map(
-	[...initial].filter(([name]) => !(name in (themed.get('dark') ?? {})))
+	[...initial].filter(([name]) => !(name in (themed.get('dark') ?? {})) && !ROW_OWN.has(name))
 );
 
 const DEFAULT = 'brass dark';

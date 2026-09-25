@@ -140,7 +140,7 @@ const CONNECTIONS: Record<string, { label: string; key: string; detail: string; 
 	plex: {
 		label: 'Plex',
 		key: 'PLEX_TOKEN',
-		detail: 'Plex, 2 libraries on tower',
+		detail: 'Plex, 2 libraries on Yggdrasil',
 		arr: false
 	},
 	jellyfin: {

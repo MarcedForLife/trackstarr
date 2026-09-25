@@ -1,5 +1,22 @@
-import { describe, expect, test } from 'vitest';
-import { detail, details, headline, measures, outcome, searchable, type Event } from '$lib/events';
+import { describe, expect, test, vi } from 'vitest';
+import {
+	detail,
+	details,
+	headline,
+	measures,
+	outcome,
+	parts,
+	searchable,
+	type Event
+} from '$lib/events';
+
+// A time of day in the test's own locale, as the rows print one.
+function clock(hour: number, minute: number): string {
+	return new Date(2026, 8, 8, hour, minute).toLocaleTimeString(undefined, {
+		hour: 'numeric',
+		minute: '2-digit'
+	});
+}
 
 function entry(over: Partial<Event> = {}): Event {
 	return {
@@ -92,8 +109,8 @@ describe('a file taken off its run', () => {
 
 	test('opens to the plan the rewrite had, and who stopped it', () => {
 		const rows = Object.fromEntries(details(cancelled).map((row) => [row.label, row.values]));
-		expect(rows.Cancelled).toEqual(['stopped 43% into the rewrite, nothing written']);
-		expect(rows.Reasons).toEqual(['add 2.0 downmix']);
+		expect(rows.Cancelled).toEqual(['Stopped 43% into the rewrite, nothing written']);
+		expect(rows.Reasons).toEqual(['Add 2.0 downmix']);
 		expect(rows.Added).toEqual(['2.0']);
 		expect(rows.By).toEqual(['admin']);
 		expect(rows.Problem).toBeUndefined();
@@ -121,7 +138,7 @@ describe('a track edited in place', () => {
 		const rows = details(line);
 		// Its own rows; the tail every event shares follows.
 		expect(rows.slice(0, 4).map((row) => row.label)).toEqual(['File', 'Track', 'Changed', 'By']);
-		expect(rows[2].values).toEqual(['language und to jpn', 'commentary on']);
+		expect(rows[2].values).toEqual(['Language und to jpn', 'Commentary on']);
 	});
 
 	test('a line recorded without a kind still reads, and SDH keeps its case', () => {
@@ -196,4 +213,127 @@ test('a file re-check receipt counts files rather than zero titles', () => {
 	expect(headline(run)).toBe('Re-checked 1 file');
 	expect(details(run).some((row) => row.label === 'Titles')).toBe(false);
 	expect(headline({ ...run, titles: 1 })).toBe('Re-checked 1 title');
+});
+
+describe('a row leads with the title', () => {
+	const path = '/movies/Sintel (2010)/Sintel (2010) Bluray-1080p.mkv';
+
+	test('a rewrite keeps its year by the title and its release words under it', () => {
+		const line = parts(entry({ event: 'modified', path, seconds: 60 }), 'Sintel');
+		expect(line).toMatchObject({ title: 'Sintel', aside: '2010', file: true });
+		expect(line.meta).toEqual(['Bluray-1080p', '1m']);
+		expect(line.status?.word).toBe('Modified');
+	});
+
+	test('a pause says how long and until when on its status line', () => {
+		const placed = new Date(2026, 8, 8, 19, 30);
+		const line = parts(
+			entry({ event: 'item_paused', path, ts: placed.toISOString(), seconds: 3600 })
+		);
+		expect(line.title).toBe('Sintel');
+		expect(line.status?.word).toBe('Paused');
+		expect(line.facts.map((part) => part.text)).toEqual(['for 1h', `until ${clock(20, 30)}`]);
+		expect(parts(entry({ event: 'item_paused', path })).facts[0].text).toBe('until resumed');
+	});
+
+	test('a resume says how long the pause ran and when it began', () => {
+		const resumed = entry({
+			event: 'item_resumed',
+			path,
+			ts: new Date(2026, 8, 8, 22, 40).toISOString(),
+			paused_at: new Date(2026, 8, 8, 19, 30).toISOString()
+		});
+		expect(parts(resumed).facts.map((part) => part.text)).toEqual([
+			'after 3h 10m',
+			`paused ${clock(19, 30)}`
+		]);
+		const rows = Object.fromEntries(details(resumed).map((row) => [row.label, row.values]));
+		expect(rows['Length']).toEqual(['3h 10m']);
+		expect(Object.keys(rows)).toEqual(expect.arrayContaining(['Paused', 'Resumed']));
+		// Older lines without paused_at have no facts.
+		expect(parts({ ...resumed, paused_at: undefined }).facts).toEqual([]);
+	});
+
+	test('the service says the same of its own pause, under its headline', () => {
+		const resumed = entry({
+			event: 'resumed',
+			ts: new Date(2026, 8, 8, 8, 41).toISOString(),
+			paused_at: new Date(2026, 8, 8, 8, 0).toISOString()
+		});
+		expect(parts(resumed)).toMatchObject({
+			title: 'Processing resumed',
+			meta: ['After 41m', `paused ${clock(8, 0)}`]
+		});
+	});
+
+	test("the service's pause says only when it began", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2026, 8, 8, 20, 0));
+		const paused = entry({ event: 'paused', ts: new Date(2026, 8, 8, 19, 30).toISOString() });
+		expect(parts(paused).meta).toEqual([clock(19, 30)]);
+		expect(details(paused).map((row) => row.label)).not.toContain('Length');
+		vi.useRealTimers();
+	});
+
+	test("a line the app's own words lead starts with a capital", () => {
+		const bare = '/movies/Sintel (2010)/Sintel (2010).mkv';
+		expect(parts(entry({ event: 'modified', path: bare, in_place: true })).meta).toEqual([
+			'In place'
+		]);
+		expect(parts(entry({ event: 'recheck', files: 1, dry_run: true })).meta).toEqual(['Dry run']);
+		// A file's own words stay as they were written.
+		const lower = parts(
+			entry({ event: 'modified', path: '/movies/Sintel (2010)/Sintel (2010) x265.mkv' })
+		);
+		expect(lower.meta[0]).toMatch(/^x265/);
+	});
+
+	test("an opened rewrite starts each change and a skip's words with a capital", () => {
+		const rows = (line: Event) =>
+			Object.fromEntries(details(line).map((row) => [row.label, row.values]));
+		const rewrite = entry({
+			event: 'pending',
+			path,
+			reasons: ['add 2.0 downmix eng from stream 1 (6ch eng)'],
+			incidental: ['reorder streams']
+		});
+		expect(rows(rewrite)['Reasons']).toEqual(['Add 2.0 downmix eng from stream 1 (6ch eng)']);
+		expect(rows(rewrite)['Additional changes']).toEqual(['Reorder streams']);
+		const skip = entry({ event: 'skipped', path, detail: 'taken off the run' });
+		expect(rows(skip)['Skipped']).toEqual(['Taken off the run']);
+		// A failure keeps the tool's spelling.
+		const failed = entry({ event: 'failed', path, detail: 'ffmpeg exited 1' });
+		expect(rows(failed)['Problem']).toEqual(['ffmpeg exited 1']);
+	});
+
+	test('names where a line came from in words', () => {
+		const from = (source: string) =>
+			details(entry({ event: 'modified', path, source })).find((row) => row.label === 'Source')
+				?.values;
+		expect(from('sweep')).toEqual(['Sweep']);
+		expect(from('webhook')).toEqual(['Import']);
+		expect(from('cli')).toEqual(['Command line']);
+	});
+
+	test('a delivery of one file is about that file', () => {
+		const one = entry({ event: 'webhook', arr_label: 'Radarr', files: 1, paths: [path] });
+		expect(parts(one).title).toBe('Sintel');
+		expect(parts(one).status?.word).toBe('Queued by Radarr');
+		const two = { ...one, files: 2, paths: [path, path.replace('Sintel', 'Spring')] };
+		expect(parts(two)).toMatchObject({ title: 'Radarr queued 2 files', file: false });
+	});
+
+	test('a run moves its file count under the headline and counts past two verdicts', () => {
+		const run = entry({
+			event: 'sweep',
+			dry_run: true,
+			files: 30,
+			seconds: 120,
+			counts: { pending: 8, conform: 20, skip: 1, unsupported: 1 }
+		});
+		const line = parts(run);
+		expect(line.title).toBe('Plan complete');
+		expect(line.meta).toEqual(['30 files', '2m', 'dry run']);
+		expect(line.facts.map((part) => part.text)).toEqual(['8 pending', '20 passed', '2 other']);
+	});
 });

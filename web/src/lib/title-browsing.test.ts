@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest';
-import { TitleBrowsing } from '$lib/title-browsing.svelte';
+import { kept, TitleBrowsing } from '$lib/title-browsing.svelte';
 import { getLinks, getTitle, type LibraryFile, type TitleDetail } from '$lib/library';
 
 const harness = vi.hoisted(() => ({
@@ -281,4 +281,18 @@ test('a captured session cannot refresh after switch, quick reopen or disposal',
 		await session.reload();
 	}
 	expect(getTitle).not.toHaveBeenCalled();
+});
+
+test('a reread keeps the files it did not change', () => {
+	const before = detail();
+	expect(kept(before, detail())).toBe(before);
+	const after = detail();
+	after.files[3] = { ...after.files[3], status: 'conform' };
+	const merged = kept(before, after);
+	expect(merged).not.toBe(before);
+	expect(merged.files[3]).toBe(after.files[3]);
+	expect(merged.files.filter((file, at) => file === before.files[at])).toHaveLength(29);
+	const renamed = { ...detail(), state: 'conform' as const };
+	expect(kept(before, renamed).files[0]).toBe(before.files[0]);
+	expect(kept(before, renamed).state).toBe('conform');
 });

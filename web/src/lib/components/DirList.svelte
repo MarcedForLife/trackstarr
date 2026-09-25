@@ -53,7 +53,7 @@
 	role="group"
 	aria-labelledby={labelledBy}
 	aria-describedby={describedBy}
-	class="flex w-full flex-col gap-2.5 sm:w-72 sm:gap-2"
+	class="flex w-full flex-col gap-2.5 sm:gap-2"
 >
 	{#each dirs as dir, index (index)}
 		{@const answer = answers.get(dir.trim())}

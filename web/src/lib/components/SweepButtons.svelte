@@ -3,7 +3,7 @@
 	import { resolve } from '$app/paths';
 	import Glyph from './Glyph.svelte';
 	import type { GlyphName } from './Glyph.svelte';
-	import { button, danger, frosted, iconButton, primary } from '$lib/controls';
+	import { button, danger, frosted, mark, markAccent, markQuiet, primary } from '$lib/controls';
 	import { REPORT_ONLY_NOTE, type RunMode } from '$lib/library';
 	import { popover } from '$lib/popover.svelte';
 
@@ -41,15 +41,15 @@
 			label: 'Plan',
 			glyph: 'doc',
 			asks: 'Reads every file in the library and records what needs doing. Changes nothing.',
-			fill: 'bg-accent text-surface active:brightness-90',
+			fill: markAccent,
 			verb: primary
 		},
 		{
 			mode: 'apply',
 			label: 'Process',
-			glyph: 'play',
+			glyph: 'bolt',
 			asks: 'Reads every file in the library and applies the rules. Files are rewritten on disk with no undo.',
-			fill: 'border border-line-strong bg-raised active:bg-sunken',
+			fill: markQuiet,
 			verb: danger
 		}
 	];
@@ -108,10 +108,10 @@
 			aria-expanded={asking === choice.mode}
 			aria-controls={`${id}-${choice.mode}`}
 			title={choice.label}
-			class={`${iconButton} ${choice.fill} aria-disabled:opacity-(--disabled)`}
+			class={`${mark} ${choice.fill} aria-disabled:opacity-(--disabled)`}
 		>
-			<!-- Larger, as the glyph is the whole control. -->
-			<Spinner glyph={choice.glyph} size={15} busy={busy === choice.mode} />
+			<Spinner glyph={choice.glyph} size={14} busy={busy === choice.mode} />
+			<span class="hidden sm:inline">{choice.label}</span>
 		</button>
 		<div
 			bind:this={sheets[choice.mode]}

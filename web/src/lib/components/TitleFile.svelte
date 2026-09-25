@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Disclosure from './Disclosure.svelte';
 	import PathDetails from './PathDetails.svelte';
 	import type { Runner } from './TitleSheet.svelte';
 	import FileAccount, { type Editing } from './FileAccount.svelte';
@@ -6,6 +7,7 @@
 	import FileWork from './FileWork.svelte';
 	import QueuePlace from './QueuePlace.svelte';
 	import { ago } from '$lib/events';
+	import { named, titled } from '$lib/format';
 	import { size, verdictLabel, verdictText, type LibraryFile } from '$lib/library';
 	import { fileState, type TitleWork } from '$lib/queue';
 
@@ -63,6 +65,23 @@
 			: (verdictText[file.status] ?? 'text-dim')
 	);
 
+	// Films start open, episodes folded. Folding cancels an open tag form, or the
+	// sheet would hold Escape for a hidden one.
+	// svelte-ignore state_referenced_locally
+	let open = $state(!series);
+	const id = $props.id();
+	function toggle() {
+		if (open && editing?.at?.path === file.path) editing.cancel();
+		open = !open;
+	}
+
+	// The sheet names the series, so an episode leads with its number and an
+	// extra with its name.
+	const episode = $derived(series ? named(file.path) : null);
+
+	// A refused corner press, shown under the name.
+	let error = $state('');
+
 	// What the rewrite did to the file's size, as the history's chips spell it.
 	const shrank = $derived.by(() => {
 		const { bytes_before: before, bytes_after: after } = file.modified ?? {};
@@ -72,64 +91,88 @@
 	});
 </script>
 
+<!-- Positioned, so the name's press can cover the head. -->
 <svelte:element
 	this={embedded ? 'div' : 'li'}
-	class={embedded ? 'p-3' : 'rounded-xl border border-line bg-sunken p-3'}
+	class={`relative ${embedded ? 'p-3' : 'rounded-xl border border-line bg-sunken p-3'}`}
 >
-	{#if manyFiles || admin}
-		<FileWork
-			path={file.path}
-			{standing}
-			ready={!!work}
-			{admin}
-			{unavailable}
-			bind:busy
-			{onchanged}
-			{onaction}
-			onrun={runner?.onfile ? (mode) => runner!.onfile!(file.path, mode) : undefined}
-			mayRewrite={runner?.mayRewrite ?? false}
-			runDisabled={!!runner?.starting || !!runner?.run}
-			refuses={runner?.refuses ?? ''}
-		>
-			{@render head()}
-		</FileWork>
-	{:else}
-		{@render head()}
-	{/if}
-	<FileAccount {file} {editing} {siblings} {series} />
+	<!-- The press covers the head. The path glyph and queue controls sit above
+	     it. -->
+	<Disclosure
+		id={`file-${id}`}
+		{open}
+		ontoggle={toggle}
+		class="group flex min-h-8 min-w-0 items-center gap-1.5 text-left after:absolute after:inset-0 after:content-['']"
+		mark={12}
+		align="start"
+		panelClass=""
+	>
+		{#snippet summary(chevron)}
+			<span class="flex text-faint transition-colors group-hover:text-fg"
+				>{@render chevron(true)}</span
+			>
+			<span class="min-w-0 truncate text-[13px] font-medium">
+				{#if episode?.episode}<span class="mr-1.5 text-dim tabular-nums">{episode.episode}</span
+					>{episode.episodeName ?? ''}{:else}{series ? titled(file.path) : file.name}{/if}
+			</span>
+		{/snippet}
+		{#snippet trail()}
+			<PathDetails path={file.path} label={file.name} glyph />
+		{/snippet}
+		{#snippet after()}
+			<FileWork
+				path={file.path}
+				{standing}
+				ready={!!work}
+				{admin}
+				{unavailable}
+				bind:busy
+				bind:error
+				{onchanged}
+				{onaction}
+				onrun={runner?.onfile ? (mode) => runner!.onfile!(file.path, mode) : undefined}
+				mayRewrite={runner?.mayRewrite ?? false}
+				runDisabled={!!runner?.starting || !!runner?.run}
+				refuses={runner?.refuses ?? ''}
+			/>
+		{/snippet}
+		{#snippet aside()}
+			{@render facts()}
+			{#if error}<p role="alert" class="text-[12px] text-danger">{error}</p>{/if}
+		{/snippet}
+		{#snippet panel()}
+			<FileAccount {file} {editing} {siblings} {series} />
+		{/snippet}
+	</Disclosure>
 </svelte:element>
 
-<!-- Left-aligned under the name at one x, which reads down a season faster than
-     labels ranged off a ragged right edge. A flex row rather than a run of text:
-     whitespace between two blocks is the one thing a template cannot be held
-     to. -->
-{#snippet head()}
-	<div class="min-w-0 flex-1">
-		<PathDetails path={file.path} label={file.name} prominent />
-		<p class="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 text-[11.5px] text-faint">
-			{#if manyFiles}
-				<span class={`font-semibold ${tone}`}>{led}</span>
-				{#if standing.place}
-					<QueuePlace place={standing.place} />
-					{#if standing.waiting.length > 1}
-						<span aria-hidden="true">·</span>
-						<span>{standing.waiting.length} runs</span>
-					{/if}
-				{/if}
-				<span aria-hidden="true">·</span>
-			{/if}
-			<span>{size(file.bytes)}</span>
-			{#if (sourced || embedded) && file.source}
-				<span aria-hidden="true">·</span>
-				<span>{file.source}</span>
-			{/if}
-			{#if file.modified}
-				<span aria-hidden="true">·</span>
-				<span class="text-ok">Modified {ago(file.modified.at)}</span>
-				{#if shrank}
-					<span class="font-mono">{shrank}</span>
+<!-- Aligned under the name past the chevron, which scans down a season faster
+     than a ragged right edge. A flex row, since template whitespace between
+     blocks is unreliable. -->
+{#snippet facts()}
+	<p class="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 pl-[18px] text-[11.5px] text-faint">
+		{#if manyFiles}
+			<span class={`font-semibold ${tone}`}>{led}</span>
+			{#if standing.place}
+				<QueuePlace place={standing.place} />
+				{#if standing.waiting.length > 1}
+					<span aria-hidden="true">·</span>
+					<span>{standing.waiting.length} runs</span>
 				{/if}
 			{/if}
-		</p>
-	</div>
+			<span aria-hidden="true">·</span>
+		{/if}
+		<span>{size(file.bytes)}</span>
+		{#if (sourced || embedded) && file.source}
+			<span aria-hidden="true">·</span>
+			<span>{file.source}</span>
+		{/if}
+		{#if file.modified}
+			<span aria-hidden="true">·</span>
+			<span class="text-ok">Modified {ago(file.modified.at)}</span>
+			{#if shrank}
+				<span class="font-mono">{shrank}</span>
+			{/if}
+		{/if}
+	</p>
 {/snippet}

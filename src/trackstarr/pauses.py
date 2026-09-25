@@ -307,7 +307,11 @@ def resume_many(targets: Sequence[str], by: str = "") -> list[Pause]:
     gone = _mutate(change)
     for pause in gone:
         events.record(
-            "item_resumed", path=pause.path, title=pause.title_id or None, by=by or None
+            "item_resumed",
+            path=pause.path,
+            title=pause.title_id or None,
+            paused_at=pause.at or None,
+            by=by or None,
         )
         log.info("pause resumed on %s%s", pause.path, f" by {by}" if by else "")
     return gone
