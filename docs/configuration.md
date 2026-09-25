@@ -12,7 +12,7 @@ use environment variables and require a restart.
 | ---------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------- |
 | `LANGUAGES`                                                                  | `original,eng`                               | Languages to keep and downmix. See [rules](rules.md#languages). |
 | `AUDIO_LAYOUTS`                                                              | `2.0,5.1`                                    | Layout actions, encoders, bitrates and order.                   |
-| `RULE_DV_STRIP` | `never` | Remove Dolby Vision from HEVC profile 8.1. See [video compatibility](rules.md#video-compatibility). |
+| `RULE_DV_STRIP` | `never` | Remove Dolby Vision from HEVC profile 8.1 and 8.6. See [video compatibility](rules.md#video-compatibility). |
 | `RULE_<NAME>`                                                                | [Rules](rules.md)                            | `never`, `alongside` or `always`.                               |
 | `ALLOWED_EXTS`                                                               | `.mkv,.mp4,.m4v`                             | Containers eligible for rewriting.                              |
 | `REGENERATE_SCOPE`                                                           | `generated`                                  | `generated` or `all`.                                           |

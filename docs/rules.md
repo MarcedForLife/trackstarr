@@ -15,7 +15,7 @@ Each `RULE_<NAME>` accepts `always`, `alongside` or `never`:
 | `commentary`    | `never`     | Remove commentary, described audio and isolated scores. These are never downmix sources.              |
 | `sdh`           | `alongside` | Remove SDH subtitles when a full subtitle remains in the same language. Keep forced subtitles.        |
 | `regenerate`    | `never`     | Rebuild outdated downmixes or replace tracks under the configured bitrate rules. MKV only.            |
-| `dv_strip`      | `never`     | Remove Dolby Vision from HEVC profile 8.1, preserving HDR10 and existing HDR10+.                       |
+| `dv_strip`      | `never`     | Remove Dolby Vision from HEVC profile 8.1 and 8.6, preserving HDR10 and existing HDR10+.               |
 | `cover_art`     | `always`    | Remove embedded artwork.                                                                              |
 | `release_tags`  | `alongside` | Clear release tags from track and container titles.                                                   |
 | `stray_streams` | `alongside` | Remove data and timecode streams.                                                                     |
@@ -100,15 +100,20 @@ Enable `RULE_REGENERATE` to update existing mixes in MKV files:
 `RULE_DV_STRIP` defaults to `never`. `always` can trigger a rewrite on its own.
 `alongside` removes Dolby Vision only during another required rewrite.
 
-Removal supports HEVC profile 8.1 in MKV, MP4 and M4V, including MP4/M4V-to-MKV
-remuxes. Eligibility requires a complete Dolby Vision configuration record with
-compatibility ID 1, a base layer and RPU, and no enhancement layer. Profile 5,
-profile 7, other compatibility IDs, artwork and ambiguous metadata are left
-alone. Unsupported Dolby Vision is explained in track details and does not
-block other rules. Filenames are never used to identify Dolby Vision.
+Removal supports HEVC profile 8.1 and 8.6 in MKV, MP4 and M4V, including
+MP4/M4V-to-MKV remuxes. Eligibility requires a complete Dolby Vision
+configuration record with compatibility ID 1 or 6, a base layer and RPU, and no
+enhancement layer. ID 6 comes from UHD Blu-ray conversions and has the same
+HDR10 base. Profile 5, profile 7, other compatibility IDs, artwork and
+ambiguous metadata are left alone. Unsupported Dolby Vision is explained in
+track details and does not block other rules. Filenames are never used to
+identify Dolby Vision.
 
 The operation discards Dolby Vision information without re-encoding video or
 adding HDR metadata. FFmpeg must provide `dovi_rpu` with the `strip` option.
+Planning strips the first frames with that filter. A stream it cannot parse is
+left alone, with FFmpeg's error in track details, until the file is checked
+again under an FFmpeg that reads it.
 Before replacement, Trackstarr checks video properties and paired samples of
 frame HDR metadata, including existing HDR10+, and checks that Dolby Vision is
 absent from the output record and sampled frames. These bounded checks do not

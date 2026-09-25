@@ -39,6 +39,9 @@ CACHE_TYPES = (SWEEP, RECHECK)
 WORKING = "working"
 WAITING = "waiting"
 ENCODING = "encoding"
+#: Verify and publish after the encode, apart from WORKING so the written file
+#: keeps its share of the overall bar.
+FINISHING = "finishing"
 
 #: How many released files a run keeps, so the overview can show what each
 #: came to.
@@ -313,6 +316,19 @@ def stage(run_id: str | None, path: str, name: str, total: float = 0.0) -> None:
             active.total = total
             active.done = active.speed = 0.0
     _moved(run_id)
+
+
+def settle(run_id: str | None, path: str) -> None:
+    """WORKING for a file still waiting or encoding, once its rewrite returns.
+    A finished encode keeps FINISHING until the file is done."""
+    if run_id is None:
+        return
+    with _lock:
+        run = _runs.get(run_id)
+        active = run.active.get(path) if run else None
+        if active is None or active.stage == FINISHING:
+            return
+    stage(run_id, path, WORKING)
 
 
 def progress(run_id: str | None, path: str, done: float, speed: float) -> None:

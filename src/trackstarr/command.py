@@ -11,7 +11,12 @@ from .tracks import encode_settings
 
 
 def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
-    args = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-loglevel", "error", "-i", plan.path]
+    args = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-loglevel", "error"]
+    if any(out.dv_strip for out in plan.streams):
+        # dovi_rpu drops a packet it cannot parse and ffmpeg still exits 0,
+        # which would only surface after the whole rewrite.
+        args.append("-xerror")
+    args += ["-i", plan.path]
     for out in plan.streams:
         args += ["-map", f"0:{out.src}"]
     args += ["-map_chapters", "0", "-c", "copy"]

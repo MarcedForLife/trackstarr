@@ -503,7 +503,7 @@
 				rule: 'dv_strip',
 				label: 'Remove Dolby Vision',
 				text: 'Remove Dolby Vision metadata from HDR10-compatible files. Preserve HDR10 and existing HDR10+. Video is not re-encoded.',
-				note: 'HEVC profile 8.1 only. Dolby Vision information is discarded.'
+				note: 'HEVC profile 8.1 and 8.6 only. Dolby Vision information is discarded.'
 			})}
 		</Section>
 
