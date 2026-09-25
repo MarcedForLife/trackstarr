@@ -19,6 +19,7 @@ from . import config
 from .langs import named_in
 from .media import (
     DV_CONTAINERS,
+    STRIP_REJECTED,
     ProbeError,
     container_title,
     dolby_vision,
@@ -35,6 +36,7 @@ from .media import (
     stream_bitrate,
     stream_lang,
     stream_title,
+    strip_trial,
     title_is_load_bearing,
     track_summary,
     unpreserved_bitrate,
@@ -371,7 +373,19 @@ def build_plan(path: str, original_lang: str | None, policy: Policy | None = Non
     if plan.policy.skip_hardlinks and src.st_nlink > 1:
         plan.skip = "hardlinked, left for the download client (SKIP_HARDLINKS)"
         return plan
-    return plan_from_probe(plan, probe(path))
+    info = probe(path)
+    if "dv_strip" in plan.policy.rules_in(ALWAYS, ALONGSIDE):
+        _trial_dv_strip(path, info)
+    return plan_from_probe(plan, info)
+
+
+def _trial_dv_strip(path: str, info: dict) -> None:
+    """Mark each eligible stream FFmpeg cannot strip, so the verdict says why
+    rather than a full rewrite failing its frame check every sweep."""
+    for stream in info.get("streams") or []:
+        dv = dolby_vision(stream)
+        if dv is not None and dv.eligible and (rejected := strip_trial(path, stream["index"])):
+            stream[STRIP_REJECTED] = rejected
 
 
 def plan_from_probe(plan: Plan, info: dict) -> Plan:

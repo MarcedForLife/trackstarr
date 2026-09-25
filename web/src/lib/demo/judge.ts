@@ -233,17 +233,16 @@ export function judge(
 	}
 
 	const stripped = new Set<number>();
-	const notes: string[] = [];
 	for (const track of file.tracks) {
 		if (
 			track.kind !== 'video' ||
 			!track.dv ||
+			track.dv.unsupported ||
 			mode(settings, 'dv_strip') === 'never' ||
 			track.flags?.includes('cover_art')
 		)
 			continue;
-		if (track.dv.unsupported) notes.push(`video stream ${track.index}: ${track.dv.unsupported}`);
-		else if (
+		if (
 			track.codec === 'hevc' &&
 			track.dv.profile === 8 &&
 			track.dv.compatibility === 1 &&
@@ -252,7 +251,6 @@ export function judge(
 			stripped.add(track.index);
 	}
 	const why: Why = {};
-	if (notes.length) why.notes = notes;
 	if (plan.reasons.length) {
 		why.reasons = plan.reasons;
 		why.rules = plan.rules;

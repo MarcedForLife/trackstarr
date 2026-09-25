@@ -58,6 +58,5 @@ describe('Dolby Vision details', () => {
 			{ ...settings, RULE_DV_STRIP: 'always' }
 		);
 		expect(result.status).toBe('conform');
-		expect(result.why.notes).toEqual(['video stream 0: No HDR10 fallback']);
 	});
 });

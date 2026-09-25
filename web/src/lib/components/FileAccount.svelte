@@ -136,10 +136,6 @@
 	<p class="mt-3"><span class={`${CHIP} ${PLAIN_TONE}`}>{DV_REMOVED}</span></p>
 {/if}
 
-{#each file.why.notes ?? [] as note (note)}
-	<p class="mt-3 text-[12px] text-dim">{note}</p>
-{/each}
-
 {#if file.why.skip}
 	<!-- The skip first, or the reasons read as a rewrite that never comes.
 	     Labelled with the file's own verdict, since an unsupported container is

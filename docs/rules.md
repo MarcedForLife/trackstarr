@@ -109,6 +109,9 @@ block other rules. Filenames are never used to identify Dolby Vision.
 
 The operation discards Dolby Vision information without re-encoding video or
 adding HDR metadata. FFmpeg must provide `dovi_rpu` with the `strip` option.
+Planning strips the first frames with that filter. A stream it cannot parse is
+left alone, with FFmpeg's error in track details, until the file is checked
+again under an FFmpeg that reads it.
 Before replacement, Trackstarr checks video properties and paired samples of
 frame HDR metadata, including existing HDR10+, and checks that Dolby Vision is
 absent from the output record and sampled frames. These bounded checks do not

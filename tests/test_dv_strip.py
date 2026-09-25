@@ -17,7 +17,7 @@ from conftest import (
     set_rules,
     video,
 )
-from trackstarr import config, executor, media, processing, rewrites, settings
+from trackstarr import config, executor, media, planner, processing, rewrites, settings
 from trackstarr.command import ffmpeg_args
 from trackstarr.executor import Outcome
 from trackstarr.planner import (
@@ -158,6 +158,71 @@ def test_filter_uses_output_video_ordinal_with_artwork_and_audio_between():
     assert args[args.index("-map_chapters") + 1] == "0"
     cover = dv_video() | {"disposition": {"attached_pic": 1}}
     assert not plan_for(cover, audio(1, 2)).needed
+
+
+def test_rejected_trial_is_explained_and_strips_abort_on_error():
+    set_rules(dv_strip="always")
+    rejected = dv_video() | {media.STRIP_REJECTED: "Buffering period SEI requires HRD"}
+    plan = plan_for(rejected, audio(1, 2))
+    assert not plan.needed
+    assert plan.notes == [
+        (
+            "video stream 0: FFmpeg cannot remove Dolby Vision from this stream "
+            "(Buffering period SEI requires HRD)"
+        )
+    ]
+    assert "-xerror" not in ffmpeg_args(plan, "/tmp/staged")
+    assert "-xerror" in ffmpeg_args(plan_for(dv_video(), audio(1, 2)), "/tmp/staged")
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        (fake_run(), ""),
+        (
+            fake_run(
+                183,
+                stderr="[dovi_rpu @ 0x7e55d3152f80] Buffering period SEI requires HRD.\n"
+                "[dovi_rpu @ 0x7e55d3152f80] Failed to read unit 8 (type 39).\n",
+            ),
+            "Buffering period SEI requires HRD",
+        ),
+        (fake_run(1), "ffmpeg exited 1"),
+    ],
+)
+def test_strip_trial_reports_ffmpegs_first_error(monkeypatch, result, expected):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: result)
+    assert media.strip_trial("/f", 0) == expected
+
+
+@pytest.mark.parametrize("error", [OSError("gone"), subprocess.TimeoutExpired("ffmpeg", 1)])
+def test_strip_trial_that_cannot_run_is_a_probe_error(monkeypatch, error):
+    def fail(*a, **k):
+        raise error
+
+    monkeypatch.setattr(subprocess, "run", fail)
+    with pytest.raises(media.ProbeError):
+        media.strip_trial("/f", 0)
+
+
+def test_build_plan_trials_eligible_streams_while_the_rule_runs(tmp_path, monkeypatch):
+    path = tmp_path / "movie.mkv"
+    path.write_bytes(b"")
+    tried = []
+
+    def trial(file, index):
+        tried.append(index)
+        return "Buffering period SEI requires HRD"
+
+    monkeypatch.setattr(planner, "probe", lambda _: probe_data(dv_video(), audio(1, 2)))
+    monkeypatch.setattr(planner, "strip_trial", trial)
+    set_rules(dv_strip="always")
+    plan = planner.build_plan(str(path), "eng")
+    assert tried == [0] and not plan.needed
+    assert plan.notes[0].startswith("video stream 0: FFmpeg cannot remove Dolby Vision")
+    set_rules(dv_strip="never")
+    planner.build_plan(str(path), "eng")
+    assert tried == [0]
 
 
 @pytest.mark.parametrize("ext", ["mkv", "mp4", "m4v", "mov"])

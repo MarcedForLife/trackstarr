@@ -1,6 +1,7 @@
 """ffprobe access and the stream predicates the planner reasons about."""
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 
@@ -276,7 +277,60 @@ def dolby_vision(stream: dict) -> DolbyVision | None:
         reason = (
             "Dolby Vision removal requires a base layer and RPU without an enhancement layer"
         )
+    elif rejected := stream.get(STRIP_REJECTED):
+        reason = f"FFmpeg cannot remove Dolby Vision from this stream ({rejected})"
     return DolbyVision(profile, compatibility, reason)
+
+
+#: Set on a probed stream by :func:`trackstarr.planner.build_plan` when
+#: :func:`strip_trial` fails, holding FFmpeg's error.
+STRIP_REJECTED = "trackstarr_dv_strip_rejected"
+
+
+def strip_trial(path: str, stream: int) -> str:
+    """FFmpeg's error from stripping the stream's first frames, or "".
+
+    dovi_rpu parses every unit, not just the RPU, so one malformed SEI costs a
+    whole keyframe. Trying FFmpeg itself means an FFmpeg that reads the stream lifts this.
+    """
+    timeout = config.current().PROBE_TIMEOUT
+    try:
+        out = subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-nostdin",
+                "-v",
+                "error",
+                # Otherwise ffmpeg drops the packet and carries on, exiting 0.
+                "-xerror",
+                "-i",
+                path,
+                "-map",
+                f"0:{stream}",
+                "-c",
+                "copy",
+                "-bsf:v",
+                "dovi_rpu=strip=1",
+                "-frames:v",
+                "24",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError) as err:
+        raise ProbeError("Dolby Vision removal trial could not run") from err
+    lines = out.stderr.strip().splitlines()
+    if out.returncode == 0 and not lines:
+        return ""
+    if not lines:
+        return f"ffmpeg exited {out.returncode}"
+    # The "[dovi_rpu @ 0x...] " prefix names an address that changes every run.
+    return re.sub(r"^\[[^]]*\] ", "", lines[0]).rstrip(".")
 
 
 # Only these source/output container paths have acceptance coverage.
