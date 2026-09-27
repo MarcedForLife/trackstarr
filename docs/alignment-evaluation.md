@@ -141,9 +141,10 @@ independent-release or whole-episode accuracy result.
 
 ## Remaining phase 1 work
 
-Investigate FFmpeg's absent reports and whether bounded sampling can expose usable
-correspondences. Compare focused visual libraries or isolated matching code before
-proposing a new matcher. Native `signature` output has not passed selection.
+The next starting point is the [bounded comparison](track-sourcing-design.md#continuation-checkpoint)
+of AVSync's isolated matching core and a research prototype using FFmpeg's exported
+fingerprints. Native `signature` output has not passed selection. Adopting an
+in-house component depends on measured accuracy and maintenance cost.
 Establish per-anchor evidence, cancellation and failure contracts for any candidate.
 Complete the transitive licence inventory and Alpine amd64/arm64 packaging checks,
 including incremental image size. Measure peak workspace, simultaneous process-tree

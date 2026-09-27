@@ -232,8 +232,9 @@ result yet.
 
 These are initial research candidates, not a closed shortlist or verified accuracy
 claims. Phase 1 researches other suitable alignment libraries and engines before
-choosing candidates to benchmark. Reuse is the preferred approach. Building a new
-matching algorithm requires a separate design decision if no suitable engine exists.
+choosing candidates to benchmark. Reuse is the preferred approach. Bounded research
+prototypes may compare extracted matching code with FFmpeg fingerprints. Adopting
+an in-house matcher requires a recorded design decision after that comparison.
 
 A small dependency footprint and clean integration are selection requirements.
 Evaluate FFmpeg's existing visual matching before adding another application.
@@ -242,7 +243,7 @@ Whole media applications remain comparison tools unless a focused, maintainable
 analysis interface justifies their inclusion. A wrapper or sidecar alone does not
 resolve dependency size or duplicated workflow ownership. If FFmpeg is insufficient,
 compare a focused library or extracted implementation explicitly, including its
-maintenance cost. A new matcher still requires a separate design decision.
+maintenance cost. The next comparison is defined in the continuation checkpoint.
 
 The comparison records direct and transitive dependencies, added installed and
 container size, native build requirements, peak memory and adapter maintenance.
@@ -563,26 +564,33 @@ harness, seven pinned candidate reviews, synthetic results and The Eternaut
 cross-dub control. Phases 2 through 8 have not started. The production planner,
 executor and configuration still have no sourcing support.
 
-The initial FFmpeg `signature` experiment is recorded in the evaluation report.
+Commit `4594b27` records the initial FFmpeg `signature` experiment.
 It needs no added packages in the existing Alpine amd64 image, but native output
 does not provide a verified timing scale or distributed correspondence evidence.
 Some inputs finish without a report. No production backend is selected.
 
-Continue phase 1 in this order.
+Continue phase 1 with a bounded comparison of two approaches.
 
-1. Investigate missing native reports and assess whether bounded FFmpeg sampling
-   can expose sufficient timing evidence. Compare a focused library or isolated
-   AVSync matching code if it cannot, including dependency and maintenance costs.
-   Using exported fingerprints to build a new matcher requires a separate design
-   decision. Do not embed a complete media application by default.
-2. Run a viable visual candidate against the existing synthetic corpus, including
-   the wrong-picture case, then the local media fixtures. Extend the real-media
-   controls with known offsets and speed changes. The Eternaut's current success
-   covers two dubs from the same release at unchanged timing only.
+1. Assess whether AVSync's visual matching core can be reused independently of its
+   application workflow. Measure the dependencies still required after extraction,
+   the evidence it exposes and the maintenance cost of carrying that code.
+2. Prototype a small matcher over FFmpeg's exported fingerprints in the research
+   harness. FFmpeg handles decoding and fingerprint extraction. The prototype
+   finds visual correspondences, estimates offset and constant speed differences,
+   and validates the mapping against regions excluded from the fit. It returns
+   anchors, coverage and residual errors, with review outcomes for ambiguous
+   matches and different cuts. It does not repair discontinuities or publish media.
 3. Close the remaining measurement, packaging and licence requirements in the
-   [evaluation report](alignment-evaluation.md#remaining-phase-1-work). Record a
-   selection decision or an explicit no-suitable-engine outcome before claiming
-   phase 1 complete. No new matching algorithm is authorised by this plan.
+   [evaluation report](alignment-evaluation.md#remaining-phase-1-work). Compare both
+   approaches against the same synthetic and real-media controls, including wrong
+   pictures, repeated content, offsets and speed changes. Record accuracy, rejection
+   behaviour, dependency size, resource use and maintenance cost before selection.
+
+A lean Trackstarr-owned alignment component is conditional on this comparison
+showing it can meet the evidence contract at an acceptable maintenance cost.
+FFmpeg would continue to handle decoding and audio transformation. No complete
+media application is embedded by default. If neither approach qualifies, record
+that outcome and keep phase 1 open. No production matcher is selected by this plan.
 
 The user's installation does not use a multi-arr setup. A local missing-dub test must not
 require a second instance. Before catalogue work, resolve how a temporary source
