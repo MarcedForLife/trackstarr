@@ -543,6 +543,10 @@ required for this feature.
 
 ## Implementation sequence
 
+Phase 1 is underway. [Evaluation findings](alignment-evaluation.md) and the
+[research harness](../tools/alignment/README.md) record the initial corpus and
+backend experiment. Backend selection and the phase 1 exit gate remain open.
+
 Each phase leaves sourcing disabled by default. Backend selection and acceptance
 limits are resolved before automatic publication is enabled.
 
