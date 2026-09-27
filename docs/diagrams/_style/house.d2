@@ -1,0 +1,61 @@
+# House style for architecture diagrams.
+#
+# Every diagram starts with one line, which imports this file:
+#
+#   ...@_style/house
+#
+# The connection style is a triple glob because D2 only carries triple
+# globs across imports. A double glob here would silently do nothing.
+
+(*** -> ***)[*]: { style: { stroke: "#5B6475"; font-color: "#5B6475" } }
+
+classes: {
+  boundary: {
+    style: {
+      fill: "#F5F7FA"
+      stroke: "#8A94A6"
+      stroke-dash: 4
+      border-radius: 6
+      font-color: "#3B4252"
+    }
+  }
+  service: {
+    style: {
+      fill: "#E3F0FF"
+      stroke: "#2F6FB2"
+      border-radius: 4
+      font-color: "#1B2A41"
+    }
+  }
+  datastore: {
+    shape: cylinder
+    style: {
+      fill: "#E8F5E9"
+      stroke: "#3C8D40"
+      font-color: "#1B2A41"
+    }
+  }
+  queue: {
+    shape: queue
+    style: {
+      fill: "#FFF9DB"
+      stroke: "#B59F00"
+      font-color: "#1B2A41"
+    }
+  }
+  external: {
+    style: {
+      fill: "#FFF4E5"
+      stroke: "#C77700"
+      stroke-dash: 3
+      font-color: "#1B2A41"
+    }
+  }
+  person: {
+    shape: person
+    style: {
+      fill: "#F3E8FF"
+      stroke: "#7B3FB2"
+    }
+  }
+}

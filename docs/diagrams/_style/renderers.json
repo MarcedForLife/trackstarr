@@ -1,0 +1,9 @@
+{
+  "d2": {
+    "version": "v0.9.0",
+    "binary_sha256": "32494f164e751a0da93c0f0016500b9ae3dddc95ad061060871da6c7989a7a6e",
+    "archive_sha256": "5669ddc46b99e942cc96078f4a4e36d5e62103348f4c05179ede27802fdd87a9"
+  },
+  "kroki": "yuzutech/kroki@sha256:6980bfb218b48b74ea14b888d9c7e8c032d1cb6325f3292277abdf62483abd9d",
+  "kroki_mermaid": "yuzutech/kroki-mermaid@sha256:ad6721646aabfb8b5f5005db2daa6e37189c25e18aab19a8ef8590b6171cd192"
+}
