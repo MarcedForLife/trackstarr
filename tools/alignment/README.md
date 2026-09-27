@@ -75,3 +75,22 @@ the current selection status and remaining work.
 For Spanish audio, use `--language-tags es,spa`. The Eternaut S01E01 has Spanish
 and English stereo and surround tracks in the tested library. Removing Spanish
 produces an English-only target suitable for the cross-dub analysis experiment.
+
+## Resuming on this host
+
+Existing disposable fixtures are `/tmp/trackstarr-alignment-corpus-v2`,
+`/tmp/trackstarr-eternaut-pair` and `/tmp/trackstarr-dark-pair`. The pinned binary
+is `/tmp/trackstarr-alignment-research/bin/RedSync`. These paths are optional
+caches, not checked-in inputs. Each episode manifest records its original path
+under the TV library mount and the fixture hashes. Check available disk space
+before regenerating full episodes, since each pair copies the video twice.
+
+The Eternaut manifest has two cases. Stereo uses absolute stream index 1 in both
+files, and surround uses index 2. Regeneration creates a first-audio case by
+default, so add the explicit stream selections to reproduce both recorded runs.
+
+Local validation after the initial implementation passed 27 evaluation tests,
+Ruff and mypy. The unchanged application passed 2,162 tests with 100% coverage
+and 17 skips. Web checks, 494 tests, lint and production/demo builds passed.
+Alpine image builds and a full transitive licence audit have not been run for an
+alignment backend.

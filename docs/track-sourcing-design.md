@@ -547,6 +547,39 @@ Phase 1 is underway. [Evaluation findings](alignment-evaluation.md) and the
 [research harness](../tools/alignment/README.md) record the initial corpus and
 backend experiment. Backend selection and the phase 1 exit gate remain open.
 
+### Continuation checkpoint
+
+Work is on `feature/audio-track-sourcing`. Commit `890f264` contains the research
+harness, seven pinned candidate reviews, synthetic results and The Eternaut
+cross-dub control. Phases 2 through 8 have not started. The production planner,
+executor and configuration still have no sourcing support.
+
+Continue phase 1 in this order.
+
+1. Evaluate the pinned AVSync visual-pairing interface in an isolated environment.
+   Measure dependency size and whether it exposes per-anchor correspondence and
+   independent validation evidence without owning rendering or publication.
+   Reject it if the footprint or integration requirements cannot be met.
+2. Run a viable visual candidate against the existing synthetic corpus, including
+   the wrong-picture case, then the local media fixtures. Extend the real-media
+   controls with known offsets and speed changes. The Eternaut's current success
+   covers two dubs from the same release at unchanged timing only.
+3. Close the remaining measurement, packaging and licence requirements in the
+   [evaluation report](alignment-evaluation.md#remaining-phase-1-work). Record a
+   selection decision or an explicit no-suitable-engine outcome before claiming
+   phase 1 complete. No new matching algorithm is authorised by this plan.
+
+The user's installation does not use a multi-arr setup. A local missing-dub test must not
+require a second instance. Before catalogue work, resolve how a temporary source
+outside arr's active file inventory gets explicit identity and read ownership.
+The current automatic-discovery design does not yet cover that workflow.
+
+Temporary fixtures may disappear between sessions. Reproduction instructions and
+the local fixture locations are in the research harness README. Library originals
+remain read-only inputs. Copying audio back through Trackstarr is still untested.
+
+### Phase gates
+
 Each phase leaves sourcing disabled by default. Backend selection and acceptance
 limits are resolved before automatic publication is enabled.
 
