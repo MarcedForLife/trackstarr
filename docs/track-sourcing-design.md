@@ -225,6 +225,7 @@ result yet.
 
 | Candidate | Documented approach | Evaluation question |
 | --- | --- | --- |
+| [FFmpeg signature](https://ffmpeg.org/ffmpeg-filters.html#signature) | MPEG-7 visual signatures and matching sequences within FFmpeg. | Can the existing runtime expose precise timestamp correspondence, speed changes and sufficient validation evidence? |
 | [avsync](https://github.com/stinkybread/avsync) | Visual anchors and audio retiming between anchors. | Can analysis and evidence be obtained without surrendering output selection or publication? |
 | [RedSync](https://github.com/720pixel/RedSync) | Audio correlation, offset and linear correction, JSON reporting. | Does it reliably align different dubs and expose enough evidence to reject bad matches? |
 | [video-sync](https://github.com/Chaphasilor/video-sync) | Frame matching, offset estimation and warp validation. | Does its analysis cover the required rate changes and unattended error handling? |
@@ -235,6 +236,14 @@ choosing candidates to benchmark. Reuse is the preferred approach. Building a ne
 matching algorithm requires a separate design decision if no suitable engine exists.
 
 A small dependency footprint and clean integration are selection requirements.
+Evaluate FFmpeg's existing visual matching before adding another application.
+The experiment measures its native output and evidence limits against the corpus.
+Whole media applications remain comparison tools unless a focused, maintainable
+analysis interface justifies their inclusion. A wrapper or sidecar alone does not
+resolve dependency size or duplicated workflow ownership. If FFmpeg is insufficient,
+compare a focused library or extracted implementation explicitly, including its
+maintenance cost. A new matcher still requires a separate design decision.
+
 The comparison records direct and transitive dependencies, added installed and
 container size, native build requirements, peak memory and adapter maintenance.
 The current application has one Python runtime dependency. Requiring a large
@@ -554,12 +563,18 @@ harness, seven pinned candidate reviews, synthetic results and The Eternaut
 cross-dub control. Phases 2 through 8 have not started. The production planner,
 executor and configuration still have no sourcing support.
 
+The initial FFmpeg `signature` experiment is recorded in the evaluation report.
+It needs no added packages in the existing Alpine amd64 image, but native output
+does not provide a verified timing scale or distributed correspondence evidence.
+Some inputs finish without a report. No production backend is selected.
+
 Continue phase 1 in this order.
 
-1. Evaluate the pinned AVSync visual-pairing interface in an isolated environment.
-   Measure dependency size and whether it exposes per-anchor correspondence and
-   independent validation evidence without owning rendering or publication.
-   Reject it if the footprint or integration requirements cannot be met.
+1. Investigate missing native reports and assess whether bounded FFmpeg sampling
+   can expose sufficient timing evidence. Compare a focused library or isolated
+   AVSync matching code if it cannot, including dependency and maintenance costs.
+   Using exported fingerprints to build a new matcher requires a separate design
+   decision. Do not embed a complete media application by default.
 2. Run a viable visual candidate against the existing synthetic corpus, including
    the wrong-picture case, then the local media fixtures. Extend the real-media
    controls with known offsets and speed changes. The Eternaut's current success

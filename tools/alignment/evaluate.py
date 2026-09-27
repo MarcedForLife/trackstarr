@@ -31,7 +31,11 @@ def parse_report(raw: str) -> dict:
         raise ValueError("expected audio analysis without rendering")
     for key in ("scale", "sync_ms", "score", "samples", "residual_ms"):
         value = report.get(key)
-        if type(value) not in (int, float) or not math.isfinite(value):
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(value)
+        ):
             raise ValueError(f"invalid {key}")
     if report["scale"] <= 0 or report["samples"] < 1 or report["residual_ms"] < 0:
         raise ValueError("invalid measurement")

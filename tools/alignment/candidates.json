@@ -2,6 +2,13 @@
   "review_date": "2026-09-27",
   "candidates": [
     {
+      "name": "FFmpeg signature",
+      "repository": "https://github.com/FFmpeg/FFmpeg",
+      "revision": "b16b5f2a01",
+      "additional_tested_build": "Alpine FFmpeg 8.1.2",
+      "benchmarked": true
+    },
+    {
       "name": "avsync",
       "repository": "https://github.com/stinkybread/avsync",
       "revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",

@@ -14,6 +14,50 @@ audio, unrelated audio, a deleted scene, reversed video and black/silent content
 The 50 ms scoring tolerance is an experimental test bound. It is not a production
 acceptance policy. Generated chirps and test patterns cannot establish dub accuracy.
 
+## FFmpeg signature experiment
+
+```sh
+python tools/alignment/signature.py /tmp/alignment-corpus /tmp/signature-report.json
+```
+
+This uses the installed FFmpeg, verifies fixture hashes before and after analysis,
+preserves input timestamps and writes media only to the null muxer. The runner
+uses the existing process-group cancellation and resource measurement helpers.
+`--ffmpeg /path/to/ffmpeg` selects another installed build. No downloads are made.
+
+The native report contains one timestamp pair and a matching frame count.
+`single_pair_only` does not establish offset, speed or whole-programme coverage.
+Ground truth scores that pair without supplying a scale to the matcher.
+`match_on_negative_case` records a local match in a known invalid whole-file pair.
+`no_match` requires an explicit FFmpeg message. Exit zero without a report remains
+`unrecognised_report`. None of these outcomes grants publication permission.
+
+The same harness can run in an existing Trackstarr image. Use a new report directory
+owned by the image's runtime user, and substitute the image ID being evaluated.
+
+```sh
+mkdir /tmp/signature-results
+docker run --rm --network none --read-only --cap-drop ALL \
+  --security-opt no-new-privileges --tmpfs /tmp:rw,nosuid,nodev,size=256m \
+  --mount type=bind,src="$PWD/tools/alignment",dst=/research,readonly \
+  --mount type=bind,src=/tmp/alignment-corpus,dst=/corpus,readonly \
+  --mount type=bind,src=/tmp/signature-results,dst=/results \
+  --entrypoint python3 IMAGE_ID \
+  /research/signature.py /corpus /results/report.json
+```
+
+Checked-in results identify the tested host binary and existing Alpine amd64 image.
+The image was not rebuilt. [Findings](../../docs/alignment-evaluation.md#ffmpeg-signature-experiment)
+describe native output limitations and remaining evaluation work.
+
+The local `/tmp/trackstarr-signature-dark-sample` corpus contains four 30-second
+video-only controls. The checked-in Dark reports include its manifest. Preparation
+used `-ss 600 -t 30 -map 0:v:0 -an -vf scale=320:-2 -c:v ffv1 -threads 1`
+on each existing Dark fixture, with `-ss` before the input and `-t` after it.
+The source variants use `trim=start=1.25,setpts=PTS-STARTPTS`, `setpts=24/25*PTS`
+and `reverse`, with `-fps_mode passthrough`. Parent fixture hashes were checked
+before and after preparation. Run the same harness against this sample directory.
+
 ## RedSync proof of concept
 
 Download and extract the Linux x64 asset from

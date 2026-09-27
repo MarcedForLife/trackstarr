@@ -1,0 +1,293 @@
+{
+  "schema_version": 1,
+  "engine": "FFmpeg signature",
+  "ffmpeg_version": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 15.2.0 (Alpine 15.2.0)\nconfiguration: --prefix=/usr --disable-librtmp --disable-lzma --disable-static --disable-stripping --enable-avfilter --enable-gpl --enable-ladspa --enable-libaom --enable-libass --enable-libbluray --enable-libdav1d --enable-libdrm --enable-libdvdnav --enable-libdvdread --enable-libfontconfig --enable-libfreetype --enable-libfribidi --enable-libharfbuzz --enable-libjxl --enable-libmp3lame --enable-libopenmpt --enable-libopus --enable-libplacebo --enable-libpulse --enable-librav1e --enable-librist --enable-libshaderc --enable-libsoxr --enable-libsrt --enable-libssh --enable-libtheora --enable-libv4l2 --enable-libvidstab --enable-libvorbis --enable-libvpx --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxcb --enable-libxml2 --enable-libxvid --enable-libzimg --enable-libzmq --enable-lto=auto --enable-lv2 --enable-openssl --enable-pic --enable-pthreads --enable-shared --enable-vaapi --enable-vdpau --enable-version3 --enable-vulkan --optflags=-O3 --enable-libsvtav1 --enable-libvpl\nlibavutil      60. 26.102 / 60. 26.102\nlibavcodec     62. 28.102 / 62. 28.102\nlibavformat    62. 12.102 / 62. 12.102\nlibavdevice    62.  3.102 / 62.  3.102\nlibavfilter    11. 14.102 / 11. 14.102\nlibswscale      9.  5.102 /  9.  5.102\nlibswresample   6.  3.102 /  6.  3.102\n\nExiting with exit code 0\n",
+  "binary_sha256": "eb78fe1752002a677e0abd61b2de2e04f32475b08f76c4d39d280de5af709d85",
+  "manifest_sha256": "ba13cb21bd6f44aabf93f9695231a83136d0c0b6ae198ebf9311096134b5554f",
+  "automatic_publication": false,
+  "mapping_recovered": false,
+  "evidence_limit": "One timestamp pair and a frame count, no fitted timing scale.",
+  "results": [
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 2.167,
+      "stdout": "",
+      "stderr": "Input #0, matroska,webm, from '/corpus/target.mkv':\n  Metadata:\n    ENCODER         : Lavf63.6.100\n  Duration: 00:00:30.00, start: 0.000000, bitrate: 7396 kb/s\n  Stream #0:0: Video: ffv1, yuv420p10le(tv, bt709, progressive), 320x180, SAR 1:1 DAR 16:9, 24 fps, 24 tbr, 1k tbn (default)\n    Metadata:\n      ENCODER         : Lavc63.8.101 ffv1\n      DURATION        : 00:00:30.000000000\nInput #1, matroska,webm, from '/corpus/source.mkv':\n  Metadata:\n    ENCODER         : Lavf63.6.100\n  Duration: 00:00:30.00, start: 0.000000, bitrate: 7396 kb/s\n  Stream #1:0: Video: ffv1, yuv420p10le(tv, bt709, progressive), 320x180, SAR 1:1 DAR 16:9, 24 fps, 24 tbr, 1k tbn (default)\n    Metadata:\n      ENCODER         : Lavc63.8.101 ffv1\n      DURATION        : 00:00:30.000000000\nStream mapping:\n  Stream #0:0 (ffv1) -> signature\n  Stream #1:0 (ffv1) -> signature\n  signature:default -> Stream #0:0 (wrapped_avframe)\nOutput #0, null, to 'pipe:':\n  Metadata:\n    encoder         : Lavf62.12.102\n  Stream #0:0: Video: wrapped_avframe, yuv420p(tv, bt709, progressive), 320x180 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 24 fps, 24 tbn\n    Metadata:\n      encoder         : Lavc62.28.102 wrapped_avframe\n[out#0/null @ 0x76ede230b340] video:294KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown\nframe=  710 fps=344 q=-0.0 Lsize=N/A time=00:00:00.00 bitrate=N/A speed=   0x elapsed=0:00:02.06    \n",
+      "command": [
+        "/usr/bin/ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-nostats",
+        "-loglevel",
+        "info",
+        "-copyts",
+        "-threads",
+        "1",
+        "-i",
+        "/corpus/target.mkv",
+        "-threads",
+        "1",
+        "-i",
+        "/corpus/source.mkv",
+        "-filter_complex_threads",
+        "1",
+        "-filter_complex",
+        "[0:v:0][1:v:0]signature=nb_inputs=2:detectmode=full[v]",
+        "-map",
+        "[v]",
+        "-an",
+        "-fps_mode",
+        "passthrough",
+        "-f",
+        "null",
+        "-"
+      ],
+      "max_process_rss_kib": 112756,
+      "input_blocks": 1240,
+      "output_blocks": 0,
+      "outcome": "unrecognised_report",
+      "reason": "expected one native signature result for two inputs",
+      "workspace_bytes_at_exit": 1489,
+      "case": "video_only_identity"
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 2.067,
+      "stdout": "",
+      "stderr": "Input #0, matroska,webm, from '/corpus/target.mkv':\n  Metadata:\n    ENCODER         : Lavf63.6.100\n  Duration: 00:00:30.00, start: 0.000000, bitrate: 7396 kb/s\n  Stream #0:0: Video: ffv1, yuv420p10le(tv, bt709, progressive), 320x180, SAR 1:1 DAR 16:9, 24 fps, 24 tbr, 1k tbn (default)\n    Metadata:\n      ENCODER         : Lavc63.8.101 ffv1\n      DURATION        : 00:00:30.000000000\nInput #1, matroska,webm, from '/corpus/trim_start.mkv':\n  Metadata:\n    ENCODER         : Lavf63.6.100\n  Duration: 00:00:28.75, start: 0.000000, bitrate: 7422 kb/s\n  Stream #1:0: Video: ffv1, yuv420p10le(tv, bt709, progressive), 320x180, SAR 1:1 DAR 16:9, 24 fps, 24 tbr, 1k tbn (default)\n    Metadata:\n      ENCODER         : Lavc63.8.101 ffv1\n      DURATION        : 00:00:28.750000000\nStream mapping:\n  Stream #0:0 (ffv1) -> signature\n  Stream #1:0 (ffv1) -> signature\n  signature:default -> Stream #0:0 (wrapped_avframe)\nOutput #0, null, to 'pipe:':\n  Metadata:\n    encoder         : Lavf62.12.102\n  Stream #0:0: Video: wrapped_avframe, yuv420p(tv, bt709, progressive), 320x180 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 24 fps, 24 tbn\n    Metadata:\n      encoder         : Lavc62.28.102 wrapped_avframe\n[out#0/null @ 0x791efa41d340] video:285KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown\nframe=  688 fps=343 q=-0.0 Lsize=N/A time=00:00:00.00 bitrate=N/A speed=   0x elapsed=0:00:02.00    \n",
+      "command": [
+        "/usr/bin/ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-nostats",
+        "-loglevel",
+        "info",
+        "-copyts",
+        "-threads",
+        "1",
+        "-i",
+        "/corpus/target.mkv",
+        "-threads",
+        "1",
+        "-i",
+        "/corpus/trim_start.mkv",
+        "-filter_complex_threads",
+        "1",
+        "-filter_complex",
+        "[0:v:0][1:v:0]signature=nb_inputs=2:detectmode=full[v]",
+        "-map",
+        "[v]",
+        "-an",
+        "-fps_mode",
+        "passthrough",
+        "-f",
+        "null",
+        "-"
+      ],
+      "max_process_rss_kib": 109524,
+      "input_blocks": 0,
+      "output_blocks": 0,
+      "outcome": "unrecognised_report",
+      "reason": "expected one native signature result for two inputs",
+      "workspace_bytes_at_exit": 1490,
+      "case": "trim_start"
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 2.217,
+      "stdout": "",
+      "stderr": "Input #0, matroska,webm, from '/corpus/target.mkv':\n  Metadata:\n    ENCODER         : Lavf63.6.100\n  Duration: 00:00:30.00, start: 0.000000, bitrate: 7396 kb/s\n  Stream #0:0: Video: ffv1, yuv420p10le(tv, bt709, progressive), 320x180, SAR 1:1 DAR 16:9, 24 fps, 24 tbr, 1k tbn (default)\n    Metadata:\n      ENCODER         : Lavc63.8.101 ffv1\n      DURATION        : 00:00:30.000000000\nInput #1, matroska,webm, from '/corpus/speed_25_24.mkv':\n  Metadata:\n    ENCODER         : Lavf63.6.100\n  Duration: 00:00:28.79, start: 0.000000, bitrate: 7706 kb/s\n  Stream #1:0: Video: ffv1, yuv420p10le(tv, bt709, progressive), 320x180, SAR 1:1 DAR 16:9, 24 fps, 24 tbr, 1k tbn (default)\n    Metadata:\n      ENCODER         : Lavc63.8.101 ffv1\n      DURATION        : 00:00:28.792000000\nStream mapping:\n  Stream #0:0 (ffv1) -> signature\n  Stream #1:0 (ffv1) -> signature\n  signature:default -> Stream #0:0 (wrapped_avframe)\nOutput #0, null, to 'pipe:':\n  Metadata:\n    encoder         : Lavf62.12.102\n  Stream #0:0: Video: wrapped_avframe, yuv420p(tv, bt709, progressive), 320x180 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 24 fps, 24 tbn\n    Metadata:\n      encoder         : Lavc62.28.102 wrapped_avframe\n[Parsed_signature_0 @ 0x7a80e50697c0] matching of video 0 at 20.792000 and 1 at 19.917000, 719 frames matching\n[Parsed_signature_0 @ 0x7a80e50697c0] whole video matching\n[out#0/null @ 0x7a80e5069340] video:298KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown\nframe=  720 fps=335 q=-0.0 Lsize=N/A time=00:00:00.00 bitrate=N/A speed=   0x elapsed=0:00:02.15    \n",
+      "command": [
+        "/usr/bin/ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-nostats",
+        "-loglevel",
+        "info",
+        "-copyts",
+        "-threads",
+        "1",
+        "-i",
+        "/corpus/target.mkv",
+        "-threads",
+        "1",
+        "-i",
+        "/corpus/speed_25_24.mkv",
+        "-filter_complex_threads",
+        "1",
+        "-filter_complex",
+        "[0:v:0][1:v:0]signature=nb_inputs=2:detectmode=full[v]",
+        "-map",
+        "[v]",
+        "-an",
+        "-fps_mode",
+        "passthrough",
+        "-f",
+        "null",
+        "-"
+      ],
+      "max_process_rss_kib": 111528,
+      "input_blocks": 0,
+      "output_blocks": 0,
+      "measurement": {
+        "matched": true,
+        "target_time_us": 20792000,
+        "source_time_us": 19917000,
+        "matching_frames": 719,
+        "whole_video_message": true
+      },
+      "outcome": "single_pair_only",
+      "ground_truth_pair_error_us": 45125.0,
+      "observed_target_minus_source_us": 875000,
+      "workspace_bytes_at_exit": 1661,
+      "case": "speed_25_24"
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 2.167,
+      "stdout": "",
+      "stderr": "Input #0, matroska,webm, from '/corpus/target.mkv':\n  Metadata:\n    ENCODER         : Lavf63.6.100\n  Duration: 00:00:30.00, start: 0.000000, bitrate: 7396 kb/s\n  Stream #0:0: Video: ffv1, yuv420p10le(tv, bt709, progressive), 320x180, SAR 1:1 DAR 16:9, 24 fps, 24 tbr, 1k tbn (default)\n    Metadata:\n      ENCODER         : Lavc63.8.101 ffv1\n      DURATION        : 00:00:30.000000000\nInput #1, matroska,webm, from '/corpus/reversed.mkv':\n  Metadata:\n    ENCODER         : Lavf63.6.100\n  Duration: 00:00:30.00, start: 0.000000, bitrate: 7396 kb/s\n  Stream #1:0: Video: ffv1, yuv420p10le(tv, bt709, progressive), 320x180, SAR 1:1 DAR 16:9, 24 fps, 24 tbr, 1k tbn (default)\n    Metadata:\n      ENCODER         : Lavc63.8.101 ffv1\n      DURATION        : 00:00:30.000000000\nStream mapping:\n  Stream #0:0 (ffv1) -> signature\n  Stream #1:0 (ffv1) -> signature\n  signature:default -> Stream #0:0 (wrapped_avframe)\nOutput #0, null, to 'pipe:':\n  Metadata:\n    encoder         : Lavf62.12.102\n  Stream #0:0: Video: wrapped_avframe, yuv420p(tv, bt709, progressive), 320x180 [SAR 1:1 DAR 16:9], q=2-31, 200 kb/s, 24 fps, 24 tbn\n    Metadata:\n      encoder         : Lavc62.28.102 wrapped_avframe\n[Parsed_signature_0 @ 0x7ecce4ea47c0] matching of video 0 at 2.958000 and 1 at 26.792000, 148 frames matching\n[Parsed_signature_0 @ 0x7ecce4ea47c0] whole video matching\n[out#0/null @ 0x7ecce4ea4340] video:298KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown\nframe=  720 fps=347 q=-0.0 Lsize=N/A time=00:00:00.00 bitrate=N/A speed=   0x elapsed=0:00:02.07    \n",
+      "command": [
+        "/usr/bin/ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-nostats",
+        "-loglevel",
+        "info",
+        "-copyts",
+        "-threads",
+        "1",
+        "-i",
+        "/corpus/target.mkv",
+        "-threads",
+        "1",
+        "-i",
+        "/corpus/reversed.mkv",
+        "-filter_complex_threads",
+        "1",
+        "-filter_complex",
+        "[0:v:0][1:v:0]signature=nb_inputs=2:detectmode=full[v]",
+        "-map",
+        "[v]",
+        "-an",
+        "-fps_mode",
+        "passthrough",
+        "-f",
+        "null",
+        "-"
+      ],
+      "max_process_rss_kib": 112056,
+      "input_blocks": 0,
+      "output_blocks": 0,
+      "measurement": {
+        "matched": true,
+        "target_time_us": 2958000,
+        "source_time_us": 26792000,
+        "matching_frames": 148,
+        "whole_video_message": true
+      },
+      "outcome": "match_on_negative_case",
+      "workspace_bytes_at_exit": 1657,
+      "case": "reversed"
+    }
+  ],
+  "environment": {
+    "platform": "Alpine 3.24.2 amd64",
+    "image_id": "sha256:9a1de36439f145c98908a2eb1ea7075f6e93e0f02d04b17ba5015a826501bf4a"
+  },
+  "sample_manifest": {
+    "schema_version": 1,
+    "time_unit": "microseconds",
+    "timeline": "target_time = scale * source_time + offset_us",
+    "tolerance_us": 50000,
+    "sample": {
+      "description": "Dark S01E01 same-release video-only control",
+      "start_seconds": 600,
+      "duration_seconds": 30,
+      "width": 320,
+      "parent_manifest_sha256": "b0dafe91d5167576b97d5cdebb45d6f3ce18a22071be554a65b9007a42949bac",
+      "parent_hashes_verified_before_and_after": true
+    },
+    "files": {
+      "trim_start.mkv": {
+        "sha256": "8143867443393e45982482e8976eff1a6a84f1d110d8507288b2e059be2da5d9",
+        "bytes": 26674300
+      },
+      "target.mkv": {
+        "sha256": "f68f07dc9918ce884d322bcaad952689ea45b9ee70df53c1122da5109a30340e",
+        "bytes": 27735026
+      },
+      "speed_25_24.mkv": {
+        "sha256": "999affa579e1d1551c98ae682bf3e6e86b60ae7918d225c4a46d9ce866e5a138",
+        "bytes": 27735026
+      },
+      "reversed.mkv": {
+        "sha256": "f2665f76f490da6baca1bf2cc11553af1424d8a5ccbbd4f83ace8b213102267b",
+        "bytes": 27735114
+      },
+      "source.mkv": {
+        "sha256": "be2857e1c2a41f8fcde1fa8533c23afe9cc735641757862ab8f57b277828670b",
+        "bytes": 27735026
+      }
+    },
+    "cases": [
+      {
+        "id": "video_only_identity",
+        "target": "target.mkv",
+        "source": "source.mkv",
+        "expected": {
+          "scale": "1",
+          "offset_us": 0
+        },
+        "source_points_us": [
+          3000000,
+          17000000,
+          27000000
+        ]
+      },
+      {
+        "id": "trim_start",
+        "target": "target.mkv",
+        "source": "trim_start.mkv",
+        "expected": {
+          "scale": "1",
+          "offset_us": 1250000
+        },
+        "source_points_us": [
+          3000000,
+          17000000,
+          27000000
+        ]
+      },
+      {
+        "id": "speed_25_24",
+        "target": "target.mkv",
+        "source": "speed_25_24.mkv",
+        "expected": {
+          "scale": "25/24",
+          "offset_us": 0
+        },
+        "source_points_us": [
+          3000000,
+          17000000,
+          27000000
+        ]
+      },
+      {
+        "id": "reversed",
+        "target": "target.mkv",
+        "source": "reversed.mkv",
+        "expected": null,
+        "source_points_us": [
+          3000000,
+          17000000,
+          27000000
+        ]
+      }
+    ]
+  }
+}

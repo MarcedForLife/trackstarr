@@ -1,9 +1,10 @@
 # Alignment evaluation, phase 1
 
 Phase 1 has started. No backend is selected and sourcing remains unimplemented.
-The first deliverable is a reproducible timing corpus, a RedSync analysis-only
-adapter experiment and a fixture builder for a missing dub. No runtime
-dependency or container change is included.
+The research harness includes a reproducible timing corpus, RedSync and FFmpeg
+signature experiments, and a fixture builder for a missing dub. FFmpeg's existing
+visual matching is the first integration preference. No runtime dependency or
+container change is included.
 
 ## Candidate screening
 
@@ -13,6 +14,7 @@ labels describe upstream files, not a completed redistribution assessment.
 
 | Engine | Interface and dependencies | Initial disposition |
 | --- | --- | --- |
+| [FFmpeg signature](https://ffmpeg.org/ffmpeg-filters.html#signature) | Native MPEG-7 visual matching. Present on the host and existing Alpine amd64 image. | Benchmarked without adding packages. Native report alone does not meet the alignment evidence contract. |
 | [AVSync](https://github.com/stinkybread/avsync/tree/ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc) | Visual pairing function inside a combined analysis, retiming and muxing script. Imports OpenCV, NumPy, SciPy, tqdm, Pillow and ImageHash. MIT. | Visual candidate, but isolation and scientific-stack size need measurement. No installed-size result yet. |
 | [RedSync v0.2.2](https://github.com/720pixel/RedSync/tree/cb07566f9c48766d8f335df0caab157f5342569a) | Go binary with audio analysis through `sync --dry-run --json`. Three direct and fifteen indirect Go module declarations. MIT. | Benchmarked. Does not pass the current corpus. |
 | [video-sync](https://github.com/Chaphasilor/video-sync/tree/90cb048c790648be1c037d3a2b702430e4d27110) | Visual matching inside a Node CLI with muxing and interactive prompts. Sixteen runtime package declarations. GPL-3.0. | Analysis extraction, Node footprint and redistribution review needed. |
@@ -46,9 +48,47 @@ On this Linux x64 host, cases took 0.61 to 2.07 seconds and the largest child
 process used 23.6 to 26.9 MiB RSS. Input block counters were zero with cached
 fixtures. These are short-fixture measurements, not HDD throughput estimates.
 
+## FFmpeg signature experiment
+
+The twelve synthetic cases ran on host FFmpeg `b16b5f2a01` and FFmpeg 8.1.2 in
+the existing Alpine 3.24.2 amd64 image. The image required no added packages or
+rebuild. [Host results](../tools/alignment/results/ffmpeg-signature-host.json) and
+[Alpine results](../tools/alignment/results/ffmpeg-signature-alpine.json) retain
+commands, binary hashes and raw reports. Input hashes were unchanged.
+
+| Case | Native result |
+| --- | --- |
+| Identity, surround, different audio | Matched repeating picture content 24 seconds away from the known correspondence on both builds. |
+| Leading black | Correct timestamp pair, target minus source was -1.5 seconds. |
+| Frame-rate-only conversion | Pair differed from ground truth by 7 ms. |
+| Speed change | Pair was about 24 seconds from ground truth. No timing scale was reported. |
+| Speed plus trim | Host pair error was 1.75 ms. Alpine emitted no matching report. |
+| Crop | Explicit no-match result on both builds. |
+| Trim, internal cut, black/silence | Exit zero without a matching report on both builds. This is not a refusal or a pass. |
+| Reversed picture | Both builds reported a 63-frame match. A local match cannot establish a valid whole-file mapping. |
+
+Periodic test patterns limit conclusions about real-media accuracy. Even the
+identity case demonstrates why the `whole video matching` log message cannot
+authorise copying. The earlier eight-second trim smoke test recovered 1.25 seconds,
+but the full-duration run above did not emit a result.
+
+Source inspection of [the native report and XML exporter](https://github.com/FFmpeg/FFmpeg/blob/b16b5f2a01/libavfilter/vf_signature.c)
+found one timestamp pair in seconds and a frame count per input pair. XML exports
+each input's signatures and timestamps, not matched correspondence pairs. Debug
+logs expose internal frame-index ratios, not a validated container-time mapping.
+There are no distributed anchors or held-out validation results in the normal
+report. The harness therefore never claims a recovered mapping.
+
+Host runs took 0.41 to 0.97 seconds, with 174 to 186 MiB largest-process RSS.
+Alpine runs took 0.46 to 1.02 seconds and 192 to 203 MiB. These cached 60-second
+fixtures do not establish full-episode memory or HDD performance. ARM64 remains
+untested. Native `signature` output is insufficient as the production adapter.
+FFmpeg remains a possible source of fingerprints if a separately reviewed matching
+implementation can meet the evidence requirements.
+
 ## Packaging and licences
 
-The downloaded archive is 7,170,929 bytes and its executable is 17,260,728 bytes.
+The RedSync archive is 7,170,929 bytes and its executable is 17,260,728 bytes.
 That executable size is not a container-size delta. Upstream embeds dovi_tool and
 hdr10plus_tool and supplies their MIT notices. The Go module dependencies still
 need a transitive licence inventory. RedSync can download FFmpeg when absent.
@@ -83,10 +123,28 @@ The source retained German AAC stereo and E-AC-3 5.1. The original's SHA-256 was
 unchanged. RedSync returned `reference: no audio stream`, so this fixture cannot
 be evaluated by its audio matcher. Trackstarr's copy-back path is still pending.
 
+### FFmpeg video-only control
+
+A 30-second sample starting at 600 seconds was extracted from each Dark fixture,
+scaled to 320 pixels wide and encoded as FFV1 without audio. Additional source
+variants applied a 1.25-second start trim, a 25/24 playback speed and reversed
+picture. Parent hashes were verified before and after extraction, and sample
+hashes before and after analysis. The library original was not accessed.
+
+[Host results](../tools/alignment/results/dark-ffmpeg-signature-host.json) and
+[Alpine results](../tools/alignment/results/dark-ffmpeg-signature-alpine.json) agree.
+Identity and trim exited zero without a matching report. The speed variant returned
+one pair with 45.125 ms ground-truth error, without recovering a scale. Reversed
+picture returned a 148-frame match and `whole video matching`. These local matches
+do not establish a safe timeline. This is a short control from one release, not an
+independent-release or whole-episode accuracy result.
+
 ## Remaining phase 1 work
 
-Benchmark a visual candidate and measure its installed dependencies. Establish
-per-anchor evidence, cancellation and failure contracts before selecting an engine.
+Investigate FFmpeg's absent reports and whether bounded sampling can expose usable
+correspondences. Compare focused visual libraries or isolated matching code before
+proposing a new matcher. Native `signature` output has not passed selection.
+Establish per-anchor evidence, cancellation and failure contracts for any candidate.
 Complete the transitive licence inventory and Alpine amd64/arm64 packaging checks,
 including incremental image size. Measure peak workspace, simultaneous process-tree
 memory and HDD/SSD reads. Current counters cover largest-process RSS and cached
