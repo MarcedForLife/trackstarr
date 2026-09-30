@@ -14,8 +14,9 @@ RELEASE = (
     "scale=1280:-2:flags=lanczos,eq=contrast=1.05:saturation=1.1:gamma=0.95,"
     f"trim=start={TRIM_SECONDS},setpts=PTS-STARTPTS"
 )
-#: Variant name to the scale its ground truth expects.
-VARIANTS = {"reencode_trim": "1", "reencode_pal": "25/24"}
+VARIANTS = ("reencode_trim", "reencode_pal")
+#: PAL plays 25 frames where film had 24, or 23.976 from a 1001 rate.
+FILM_RATES = (Fraction(24), Fraction(24000, 1001))
 ENCODING = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-an"]
 FFMPEG = ["ffmpeg", "-nostdin", "-v", "error", "-n"]
 
@@ -60,12 +61,36 @@ def duration(path: Path) -> float:
     return float(raw)
 
 
+def frame_rate(path: Path) -> Fraction:
+    raw = subprocess.check_output(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=r_frame_rate",
+            "-of",
+            "csv=p=0",
+            str(path),
+        ],
+        text=True,
+        timeout=60,
+    )
+    return Fraction(raw.strip().rstrip(","))
+
+
 def prepare(pair: Path, root: Path) -> dict:
     facts = json.loads((pair / "manifest.json").read_text())
     for name in ("target.mkv", "source.mkv"):
         if digest(pair / name) != facts["files"][name]["sha256"]:
             raise ValueError(f"pair fixture changed: {name}")
     source = pair / "source.mkv"
+    rate = frame_rate(source)
+    if rate not in FILM_RATES:
+        raise ValueError(f"expected a film frame rate, found {rate}")
+    scales = {"reencode_trim": Fraction(1), "reencode_pal": Fraction(25) / rate}
     root.mkdir(parents=True, exist_ok=False)
     (root / "target.mkv").symlink_to(pair / "target.mkv")
     trim = root / "reencode_trim.mkv"
@@ -75,12 +100,12 @@ def prepare(pair: Path, root: Path) -> dict:
         capture_output=True,
         timeout=7200,
     )
-    # The same pictures played 25 where 24 stood. Re-encoding at a 1/24 time base
-    # would drop every 25th frame instead.
+    # The same pictures played at 25 fps. Re-encoding at the film time base would drop
+    # every 25th frame instead.
     subprocess.run(
         [
             *FFMPEG,
-            *("-itsscale", "0.96", "-i", str(trim)),
+            *("-itsscale", f"{float(rate / 25):.12f}", "-i", str(trim)),
             *("-map", "0:v:0", "-c", "copy", str(root / "reencode_pal.mkv")),
         ],
         check=True,
@@ -93,7 +118,7 @@ def prepare(pair: Path, root: Path) -> dict:
     times = frame_times(source, 24 * (TRIM_SECONDS + 1))
     kept = next(t for t in times if t - times[0] >= TRIM_SECONDS)
     cases = []
-    for name, scale in VARIANTS.items():
+    for name, scale in scales.items():
         variant = root / f"{name}.mkv"
         first = frame_times(variant, 1)[0]
         cases.append(
@@ -102,8 +127,8 @@ def prepare(pair: Path, root: Path) -> dict:
                 "target": "target.mkv",
                 "source": variant.name,
                 "expected": {
-                    "scale": scale,
-                    "offset_us": round((kept - Fraction(scale) * first) * 1_000_000),
+                    "scale": str(scale),
+                    "offset_us": round((kept - scale * first) * 1_000_000),
                 },
                 "source_points_us": [
                     int(duration(variant) * fraction * 1_000_000)
