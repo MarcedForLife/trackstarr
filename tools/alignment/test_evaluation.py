@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import evaluate as evaluation
@@ -241,11 +242,20 @@ def test_missing_german_pair(tmp_path):
     assert not (tmp_path / "bad").exists()
 
 
-def test_reports_name_the_corpus_and_home_instead_of_host_paths(tmp_path):
+def test_reports_name_the_corpus_temp_and_home_instead_of_host_paths(tmp_path):
     corpus = tmp_path / "corpus"
+    workspace = Path(tempfile.gettempdir()) / "trackstarr-visual-1"
     report = {
-        "command": [str(Path.home() / ".local/bin/ffmpeg"), str(corpus / "target.mkv")],
+        "command": [
+            str(Path.home() / ".local/bin/ffmpeg"),
+            str(corpus / "target.mkv"),
+            str(workspace / "measurement.json"),
+        ],
     }
     assert json.loads(portable(report, corpus)) == {
-        "command": ["~/.local/bin/ffmpeg", "<corpus>/target.mkv"]
+        "command": [
+            "~/.local/bin/ffmpeg",
+            "<corpus>/target.mkv",
+            "<tmp>/trackstarr-visual-1/measurement.json",
+        ]
     }

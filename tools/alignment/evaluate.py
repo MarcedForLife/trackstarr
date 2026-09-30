@@ -66,9 +66,10 @@ def compare(case: dict, report: dict, tolerance_us: int) -> dict:
 
 
 def portable(report: dict, corpus: Path) -> str:
-    """The report as JSON, naming the corpus and home directory instead of this host's paths."""
+    """The report as JSON, naming the corpus, temp and home directories, not their paths."""
     text = json.dumps(report, indent=2)
-    for directory, name in ((corpus, "<corpus>"), (Path.home(), "~")):
+    temp = Path(tempfile.gettempdir())
+    for directory, name in ((corpus, "<corpus>"), (temp, "<tmp>"), (Path.home(), "~")):
         text = text.replace(str(directory), name)
     return text + "\n"
 
