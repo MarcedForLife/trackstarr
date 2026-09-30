@@ -14,6 +14,60 @@ audio, unrelated audio, a deleted scene, reversed video and black/silent content
 The 50 ms scoring tolerance is an experimental test bound. It is not a production
 acceptance policy. Generated chirps and test patterns cannot establish dub accuracy.
 
+## Bounded visual comparison
+
+The fingerprint prototype uses only the existing Python and FFmpeg installations.
+It exports signatures into a disposable workspace and fits alternating time regions,
+then validates against regions excluded from the fit. Each region requires usable,
+unambiguous correspondence. Inputs longer than 120 seconds are unsupported.
+
+```sh
+python tools/alignment/compare_visual.py run --engine fingerprints \
+  --corpus /tmp/alignment-corpus --report /tmp/fingerprints.json
+```
+
+Use `--engine temporal` for the separate temporal-context experiment. It compares
+five fingerprints across 800 ms, searching eleven local timing scales from 0.9
+to 1.1. Source windows stay within their fit or validation region. Missing windows
+count against coverage. The baseline distance, ambiguity, coverage and residual
+limits remain unchanged. Run both engines on the same corpus for comparison.
+Neither engine has passed backend selection.
+
+The AVSync wrapper requires a separate checkout at
+`ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc`. It verifies the source hash and loads
+six visual functions without running the application. The wrapper translates the
+removed FFmpeg `-vsync vfr` option to `-fps_mode vfr` and raises on extraction
+failure. Matching thresholds and algorithms retain their upstream defaults.
+
+```sh
+uv venv /tmp/avsync-research --python 3.14
+uv pip install --python /tmp/avsync-research/bin/python \
+  -r tools/alignment/avsync-requirements.txt
+python tools/alignment/compare_visual.py run --engine avsync \
+  --python /tmp/avsync-research/bin/python \
+  --avsync-source /path/to/avsync/AVSync_v14.py \
+  --corpus /tmp/alignment-corpus --report /tmp/avsync.json
+/tmp/avsync-research/bin/python tools/alignment/footprint.py \
+  /path/to/avsync/AVSync_v14.py /tmp/avsync-footprint.json
+```
+
+Run both engines against `/tmp/trackstarr-signature-dark-sample` to reproduce the
+short video-only comparison. Use a new report path each time. Run benchmarks
+serially to avoid competing for resources. `--timeout` bounds each worker and its
+descendants. `--ffmpeg` and `--ffprobe` select installed binaries.
+
+Reports include code hashes, settings, fit and validation anchors, residuals and
+review reasons. `proposed` only means the experimental evidence checks passed.
+`mapping_recovered` additionally means independent ground truth agreed within the
+corpus tolerance. Technical failures remain `backend_error` or `timeout`.
+No outcome authorises publication. Workers never receive corpus ground truth.
+
+The pinned AVSync environment contains headless OpenCV and six other distributions.
+It is separate from Trackstarr's runtime. The footprint inventory records installed
+bytes and licence-file hashes, not an Alpine image delta or redistribution clearance.
+[Comparison findings](../../docs/visual-alignment-comparison.md) record the selection
+decision and measurement limits.
+
 ## FFmpeg signature experiment
 
 ```sh

@@ -569,28 +569,31 @@ It needs no added packages in the existing Alpine amd64 image, but native output
 does not provide a verified timing scale or distributed correspondence evidence.
 Some inputs finish without a report. No production backend is selected.
 
-Continue phase 1 with a bounded comparison of two approaches.
+The [bounded visual comparison](visual-alignment-comparison.md) now records both
+approaches. The FFmpeg fingerprint prototype recovered eight of nine valid
+synthetic mappings and sent the crop and all negative cases to review. It also
+sent all short Dark controls to review. AVSync's isolated visual stage produced
+insufficient evidence and required about 340 MiB of installed dependencies on the
+host. Neither approach qualifies. Phase 1 remains open.
 
-1. Assess whether AVSync's visual matching core can be reused independently of its
-   application workflow. Measure the dependencies still required after extraction,
-   the evidence it exposes and the maintenance cost of carrying that code.
-2. Prototype a small matcher over FFmpeg's exported fingerprints in the research
-   harness. FFmpeg handles decoding and fingerprint extraction. The prototype
-   finds visual correspondences, estimates offset and constant speed differences,
-   and validates the mapping against regions excluded from the fit. It returns
-   anchors, coverage and residual errors, with review outcomes for ambiguous
-   matches and different cuts. It does not repair discontinuities or publish media.
-3. Close the remaining measurement, packaging and licence requirements in the
-   [evaluation report](alignment-evaluation.md#remaining-phase-1-work). Compare both
-   approaches against the same synthetic and real-media controls, including wrong
-   pictures, repeated content, offsets and speed changes. Record accuracy, rejection
-   behaviour, dependency size, resource use and maintenance cost before selection.
+The research harness exposes anchors, coverage and residuals, with fit and
+validation regions separated. It includes pinned AVSync dependencies, source-hash
+verification and a compatibility wrapper for current FFmpeg. No production code
+or container dependency has changed.
 
-A lean Trackstarr-owned alignment component is conditional on this comparison
-showing it can meet the evidence contract at an acceptable maintenance cost.
-FFmpeg would continue to handle decoding and audio transformation. No complete
-media application is embedded by default. If neither approach qualifies, record
-that outcome and keep phase 1 open. No production matcher is selected by this plan.
+The temporal-context follow-up recovers the same eight valid synthetic mappings
+and reduces valid Dark controls' validation residuals below 50 ms. Those controls
+still fail distributed-evidence requirements. Static scenes and repeated sequences
+remain ambiguous, and crop remains unresolved. Acceptance limits are unchanged.
+
+Continue with independent-release controls and the unresolved coverage and crop
+failures. The existing Dark and Eternaut fixtures each derive from one release.
+Independent-release testing is pending because the user has no suitable pair
+available. Two releases with reviewed correspondences are still needed. Close the
+measurement, packaging and licence requirements in the
+[evaluation report](alignment-evaluation.md#remaining-phase-1-work) before selection.
+A Trackstarr-owned alignment component still requires a recorded adoption decision
+based on accuracy and maintenance cost. No production matcher is selected.
 
 The user's installation does not use a multi-arr setup. A local missing-dub test must not
 require a second instance. Before catalogue work, resolve how a temporary source

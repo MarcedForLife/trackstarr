@@ -2,20 +2,21 @@
 
 Phase 1 has started. No backend is selected and sourcing remains unimplemented.
 The research harness includes a reproducible timing corpus, RedSync and FFmpeg
-signature experiments, and a fixture builder for a missing dub. FFmpeg's existing
-visual matching is the first integration preference. No runtime dependency or
-container change is included.
+signature experiments, and a fixture builder for a missing dub. A
+[bounded visual comparison](visual-alignment-comparison.md) now evaluates an
+FFmpeg fingerprint prototype and AVSync's isolated core. Neither qualifies for
+selection. No runtime dependency or container change is included.
 
 ## Candidate screening
 
 Source revisions are recorded in [candidates.json](../tools/alignment/candidates.json).
-These are source inspections, except for the RedSync benchmark below. Licence
-labels describe upstream files, not a completed redistribution assessment.
+The table distinguishes source inspections from benchmarks. Licence labels
+describe upstream files, not a completed redistribution assessment.
 
 | Engine | Interface and dependencies | Initial disposition |
 | --- | --- | --- |
 | [FFmpeg signature](https://ffmpeg.org/ffmpeg-filters.html#signature) | Native MPEG-7 visual matching. Present on the host and existing Alpine amd64 image. | Benchmarked without adding packages. Native report alone does not meet the alignment evidence contract. |
-| [AVSync](https://github.com/stinkybread/avsync/tree/ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc) | Visual pairing function inside a combined analysis, retiming and muxing script. Imports OpenCV, NumPy, SciPy, tqdm, Pillow and ImageHash. MIT. | Visual candidate, but isolation and scientific-stack size need measurement. No installed-size result yet. |
+| [AVSync](https://github.com/stinkybread/avsync/tree/ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc) | Isolated visual functions with headless OpenCV, NumPy and perceptual-hash dependencies. MIT upstream. | Benchmarked. Insufficient evidence on these controls, about 340 MiB of installed Python dependencies on the host. |
 | [RedSync v0.2.2](https://github.com/720pixel/RedSync/tree/cb07566f9c48766d8f335df0caab157f5342569a) | Go binary with audio analysis through `sync --dry-run --json`. Three direct and fifteen indirect Go module declarations. MIT. | Benchmarked. Does not pass the current corpus. |
 | [video-sync](https://github.com/Chaphasilor/video-sync/tree/90cb048c790648be1c037d3a2b702430e4d27110) | Visual matching inside a Node CLI with muxing and interactive prompts. Sixteen runtime package declarations. GPL-3.0. | Analysis extraction, Node footprint and redistribution review needed. |
 | [audalign](https://github.com/benfmiller/audalign/tree/d87b7a93f944ee3ee436a94e2bc982118df78cac) | Python audio alignment. Pins NumPy, SciPy, matplotlib, pydub, setuptools and tqdm. MIT. | Scientific-stack footprint and old dependency pins need checking against Python 3.14. |
@@ -141,10 +142,13 @@ independent-release or whole-episode accuracy result.
 
 ## Remaining phase 1 work
 
-The next starting point is the [bounded comparison](track-sourcing-design.md#continuation-checkpoint)
-of AVSync's isolated matching core and a research prototype using FFmpeg's exported
-fingerprints. Native `signature` output has not passed selection. Adopting an
-in-house component depends on measured accuracy and maintenance cost.
+The [bounded comparison](visual-alignment-comparison.md) is recorded. Neither
+candidate qualifies. A temporal-context follow-up improves timing residuals on
+valid Dark controls, but they still fail distributed-evidence requirements. The
+next work needs independent-release controls and investigation of the remaining
+coverage and crop failures. Native `signature` output has not passed selection.
+Adopting an in-house component still depends on
+measured accuracy and maintenance cost.
 Establish per-anchor evidence, cancellation and failure contracts for any candidate.
 Complete the transitive licence inventory and Alpine amd64/arm64 packaging checks,
 including incremental image size. Measure peak workspace, simultaneous process-tree
