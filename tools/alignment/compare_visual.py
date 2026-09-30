@@ -11,10 +11,13 @@ from fractions import Fraction
 from pathlib import Path
 
 from avsync_core import analyse
+from consensus import CONSENSUS_SETTINGS, match_consensus
 from corpus import digest
 from evaluate import run_process
 from temporal import TEMPORAL_SETTINGS, match_temporal
 from visual import SETTINGS, extract, match
+
+MATCHERS = {"fingerprints": match, "temporal": match_temporal, "consensus": match_consensus}
 
 
 def video_bounds(ffprobe: str, path: Path) -> tuple[float, float]:
@@ -51,8 +54,8 @@ def worker(args) -> None:
         SETTINGS["max_duration_seconds"] * 1_000_000
     ):
         measurement = {"status": "unsupported", "reason": "duration_exceeds_research_bound"}
-    elif args.engine in ("fingerprints", "temporal"):
-        matcher = match_temporal if args.engine == "temporal" else match
+    elif args.engine in MATCHERS:
+        matcher = MATCHERS[args.engine]
         measurement = matcher(
             extract(args.ffmpeg, target, Path.cwd() / "target.xml"),
             extract(args.ffmpeg, source, Path.cwd() / "source.xml"),
@@ -167,12 +170,19 @@ def evaluate(args) -> dict:
         "automatic_publication": False,
         "settings": SETTINGS,
         "temporal_settings": TEMPORAL_SETTINGS if args.engine == "temporal" else None,
+        "consensus_settings": CONSENSUS_SETTINGS if args.engine == "consensus" else None,
         "manifest_sha256": digest(manifest_path),
         "ffmpeg_version": subprocess.check_output([args.ffmpeg, "-version"], text=True),
         "binary_sha256": digest(Path(args.ffmpeg)),
         "implementation_sha256": {
             name: digest(Path(__file__).with_name(name))
-            for name in ("visual.py", "temporal.py", "avsync_core.py", "compare_visual.py")
+            for name in (
+                "visual.py",
+                "temporal.py",
+                "consensus.py",
+                "avsync_core.py",
+                "compare_visual.py",
+            )
         },
         "results": results,
     }
@@ -181,9 +191,7 @@ def evaluate(args) -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=["run", "worker"])
-    parser.add_argument(
-        "--engine", choices=["fingerprints", "temporal", "avsync"], required=True
-    )
+    parser.add_argument("--engine", choices=[*MATCHERS, "avsync"], required=True)
     parser.add_argument("--corpus", type=Path)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--target", type=Path)
