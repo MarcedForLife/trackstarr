@@ -145,10 +145,10 @@ independent-release or whole-episode accuracy result.
 The [bounded comparison](visual-alignment-comparison.md) is recorded. Neither
 candidate qualifies. A temporal-context follow-up improves timing residuals on
 valid Dark controls, but they still fail distributed-evidence requirements. The
-next work needs independent-release controls and investigation of the remaining
-coverage and crop failures. Native `signature` output has not passed selection.
-Adopting an in-house component still depends on
-measured accuracy and maintenance cost.
+[continuation checkpoint](track-sourcing-design.md#continuation-checkpoint) sets
+the next matcher experiment. Independent-release controls and crop remain open.
+Native `signature` output has not passed selection. Adopting an in-house component
+still depends on measured accuracy and maintenance cost.
 Establish per-anchor evidence, cancellation and failure contracts for any candidate.
 Complete the transitive licence inventory and Alpine amd64/arm64 packaging checks,
 including incremental image size. Measure peak workspace, simultaneous process-tree

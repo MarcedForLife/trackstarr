@@ -56,10 +56,10 @@ to its ordinary rules. Sourcing itself never substitutes source video or chapter
 | --- | --- | --- |
 | Library | Titles merge by provider identity. Episode variants are grouped by filename for display. | Authoritative file and episode identities for processing. |
 | Planning | `Plan` and `OutStream` describe one input. Rules are pure after probing. | Explicit input references and an independent sourcing assessment. |
-| Execution | One FFmpeg input, staged validation and replacement. | Several inputs, timing transforms and dependency validation. |
-| Cache | A verdict depends on target stat information and policy. | Also account for source inventory and alignment dependencies. |
-| Scheduling | Discovery and work share an ordered queue. Imports deduplicate by path. | Analysis handoff, affected-target admission and revisions arriving during active work. |
-| Concurrency | Scheduler and observation fences coordinate one process. Flock slots limit rewrites across processes. | Shared source leases and exclusive target leases across all mutation paths. |
+| Execution | One FFmpeg input, staged validation and replacement. | Prepared source tracks as further inputs, with source revalidation. |
+| Cache | A verdict depends on target stat information and policy. | Record the source inventory fingerprint and alignment records in the target's verdict. |
+| Scheduling | Discovery and work share an ordered queue. Imports deduplicate by path. | Analysis handoff, affected-target admission and a rerun for an import that arrives during active work. |
+| Concurrency | Scheduler and observation fences coordinate one process. Flock slots limit rewrites across processes. Tag edits refuse a file this process is rewriting. | Source reads join that tag-edit guard. No new cross-process lock. |
 | Status | No required rewrite can be reported as conforming. | Requested-track completeness independent of rewrite outcome. |
 
 Starting points are [the planner](../src/trackstarr/planner.py),
@@ -87,9 +87,8 @@ inheritance hierarchy.
 | Executor | Prepare audio, render, validate and publish one target. | Source selection or acquisition. |
 | Library/API projection | Present cached assessments, plans and history. | Expensive analysis during a GET request. |
 
-Proposed modules are `catalogue.py`, `sourcing.py`, `alignment.py`,
-`sourcing_store.py` and `file_leases.py`, alongside extensions to the existing
-planner, command renderer and coordinator. The backend adapter belongs beside
+Proposed modules are `catalogue.py`, `sourcing.py` and `alignment.py`, alongside
+extensions to the existing planner, command renderer, executor and coordinator. The backend adapter belongs beside
 `alignment.py` when it contains enough implementation to justify a separate file.
 Extract catalogue identity code from library presentation rather than importing
 `library.py` into the planner. Existing local-only calls retain their behaviour.
@@ -168,8 +167,8 @@ Existing hardlink protection continues to govern writes to targets.
 | `Candidate` | Requirement, source track, preference and eligibility reasons. |
 | `AlignmentResult` | Both revisions, backend/version/settings digest, mapping, evidence, supported operations and structured result reason. |
 | `SourcingAssessment` | Per-requirement resolution, inventory fingerprint and selected or rejected candidates. |
-| `PlanInput` | Input identity, revision and role. Target is input zero, additional inputs are explicit. |
-| `OutStream` | `TrackRef`, copy/encode operation, output metadata and optional timing transform. |
+| `PlanInput` | Target revision as input zero. Each further input is one prepared source track with its `TrackRef`, mapping and preparation operation. |
+| `OutStream` | Input and stream reference, copy/encode operation and output metadata. Timing belongs to preparation. |
 
 `AlignmentResult` separates accepted, review-required, unsupported and technical
 failure results. Absence of a source is decided before calling the adapter.
@@ -205,7 +204,7 @@ the same video alignment analysis, with per-track timestamp offsets preserved.
 Selection only considers tracks already present in a stable observed file. It
 never recursively asks another variant to acquire a missing track first. Reciprocal
 copy permissions therefore create no job dependencies. A source can be rewritten
-by its own independent job, subject to the shared lease protocol. Imported-track
+by its own independent job, since preparation revalidates what it read. Imported-track
 provenance remains visible, and native tracks are preferred when candidates are
 otherwise equivalent. Presence-based requirements prevent tracks circulating
 indefinitely between variants.
@@ -219,67 +218,34 @@ requirements need a separate extension of language policy and metadata handling.
 
 Equal duration or frame rate does not authorise copying. Frame rate is a hint for
 candidate transforms, and measured correspondence must confirm any speed change.
-Audio correlation across different dubs may be unreliable, so a visual method is
-the preferred starting point for evaluation. That preference is not a measured
-result yet.
+Audio correlation across different dubs may be unreliable, so visual matching is
+the preferred starting point. The [evaluation report](alignment-evaluation.md)
+records the candidates, their pinned revisions and results.
 
-| Candidate | Documented approach | Evaluation question |
-| --- | --- | --- |
-| [FFmpeg signature](https://ffmpeg.org/ffmpeg-filters.html#signature) | MPEG-7 visual signatures and matching sequences within FFmpeg. | Can the existing runtime expose precise timestamp correspondence, speed changes and sufficient validation evidence? |
-| [avsync](https://github.com/stinkybread/avsync) | Visual anchors and audio retiming between anchors. | Can analysis and evidence be obtained without surrendering output selection or publication? |
-| [RedSync](https://github.com/720pixel/RedSync) | Audio correlation, offset and linear correction, JSON reporting. | Does it reliably align different dubs and expose enough evidence to reject bad matches? |
-| [video-sync](https://github.com/Chaphasilor/video-sync) | Frame matching, offset estimation and warp validation. | Does its analysis cover the required rate changes and unattended error handling? |
+A backend must meet accuracy, footprint, interface and licensing requirements
+together. The application has one Python runtime dependency, so a large scientific
+stack or a maintained fork disqualifies a candidate unless that constraint is
+reconsidered. The backend exposes analysis and structured evidence without its own
+workflow, downloader or muxing, supports cancellation and machine-readable output,
+and packages for Alpine without runtime downloads. A subprocess is preferred where
+it isolates dependencies and failures without complicating the adapter.
 
-These are initial research candidates, not a closed shortlist or verified accuracy
-claims. Phase 1 researches other suitable alignment libraries and engines before
-choosing candidates to benchmark. Reuse is the preferred approach. Bounded research
-prototypes may compare extracted matching code with FFmpeg fingerprints. Adopting
-an in-house matcher requires a recorded design decision after that comparison.
+The licence must keep Trackstarr [MIT-licensed](../LICENSE) and its published
+images redistributable, which excludes proprietary, source-available-only and
+non-commercial engines. Running an engine as a subprocess does not by itself settle
+licence compatibility. Phase 1 records the terms of the engine, its transitive
+dependencies and bundled binaries for the actual packaging method.
 
-A small dependency footprint and clean integration are selection requirements.
-Evaluate FFmpeg's existing visual matching before adding another application.
-The experiment measures its native output and evidence limits against the corpus.
-Whole media applications remain comparison tools unless a focused, maintainable
-analysis interface justifies their inclusion. A wrapper or sidecar alone does not
-resolve dependency size or duplicated workflow ownership. If FFmpeg is insufficient,
-compare a focused library or extracted implementation explicitly, including its
-maintenance cost. The next comparison is defined in the continuation checkpoint.
-
-The comparison records direct and transitive dependencies, added installed and
-container size, native build requirements, peak memory and adapter maintenance.
-The current application has one Python runtime dependency. Requiring a large
-scientific stack or a maintained fork makes a candidate unsuitable unless that
-constraint is explicitly reconsidered. A clean integration exposes analysis and
-structured evidence without requiring its own workflow, downloader or muxing owner.
-
-Open-source licensing compatible with Trackstarr's [MIT licence](../LICENSE) is
-also a selection requirement. Prefer a permissively licensed engine. The chosen
-integration must allow Trackstarr to remain MIT-licensed and permit redistribution
-in its published container images. Exclude proprietary, source-available-only and
-non-commercial engines.
-
-Phase 1 verifies the licences of the pinned engine, transitive dependencies and
-bundled binaries, including required notices and any source-distribution duties.
-It records compatibility for the actual integration and packaging method. Running
-an engine as a subprocess does not by itself establish licence compatibility.
-A candidate with unresolved or incompatible terms does not pass selection.
-
-Pin source revisions during evaluation. Compare a library API with a subprocess
-interface, preferring a subprocess when it keeps dependencies and failures isolated
-without complicating the adapter. Evaluate cancellation, machine output,
-reproducibility, maintenance, licences and Alpine/container packaging. No runtime
-downloads of tools are permitted. If no candidate meets accuracy, size, interface
-and licensing requirements together, phase 1 reports that outcome rather than silently relaxing
-the requirements.
+FFmpeg's existing visual matching is evaluated before adding another application.
+A Trackstarr-owned matcher over FFmpeg fingerprints needs a recorded adoption
+decision weighing accuracy against maintenance cost. If no candidate meets every
+requirement, phase 1 reports that outcome rather than relaxing the requirements.
 
 The adapter implements `analyse(target, source, settings, workspace, cancel)` and
-returns an `AlignmentResult`. It returns measurements only. Audio transformation
-belongs to the executor, using the normal output codec and preservation policy.
-An upstream tool may operate only within the job workspace. Trackstarr never gives
-it the live target as an output path. A backend that cannot expose usable analysis
-without taking ownership of publication fails the evaluation gate. If extracting
-an analysis interface requires maintained upstream changes, phase 1 records that
-maintenance cost before selecting it.
+returns an `AlignmentResult`. It measures only, and preparation applies the mapping.
+An upstream tool works only inside the job workspace and never receives the live
+target as an output path. If extracting an analysis interface requires maintained
+upstream changes, phase 1 records that cost before selecting it.
 
 ### Timing model
 
@@ -300,12 +266,14 @@ scale range. Their shipped values and rationale are outputs of the evaluation
 corpus. A similarity score alone is never labelled a probability. Until that gate
 passes, automatic sourcing remains disabled.
 
-Offset-only operations preserve encoded audio where container timestamps can
-represent them correctly. Speed changes or sample-accurate trimming require
-decoding and an explicit output encoder. Copy, trim, silence padding and encoding
-must be visible in the plan. Silence padding is permitted only for verified edge
-alignment, never to invent missing programme audio. Unsupported channel layouts or
-immersive formats that would lose required information produce a review result.
+Preparation applies the mapping to each selected source track inside the job
+workspace. An offset that container timestamps can represent keeps the encoded
+audio. A speed change or sample-accurate trim decodes to a lossless intermediate,
+which the render encodes once with the encoder and bitrate `AUDIO_LAYOUTS` sets
+for its layout. Silence padding is permitted only for verified edge alignment,
+never to invent missing programme audio. A layout with no encoder, or immersive
+audio that retiming would flatten, produces a review result. The plan shows copy,
+trim, padding and encoding for every sourced track.
 
 Discontinuities produce `needs_review` in the initial adapter contract. A future
 piecewise mapping must identify every segment and unmatched interval explicitly.
@@ -330,35 +298,25 @@ supported envelope and measured limitations with the chosen adapter.
 
 Processing first probes the target and builds a local assessment. Missing language
 requirements then drive candidate discovery and, when appropriate, analysis.
-Accepted source tracks enter the pure planner as external inputs before audio
-layout selection. Local cleanup, sourcing and downmixing are composed into one
-final target rewrite.
+Accepted source tracks enter the pure planner as facts before audio layout
+selection. Local cleanup, sourcing and downmixing compose into one target rewrite.
 
 Probe facts remain available when mutation is disabled or a hardlink prevents
-rewriting. Move write eligibility checks out of fact collection where necessary.
-A protected file can still be assessed or used as a source without passing a
-mutation gate.
+rewriting. Move write eligibility checks out of fact collection where necessary,
+so a protected file can still be assessed or used as a source.
 
-The planner retains its deciding pass and alongside pass. Both receive identical
-immutable observations. Sourcing candidates are available in the deciding pass
-only when the rule is `always`. With `alongside`, the local deciding pass must first
-establish an independent reason. No subprocess runs inside either pass.
+Sourcing is one more rule in the planner's deciding and alongside passes. Both
+passes receive identical immutable observations and run no subprocesses. With
+`always`, analysis precedes planning. With `alongside`, it follows a local plan
+that has already decided to rewrite.
 
-The resulting plan names every input, every imported track and all timing and
-encoding operations. It also contains unmet requirements that do not block
-independent cleanup. If an accepted source disappears before execution, discard
-that sourcing plan and replan. Do not silently remove an advertised operation
-from the plan being executed. A fresh local-only plan can still proceed.
-
-The renderer maps each output stream and its metadata to its actual input.
-Target chapters and container metadata retain input-zero ownership. Existing
-default-track policy applies explicitly so copied source default flags cannot
-accidentally create several defaults. Generated-track tags continue identifying
-Trackstarr downmixes. Sourced-track provenance is separate from those tags.
-
-Where retiming and downmixing both require encoding, combine filters into one
-encode if possible. Any intermediate that must be decoded again is lossless.
-Never repeatedly transform a previously prepared lossy track during retries.
+The plan names every sourced track with its mapping and preparation, and lists
+unmet requirements that do not block independent cleanup. The renderer takes the
+target as input zero and each prepared track as a further input. Target chapters
+and container metadata keep input-zero ownership. Default-track policy applies
+explicitly, so copied default flags cannot create several defaults. Generated-track
+tags continue identifying Trackstarr downmixes, and sourced-track provenance is
+recorded separately.
 
 ## Completeness and execution status
 
@@ -394,10 +352,11 @@ machine-wide work slots. The run keeps its queue rank and cancellation semantics
 through handoffs. Analysis must not monopolise probe workers or run while the
 scheduler condition lock is held.
 
-Import handlers validate and persist a small dirty-subject record before
-acknowledging an accepted event. Workers resolve identities and refresh inventory.
-They never perform arr lookups or alignment in the HTTP handler. A subject can be
-an already known content key or an instance-local locator awaiting resolution.
+Import handlers only queue the delivery. Workers resolve identities, refresh
+inventory and admit affected targets as import work. Currently a second import
+for a path already in flight is dropped, which would lose a source that arrives
+while its target is processed. Instead it schedules one rerun after the active
+job, however many imports arrive meanwhile.
 
 | Change | Reassessment |
 | --- | --- |
@@ -408,26 +367,19 @@ an already known content key or an instance-local locator awaiting resolution.
 | Connection recovery or root remount | Refresh unknown inventory and reconsider waiting targets. |
 | Successful target rewrite | Reprobe the result, then close requirements from observed tracks. |
 
-Each dirty subject has a monotonically increasing generation and the originating
-trigger. A worker clears it
-only if it processed that generation. An event arriving during active work leaves
-a newer generation for another pass. Deduplicating solely by an inflight path
-would lose the late-source case. Jobs never wait on another job while holding a
-work slot.
-
-Startup drains dirty subjects and reconciles configured sourcing inventories.
-Scheduled sweeps refresh source metadata before evaluating target cache hits.
-Dependency fingerprints include relevant inventory contents and availability, so
-a missed webhook can still invalidate an unchanged target. Library GET requests
-remain cached reads.
+Jobs never wait on another job while holding a work slot. Queued imports do not
+survive a restart today, and sourcing work matches that. Sweeps refresh source
+inventories before evaluating target cache hits. Each target verdict records a
+fingerprint of the source inventory and availability it was judged against, so
+a missed webhook or a restart still invalidates an unchanged target. Library GET
+requests remain cached reads. If durable imports become a requirement, they belong
+to every import, persisted as parked jobs are, rather than to a sourcing-only store.
 
 `REWRITE_MODE=report` permits bounded queued analysis when explicitly requested,
 but forbids media publication. Ordinary report sweeps may stop at
 `analysis_required` to avoid unexpectedly analysing an entire library.
 Under `imports`, a source import may cause a related existing target to be rewritten
-as import-triggered work. Startup may resume persisted import-triggered work under
-`imports`, subject to current settings. Newly discovered startup and sweep work
-reports changes unless mode is `all`. Explicit apply permission remains scoped to
+as import-triggered work. Sweep work reports changes unless mode is `all`. Explicit apply permission remains scoped to
 the selected targets and is not inherited by other affected variants. Target
 pauses block automatic analysis and publication.
 Pauses retain their mutation meaning. A paused variant can still supply audio to
@@ -436,25 +388,16 @@ reads. Removing a connection from `AUDIO_SOURCES` excludes it from automatic rea
 
 ## Metadata persistence and recovery
 
-Extend the existing verdict format with the sourcing assessment and dependency
-fingerprint. Older entries remain displayable but are stale for sourcing until
-reassessed. Existing users with sourcing disabled retain current cache behaviour.
-Probe facts should remain reusable when only source availability changes.
+The verdict format gains the sourcing assessment, the source inventory
+fingerprint and bounded alignment records. A record holds numeric anchors, the
+mapping and reasons, keyed by source revision, backend version and analysis
+settings. It contains no audio, images or fingerprints that stand in for retained
+media. Records live in the target's verdict, so a target change discards them with
+the rest of its entry, and sourcing adds no separate state file or lock. Older
+entries remain displayable but are stale for sourcing until reassessed.
+Installations with sourcing disabled keep current cache behaviour, and probe facts
+stay reusable when only source availability changes.
 
-A small versioned `sourcing-state.json` stores dirty generations and bounded
-alignment records keyed by both file revisions, backend version and analysis
-settings. Records contain numeric anchors, transforms and reasons only. They
-contain no audio, images or extracted fingerprints that stand in for retained
-media. Cache expiry causes recomputation from available files.
-
-Read-modify-write operations use a process lock plus a file lock and atomic replace.
-Do not rely on atomic replace alone to prevent lost updates. No state-store lock
-is held during arr calls, probing or subprocess work. Corrupt or unsupported state triggers
-reconciliation and loss of cached analysis, never media mutation. This metadata
-store tracks invalidation, not a second job queue with ranks or worker ownership.
-
-Persist dirty state before scheduling. If persistence fails, automatic admission
-does not report a durable success. Retry and reconciliation can recover it.
 Publication remains authoritative even if later telemetry fails. On restart,
 re-probing the target determines whether copying already completed. Provenance
 tags assist diagnosis, but absence of a history entry never authorises a duplicate.
@@ -464,27 +407,25 @@ backend and mapping. Technical retries use bounded backoff. Source replacement,
 backend changes or explicit reanalysis permit a new attempt. An unchanged rejected
 mapping is reused as a review result rather than recomputed on every sweep.
 
-## File leases and publication
+## Source reads and publication
 
-Generalise mutation coordination before enabling multi-input rewrites. Every
-Trackstarr writer, including CLI fixes and metadata edits, participates in the same
-cross-process lease protocol. Readers performing analysis or rendering take shared
-source leases. Target mutation takes an exclusive lease including its output path.
-Locks live in `STATE_DIR`, so read-only source mounts need no writable lock files.
+Only analysis and preparation read a source. The render reads the target and the
+prepared tracks. Analysis and preparation register the source path with the
+in-process guard that tag edits already check, so this process never edits a
+header under an active read.
+Rewrites publish by rename, so a concurrent rewrite of a source leaves an open read
+intact. Afterwards, each read compares the source revision with the one it planned
+against. A change, including an in-place edit by another process, discards the
+result and replans. A missing source does the same, and a fresh local-only plan can
+still proceed. No cross-process source lock is needed, and read-only source mounts
+need no lock files.
 
-Acquire a canonical ordered set of path and existing inode identities. Resolve
-aliases and revalidate identities after acquisition. Take the whole required set
-before observation mutation claims, and release/retry if it has changed. Never
-upgrade a shared lease while retaining other leases. This prevents opposite-order
-deadlocks and concurrent tag edits while a track is being read. All processes must
-share the same `STATE_DIR` and media path mapping for these locks to coordinate.
-
-At execution entry, validate permissions, policy, pause state, input revisions,
-track identity and alignment dependencies. Revalidate after preparation and before
-publication. A changed or missing input defers the plan and discards staged output.
+The target keeps its existing rewrite slot, observation fence and pre-publication
+checks. At execution entry, validate permissions, policy, pause state, the target
+revision and alignment dependencies, and check them again before publication.
 Workspaces are unique, space is checked before large writes, and cancellation
-terminates subprocess groups before cleanup. Startup orphan cleanup observes all
-work slots, including analysis workspaces.
+terminates subprocess groups before cleanup. Startup orphan cleanup covers analysis
+and preparation workspaces.
 
 Validation checks the target video properties and preservation operations,
 chapters, expected stream identities/counts, language/disposition metadata, audio
@@ -494,8 +435,8 @@ No output is published merely because FFmpeg exited successfully.
 
 Trackstarr publishes through its existing staged replacement path and refreshes
 only the owning target arr and relevant media servers. Source inputs are not
-modified by that copy operation. External arr processes do not participate in
-Trackstarr leases. Stat revalidation
+modified by that copy operation. External arr processes do not coordinate with
+Trackstarr. Stat revalidation
 detects observed replacements but cannot provide an atomic compare-and-swap against
 an external rename in the final publication window. Document this existing limit
 and test observable upgrade races without claiming a filesystem guarantee the
@@ -520,7 +461,8 @@ Proposed admin commands are `POST /api/library/source-audio/analyse` and
 HTTP 202. GET file/title projections expose assessment and analysis results.
 Analyse accepts a target locator and optional candidate selection. Apply accepts
 the reviewed assessment digest, exact track references and an optional manual
-mapping. It never accepts a shell command or unvalidated arbitrary input path.
+mapping. It accepts only tracks the catalogue resolves, never a shell command or
+file path.
 
 Manual adjustment supports a signed offset and an optional second anchor pair to
 derive scale. The UI states which file plays earlier. It previews copy, trim,
@@ -533,91 +475,78 @@ Manual copying cannot create a track that normal rules would immediately remove.
 CLI `plan` and `fix` use the same coordinator for connected files. Planning remains
 non-mutating and reports when analysis is required. Add an explicit analysis option
 and source/offset/anchor arguments for manual use through the same application
-commands as the API. Unmanaged file processing retains local behaviour unless
-explicitly paired with a source. A connection's mutation permission overrides a CLI
-write request. Source and target labels appear within the copy operation only.
+commands as the API. The CLI also accepts an explicit source file, which pairs an
+unmanaged file or serves an installation with a single arr connection. Otherwise
+unmanaged file processing keeps its local behaviour. A connection's mutation
+permission overrides a CLI write request. Source and target labels appear within
+the copy operation only.
 
 ## Integration output
 
 Extend existing authenticated file/title APIs and history with stable reason codes,
-content identity, assessment generation, input revisions and missing languages.
+content identity, assessment digest, input revisions and missing languages.
 Events include `audio_sourcing_changed` and successful sourcing details on the
 existing rewrite event. Emit assessment changes on transitions, not every sweep.
 Persist the current result before sending the existing UI invalidation signal.
 
 External automation can poll current state or consume history. Events may be
 duplicated or missed, so consumers reconcile against current assessments and
-generations. An event cannot promise future track availability or deletion safety.
+their digests. An event cannot promise future track availability or deletion safety.
 No new outbound webhook delivery system or Maintainerr-specific integration is
 required for this feature.
 
 ## Implementation sequence
 
-Phase 1 is underway. [Evaluation findings](alignment-evaluation.md) and the
-[research harness](../tools/alignment/README.md) record the initial corpus and
-backend experiment. Backend selection and the phase 1 exit gate remain open.
+Phase 1 is underway. The [evaluation report](alignment-evaluation.md),
+[visual comparison](visual-alignment-comparison.md) and
+[research harness](../tools/alignment/README.md) record the corpus, candidates and
+results. No backend is selected, and no production code or container dependency
+has changed.
 
 ### Continuation checkpoint
 
-Work is on `feature/audio-track-sourcing`. Commit `890f264` contains the research
-harness, seven pinned candidate reviews, synthetic results and The Eternaut
-cross-dub control. Phases 2 through 8 have not started. The production planner,
-executor and configuration still have no sourcing support.
+Work is on `feature/audio-track-sourcing`. No candidate qualifies yet. The
+fingerprint prototypes recover every valid synthetic mapping except crop, but send
+each short Dark control to review for lack of distributed evidence. AVSync's
+isolated core finds too few anchors and needs about 340 MiB of dependencies. The
+Dark and Eternaut fixtures each derive from one release, and no independently
+released pair is available yet.
 
-Commit `4594b27` records the initial FFmpeg `signature` experiment.
-It needs no added packages in the existing Alpine amd64 image, but native output
-does not provide a verified timing scale or distributed correspondence evidence.
-Some inputs finish without a report. No production backend is selected.
+Phases 2 and 3 need no alignment backend and can start now. Manual copy from an
+explicit source file needs no second arr connection, so a single-connection
+installation can test preparation, rendering and publication end to end.
 
-The [bounded visual comparison](visual-alignment-comparison.md) now records both
-approaches. The FFmpeg fingerprint prototype recovered eight of nine valid
-synthetic mappings and sent the crop and all negative cases to review. It also
-sent all short Dark controls to review. AVSync's isolated visual stage produced
-insufficient evidence and required about 340 MiB of installed dependencies on the
-host. Neither approach qualifies. Phase 1 remains open.
+The next matcher experiment replaces per-probe decisions with consensus. The
+current prototypes discard any probe with a close alternative, so dark or
+repetitive regions lack evidence even when their best matches agree. Instead, each
+plausible scale lets every close match vote for an offset. Plausible scales are 1,
+1001/1000, 25/24, 25025/24000 and their inverses, which cover common film speed
+changes. Repeated and static content spreads its votes, while a true mapping
+concentrates them. Held-out regions then check the winning mapping, each confirming
+it, contradicting it or carrying too little picture detail to judge. Acceptance
+needs no contradicting region and confirmed evidence near both ends and across a
+minimum share of the programme. Indexing target frames by the per-frame words
+FFmpeg already exports would let the search cover whole episodes instead of
+120-second samples. Crop remains unresolved.
 
-The research harness exposes anchors, coverage and residuals, with fit and
-validation regions separated. It includes pinned AVSync dependencies, source-hash
-verification and a compatibility wrapper for current FFmpeg. No production code
-or container dependency has changed.
-
-The temporal-context follow-up recovers the same eight valid synthetic mappings
-and reduces valid Dark controls' validation residuals below 50 ms. Those controls
-still fail distributed-evidence requirements. Static scenes and repeated sequences
-remain ambiguous, and crop remains unresolved. Acceptance limits are unchanged.
-
-Continue with independent-release controls and the unresolved coverage and crop
-failures. The existing Dark and Eternaut fixtures each derive from one release.
-Independent-release testing is pending because the user has no suitable pair
-available. Two releases with reviewed correspondences are still needed. Close the
-measurement, packaging and licence requirements in the
-[evaluation report](alignment-evaluation.md#remaining-phase-1-work) before selection.
-A Trackstarr-owned alignment component still requires a recorded adoption decision
-based on accuracy and maintenance cost. No production matcher is selected.
-
-The user's installation does not use a multi-arr setup. A local missing-dub test must not
-require a second instance. Before catalogue work, resolve how a temporary source
-outside arr's active file inventory gets explicit identity and read ownership.
-The current automatic-discovery design does not yet cover that workflow.
-
-Temporary fixtures may disappear between sessions. Reproduction instructions and
-the local fixture locations are in the research harness README. Library originals
-remain read-only inputs. Copying audio back through Trackstarr is still untested.
+Temporary fixtures may disappear between sessions. The harness README has
+reproduction steps. Library originals remain read-only inputs.
 
 ### Phase gates
 
 Each phase leaves sourcing disabled by default. Backend selection and acceptance
-limits are resolved before automatic publication is enabled.
+limits gate automatic publication only. Phases 2 to 4 need no backend and proceed
+while phase 1 is open.
 
 | Phase | Work | Exit evidence |
 | --- | --- | --- |
 | 1. Research and evaluate alignment engines | Research suitable libraries and engines beyond the initial candidates. Compare dependency footprint, integration interfaces and licence compatibility, build the timing corpus, benchmark pinned candidates and recommend one adapter. | Written selection report with dependency/container size, a minimal adapter proof of concept, accuracy and resource results, real-media review, packaging evidence and a licence inventory with redistribution obligations. The selected engine meets the footprint, interface and MIT-compatible licensing requirements. |
-| 2. Establish identity and permissions | Extract catalogue facts, add file/episode identity, processing permission and source-list validation. | Cross-instance identity tests, ambiguous episodes excluded, every mutation entry point respects ownership and write permissions. |
-| 3. Model assessments | Add requirements, selection, completeness and dependency-aware verdicts with migrations. | Pure policy tests and API fixtures show missing/unavailable/review states without rewrite loops. |
-| 4. Generalise execution | Add explicit input/track references, shared leases, source metadata mapping and temporary audio preparation. Keep old plans working. | Existing suite passes and synthetic multi-input rendering preserves target content. |
-| 5. Integrate analysis | Connect the chosen adapter through queued work, cancellation, metadata caching and validated mappings. | Deterministic accepted/refused cases and cancellation/restart tests pass. |
-| 6. Integrate reconciliation | Add dirty generations, source-triggered target work, startup/sweep recovery and mode/pause handling. | Late source, missed event, active-work invalidation and upgrade scenarios converge correctly. |
-| 7. Complete product surface | Settings, plan/source picker, manual timing, CLI, history, integration fields and demo fixtures. | Shared contracts pass, stale selections are refused and review flows work through the UI. |
+| 2. Generalise execution | Add explicit input and track references, source preparation and revalidation, and source metadata mapping. Keep old plans working. | Existing suite passes, local-only output is unchanged and synthetic multi-input rendering preserves target content. |
+| 3. Manual copy | CLI copy from an explicit source file with chosen tracks and a signed offset or anchor pair. | A real copy passes listening and picture review. Changed inputs are refused. |
+| 4. Identity, permissions and assessments | Extract catalogue facts, add file/episode identity, processing permission, source lists, requirements, selection and dependency-aware verdicts. | Cross-instance identity tests, ambiguous episodes excluded, every mutation entry point respects write permissions, and missing/unavailable/review states cause no rewrite loops. |
+| 5. Integrate analysis | Connect the chosen adapter through queued work and cancellation. Measured mappings appear as suggestions for review before automatic publication is enabled. | Deterministic accepted/refused cases and cancellation/restart tests pass. |
+| 6. Integrate reconciliation | Source-triggered target work, coalesced reruns, inventory fingerprints in sweeps, and mode/pause handling. | Late source, missed event, active-work and upgrade scenarios converge correctly. |
+| 7. Complete product surface | Settings, source picker, manual timing in the UI, history, integration fields and demo fixtures. | Shared contracts pass, stale selections are refused and review flows work through the UI. |
 | 8. Release validation | Real-library report run, explicit copies, then automatic sourcing within the supported envelope. Document behaviour and limitations. | Acceptance matrix below passes with measured resource limits. |
 
 Do not combine the catalogue extraction, stream-reference migration and automatic
@@ -642,12 +571,12 @@ demonstrate unchanged local-only output before source support is switched on.
 | Source absent after target upgrade | Missing-source state, no download request and no retained-media fallback. |
 | Source deleted after a successful copy | Existing target remains satisfied. |
 | Source mount or arr unavailable | Unknown/unavailable assessment, not a false empty inventory. |
-| Source removed, replaced or retagged during work | Stale plan deferred, no partially adjusted target. |
+| Source removed, replaced or retagged during analysis or preparation | Result discarded and the target replanned, no partially adjusted target. |
 | Target upgraded while work runs | Detected replacement prevents publication over it. Final external rename race is documented. |
 | Same stream indexes in two inputs | Correct source streams and metadata appear in output. |
 | Hardlinked source and protected target | Source readable, target write deferred according to existing policy. |
-| Imports, sweeps, CLI and tag editing overlap | Lease ordering prevents concurrent conflicting writes and deadlocks. |
-| Event arrives during an active assessment | New dirty generation survives and is processed. |
+| Tag edit requested on a source being read | Refused in this process. Revalidation catches an edit from another process. |
+| Source import while its target is processed | One rerun reassesses the target afterwards. |
 | Missed webhook or restart | Inventory reconciliation repairs stale assessments within the allowed rewrite mode. |
 | Cancellation, tool crash, disk full or malformed report | Target survives, temporary media is cleaned, failure is bounded and visible. |
 | Restart after publication but before history recording | Reprobe observes the copied track, no duplicate insertion. |
@@ -670,8 +599,9 @@ acceptance checks to make the corpus pass.
 
 ## Decisions to close during phase 1
 
-The backend, numerical acceptance thresholds, retiming encoder policy for retained
-source layouts, and supported platform builds require measured evidence. The
-proposed per-connection mutation permission, separate required-language list and
-initial offset/linear scope can be reviewed directly from this plan. None of those
-choices changes the agreed ownership of acquisition, source deletion or media retention.
+The backend, numerical acceptance thresholds and supported platform builds require
+measured evidence. The proposed per-connection mutation permission, separate
+required-language list, initial offset/linear scope and encoding retimed tracks
+with the layout's configured encoder can be reviewed directly from this plan. None
+of those choices changes the agreed ownership of acquisition, source deletion or
+media retention.
