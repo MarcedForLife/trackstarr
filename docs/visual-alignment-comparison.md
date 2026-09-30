@@ -5,8 +5,8 @@ prototype recovers most synthetic mappings but cannot establish sufficient evide
 on the short Dark control. AVSync's isolated visual stage supplies too few anchors
 and still requires a large scientific stack. A later
 [consensus matcher](#consensus-follow-up) over the same fingerprints passes both
-short corpora except crop, after a change the Dark results prompted. No backend is
-selected and phase 1 remains open.
+short corpora except crop, whole same-release episodes and held-out re-encoded
+episodes. No backend is selected and phase 1 remains open.
 
 ## Scope and implementation
 
@@ -139,7 +139,8 @@ frame to two seconds, fully repeated content, static regions and neighbour ties.
 
 Whole episodes are extracted at the samples' 320-pixel width with every decoder
 thread and read as a stream. The Dark and Eternaut pairs ran once, with the design
-frozen before the run and unchanged since.
+frozen before the run. They ran before the two fixes below, which left every
+lossless short-corpus result unchanged.
 
 | Pair | Result | Wall time |
 | --- | --- | --- |
@@ -159,9 +160,50 @@ not invent ambiguity on real long content. Aligning independent releases remains
 untested. Decoding two 4K HEVC streams takes almost all the time. From the scan cost,
 matching should take well under a minute, but it was not timed separately.
 
-This is the first matcher to pass the Dark controls and whole episodes, but it does
-not qualify for selection. The short Dark pass is not held out, every pair comes
-from one release and crop is unresolved. It adds no dependencies.
+### Re-encoded stand-ins
+
+Every pair above shares one video stream.
+[The re-encode builder](../tools/alignment/reencode.py) makes a stand-in for
+another release from a pair's source: 720p through a Lanczos scaler, a contrast,
+saturation and gamma change, x264 veryfast at CRF 24 and a two-second trim. A
+second variant stream-copies it with timestamps scaled to PAL speed, 25/24 from
+24 fps or 1001/960 from 23.976. Ground truth is the first kept frame's timestamp,
+checked against frame checksums. The encodes came out at 0.5 to 1.5 Mbit/s, harsher
+than typical releases.
+
+The first two held-out titles failed. [Dark](../tools/alignment/results/consensus-dark-reencode-heldout.json)
+and [The Eternaut](../tools/alignment/results/consensus-eternaut-reencode-heldout.json)
+both fitted their mappings within 2 ms but went to review over false
+contradictions. In Dark's opening fade-in, the grade lifted dim frames above zero
+confidence on the variant side only, and the matcher skipped the target frames it
+should have compared. It now compares the predicted frame whatever its confidence.
+In a dim, heavily compressed Eternaut scene, matches only 2 to 7 bits closer than
+the predicted frame counted as contradictions. A contradiction must now beat the
+predicted frame by the ambiguity margin, as a confirmation must. Neither fix moved
+a limit, and the short corpora came out identical after each.
+
+Those two titles shaped the fixes, so Futurama S01E01 (animation) and Breaking Bad
+S01E01 (live action), both at 23.976 fps, ran once as a fresh held-out test.
+
+| Held-out case | Result |
+| --- | --- |
+| Futurama, trim | Recovered, 0.34 ms error, 112 exact anchors. |
+| Futurama, trim and 1001/960 speed-up | Recovered, 0.85 ms error. |
+| Breaking Bad, trim | Recovered, 0.06 ms error, 336 exact anchors. |
+| Breaking Bad, trim and 1001/960 speed-up | Recovered, 0.45 ms error. |
+
+Every region confirmed and none contradicted. The runner-up drew at most 26% of the
+winner's votes, the most on Futurama's animation.
+[Futurama](../tools/alignment/results/consensus-futurama-reencode-heldout.json) and
+[Breaking Bad](../tools/alignment/results/consensus-breakingbad-reencode-heldout.json)
+retain the evidence. With both fixes, the
+[Dark](../tools/alignment/results/consensus-dark-reencode.json) and
+[Eternaut](../tools/alignment/results/consensus-eternaut-reencode.json) stand-ins now
+recover within 4 ms too, though those titles are no longer held out.
+
+The matcher adds no dependencies but does not qualify for selection yet. A stand-in
+keeps its master's frames one for one, so different edits, masters and letterboxing
+remain untested. Crop still fails on the synthetic corpus.
 
 ## AVSync extraction
 
@@ -217,6 +259,7 @@ memory, peak workspace or HDD throughput. All runs reported zero input blocks.
 | Consensus, synthetic | 1.06 to 2.42 | 31.8 to 32.7 MiB | 4.13 MiB |
 | Consensus, Dark | 4.42 to 4.62 | 27.6 to 28.2 MiB | 2.02 MiB |
 | Consensus, whole 4K episodes | 1,721 to 2,196 | 463 to 556 MiB | 2.2 KiB, export deleted after parsing |
+| Consensus, held-out 1080p re-encodes | 98 to 394 | 135 to 194 MiB | 2.2 KiB |
 | AVSync, synthetic | 0.41 to 0.47 | 66.5 to 68.1 MiB | Under 1 KiB, no scenes extracted |
 | AVSync, Dark | 1.52 to 1.72 | 70.1 to 99.6 MiB | 1.45 MiB |
 
@@ -238,4 +281,4 @@ Frontend checks, 494 tests, lint and production/demo builds passed. Application
 HTTP tests required loopback socket access outside the restricted sandbox.
 
 The consensus follow-up changed only research code. The research suite then passed
-96 tests, and Ruff and mypy passed on the new modules.
+98 tests, and Ruff and mypy passed on the new modules.

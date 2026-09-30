@@ -47,7 +47,15 @@ python tools/alignment/compare_visual.py run --engine consensus --whole-episodes
   --timeout 7200 --corpus /tmp/trackstarr-dark-pair --report /tmp/dark-episode.json
 ```
 
-Reports name the corpus directory `<corpus>` and the home directory `~`.
+Reports name the corpus, temp and home directories `<corpus>`, `<tmp>` and `~`.
+
+`reencode.py` makes stand-ins for another release from a pair: a graded 720p x264
+re-encode with a two-second trim, and a PAL-speed retime of it. The pair's source
+must run at 24 or 23.976 fps.
+
+```sh
+python tools/alignment/reencode.py /tmp/trackstarr-dark-pair /tmp/dark-reencode
+```
 
 The AVSync wrapper requires a separate checkout at
 `ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc`. It verifies the source hash and loads

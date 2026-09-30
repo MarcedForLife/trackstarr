@@ -519,10 +519,12 @@ The [consensus matcher](visual-alignment-comparison.md#consensus-follow-up)
 replaces per-probe decisions with offset votes at fixed film speed ratios, checked
 on regions that did not vote. It recovers every valid synthetic mapping except
 crop, and the three valid short Dark controls within 2.5 ms after a change they
-prompted. Held out, it recovers the whole Dark and Eternaut episodes exactly. Every
-pair so far shares one video stream, so an independently released pair is the next
-real test. Crop remains unresolved. Decoding dominates, at about 18 minutes per 4K
-episode on a six-core host.
+prompted. Held out, it recovers the whole Dark and Eternaut episodes exactly and
+re-encoded Futurama and Breaking Bad episodes within 1 ms, including 1001/960
+speed-ups. Two earlier re-encoded titles prompted the fixes behind that result.
+Re-encodes keep their master's frames one for one, so a release with different
+edits or masters is still the real test. Crop remains unresolved. Decoding
+dominates, at about 18 minutes per 4K episode on a six-core host.
 
 Temporary fixtures may disappear between sessions. The harness README has
 reproduction steps. Library originals remain read-only inputs.

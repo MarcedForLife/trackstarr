@@ -12,6 +12,10 @@
         "results/consensus-dark-episode.json",
         "results/consensus-eternaut-episode.json"
       ],
+      "consensus_held_out_reencodes": [
+        "results/consensus-futurama-reencode-heldout.json",
+        "results/consensus-breakingbad-reencode-heldout.json"
+      ],
       "benchmarked": true
     },
     {
