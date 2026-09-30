@@ -65,6 +65,14 @@ def compare(case: dict, report: dict, tolerance_us: int) -> dict:
     }
 
 
+def portable(report: dict, corpus: Path) -> str:
+    """The report as JSON, naming the corpus and home directory instead of this host's paths."""
+    text = json.dumps(report, indent=2)
+    for directory, name in ((corpus, "<corpus>"), (Path.home(), "~")):
+        text = text.replace(str(directory), name)
+    return text + "\n"
+
+
 def run_process(command: list[str], workspace: Path, timeout: float) -> dict:
     env = dict(os.environ, TMPDIR=str(workspace), XDG_CACHE_HOME=str(workspace / "cache"))
     started = time.monotonic()
@@ -198,9 +206,5 @@ if __name__ == "__main__":
         parser.error("timeout must be finite and positive")
     # Reserve the report first so an existing result is never overwritten.
     with args.report.open("x") as output:
-        json.dump(
-            evaluate(args.corpus.resolve(), args.binary.resolve(), args.timeout),
-            output,
-            indent=2,
-        )
-        output.write("\n")
+        corpus = args.corpus.resolve()
+        output.write(portable(evaluate(corpus, args.binary.resolve(), args.timeout), corpus))

@@ -12,7 +12,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from corpus import digest
-from evaluate import run_process
+from evaluate import portable, run_process
 
 MATCH = re.compile(
     r"matching of video 0 at (-?\d+\.\d+) and 1 at (-?\d+\.\d+), (\d+) frames matching"
@@ -177,5 +177,5 @@ if __name__ == "__main__":
     if executable is None:
         parser.error("FFmpeg must already be installed")
     with args.report.open("x") as output:
-        json.dump(evaluate(args.corpus.resolve(), executable, args.timeout), output, indent=2)
-        output.write("\n")
+        corpus = args.corpus.resolve()
+        output.write(portable(evaluate(corpus, executable, args.timeout), corpus))

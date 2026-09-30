@@ -9,7 +9,7 @@ import evaluate as evaluation
 import pytest
 from corpus import digest, generate
 from episode import prepare, probe
-from evaluate import compare, parse_report, run_process
+from evaluate import compare, parse_report, portable, run_process
 
 
 def measurement(**changes):
@@ -239,3 +239,13 @@ def test_missing_german_pair(tmp_path):
     with pytest.raises(ValueError, match="requested dub"):
         prepare(root / "target.mkv", tmp_path / "bad", {"ger"})
     assert not (tmp_path / "bad").exists()
+
+
+def test_reports_name_the_corpus_and_home_instead_of_host_paths(tmp_path):
+    corpus = tmp_path / "corpus"
+    report = {
+        "command": [str(Path.home() / ".local/bin/ffmpeg"), str(corpus / "target.mkv")],
+    }
+    assert json.loads(portable(report, corpus)) == {
+        "command": ["~/.local/bin/ffmpeg", "<corpus>/target.mkv"]
+    }

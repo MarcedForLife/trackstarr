@@ -14,7 +14,7 @@ from avsync_core import analyse
 from consensus import CONSENSUS_SETTINGS, match_consensus
 from corpus import digest
 from episode_signatures import EPISODE_SETTINGS, extract_episode
-from evaluate import run_process
+from evaluate import portable, run_process
 from temporal import TEMPORAL_SETTINGS, match_temporal
 from visual import SETTINGS, extract, match
 
@@ -234,5 +234,4 @@ if __name__ == "__main__":
         if args.corpus is None:
             parser.error("run requires --corpus")
         with args.report.open("x") as output:
-            json.dump(evaluate(args), output, indent=2)
-            output.write("\n")
+            output.write(portable(evaluate(args), args.corpus.resolve()))

@@ -38,6 +38,17 @@ fitted. Timing uses only frames that also beat their neighbours. Its distance,
 ambiguity, span and residual limits are the baseline's. No engine has passed
 backend selection.
 
+`--whole-episodes` lifts the 120-second bound for the consensus engine. It
+extracts at 320 pixels wide with every decoder thread, reads the export as a stream
+and deletes it after parsing. The timeout must cover decoding both files.
+
+```sh
+python tools/alignment/compare_visual.py run --engine consensus --whole-episodes \
+  --timeout 7200 --corpus /tmp/trackstarr-dark-pair --report /tmp/dark-episode.json
+```
+
+Reports name the corpus directory `<corpus>` and the home directory `~`.
+
 The AVSync wrapper requires a separate checkout at
 `ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc`. It verifies the source hash and loads
 six visual functions without running the application. The wrapper translates the
