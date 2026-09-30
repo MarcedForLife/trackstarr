@@ -6,7 +6,7 @@ signature experiments, and a fixture builder for a missing dub. A
 [bounded visual comparison](visual-alignment-comparison.md) now evaluates an
 FFmpeg fingerprint prototype and AVSync's isolated core. Neither qualifies for
 selection. A consensus follow-up over the same fingerprints passes both short
-corpora except crop but is not selected. No runtime dependency or container change
+corpora except crop and two whole same-release episodes, but is not selected. No runtime dependency or container change
 is included.
 
 ## Candidate screening
@@ -147,7 +147,8 @@ independent-release or whole-episode accuracy result.
 The [bounded comparison](visual-alignment-comparison.md) is recorded. Neither
 candidate qualifies. A temporal-context follow-up improves timing residuals on
 valid Dark controls, but they still fail distributed-evidence requirements. The
-consensus follow-up passes them, though that pass is not held out. The
+consensus follow-up passes them, though that pass is not held out, and recovers
+two whole same-release episodes exactly. The
 [continuation checkpoint](track-sourcing-design.md#continuation-checkpoint) sets
 the next step. Independent-release controls and crop remain open.
 Native `signature` output has not passed selection. Adopting an in-house component

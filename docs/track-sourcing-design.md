@@ -517,12 +517,12 @@ installation can test preparation, rendering and publication end to end.
 
 The [consensus matcher](visual-alignment-comparison.md#consensus-follow-up)
 replaces per-probe decisions with offset votes at fixed film speed ratios, checked
-on regions that did not vote. It recovers every valid synthetic mapping except crop
-and, after a change the Dark results prompted, the three valid Dark controls within
-2.5 ms. That Dark pass is not held out. It compares every frame pair, so the next
-step indexes target frames by the per-frame words FFmpeg already exports. Whole
-Dark and Eternaut episodes can then run, and an independently released pair
-remains the real test. Crop remains unresolved.
+on regions that did not vote. It recovers every valid synthetic mapping except
+crop, and the three valid short Dark controls within 2.5 ms after a change they
+prompted. Held out, it recovers the whole Dark and Eternaut episodes exactly. Every
+pair so far shares one video stream, so an independently released pair is the next
+real test. Crop remains unresolved. Decoding dominates, at about 18 minutes per 4K
+episode on a six-core host.
 
 Temporary fixtures may disappear between sessions. The harness README has
 reproduction steps. Library originals remain read-only inputs.

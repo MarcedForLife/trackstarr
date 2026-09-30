@@ -105,6 +105,13 @@ Timing uses only exact anchors, frames that also beat their neighbours by the
 ambiguity margin. Other confirmations count toward coverage. The distance,
 ambiguity, span and 50 ms residual limits are the baseline's.
 
+Probes are up to 100 evenly spaced source frames per region. Only probes vote and
+receive the full check. Every other held-out frame is checked at its predicted
+position, with a full-timeline scan only when that fails, so a cut between probes
+still forms a contradicting run. A full scan costs about 130 ns per frame pair, so
+the planned word index was unnecessary. Sampling left the short-corpus outcomes
+unchanged.
+
 The design changed twice against the synthetic corpus before the Dark run. The
 first run let neighbouring frames vote, so a slightly wrong scale won. The second
 found the true mapping everywhere but refused it, because testsrc2 repeats every
@@ -128,10 +135,33 @@ were added in response, so the passing Dark result below is not held out.
 hypotheses, region tallies and residuals. Deterministic tests cover cuts from one
 frame to two seconds, fully repeated content, static regions and neighbour ties.
 
-This is the first matcher to pass the Dark controls, but it does not qualify for
-selection. The Dark pass is not held out, both Dark files come from one release
-and crop is unresolved. The matcher adds no dependencies, but it compares every
-frame pair, so whole episodes need an index before they can run.
+### Whole episodes
+
+Whole episodes are extracted at the samples' 320-pixel width with every decoder
+thread and read as a stream. The Dark and Eternaut pairs ran once, with the design
+frozen before the run and unchanged since.
+
+| Pair | Result | Wall time |
+| --- | --- | --- |
+| Dark S01E01, 51 minutes | Recovered exactly. Eight of eight regions confirmed, 378 exact anchors. | 36.6 min |
+| The Eternaut S01E01, 45 minutes, stereo and surround cases | Both recovered exactly. Eight of eight regions confirmed, 412 exact anchors. | 28.7 and 29.7 min |
+
+The runner-up mapping drew 6 to 15% of the winner's votes and no region
+contradicted. The last Eternaut region is mostly credits, where 68 probes were
+uninformative, and it still confirmed.
+[Dark results](../tools/alignment/results/consensus-dark-episode.json) and
+[Eternaut results](../tools/alignment/results/consensus-eternaut-episode.json)
+retain the evidence.
+
+Both pairs share one video stream, because each fixture was made by removing audio
+from one file with stream copies. The runs show that the matcher scales and does
+not invent ambiguity on real long content. Aligning independent releases remains
+untested. Decoding two 4K HEVC streams takes almost all the time. From the scan cost,
+matching should take well under a minute, but it was not timed separately.
+
+This is the first matcher to pass the Dark controls and whole episodes, but it does
+not qualify for selection. The short Dark pass is not held out, every pair comes
+from one release and crop is unresolved. It adds no dependencies.
 
 ## AVSync extraction
 
@@ -186,6 +216,7 @@ memory, peak workspace or HDD throughput. All runs reported zero input blocks.
 | Temporal context, Dark | 4.92 to 5.02 | 27.4 to 27.7 MiB | 2.05 MiB |
 | Consensus, synthetic | 1.06 to 2.42 | 31.8 to 32.7 MiB | 4.13 MiB |
 | Consensus, Dark | 4.42 to 4.62 | 27.6 to 28.2 MiB | 2.02 MiB |
+| Consensus, whole 4K episodes | 1,721 to 2,196 | 463 to 556 MiB | 2.2 KiB, export deleted after parsing |
 | AVSync, synthetic | 0.41 to 0.47 | 66.5 to 68.1 MiB | Under 1 KiB, no scenes extracted |
 | AVSync, Dark | 1.52 to 1.72 | 70.1 to 99.6 MiB | 1.45 MiB |
 
@@ -194,8 +225,8 @@ Bundled native libraries still need a transitive
 licence review. Alpine amd64/arm64 packaging and incremental image size are untested
 for the extracted AVSync environment.
 
-Phase 1 still needs representative independent-release controls, whole-episode
-runs and a solution to crop. Keep this corpus as regression evidence.
+Phase 1 still needs representative independent-release controls and a solution to
+crop. Keep this corpus as regression evidence.
 Selection also requires the packaging, resource and real-media review evidence
 in the main plan. Validation limits remain unchanged.
 
@@ -207,4 +238,4 @@ Frontend checks, 494 tests, lint and production/demo builds passed. Application
 HTTP tests required loopback socket access outside the restricted sandbox.
 
 The consensus follow-up changed only research code. The research suite then passed
-87 tests, and Ruff and mypy passed on the new modules.
+96 tests, and Ruff and mypy passed on the new modules.
