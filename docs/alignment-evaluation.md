@@ -5,7 +5,9 @@ The research harness includes a reproducible timing corpus, RedSync and FFmpeg
 signature experiments, and a fixture builder for a missing dub. A
 [bounded visual comparison](visual-alignment-comparison.md) now evaluates an
 FFmpeg fingerprint prototype and AVSync's isolated core. Neither qualifies for
-selection. No runtime dependency or container change is included.
+selection. A consensus follow-up over the same fingerprints passes both short
+corpora except crop but is not selected. No runtime dependency or container change
+is included.
 
 ## Candidate screening
 
@@ -145,8 +147,9 @@ independent-release or whole-episode accuracy result.
 The [bounded comparison](visual-alignment-comparison.md) is recorded. Neither
 candidate qualifies. A temporal-context follow-up improves timing residuals on
 valid Dark controls, but they still fail distributed-evidence requirements. The
+consensus follow-up passes them, though that pass is not held out. The
 [continuation checkpoint](track-sourcing-design.md#continuation-checkpoint) sets
-the next matcher experiment. Independent-release controls and crop remain open.
+the next step. Independent-release controls and crop remain open.
 Native `signature` output has not passed selection. Adopting an in-house component
 still depends on measured accuracy and maintenance cost.
 Establish per-anchor evidence, cancellation and failure contracts for any candidate.

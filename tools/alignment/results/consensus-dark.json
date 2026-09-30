@@ -1,0 +1,566 @@
+{
+  "schema_version": 1,
+  "engine": "consensus",
+  "automatic_publication": false,
+  "settings": {
+    "regions": 8,
+    "probes_per_region": 12,
+    "max_distance": 60,
+    "ambiguity_margin": 8,
+    "alternative_separation_us": 500000,
+    "min_region_matches": 2,
+    "min_match_fraction": 0.5,
+    "max_residual_us": 50000,
+    "min_span_fraction": 0.8,
+    "min_scale": 0.9,
+    "max_scale": 1.1,
+    "max_duration_seconds": 120,
+    "max_frames": 20000
+  },
+  "temporal_settings": null,
+  "consensus_settings": {
+    "scales": [
+      "1",
+      "1001/1000",
+      "1000/1001",
+      "25/24",
+      "24/25",
+      "25025/24000",
+      "24000/25025"
+    ],
+    "votes_per_probe": 8,
+    "offset_bin_us": 20000,
+    "min_votes": 10,
+    "min_peak_ratio": 2.0,
+    "max_sample_gap_us": 75000,
+    "min_region_confirmations": 3,
+    "min_contradicting_run": 3,
+    "min_confirmed_regions": 5
+  },
+  "manifest_sha256": "ba13cb21bd6f44aabf93f9695231a83136d0c0b6ae198ebf9311096134b5554f",
+  "ffmpeg_version": "ffmpeg version N-126168-gb16b5f2a01-20260815 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 15.2.0 (crosstool-NG 1.28.0.23_185f348)\nconfiguration: --prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config --cross-prefix=x86_64-ffbuild-linux-gnu- --arch=x86_64 --target-os=linux --enable-gpl --enable-version3 --disable-debug --enable-iconv --enable-zlib --enable-libxml2 --enable-libsoxr --enable-openssl --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype --enable-libfribidi --enable-vulkan --enable-libvorbis --enable-libxcb --enable-xlib --enable-libpulse --enable-gmp --enable-lzma --enable-liblcevc-dec --enable-opencl --enable-amf --enable-libaom --enable-libaribb24 --enable-avisynth --enable-chromaprint --enable-libdav1d --enable-libdavs2 --enable-libdvdread --enable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --enable-frei0r --enable-libgme --enable-libkvazaar --enable-libaribcaption --enable-libass --enable-libbluray --enable-libjxl --enable-libmp3lame --enable-libopus --enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx --enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopenmpt --enable-librav1e --enable-librubberband --disable-schannel --enable-sdl2 --enable-libsnappy --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d --enable-libdrm --enable-vaapi --enable-libvidstab --enable-libvvenc --disable-whisper --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxvid --enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags= --extra-libs='-lgomp -ldl' --extra-ldflags=-pthread --extra-ldexeflags=-pie --cc=x86_64-ffbuild-linux-gnu-gcc --cxx=x86_64-ffbuild-linux-gnu-g++ --ar=x86_64-ffbuild-linux-gnu-gcc-ar --ranlib=x86_64-ffbuild-linux-gnu-gcc-ranlib --nm=x86_64-ffbuild-linux-gnu-gcc-nm --extra-version=20260815\nlibavutil      61.  5.100 / 61.  5.100\nlibavcodec     63.  8.101 / 63.  8.101\nlibavformat    63.  6.100 / 63.  6.100\nlibavdevice    63.  2.100 / 63.  2.100\nlibavfilter    12.  3.101 / 12.  3.101\nlibswscale     10.  2.100 / 10.  2.100\nlibswresample   7.  2.100 /  7.  2.100\n\nExiting with exit code 0\n",
+  "binary_sha256": "f1e69546b9ac98ca220eafa680d3c2ecfd18f6f756452858574f21b6bac04115",
+  "implementation_sha256": {
+    "visual.py": "98ccef77cdbbc7f0088791972da6be9f6fbfe844205be8eb207e63eb9f3d2e93",
+    "temporal.py": "4bccf965d9822bf90992b18dc1dc01ba65b67adaacd0f81bb836c4d0a985e362",
+    "consensus.py": "a92cf6fca4fdea8f006731627e23d910102d3b0f0a1bf820a8c1252ec4ae4905",
+    "avsync_core.py": "bfaa4b9b26017bca09aecf2c11fa7afbbdee562e553dd6c35d8c25d68a041783",
+    "compare_visual.py": "31c0ea3da32cc4cccd47e72b76180a7121ea8d20a2df8d44f4816520729bdbbb"
+  },
+  "results": [
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 4.57,
+      "stdout": "",
+      "stderr": "",
+      "case": "video_only_identity",
+      "command": [
+        "/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "consensus",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/source.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-gb511ogm/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 28276,
+      "input_blocks": 0,
+      "output_blocks": 4152,
+      "measurement": {
+        "status": "proposed",
+        "folds": [
+          {
+            "fit_parity": 0,
+            "fit_probes": 360,
+            "hypothesis": {
+              "scale": "1000/1001",
+              "offset_us": 0,
+              "votes": 275
+            },
+            "runner_up": {
+              "scale": "24/25",
+              "offset_us": 640000,
+              "votes": 55
+            }
+          },
+          {
+            "fit_parity": 1,
+            "fit_probes": 360,
+            "hypothesis": {
+              "scale": "1000/1001",
+              "offset_us": 0,
+              "votes": 252
+            },
+            "runner_up": {
+              "scale": "24/25",
+              "offset_us": 540000,
+              "votes": 54
+            }
+          }
+        ],
+        "region_tallies": [
+          {
+            "confirms": 30,
+            "uninformative": 60
+          },
+          {
+            "confirms": 88,
+            "uninformative": 2
+          },
+          {
+            "confirms": 90
+          },
+          {
+            "confirms": 90
+          },
+          {
+            "confirms": 74,
+            "uninformative": 16
+          },
+          {
+            "uninformative": 90
+          },
+          {
+            "uninformative": 80,
+            "confirms": 10
+          },
+          {
+            "uninformative": 39,
+            "confirms": 51
+          }
+        ],
+        "region_verdicts": [
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "insufficient",
+          "confirms",
+          "confirms"
+        ],
+        "max_region_residual_us": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "confirmed_pairs": 433,
+        "exact_anchors": 244,
+        "span_fraction": {
+          "source": 1.0,
+          "target": 1.0
+        },
+        "frame_counts": {
+          "target": 720,
+          "source": 720
+        },
+        "mapping": {
+          "scale": 1.0,
+          "offset_us": 0.0
+        },
+        "reason": "research_limits_met",
+        "automatic_publication": false
+      },
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_error_us": 0.0,
+      "workspace_bytes_at_exit": 2119125
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 4.521,
+      "stdout": "",
+      "stderr": "",
+      "case": "trim_start",
+      "command": [
+        "/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "consensus",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/trim_start.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-2i5nd27g/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 28872,
+      "input_blocks": 0,
+      "output_blocks": 4072,
+      "measurement": {
+        "status": "proposed",
+        "folds": [
+          {
+            "fit_parity": 0,
+            "fit_probes": 345,
+            "hypothesis": {
+              "scale": "1001/1000",
+              "offset_us": 1220000,
+              "votes": 249
+            },
+            "runner_up": {
+              "scale": "25/24",
+              "offset_us": 840000,
+              "votes": 56
+            }
+          },
+          {
+            "fit_parity": 1,
+            "fit_probes": 345,
+            "hypothesis": {
+              "scale": "1001/1000",
+              "offset_us": 1220000,
+              "votes": 244
+            },
+            "runner_up": {
+              "scale": "24/25",
+              "offset_us": 1740000,
+              "votes": 53
+            }
+          }
+        ],
+        "region_tallies": [
+          {
+            "uninformative": 57,
+            "confirms": 30
+          },
+          {
+            "confirms": 86
+          },
+          {
+            "confirms": 86
+          },
+          {
+            "confirms": 86
+          },
+          {
+            "confirms": 59,
+            "uninformative": 27
+          },
+          {
+            "uninformative": 86
+          },
+          {
+            "uninformative": 76,
+            "confirms": 10
+          },
+          {
+            "uninformative": 36,
+            "confirms": 51
+          }
+        ],
+        "region_verdicts": [
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "insufficient",
+          "confirms",
+          "confirms"
+        ],
+        "max_region_residual_us": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "confirmed_pairs": 408,
+        "exact_anchors": 244,
+        "span_fraction": {
+          "source": 0.9985369931726348,
+          "target": 0.9582749182188397
+        },
+        "frame_counts": {
+          "target": 720,
+          "source": 690
+        },
+        "mapping": {
+          "scale": 1.0,
+          "offset_us": 1250000.0
+        },
+        "reason": "research_limits_met",
+        "automatic_publication": false
+      },
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_error_us": 0.0,
+      "workspace_bytes_at_exit": 2077808
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 4.62,
+      "stdout": "",
+      "stderr": "[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 500000 >= 500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 1500000 >= 1500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 2458000 >= 2458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 3500000 >= 3500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 4500000 >= 4500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 5458000 >= 5458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 6500000 >= 6500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 7500000 >= 7500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 8458000 >= 8458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 9500000 >= 9500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 10500000 >= 10500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 11458000 >= 11458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 12500000 >= 12500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 13500000 >= 13500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 14458000 >= 14458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 15500000 >= 15500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 16500000 >= 16500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 17458000 >= 17458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 18500000 >= 18500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 19500000 >= 19500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 20458000 >= 20458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 21500000 >= 21500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 22500000 >= 22500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 23458000 >= 23458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 24500000 >= 24500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 25500000 >= 25500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 26458000 >= 26458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 27500000 >= 27500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 28500000 >= 28500000\n",
+      "case": "speed_25_24",
+      "command": [
+        "/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "consensus",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/speed_25_24.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-fsydc05e/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 28756,
+      "input_blocks": 0,
+      "output_blocks": 4160,
+      "measurement": {
+        "status": "proposed",
+        "folds": [
+          {
+            "fit_parity": 0,
+            "fit_probes": 361,
+            "hypothesis": {
+              "scale": "25/24",
+              "offset_us": 0,
+              "votes": 260
+            },
+            "runner_up": {
+              "scale": "1000/1001",
+              "offset_us": 660000,
+              "votes": 70
+            }
+          },
+          {
+            "fit_parity": 1,
+            "fit_probes": 359,
+            "hypothesis": {
+              "scale": "25/24",
+              "offset_us": 0,
+              "votes": 237
+            },
+            "runner_up": {
+              "scale": "1000/1001",
+              "offset_us": 1180000,
+              "votes": 54
+            }
+          }
+        ],
+        "region_tallies": [
+          {
+            "confirms": 32,
+            "uninformative": 59
+          },
+          {
+            "uninformative": 2,
+            "confirms": 87
+          },
+          {
+            "confirms": 90
+          },
+          {
+            "confirms": 89
+          },
+          {
+            "confirms": 75,
+            "uninformative": 16
+          },
+          {
+            "uninformative": 90
+          },
+          {
+            "uninformative": 79,
+            "confirms": 10
+          },
+          {
+            "uninformative": 40,
+            "confirms": 51
+          }
+        ],
+        "region_verdicts": [
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "insufficient",
+          "confirms",
+          "confirms"
+        ],
+        "max_region_residual_us": [
+          0.0,
+          22939.81059587095,
+          22494.58842605166,
+          22268.477576956153,
+          21367.267431549728,
+          0.0,
+          0.0,
+          21409.854970332235
+        ],
+        "confirmed_pairs": 434,
+        "exact_anchors": 244,
+        "span_fraction": {
+          "source": 1.0,
+          "target": 1.0
+        },
+        "frame_counts": {
+          "target": 720,
+          "source": 720
+        },
+        "mapping": {
+          "scale": 1.0415547778301808,
+          "offset_us": 2833.7546996958554
+        },
+        "reason": "research_limits_met",
+        "automatic_publication": false
+      },
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        2498.088190238034,
+        931.6444794348668,
+        187.24388542453835
+      ],
+      "max_error_us": 2498.088190238034,
+      "workspace_bytes_at_exit": 2122966
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 4.42,
+      "stdout": "",
+      "stderr": "",
+      "case": "reversed",
+      "command": [
+        "/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "consensus",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/reversed.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-7jn7da9e/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 28856,
+      "input_blocks": 0,
+      "output_blocks": 4152,
+      "measurement": {
+        "status": "review_required",
+        "folds": [
+          {
+            "fit_parity": 0,
+            "fit_probes": 360,
+            "hypothesis": {
+              "scale": "25/24",
+              "offset_us": 12100000,
+              "votes": 8
+            },
+            "runner_up": {
+              "scale": "25/24",
+              "offset_us": 24040000,
+              "votes": 7
+            },
+            "reason": "insufficient_votes"
+          },
+          {
+            "fit_parity": 1,
+            "fit_probes": 360,
+            "hypothesis": {
+              "scale": "24/25",
+              "offset_us": -22980000,
+              "votes": 6
+            },
+            "runner_up": {
+              "scale": "960/1001",
+              "offset_us": -23520000,
+              "votes": 6
+            },
+            "reason": "insufficient_votes"
+          }
+        ],
+        "region_tallies": [
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "region_verdicts": [
+          "insufficient",
+          "insufficient",
+          "insufficient",
+          "insufficient",
+          "insufficient",
+          "insufficient",
+          "insufficient",
+          "insufficient"
+        ],
+        "max_region_residual_us": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "confirmed_pairs": 0,
+        "exact_anchors": 0,
+        "span_fraction": {
+          "source": 0.0,
+          "target": 0.0
+        },
+        "frame_counts": {
+          "target": 720,
+          "source": 720
+        },
+        "reason": "insufficient_votes",
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 2118834
+    }
+  ]
+}

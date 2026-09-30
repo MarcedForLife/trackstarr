@@ -109,3 +109,23 @@ def test_cuts_near_the_ends_or_one_frame_long_are_caught(first, last):
     ]
     result = match_consensus(target, source)
     assert result["reason"] in {"contradicting_region", "folds_disagree"}
+
+
+@pytest.mark.parametrize(("period", "status"), [(4, "proposed"), (2, "review_required")])
+def test_frames_tied_with_a_neighbour_show_coverage_but_not_timing(period, status):
+    original = frames()
+    # A repeated frame, as a slow scene gives at 24 fps. With period 2 nothing pins the time.
+    source = [
+        Frame(f.time_us, f.confidence, original[i - 1].lower, original[i - 1].upper)
+        if i % period == 1
+        else f
+        for i, f in enumerate(original)
+    ]
+    result = match_consensus(shifted(source, offset_us=300_000), source)
+    assert result["status"] == status
+    assert result["confirmed_pairs"] == len(source)
+    assert result["exact_anchors"] == (len(source) // 2 if period == 4 else 0)
+    if status == "proposed":
+        assert result["mapping"]["offset_us"] == pytest.approx(300_000, abs=1)
+    else:
+        assert result["reason"] == "inconsistent_timeline"

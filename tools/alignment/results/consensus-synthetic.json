@@ -43,7 +43,7 @@
   "implementation_sha256": {
     "visual.py": "98ccef77cdbbc7f0088791972da6be9f6fbfe844205be8eb207e63eb9f3d2e93",
     "temporal.py": "4bccf965d9822bf90992b18dc1dc01ba65b67adaacd0f81bb836c4d0a985e362",
-    "consensus.py": "5fd9bc8afa2e4f4d094312c6b6afbc3f9dda2f48bc315368b77e63ef37549d81",
+    "consensus.py": "a92cf6fca4fdea8f006731627e23d910102d3b0f0a1bf820a8c1252ec4ae4905",
     "avsync_core.py": "bfaa4b9b26017bca09aecf2c11fa7afbbdee562e553dd6c35d8c25d68a041783",
     "compare_visual.py": "31c0ea3da32cc4cccd47e72b76180a7121ea8d20a2df8d44f4816520729bdbbb"
   },
@@ -66,14 +66,14 @@
         "--source",
         "/tmp/alignment-corpus/identity.mkv",
         "--report",
-        "/tmp/trackstarr-visual-dubkl_zk/measurement.json",
+        "/tmp/trackstarr-visual-e0teoe6a/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 33324,
-      "input_blocks": 8,
+      "max_process_rss_kib": 32884,
+      "input_blocks": 0,
       "output_blocks": 8280,
       "measurement": {
         "status": "proposed",
@@ -154,6 +154,7 @@
           0.0
         ],
         "confirmed_pairs": 1440,
+        "exact_anchors": 1440,
         "span_fraction": {
           "source": 1.0,
           "target": 1.0
@@ -177,12 +178,12 @@
         0.0
       ],
       "max_error_us": 0.0,
-      "workspace_bytes_at_exit": 4234720
+      "workspace_bytes_at_exit": 4234745
     },
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 2.269,
+      "wall_seconds": 2.417,
       "stdout": "",
       "stderr": "",
       "case": "trim_start",
@@ -197,13 +198,13 @@
         "--source",
         "/tmp/alignment-corpus/trim_start.mkv",
         "--report",
-        "/tmp/trackstarr-visual-muoj212l/measurement.json",
+        "/tmp/trackstarr-visual-jcmga2kz/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 32988,
+      "max_process_rss_kib": 32972,
       "input_blocks": 0,
       "output_blocks": 8200,
       "measurement": {
@@ -285,6 +286,7 @@
           0.0
         ],
         "confirmed_pairs": 1410,
+        "exact_anchors": 1410,
         "span_fraction": {
           "source": 1.0,
           "target": 0.9791520731178491
@@ -308,12 +310,12 @@
         0.0
       ],
       "max_error_us": 0.0,
-      "workspace_bytes_at_exit": 4193458
+      "workspace_bytes_at_exit": 4193483
     },
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 2.317,
+      "wall_seconds": 2.368,
       "stdout": "",
       "stderr": "",
       "case": "leading_black",
@@ -328,13 +330,13 @@
         "--source",
         "/tmp/alignment-corpus/leading_black.mkv",
         "--report",
-        "/tmp/trackstarr-visual-5zi0v89f/measurement.json",
+        "/tmp/trackstarr-visual-n41tcwyj/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 33248,
+      "max_process_rss_kib": 33364,
       "input_blocks": 0,
       "output_blocks": 8384,
       "measurement": {
@@ -416,6 +418,7 @@
           0.0
         ],
         "confirmed_pairs": 1440,
+        "exact_anchors": 1440,
         "span_fraction": {
           "source": 0.975593087962511,
           "target": 1.0
@@ -439,14 +442,14 @@
         0.0
       ],
       "max_error_us": 0.0,
-      "workspace_bytes_at_exit": 4288518
+      "workspace_bytes_at_exit": 4288543
     },
     {
       "returncode": 0,
       "timed_out": false,
       "wall_seconds": 2.367,
       "stdout": "",
-      "stderr": "[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 500000 >= 500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 1500000 >= 1500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 2458000 >= 2458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 3500000 >= 3500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 4500000 >= 4500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 5458000 >= 5458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 6500000 >= 6500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 7500000 >= 7500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 8458000 >= 8458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 9500000 >= 9500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 10500000 >= 10500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 11458000 >= 11458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 12500000 >= 12500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 13500000 >= 13500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 14458000 >= 14458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 15500000 >= 15500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 16500000 >= 16500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 17458000 >= 17458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 18500000 >= 18500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 19500000 >= 19500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 20458000 >= 20458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 21500000 >= 21500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 22500000 >= 22500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 23458000 >= 23458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 24500000 >= 24500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 25500000 >= 25500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 26458000 >= 26458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 27500000 >= 27500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 28500000 >= 28500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 29458000 >= 29458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 30500000 >= 30500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 31500000 >= 31500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 32458000 >= 32458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 33500000 >= 33500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 34500000 >= 34500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 35458000 >= 35458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 36500000 >= 36500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 37500000 >= 37500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 38458000 >= 38458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 39500000 >= 39500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 40500000 >= 40500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 41458000 >= 41458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 42500000 >= 42500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 43500000 >= 43500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 44458000 >= 44458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 45500000 >= 45500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 46500000 >= 46500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 47458000 >= 47458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 48500000 >= 48500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 49500000 >= 49500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 50458000 >= 50458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 51500000 >= 51500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 52500000 >= 52500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 53458000 >= 53458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 54500000 >= 54500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 55500000 >= 55500000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 56458000 >= 56458000\n[null @ 0x5f0f86665100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 57500000 >= 57500000\n",
+      "stderr": "[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 500000 >= 500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 1500000 >= 1500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 2458000 >= 2458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 3500000 >= 3500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 4500000 >= 4500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 5458000 >= 5458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 6500000 >= 6500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 7500000 >= 7500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 8458000 >= 8458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 9500000 >= 9500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 10500000 >= 10500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 11458000 >= 11458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 12500000 >= 12500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 13500000 >= 13500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 14458000 >= 14458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 15500000 >= 15500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 16500000 >= 16500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 17458000 >= 17458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 18500000 >= 18500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 19500000 >= 19500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 20458000 >= 20458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 21500000 >= 21500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 22500000 >= 22500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 23458000 >= 23458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 24500000 >= 24500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 25500000 >= 25500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 26458000 >= 26458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 27500000 >= 27500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 28500000 >= 28500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 29458000 >= 29458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 30500000 >= 30500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 31500000 >= 31500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 32458000 >= 32458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 33500000 >= 33500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 34500000 >= 34500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 35458000 >= 35458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 36500000 >= 36500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 37500000 >= 37500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 38458000 >= 38458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 39500000 >= 39500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 40500000 >= 40500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 41458000 >= 41458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 42500000 >= 42500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 43500000 >= 43500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 44458000 >= 44458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 45500000 >= 45500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 46500000 >= 46500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 47458000 >= 47458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 48500000 >= 48500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 49500000 >= 49500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 50458000 >= 50458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 51500000 >= 51500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 52500000 >= 52500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 53458000 >= 53458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 54500000 >= 54500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 55500000 >= 55500000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 56458000 >= 56458000\n[null @ 0x5d70d31f0100] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 57500000 >= 57500000\n",
       "case": "speed_25_24",
       "command": [
         "/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14",
@@ -459,13 +462,13 @@
         "--source",
         "/tmp/alignment-corpus/speed_25_24.mkv",
         "--report",
-        "/tmp/trackstarr-visual-ja1zbvm_/measurement.json",
+        "/tmp/trackstarr-visual-unn6d9a9/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 33092,
+      "max_process_rss_kib": 33140,
       "input_blocks": 0,
       "output_blocks": 8296,
       "measurement": {
@@ -547,6 +550,7 @@
           22061.25246785581
         ],
         "confirmed_pairs": 1440,
+        "exact_anchors": 1440,
         "span_fraction": {
           "source": 1.0,
           "target": 1.0
@@ -570,14 +574,14 @@
         524.4640828602438
       ],
       "max_error_us": 524.4640828602438,
-      "workspace_bytes_at_exit": 4242382
+      "workspace_bytes_at_exit": 4242407
     },
     {
       "returncode": 0,
       "timed_out": false,
       "wall_seconds": 2.317,
       "stdout": "",
-      "stderr": "[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 500000 >= 500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 1500000 >= 1500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 2458000 >= 2458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 3500000 >= 3500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 4500000 >= 4500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 5458000 >= 5458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 6500000 >= 6500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 7500000 >= 7500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 8458000 >= 8458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 9500000 >= 9500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 10500000 >= 10500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 11458000 >= 11458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 12500000 >= 12500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 13500000 >= 13500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 14458000 >= 14458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 15500000 >= 15500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 16500000 >= 16500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 17458000 >= 17458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 18500000 >= 18500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 19500000 >= 19500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 20458000 >= 20458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 21500000 >= 21500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 22500000 >= 22500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 23458000 >= 23458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 24500000 >= 24500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 25500000 >= 25500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 26458000 >= 26458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 27500000 >= 27500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 28500000 >= 28500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 29458000 >= 29458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 30500000 >= 30500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 31500000 >= 31500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 32458000 >= 32458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 33500000 >= 33500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 34500000 >= 34500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 35458000 >= 35458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 36500000 >= 36500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 37500000 >= 37500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 38458000 >= 38458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 39500000 >= 39500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 40500000 >= 40500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 41458000 >= 41458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 42500000 >= 42500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 43500000 >= 43500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 44458000 >= 44458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 45500000 >= 45500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 46500000 >= 46500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 47458000 >= 47458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 48500000 >= 48500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 49500000 >= 49500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 50458000 >= 50458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 51500000 >= 51500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 52500000 >= 52500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 53458000 >= 53458000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 54500000 >= 54500000\n[null @ 0x5f29771ca6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 55500000 >= 55500000\n",
+      "stderr": "[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 500000 >= 500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 1500000 >= 1500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 2458000 >= 2458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 3500000 >= 3500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 4500000 >= 4500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 5458000 >= 5458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 6500000 >= 6500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 7500000 >= 7500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 8458000 >= 8458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 9500000 >= 9500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 10500000 >= 10500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 11458000 >= 11458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 12500000 >= 12500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 13500000 >= 13500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 14458000 >= 14458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 15500000 >= 15500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 16500000 >= 16500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 17458000 >= 17458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 18500000 >= 18500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 19500000 >= 19500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 20458000 >= 20458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 21500000 >= 21500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 22500000 >= 22500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 23458000 >= 23458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 24500000 >= 24500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 25500000 >= 25500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 26458000 >= 26458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 27500000 >= 27500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 28500000 >= 28500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 29458000 >= 29458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 30500000 >= 30500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 31500000 >= 31500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 32458000 >= 32458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 33500000 >= 33500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 34500000 >= 34500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 35458000 >= 35458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 36500000 >= 36500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 37500000 >= 37500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 38458000 >= 38458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 39500000 >= 39500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 40500000 >= 40500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 41458000 >= 41458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 42500000 >= 42500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 43500000 >= 43500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 44458000 >= 44458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 45500000 >= 45500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 46500000 >= 46500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 47458000 >= 47458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 48500000 >= 48500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 49500000 >= 49500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 50458000 >= 50458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 51500000 >= 51500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 52500000 >= 52500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 53458000 >= 53458000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 54500000 >= 54500000\n[null @ 0x58dce791a6c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 55500000 >= 55500000\n",
       "case": "speed_and_trim",
       "command": [
         "/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14",
@@ -590,13 +594,13 @@
         "--source",
         "/tmp/alignment-corpus/speed_and_trim.mkv",
         "--report",
-        "/tmp/trackstarr-visual-fesiqgf4/measurement.json",
+        "/tmp/trackstarr-visual-yjvnmnv1/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 33160,
+      "max_process_rss_kib": 32904,
       "input_blocks": 0,
       "output_blocks": 8216,
       "measurement": {
@@ -678,6 +682,7 @@
           22082.596805617213
         ],
         "confirmed_pairs": 1410,
+        "exact_anchors": 1410,
         "span_fraction": {
           "source": 1.0,
           "target": 0.9791520731178491
@@ -701,12 +706,12 @@
         500.59218167257495
       ],
       "max_error_us": 505.45988188078627,
-      "workspace_bytes_at_exit": 4200853
+      "workspace_bytes_at_exit": 4200878
     },
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 2.418,
+      "wall_seconds": 2.417,
       "stdout": "",
       "stderr": "",
       "case": "fps_only",
@@ -721,13 +726,13 @@
         "--source",
         "/tmp/alignment-corpus/fps_only.mkv",
         "--report",
-        "/tmp/trackstarr-visual-62h6fnp2/measurement.json",
+        "/tmp/trackstarr-visual-vpa5mmij/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 33140,
+      "max_process_rss_kib": 33428,
       "input_blocks": 0,
       "output_blocks": 8456,
       "measurement": {
@@ -809,6 +814,7 @@
           20189.67994207889
         ],
         "confirmed_pairs": 1500,
+        "exact_anchors": 1500,
         "span_fraction": {
           "source": 1.0,
           "target": 1.0
@@ -832,12 +838,12 @@
         1824.9159044066853
       ],
       "max_error_us": 1824.9159044066853,
-      "workspace_bytes_at_exit": 4325832
+      "workspace_bytes_at_exit": 4325857
     },
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 2.016,
+      "wall_seconds": 2.017,
       "stdout": "",
       "stderr": "",
       "case": "crop",
@@ -852,13 +858,13 @@
         "--source",
         "/tmp/alignment-corpus/crop.mkv",
         "--report",
-        "/tmp/trackstarr-visual-3e29ojft/measurement.json",
+        "/tmp/trackstarr-visual-4q3wbn3i/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 33144,
+      "max_process_rss_kib": 32960,
       "input_blocks": 0,
       "output_blocks": 8280,
       "measurement": {
@@ -906,6 +912,7 @@
           0.0
         ],
         "confirmed_pairs": 0,
+        "exact_anchors": 0,
         "span_fraction": {
           "source": 0.0,
           "target": 0.0
@@ -918,12 +925,12 @@
         "automatic_publication": false
       },
       "outcome": "review_required",
-      "workspace_bytes_at_exit": 4234208
+      "workspace_bytes_at_exit": 4234230
     },
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 2.317,
+      "wall_seconds": 2.367,
       "stdout": "",
       "stderr": "",
       "case": "surround",
@@ -938,13 +945,13 @@
         "--source",
         "/tmp/alignment-corpus/surround.mkv",
         "--report",
-        "/tmp/trackstarr-visual-hcpeitwl/measurement.json",
+        "/tmp/trackstarr-visual-sugingqq/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 32968,
+      "max_process_rss_kib": 33260,
       "input_blocks": 0,
       "output_blocks": 8280,
       "measurement": {
@@ -1026,6 +1033,7 @@
           0.0
         ],
         "confirmed_pairs": 1440,
+        "exact_anchors": 1440,
         "span_fraction": {
           "source": 1.0,
           "target": 1.0
@@ -1049,12 +1057,12 @@
         0.0
       ],
       "max_error_us": 0.0,
-      "workspace_bytes_at_exit": 4234720
+      "workspace_bytes_at_exit": 4234745
     },
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 2.267,
+      "wall_seconds": 2.367,
       "stdout": "",
       "stderr": "",
       "case": "different_audio",
@@ -1069,13 +1077,13 @@
         "--source",
         "/tmp/alignment-corpus/different_audio.mkv",
         "--report",
-        "/tmp/trackstarr-visual-4udw1q77/measurement.json",
+        "/tmp/trackstarr-visual-s3mummrs/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 33164,
+      "max_process_rss_kib": 33124,
       "input_blocks": 0,
       "output_blocks": 8280,
       "measurement": {
@@ -1157,6 +1165,7 @@
           0.0
         ],
         "confirmed_pairs": 1440,
+        "exact_anchors": 1440,
         "span_fraction": {
           "source": 1.0,
           "target": 1.0
@@ -1180,12 +1189,12 @@
         0.0
       ],
       "max_error_us": 0.0,
-      "workspace_bytes_at_exit": 4234720
+      "workspace_bytes_at_exit": 4234745
     },
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 2.017,
+      "wall_seconds": 1.967,
       "stdout": "",
       "stderr": "",
       "case": "internal_cut",
@@ -1200,13 +1209,13 @@
         "--source",
         "/tmp/alignment-corpus/internal_cut.mkv",
         "--report",
-        "/tmp/trackstarr-visual-6c9tnlvo/measurement.json",
+        "/tmp/trackstarr-visual-_exv5xsk/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 32752,
+      "max_process_rss_kib": 32612,
       "input_blocks": 0,
       "output_blocks": 8144,
       "measurement": {
@@ -1281,6 +1290,7 @@
           0.0
         ],
         "confirmed_pairs": 347,
+        "exact_anchors": 347,
         "span_fraction": {
           "source": 0.3741043217017456,
           "target": 0.3613529470629441
@@ -1297,12 +1307,12 @@
         "automatic_publication": false
       },
       "outcome": "review_required",
-      "workspace_bytes_at_exit": 4163120
+      "workspace_bytes_at_exit": 4163144
     },
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 1.716,
+      "wall_seconds": 1.666,
       "stdout": "",
       "stderr": "",
       "case": "wrong_video_same_audio",
@@ -1317,13 +1327,13 @@
         "--source",
         "/tmp/alignment-corpus/wrong_video_same_audio.mkv",
         "--report",
-        "/tmp/trackstarr-visual-o2uofngj/measurement.json",
+        "/tmp/trackstarr-visual-lf654w_i/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 33520,
+      "max_process_rss_kib": 33436,
       "input_blocks": 0,
       "output_blocks": 8280,
       "measurement": {
@@ -1391,6 +1401,7 @@
           0.0
         ],
         "confirmed_pairs": 0,
+        "exact_anchors": 0,
         "span_fraction": {
           "source": 0.0,
           "target": 0.0
@@ -1403,7 +1414,7 @@
         "automatic_publication": false
       },
       "outcome": "review_required",
-      "workspace_bytes_at_exit": 4234569
+      "workspace_bytes_at_exit": 4234591
     },
     {
       "returncode": 0,
@@ -1423,13 +1434,13 @@
         "--source",
         "/tmp/alignment-corpus/black_silence.mkv",
         "--report",
-        "/tmp/trackstarr-visual-opv9x3n8/measurement.json",
+        "/tmp/trackstarr-visual-vmhhcn2a/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 32856,
+      "max_process_rss_kib": 32828,
       "input_blocks": 0,
       "output_blocks": 8280,
       "measurement": {
@@ -1477,6 +1488,7 @@
           0.0
         ],
         "confirmed_pairs": 0,
+        "exact_anchors": 0,
         "span_fraction": {
           "source": 0.0,
           "target": 0.0
@@ -1489,7 +1501,7 @@
         "automatic_publication": false
       },
       "outcome": "review_required",
-      "workspace_bytes_at_exit": 4234889
+      "workspace_bytes_at_exit": 4234911
     }
   ]
 }

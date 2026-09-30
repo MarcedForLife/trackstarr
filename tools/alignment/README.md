@@ -31,7 +31,12 @@ five fingerprints across 800 ms, searching eleven local timing scales from 0.9
 to 1.1. Source windows stay within their fit or validation region. Missing windows
 count against coverage. The baseline distance, ambiguity, coverage and residual
 limits remain unchanged. Run both engines on the same corpus for comparison.
-Neither engine has passed backend selection.
+
+`--engine consensus` runs the consensus matcher. Source frames vote for an offset
+at seven fixed speed ratios, and two folds each check the regions the other
+fitted. Timing uses only frames that also beat their neighbours. Its distance,
+ambiguity, span and residual limits are the baseline's. No engine has passed
+backend selection.
 
 The AVSync wrapper requires a separate checkout at
 `ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc`. It verifies the source hash and loads

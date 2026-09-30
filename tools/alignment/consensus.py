@@ -101,11 +101,13 @@ def check(frame: Frame, target: list[Frame], hypothesis: dict, bounds: dict) -> 
         default=None,
     )
     if nearest is not None and nearest[0] <= SETTINGS["max_distance"]:
-        distinct = (
-            alternative is None or alternative - nearest[0] >= SETTINGS["ambiguity_margin"]
-        )
-        verdict = "confirms" if distinct else "uninformative"
-        return result | {"verdict": verdict, "target_time_us": nearest[1]}
+        margin = SETTINGS["ambiguity_margin"]
+        if alternative is not None and alternative - nearest[0] < margin:
+            return result | {"verdict": "uninformative"}
+        # Only a frame that also beats its neighbours pins the time, not just the scene.
+        runner_up = min((d for d, t, _ in scored if t != nearest[1]), default=None)
+        exact = runner_up is None or runner_up - nearest[0] >= margin
+        return result | {"verdict": "confirms", "target_time_us": nearest[1], "exact": exact}
     # A close match anywhere but the predicted frame, even a few frames away, is a timing error.
     if any(d <= SETTINGS["max_distance"] for d, _, away in scored if away > gap):
         return result | {"verdict": "contradicts"}
@@ -190,18 +192,16 @@ def match_consensus(target: list[Frame], source: list[Frame]) -> dict:
     for item in sorted(checks, key=lambda c: c["source_time_us"]):
         ordered[item["region"]].append(item["verdict"])
     verdicts = [region_verdict(region_checks) for region_checks in ordered]
-    pairs = [
-        (c["source_time_us"], c["target_time_us"]) for c in checks if c["verdict"] == "confirms"
-    ]
-    mapping = fit(pairs)
+    confirmed = [c for c in checks if c["verdict"] == "confirms"]
+    pairs = [(c["source_time_us"], c["target_time_us"]) for c in confirmed]
+    # Every confirmation shows coverage, but only exact ones fit and test the timing.
+    anchors = [c for c in confirmed if c["exact"]]
+    mapping = fit([(c["source_time_us"], c["target_time_us"]) for c in anchors])
     residuals = [0.0] * SETTINGS["regions"]
     if mapping:
-        for item in checks:
-            if item["verdict"] == "confirms":
-                residual = abs(
-                    item["target_time_us"] - predict(mapping, item["source_time_us"])
-                )
-                residuals[item["region"]] = max(residuals[item["region"]], residual)
+        for item in anchors:
+            residual = abs(item["target_time_us"] - predict(mapping, item["source_time_us"]))
+            residuals[item["region"]] = max(residuals[item["region"]], residual)
     result: dict = {
         "status": "review_required",
         "folds": folds,
@@ -209,6 +209,7 @@ def match_consensus(target: list[Frame], source: list[Frame]) -> dict:
         "region_verdicts": verdicts,
         "max_region_residual_us": residuals,
         "confirmed_pairs": len(pairs),
+        "exact_anchors": len(anchors),
         "span_fraction": span_fraction(pairs, bounds),
         "frame_counts": {"target": len(target), "source": len(source)},
     }

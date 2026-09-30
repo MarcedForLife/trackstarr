@@ -7,6 +7,7 @@
       "revision": "b16b5f2a01",
       "additional_tested_build": "Alpine FFmpeg 8.1.2",
       "fingerprint_prototype_comparison": "results/fingerprints-synthetic.json",
+      "consensus_prototype_comparison": "results/consensus-synthetic.json",
       "benchmarked": true
     },
     {

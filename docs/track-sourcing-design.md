@@ -505,29 +505,24 @@ has changed.
 
 ### Continuation checkpoint
 
-Work is on `feature/audio-track-sourcing`. No candidate qualifies yet. The
-fingerprint prototypes recover every valid synthetic mapping except crop, but send
-each short Dark control to review for lack of distributed evidence. AVSync's
-isolated core finds too few anchors and needs about 340 MiB of dependencies. The
-Dark and Eternaut fixtures each derive from one release, and no independently
-released pair is available yet.
+Work is on `feature/audio-track-sourcing`. No candidate qualifies yet. The first
+fingerprint prototypes send each short Dark control to review for lack of
+distributed evidence. AVSync's isolated core finds too few anchors and needs about
+340 MiB of dependencies. The Dark and Eternaut fixtures each derive from one
+release, and no independently released pair is available yet.
 
 Phases 2 and 3 need no alignment backend and can start now. Manual copy from an
 explicit source file needs no second arr connection, so a single-connection
 installation can test preparation, rendering and publication end to end.
 
-The next matcher experiment replaces per-probe decisions with consensus. The
-current prototypes discard any probe with a close alternative, so dark or
-repetitive regions lack evidence even when their best matches agree. Instead, each
-plausible scale lets every close match vote for an offset. Plausible scales are 1,
-1001/1000, 25/24, 25025/24000 and their inverses, which cover common film speed
-changes. Repeated and static content spreads its votes, while a true mapping
-concentrates them. Held-out regions then check the winning mapping, each confirming
-it, contradicting it or carrying too little picture detail to judge. Acceptance
-needs no contradicting region and confirmed evidence near both ends and across a
-minimum share of the programme. Indexing target frames by the per-frame words
-FFmpeg already exports would let the search cover whole episodes instead of
-120-second samples. Crop remains unresolved.
+The [consensus matcher](visual-alignment-comparison.md#consensus-follow-up)
+replaces per-probe decisions with offset votes at fixed film speed ratios, checked
+on regions that did not vote. It recovers every valid synthetic mapping except crop
+and, after a change the Dark results prompted, the three valid Dark controls within
+2.5 ms. That Dark pass is not held out. It compares every frame pair, so the next
+step indexes target frames by the per-frame words FFmpeg already exports. Whole
+Dark and Eternaut episodes can then run, and an independently released pair
+remains the real test. Crop remains unresolved.
 
 Temporary fixtures may disappear between sessions. The harness README has
 reproduction steps. Library originals remain read-only inputs.
