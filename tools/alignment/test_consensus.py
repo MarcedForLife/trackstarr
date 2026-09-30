@@ -164,3 +164,25 @@ def test_a_dim_predicted_frame_is_compared_not_skipped():
     result = match_consensus(target, source)
     assert result["status"] == "proposed"
     assert "contradicts" not in result["region_tallies"][4]
+
+
+def test_a_barely_closer_match_elsewhere_is_not_a_contradiction():
+    original = frames()
+    dim = original[125]
+    # A dim, static stretch at 120 to 129. Compression leaves the predicted target frames
+    # 62 bits off and one neighbour 56 off, closer by less than the ambiguity margin.
+    source = [
+        Frame(f.time_us, f.confidence, dim.lower, dim.upper) if 120 <= i < 130 else f
+        for i, f in enumerate(original)
+    ]
+    target = [
+        Frame(f.time_us, f.confidence, f.lower ^ ((1 << 62) - 1), f.upper)
+        if 121 <= i < 130
+        else Frame(f.time_us, f.confidence, f.lower ^ ((1 << 56) - 1), f.upper)
+        if i == 120
+        else f
+        for i, f in enumerate(shifted(source, offset_us=300_000))
+    ]
+    result = match_consensus(target, source)
+    assert result["status"] == "proposed"
+    assert "contradicts" not in result["region_tallies"][5]

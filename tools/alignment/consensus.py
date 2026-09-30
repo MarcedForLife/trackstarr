@@ -127,9 +127,13 @@ def check(frame: Frame, target: Target, hypothesis: dict, probe: bool) -> dict:
         ((distance(frame, f), f.time_us) for f in target.near(predicted, gap)), default=None
     )
     if nearest is None or nearest[0] > SETTINGS["max_distance"]:
-        # A close match anywhere but the predicted frame, even frames away, is a timing error.
+        # A distinctly closer match anywhere else, even frames away, is a timing error. One
+        # barely closer is noise in a dim, heavily compressed scene.
+        limit = SETTINGS["max_distance"]
+        if nearest is not None:
+            limit = min(limit, nearest[0] - SETTINGS["ambiguity_margin"])
         contradicted = any(
-            distance(frame, f) <= SETTINGS["max_distance"]
+            distance(frame, f) <= limit
             for f in target.informative
             if abs(f.time_us - predicted) > gap
         )
