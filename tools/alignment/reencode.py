@@ -61,16 +61,16 @@ def duration(path: Path) -> float:
     return float(raw)
 
 
-def frame_rate(path: Path) -> Fraction:
+def probe_value(path: Path, entry: str, stream: bool = True) -> Fraction:
+    selection = ["-select_streams", "v:0"] if stream else []
     raw = subprocess.check_output(
         [
             "ffprobe",
             "-v",
             "error",
-            "-select_streams",
-            "v:0",
+            *selection,
             "-show_entries",
-            "stream=r_frame_rate",
+            entry,
             "-of",
             "csv=p=0",
             str(path),
@@ -87,7 +87,7 @@ def prepare(pair: Path, root: Path) -> dict:
         if digest(pair / name) != facts["files"][name]["sha256"]:
             raise ValueError(f"pair fixture changed: {name}")
     source = pair / "source.mkv"
-    rate = frame_rate(source)
+    rate = probe_value(source, "stream=r_frame_rate")
     if rate not in FILM_RATES:
         raise ValueError(f"expected a film frame rate, found {rate}")
     scales = {"reencode_trim": Fraction(1), "reencode_pal": Fraction(25) / rate}
@@ -114,9 +114,11 @@ def prepare(pair: Path, root: Path) -> dict:
     )
     if digest(source) != facts["files"]["source.mkv"]["sha256"]:
         raise ValueError("source changed during re-encoding")
+    # FFmpeg's trim counts from the container start, which audio can set before the video.
     # Target and source share one timeline, so the first kept source frame is target time.
+    start = probe_value(source, "format=start_time", stream=False)
     times = frame_times(source, 24 * (TRIM_SECONDS + 1))
-    kept = next(t for t in times if t - times[0] >= TRIM_SECONDS)
+    kept = min(t for t in times if t - start >= TRIM_SECONDS)
     cases = []
     for name, scale in scales.items():
         variant = root / f"{name}.mkv"
