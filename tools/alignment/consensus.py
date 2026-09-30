@@ -32,16 +32,23 @@ LOCAL_MATCHES = {"consistent", "confirms", "uninformative"}
 
 @dataclass(frozen=True)
 class Target:
-    frames: list[Frame]
+    """The predicted frame is compared whatever its confidence, since a re-encode can
+    lift a dim frame above zero on one side only. Only informative frames are evidence."""
+
+    all_frames: list[Frame]
     bounds: tuple[int, int]
+    informative: list[Frame] = field(init=False)
     times: list[int] = field(init=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "times", [f.time_us for f in self.frames])
+        object.__setattr__(
+            self, "informative", [f for f in self.all_frames if f.confidence > 0]
+        )
+        object.__setattr__(self, "times", [f.time_us for f in self.all_frames])
 
     def near(self, time_us: float, within: float) -> list[Frame]:
         start = bisect_left(self.times, time_us - within)
-        return self.frames[start : bisect_right(self.times, time_us + within)]
+        return self.all_frames[start : bisect_right(self.times, time_us + within)]
 
 
 def distance(first: Frame, second: Frame) -> int:
@@ -71,7 +78,7 @@ def distinct_matches(probe: Frame, target: Target) -> list[int]:
     """
     close = sorted(
         (gap, frame.time_us)
-        for frame in target.frames
+        for frame in target.informative
         if (gap := distance(probe, frame)) <= SETTINGS["max_distance"]
     )
     chosen: list[int] = []
@@ -123,14 +130,14 @@ def check(frame: Frame, target: Target, hypothesis: dict, probe: bool) -> dict:
         # A close match anywhere but the predicted frame, even frames away, is a timing error.
         contradicted = any(
             distance(frame, f) <= SETTINGS["max_distance"]
-            for f in target.frames
+            for f in target.informative
             if abs(f.time_us - predicted) > gap
         )
         return result | {"verdict": "contradicts" if contradicted else "unmatched"}
     if not probe:
         return result | {"verdict": "consistent"}
     margin = SETTINGS["ambiguity_margin"]
-    scored = [(distance(frame, f), f.time_us) for f in target.frames]
+    scored = [(distance(frame, f), f.time_us) for f in target.informative]
     # Distinctness ignores neighbouring frames, which resemble any match in a slow scene.
     alternative = min(
         (d for d, t in scored if abs(t - predicted) > SETTINGS["alternative_separation_us"]),
@@ -239,7 +246,7 @@ def match_consensus(target_frames: list[Frame], source: list[Frame]) -> dict:
         "source": (source[0].time_us, source[-1].time_us),
         "target": (target_frames[0].time_us, target_frames[-1].time_us),
     }
-    target = Target([f for f in target_frames if f.confidence > 0], bounds["target"])
+    target = Target(target_frames, bounds["target"])
     regions: list[list[Frame]] = [[] for _ in range(SETTINGS["regions"])]
     for frame in source:
         if frame.confidence > 0:
@@ -276,7 +283,7 @@ def match_consensus(target_frames: list[Frame], source: list[Frame]) -> dict:
         "confirmed_pairs": len(pairs),
         "exact_anchors": len(anchors),
         "span_fraction": span_fraction(pairs, bounds),
-        "frame_counts": {"target": len(target.frames), "source": sum(map(len, regions))},
+        "frame_counts": {"target": len(target.informative), "source": sum(map(len, regions))},
     }
     if mapping:
         result["mapping"] = mapping

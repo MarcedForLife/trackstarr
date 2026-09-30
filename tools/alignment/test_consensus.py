@@ -144,3 +144,23 @@ def test_frames_between_sampled_probes_still_catch_a_cut(monkeypatch):
     result = match_consensus(target, source)
     assert result["reason"] == "contradicting_region"
     assert "contradicts" in result["region_tallies"][6]
+
+
+def test_a_dim_predicted_frame_is_compared_not_skipped():
+    original = frames()
+    dim = original[25]
+    # A dim scene at frames 20 to 29 recurs at 100 to 109, where only the target's
+    # copy has zero confidence, as a re-encode's grade can leave it.
+    source = [
+        Frame(f.time_us, f.confidence, dim.lower, dim.upper)
+        if 20 <= i < 30 or 100 <= i < 110
+        else f
+        for i, f in enumerate(original)
+    ]
+    target = [
+        Frame(f.time_us, 0 if 100 <= i < 110 else f.confidence, f.lower, f.upper)
+        for i, f in enumerate(shifted(source, offset_us=300_000))
+    ]
+    result = match_consensus(target, source)
+    assert result["status"] == "proposed"
+    assert "contradicts" not in result["region_tallies"][4]
