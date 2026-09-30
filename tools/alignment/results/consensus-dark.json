@@ -33,25 +33,28 @@
     "min_votes": 10,
     "min_peak_ratio": 2.0,
     "max_sample_gap_us": 75000,
+    "probes_per_region": 100,
     "min_region_confirmations": 3,
     "min_contradicting_run": 3,
     "min_confirmed_regions": 5
   },
+  "episode_settings": null,
   "manifest_sha256": "ba13cb21bd6f44aabf93f9695231a83136d0c0b6ae198ebf9311096134b5554f",
   "ffmpeg_version": "ffmpeg version N-126168-gb16b5f2a01-20260815 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 15.2.0 (crosstool-NG 1.28.0.23_185f348)\nconfiguration: --prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config --cross-prefix=x86_64-ffbuild-linux-gnu- --arch=x86_64 --target-os=linux --enable-gpl --enable-version3 --disable-debug --enable-iconv --enable-zlib --enable-libxml2 --enable-libsoxr --enable-openssl --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype --enable-libfribidi --enable-vulkan --enable-libvorbis --enable-libxcb --enable-xlib --enable-libpulse --enable-gmp --enable-lzma --enable-liblcevc-dec --enable-opencl --enable-amf --enable-libaom --enable-libaribb24 --enable-avisynth --enable-chromaprint --enable-libdav1d --enable-libdavs2 --enable-libdvdread --enable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --enable-frei0r --enable-libgme --enable-libkvazaar --enable-libaribcaption --enable-libass --enable-libbluray --enable-libjxl --enable-libmp3lame --enable-libopus --enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx --enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopenmpt --enable-librav1e --enable-librubberband --disable-schannel --enable-sdl2 --enable-libsnappy --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d --enable-libdrm --enable-vaapi --enable-libvidstab --enable-libvvenc --disable-whisper --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxvid --enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags= --extra-libs='-lgomp -ldl' --extra-ldflags=-pthread --extra-ldexeflags=-pie --cc=x86_64-ffbuild-linux-gnu-gcc --cxx=x86_64-ffbuild-linux-gnu-g++ --ar=x86_64-ffbuild-linux-gnu-gcc-ar --ranlib=x86_64-ffbuild-linux-gnu-gcc-ranlib --nm=x86_64-ffbuild-linux-gnu-gcc-nm --extra-version=20260815\nlibavutil      61.  5.100 / 61.  5.100\nlibavcodec     63.  8.101 / 63.  8.101\nlibavformat    63.  6.100 / 63.  6.100\nlibavdevice    63.  2.100 / 63.  2.100\nlibavfilter    12.  3.101 / 12.  3.101\nlibswscale     10.  2.100 / 10.  2.100\nlibswresample   7.  2.100 /  7.  2.100\n\nExiting with exit code 0\n",
   "binary_sha256": "f1e69546b9ac98ca220eafa680d3c2ecfd18f6f756452858574f21b6bac04115",
   "implementation_sha256": {
-    "visual.py": "98ccef77cdbbc7f0088791972da6be9f6fbfe844205be8eb207e63eb9f3d2e93",
+    "visual.py": "314a9d3ed2217d2eb0f8a7beb82a0ebd25ce438165594198a66b21c5395a34cc",
     "temporal.py": "4bccf965d9822bf90992b18dc1dc01ba65b67adaacd0f81bb836c4d0a985e362",
-    "consensus.py": "a92cf6fca4fdea8f006731627e23d910102d3b0f0a1bf820a8c1252ec4ae4905",
+    "consensus.py": "ede86645b790b4f676bfa6c9d784124d290771645a62a14c19a3640ebfc3800c",
+    "episode_signatures.py": "08507e1209570405ec37450684591b7011158040d639dbac8f6b4ce2f8b13016",
     "avsync_core.py": "bfaa4b9b26017bca09aecf2c11fa7afbbdee562e553dd6c35d8c25d68a041783",
-    "compare_visual.py": "31c0ea3da32cc4cccd47e72b76180a7121ea8d20a2df8d44f4816520729bdbbb"
+    "compare_visual.py": "143b55256b26f66fea8b3c0ee5a8f1804006a6fe3b9bb5b19945d09f59807094"
   },
   "results": [
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 4.57,
+      "wall_seconds": 4.721,
       "stdout": "",
       "stderr": "",
       "case": "video_only_identity",
@@ -66,13 +69,13 @@
         "--source",
         "/tmp/trackstarr-signature-dark-sample/source.mkv",
         "--report",
-        "/tmp/trackstarr-visual-gb511ogm/measurement.json",
+        "/tmp/trackstarr-visual-ptlz7852/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 28276,
+      "max_process_rss_kib": 29312,
       "input_blocks": 0,
       "output_blocks": 4152,
       "measurement": {
@@ -187,7 +190,7 @@
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 4.521,
+      "wall_seconds": 4.623,
       "stdout": "",
       "stderr": "",
       "case": "trim_start",
@@ -202,13 +205,13 @@
         "--source",
         "/tmp/trackstarr-signature-dark-sample/trim_start.mkv",
         "--report",
-        "/tmp/trackstarr-visual-2i5nd27g/measurement.json",
+        "/tmp/trackstarr-visual-k77xzoa_/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 28872,
+      "max_process_rss_kib": 28476,
       "input_blocks": 0,
       "output_blocks": 4072,
       "measurement": {
@@ -322,9 +325,9 @@
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 4.62,
+      "wall_seconds": 4.721,
       "stdout": "",
-      "stderr": "[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 500000 >= 500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 1500000 >= 1500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 2458000 >= 2458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 3500000 >= 3500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 4500000 >= 4500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 5458000 >= 5458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 6500000 >= 6500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 7500000 >= 7500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 8458000 >= 8458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 9500000 >= 9500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 10500000 >= 10500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 11458000 >= 11458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 12500000 >= 12500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 13500000 >= 13500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 14458000 >= 14458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 15500000 >= 15500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 16500000 >= 16500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 17458000 >= 17458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 18500000 >= 18500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 19500000 >= 19500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 20458000 >= 20458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 21500000 >= 21500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 22500000 >= 22500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 23458000 >= 23458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 24500000 >= 24500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 25500000 >= 25500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 26458000 >= 26458000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 27500000 >= 27500000\n[null @ 0x5f12ac924880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 28500000 >= 28500000\n",
+      "stderr": "[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 500000 >= 500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 1500000 >= 1500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 2458000 >= 2458000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 3500000 >= 3500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 4500000 >= 4500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 5458000 >= 5458000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 6500000 >= 6500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 7500000 >= 7500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 8458000 >= 8458000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 9500000 >= 9500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 10500000 >= 10500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 11458000 >= 11458000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 12500000 >= 12500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 13500000 >= 13500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 14458000 >= 14458000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 15500000 >= 15500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 16500000 >= 16500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 17458000 >= 17458000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 18500000 >= 18500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 19500000 >= 19500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 20458000 >= 20458000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 21500000 >= 21500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 22500000 >= 22500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 23458000 >= 23458000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 24500000 >= 24500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 25500000 >= 25500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 26458000 >= 26458000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 27500000 >= 27500000\n[null @ 0x62423ad51880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 28500000 >= 28500000\n",
       "case": "speed_25_24",
       "command": [
         "/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14",
@@ -337,13 +340,13 @@
         "--source",
         "/tmp/trackstarr-signature-dark-sample/speed_25_24.mkv",
         "--report",
-        "/tmp/trackstarr-visual-fsydc05e/measurement.json",
+        "/tmp/trackstarr-visual-7j73zf41/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 28756,
+      "max_process_rss_kib": 28328,
       "input_blocks": 0,
       "output_blocks": 4160,
       "measurement": {
@@ -458,7 +461,7 @@
     {
       "returncode": 0,
       "timed_out": false,
-      "wall_seconds": 4.42,
+      "wall_seconds": 4.571,
       "stdout": "",
       "stderr": "",
       "case": "reversed",
@@ -473,13 +476,13 @@
         "--source",
         "/tmp/trackstarr-signature-dark-sample/reversed.mkv",
         "--report",
-        "/tmp/trackstarr-visual-7jn7da9e/measurement.json",
+        "/tmp/trackstarr-visual-0lu81z04/measurement.json",
         "--ffmpeg",
         "ffmpeg",
         "--ffprobe",
         "ffprobe"
       ],
-      "max_process_rss_kib": 28856,
+      "max_process_rss_kib": 28860,
       "input_blocks": 0,
       "output_blocks": 4152,
       "measurement": {

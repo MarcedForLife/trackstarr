@@ -1,7 +1,9 @@
 """Vote for one timeline mapping, then check it on regions that did not vote."""
 
 import statistics
+from bisect import bisect_left, bisect_right
 from collections import Counter
+from dataclasses import dataclass, field
 from fractions import Fraction
 
 from visual import SETTINGS, Frame, region
@@ -15,12 +17,31 @@ CONSENSUS_SETTINGS: dict = {
     "min_votes": 10,
     "min_peak_ratio": 2.0,
     "max_sample_gap_us": 75_000,
+    # Probes scan the whole target. Every other frame is checked only where predicted.
+    "probes_per_region": 100,
     "min_region_confirmations": 3,
     "min_contradicting_run": 3,
     "min_confirmed_regions": 5,
 }
 
 SCALES = [Fraction(scale) for scale in CONSENSUS_SETTINGS["scales"]]
+
+#: Verdicts whose predicted frame matched, which end a run of contradictions.
+LOCAL_MATCHES = {"consistent", "confirms", "uninformative"}
+
+
+@dataclass(frozen=True)
+class Target:
+    frames: list[Frame]
+    bounds: tuple[int, int]
+    times: list[int] = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "times", [f.time_us for f in self.frames])
+
+    def near(self, time_us: float, within: float) -> list[Frame]:
+        start = bisect_left(self.times, time_us - within)
+        return self.frames[start : bisect_right(self.times, time_us + within)]
 
 
 def distance(first: Frame, second: Frame) -> int:
@@ -36,7 +57,12 @@ def separated(first: dict, second: dict, source_bounds: tuple, limit: float) -> 
     return max(abs(predict(first, t) - predict(second, t)) for t in source_bounds) > limit
 
 
-def distinct_matches(probe: Frame, target: list[Frame]) -> list[int]:
+def sample(frames: list[Frame]) -> list[Frame]:
+    count = min(len(frames), CONSENSUS_SETTINGS["probes_per_region"])
+    return [frames[int((i + 0.5) * len(frames) / count)] for i in range(count)]
+
+
+def distinct_matches(probe: Frame, target: Target) -> list[int]:
     """Target times about as close as the best match, one per separated stretch.
 
     A match's neighbouring frames would otherwise take every vote, and a slightly
@@ -45,7 +71,7 @@ def distinct_matches(probe: Frame, target: list[Frame]) -> list[int]:
     """
     close = sorted(
         (gap, frame.time_us)
-        for frame in target
+        for frame in target.frames
         if (gap := distance(probe, frame)) <= SETTINGS["max_distance"]
     )
     chosen: list[int] = []
@@ -57,7 +83,7 @@ def distinct_matches(probe: Frame, target: list[Frame]) -> list[int]:
     return chosen if len(chosen) <= CONSENSUS_SETTINGS["votes_per_probe"] else []
 
 
-def vote(target: list[Frame], probes: list[Frame]) -> Counter:
+def vote(target: Target, probes: list[Frame]) -> Counter:
     """Each probe votes once per offset bin, at every scale, for its distinct matches."""
     bin_us = CONSENSUS_SETTINGS["offset_bin_us"]
     counts: Counter = Counter()
@@ -83,44 +109,77 @@ def ranked_hypotheses(counts: Counter) -> list[dict]:
     return sorted(scored, key=lambda hypothesis: -hypothesis["votes"])
 
 
-def check(frame: Frame, target: list[Frame], hypothesis: dict, bounds: dict) -> dict:
-    """Whether the frame the mapping predicts is this frame's distinct match."""
+def check(frame: Frame, target: Target, hypothesis: dict, probe: bool) -> dict:
+    """Whether the predicted frame matches, and for a probe whether it is the distinct match."""
     gap = CONSENSUS_SETTINGS["max_sample_gap_us"]
     predicted = predict(hypothesis, frame.time_us)
-    result: dict = {
-        "source_time_us": frame.time_us,
-        "region": region(frame.time_us, bounds["source"]),
-    }
-    if not bounds["target"][0] - gap <= predicted <= bounds["target"][1] + gap:
+    result: dict = {"source_time_us": frame.time_us}
+    if not target.bounds[0] - gap <= predicted <= target.bounds[1] + gap:
         return result | {"verdict": "no_counterpart"}
-    scored = [(distance(frame, f), f.time_us, abs(f.time_us - predicted)) for f in target]
-    nearest = min(((d, t) for d, t, away in scored if away <= gap), default=None)
+    nearest = min(
+        ((distance(frame, f), f.time_us) for f in target.near(predicted, gap)), default=None
+    )
+    if nearest is None or nearest[0] > SETTINGS["max_distance"]:
+        # A close match anywhere but the predicted frame, even frames away, is a timing error.
+        contradicted = any(
+            distance(frame, f) <= SETTINGS["max_distance"]
+            for f in target.frames
+            if abs(f.time_us - predicted) > gap
+        )
+        return result | {"verdict": "contradicts" if contradicted else "unmatched"}
+    if not probe:
+        return result | {"verdict": "consistent"}
+    margin = SETTINGS["ambiguity_margin"]
+    scored = [(distance(frame, f), f.time_us) for f in target.frames]
     # Distinctness ignores neighbouring frames, which resemble any match in a slow scene.
     alternative = min(
-        (d for d, _, away in scored if away > SETTINGS["alternative_separation_us"]),
+        (d for d, t in scored if abs(t - predicted) > SETTINGS["alternative_separation_us"]),
         default=None,
     )
-    if nearest is not None and nearest[0] <= SETTINGS["max_distance"]:
-        margin = SETTINGS["ambiguity_margin"]
-        if alternative is not None and alternative - nearest[0] < margin:
-            return result | {"verdict": "uninformative"}
-        # Only a frame that also beats its neighbours pins the time, not just the scene.
-        runner_up = min((d for d, t, _ in scored if t != nearest[1]), default=None)
-        exact = runner_up is None or runner_up - nearest[0] >= margin
-        return result | {"verdict": "confirms", "target_time_us": nearest[1], "exact": exact}
-    # A close match anywhere but the predicted frame, even a few frames away, is a timing error.
-    if any(d <= SETTINGS["max_distance"] for d, _, away in scored if away > gap):
-        return result | {"verdict": "contradicts"}
-    return result | {"verdict": "unmatched"}
+    if alternative is not None and alternative - nearest[0] < margin:
+        return result | {"verdict": "uninformative"}
+    # Only a frame that also beats its neighbours pins the time, not just the scene.
+    runner_up = min((d for d, t in scored if t != nearest[1]), default=None)
+    exact = runner_up is None or runner_up - nearest[0] >= margin
+    return result | {"verdict": "confirms", "target_time_us": nearest[1], "exact": exact}
 
 
-def fold(target: list[Frame], source: list[Frame], fit_parity: int, bounds: dict) -> dict:
+def contradicting_run(verdicts: list[str]) -> bool:
+    """Consecutive contradictions mark a cut however long the region is."""
+    run = 0
+    for verdict in verdicts:
+        if verdict == "contradicts":
+            run += 1
+            if run >= CONSENSUS_SETTINGS["min_contradicting_run"]:
+                return True
+        elif verdict in LOCAL_MATCHES:
+            run = 0
+    return False
+
+
+def check_region(frames: list[Frame], target: Target, hypothesis: dict) -> list[dict]:
+    """Every frame in time order, stopping once a contradicting run settles the region."""
+    probes = {f.time_us for f in sample(frames)}
+    checks: list[dict] = []
+    for frame in frames:
+        checks.append(check(frame, target, hypothesis, frame.time_us in probes))
+        if checks[-1]["verdict"] == "contradicts" and contradicting_run(
+            [c["verdict"] for c in checks[-CONSENSUS_SETTINGS["min_contradicting_run"] :]]
+        ):
+            break
+    return checks
+
+
+def fold(regions: list[list[Frame]], target: Target, fit_parity: int, bounds: tuple) -> dict:
     """Fit on one parity of source regions and check the other."""
-    parities = [region(f.time_us, bounds["source"]) % 2 for f in source]
-    fitting = [f for f, parity in zip(source, parities, strict=True) if parity == fit_parity]
-    held_out = [f for f, parity in zip(source, parities, strict=True) if parity != fit_parity]
+    fitting = [
+        f
+        for index, frames in enumerate(regions)
+        if index % 2 == fit_parity
+        for f in sample(frames)
+    ]
     ranked = ranked_hypotheses(vote(target, fitting))
-    result: dict = {"fit_parity": fit_parity, "fit_probes": len(fitting), "checks": []}
+    result: dict = {"fit_parity": fit_parity, "fit_probes": len(fitting), "checks": {}}
     if not ranked:
         return result | {"reason": "no_votes"}
     best = ranked[0]
@@ -128,7 +187,7 @@ def fold(target: list[Frame], source: list[Frame], fit_parity: int, bounds: dict
         (
             h
             for h in ranked[1:]
-            if separated(best, h, bounds["source"], SETTINGS["alternative_separation_us"])
+            if separated(best, h, bounds, SETTINGS["alternative_separation_us"])
         ),
         None,
     )
@@ -137,20 +196,16 @@ def fold(target: list[Frame], source: list[Frame], fit_parity: int, bounds: dict
         return result | {"reason": "insufficient_votes"}
     if runner_up and best["votes"] < CONSENSUS_SETTINGS["min_peak_ratio"] * runner_up["votes"]:
         return result | {"reason": "ambiguous_mapping"}
-    result["checks"] = [check(f, target, best, bounds) for f in held_out]
+    result["checks"] = {
+        index: check_region(frames, target, best)
+        for index, frames in enumerate(regions)
+        if index % 2 != fit_parity
+    }
     return result
 
 
 def region_verdict(verdicts: list[str]) -> str:
-    """A run of contradicting frames marks a cut however long the region is."""
-    run = longest = 0
-    for verdict in verdicts:
-        if verdict == "contradicts":
-            run += 1
-            longest = max(longest, run)
-        elif verdict == "confirms":
-            run = 0
-    if longest >= CONSENSUS_SETTINGS["min_contradicting_run"]:
+    if contradicting_run(verdicts):
         return "contradicts"
     if verdicts.count("confirms") >= CONSENSUS_SETTINGS["min_region_confirmations"]:
         return "confirms"
@@ -179,39 +234,49 @@ def span_fraction(pairs: list[tuple[int, int]], bounds: dict) -> dict:
     return spans
 
 
-def match_consensus(target: list[Frame], source: list[Frame]) -> dict:
+def match_consensus(target_frames: list[Frame], source: list[Frame]) -> dict:
     bounds = {
         "source": (source[0].time_us, source[-1].time_us),
-        "target": (target[0].time_us, target[-1].time_us),
+        "target": (target_frames[0].time_us, target_frames[-1].time_us),
     }
-    target = [f for f in target if f.confidence > 0]
-    source = [f for f in source if f.confidence > 0]
-    folds = [fold(target, source, parity, bounds) for parity in (0, 1)]
-    checks = [c for f in folds for c in f.pop("checks")]
-    ordered: list[list[str]] = [[] for _ in range(SETTINGS["regions"])]
-    for item in sorted(checks, key=lambda c: c["source_time_us"]):
-        ordered[item["region"]].append(item["verdict"])
-    verdicts = [region_verdict(region_checks) for region_checks in ordered]
-    confirmed = [c for c in checks if c["verdict"] == "confirms"]
-    pairs = [(c["source_time_us"], c["target_time_us"]) for c in confirmed]
+    target = Target([f for f in target_frames if f.confidence > 0], bounds["target"])
+    regions: list[list[Frame]] = [[] for _ in range(SETTINGS["regions"])]
+    for frame in source:
+        if frame.confidence > 0:
+            regions[region(frame.time_us, bounds["source"])].append(frame)
+    folds = [fold(regions, target, parity, bounds["source"]) for parity in (0, 1)]
+    checks_by_region: list[list[dict]] = [[] for _ in range(SETTINGS["regions"])]
+    for completed in folds:
+        for index, checks in completed.pop("checks").items():
+            checks_by_region[index] = checks
+    verdicts = [region_verdict([c["verdict"] for c in checks]) for checks in checks_by_region]
+    confirmed = [
+        (index, c)
+        for index, checks in enumerate(checks_by_region)
+        for c in checks
+        if c["verdict"] == "confirms"
+    ]
+    pairs = [(c["source_time_us"], c["target_time_us"]) for _, c in confirmed]
     # Every confirmation shows coverage, but only exact ones fit and test the timing.
-    anchors = [c for c in confirmed if c["exact"]]
-    mapping = fit([(c["source_time_us"], c["target_time_us"]) for c in anchors])
+    anchors = [(index, c) for index, c in confirmed if c["exact"]]
+    mapping = fit([(c["source_time_us"], c["target_time_us"]) for _, c in anchors])
     residuals = [0.0] * SETTINGS["regions"]
     if mapping:
-        for item in anchors:
+        for index, item in anchors:
             residual = abs(item["target_time_us"] - predict(mapping, item["source_time_us"]))
-            residuals[item["region"]] = max(residuals[item["region"]], residual)
+            residuals[index] = max(residuals[index], residual)
     result: dict = {
         "status": "review_required",
         "folds": folds,
-        "region_tallies": [dict(Counter(region_checks)) for region_checks in ordered],
+        "region_tallies": [
+            dict(Counter(c["verdict"] for c in checks)) for checks in checks_by_region
+        ],
         "region_verdicts": verdicts,
         "max_region_residual_us": residuals,
         "confirmed_pairs": len(pairs),
         "exact_anchors": len(anchors),
         "span_fraction": span_fraction(pairs, bounds),
-        "frame_counts": {"target": len(target), "source": len(source)},
+        "frame_counts": {"target": len(target.frames), "source": sum(map(len, regions))},
     }
     if mapping:
         result["mapping"] = mapping

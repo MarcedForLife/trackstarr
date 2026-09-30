@@ -1,7 +1,7 @@
 """Consensus recovers real mappings and sends ambiguity, cuts and wrong pictures to review."""
 
 import pytest
-from consensus import match_consensus
+from consensus import CONSENSUS_SETTINGS, match_consensus
 from test_visual import frames
 from visual import Frame
 
@@ -129,3 +129,18 @@ def test_frames_tied_with_a_neighbour_show_coverage_but_not_timing(period, statu
         assert result["mapping"]["offset_us"] == pytest.approx(300_000, abs=1)
     else:
         assert result["reason"] == "inconsistent_timeline"
+
+
+def test_frames_between_sampled_probes_still_catch_a_cut(monkeypatch):
+    monkeypatch.setitem(CONSENSUS_SETTINGS, "probes_per_region", 4)
+    target = frames()
+    assert match_consensus(shifted(target), target)["status"] == "proposed"
+    # Removing frames 150 to 152 leaves the evenly spaced probes untouched.
+    source = [
+        Frame(f.time_us - (300_000 if i >= 153 else 0), f.confidence, f.lower, f.upper)
+        for i, f in enumerate(target)
+        if not 150 <= i < 153
+    ]
+    result = match_consensus(target, source)
+    assert result["reason"] == "contradicting_region"
+    assert "contradicts" in result["region_tallies"][6]

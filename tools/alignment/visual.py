@@ -54,19 +54,27 @@ def read_signatures(path: Path) -> list[Frame]:
         raise ValueError("expected microsecond signature time base")
     frames: list[Frame] = []
     for element in root.findall(".//{*}VideoFrame"):
-        timestamp = int(element.findtext("{*}MediaTimeOfFrame", ""))
-        confidence = int(element.findtext("{*}FrameConfidence", ""))
-        values = [int(v) for v in element.findtext("{*}FrameSignature", "").split()]
-        if abs(timestamp) > 86_400_000_000 or not 0 <= confidence <= 255:
-            raise ValueError("invalid frame timestamp or confidence")
-        if frames and timestamp < frames[-1].time_us:
-            raise ValueError("signature timestamps must not decrease")
-        frames.append(Frame(timestamp, confidence, *fingerprint(values)))
-    if not 2 <= len(frames) <= SETTINGS["max_frames"]:
+        append_frame(frames, element)
+    check_timeline(frames, SETTINGS["max_frames"])
+    return frames
+
+
+def append_frame(frames: list[Frame], element: ET.Element) -> None:
+    timestamp = int(element.findtext("{*}MediaTimeOfFrame", ""))
+    confidence = int(element.findtext("{*}FrameConfidence", ""))
+    values = [int(v) for v in element.findtext("{*}FrameSignature", "").split()]
+    if abs(timestamp) > 86_400_000_000 or not 0 <= confidence <= 255:
+        raise ValueError("invalid frame timestamp or confidence")
+    if frames and timestamp < frames[-1].time_us:
+        raise ValueError("signature timestamps must not decrease")
+    frames.append(Frame(timestamp, confidence, *fingerprint(values)))
+
+
+def check_timeline(frames: list[Frame], max_frames: int) -> None:
+    if not 2 <= len(frames) <= max_frames:
         raise ValueError("signature frame count outside research bound")
     if frames[0].time_us == frames[-1].time_us:
         raise ValueError("signature timeline has no duration")
-    return frames
 
 
 def extract(binary: str, media: Path, output: Path) -> list[Frame]:

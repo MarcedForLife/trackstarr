@@ -13,6 +13,7 @@ from pathlib import Path
 from avsync_core import analyse
 from consensus import CONSENSUS_SETTINGS, match_consensus
 from corpus import digest
+from episode_signatures import EPISODE_SETTINGS, extract_episode
 from evaluate import run_process
 from temporal import TEMPORAL_SETTINGS, match_temporal
 from visual import SETTINGS, extract, match
@@ -50,7 +51,12 @@ def worker(args) -> None:
     target, source = args.target.resolve(), args.source.resolve()
     target_bounds = video_bounds(args.ffprobe, target)
     source_bounds = video_bounds(args.ffprobe, source)
-    if max(b - a for a, b in (target_bounds, source_bounds)) > (
+    if args.whole_episodes:
+        measurement = match_consensus(
+            extract_episode(args.ffmpeg, target, Path.cwd() / "target.xml"),
+            extract_episode(args.ffmpeg, source, Path.cwd() / "source.xml"),
+        )
+    elif max(b - a for a, b in (target_bounds, source_bounds)) > (
         SETTINGS["max_duration_seconds"] * 1_000_000
     ):
         measurement = {"status": "unsupported", "reason": "duration_exceeds_research_bound"}
@@ -134,6 +140,8 @@ def evaluate(args) -> dict:
                 ]
                 if args.avsync_source:
                     command.extend(["--avsync-source", str(args.avsync_source.resolve())])
+                if args.whole_episodes:
+                    command.append("--whole-episodes")
                 result = run_process(
                     [
                         sys.executable,
@@ -171,6 +179,7 @@ def evaluate(args) -> dict:
         "settings": SETTINGS,
         "temporal_settings": TEMPORAL_SETTINGS if args.engine == "temporal" else None,
         "consensus_settings": CONSENSUS_SETTINGS if args.engine == "consensus" else None,
+        "episode_settings": EPISODE_SETTINGS if args.whole_episodes else None,
         "manifest_sha256": digest(manifest_path),
         "ffmpeg_version": subprocess.check_output([args.ffmpeg, "-version"], text=True),
         "binary_sha256": digest(Path(args.ffmpeg)),
@@ -180,6 +189,7 @@ def evaluate(args) -> dict:
                 "visual.py",
                 "temporal.py",
                 "consensus.py",
+                "episode_signatures.py",
                 "avsync_core.py",
                 "compare_visual.py",
             )
@@ -201,6 +211,8 @@ if __name__ == "__main__":
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--ffprobe", default="ffprobe")
     parser.add_argument("--timeout", type=float, default=120)
+    # Consensus only: the other engines hold every frame pair or a scale window per frame.
+    parser.add_argument("--whole-episodes", action="store_true")
     args = parser.parse_args()
     if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error("timeout must be finite and positive")
@@ -210,6 +222,8 @@ if __name__ == "__main__":
             parser.error(f"{key} must already be installed")
         # Resolving a venv's Python symlink bypasses its site-packages.
         setattr(args, key, str(Path(binary).absolute()))
+    if args.whole_episodes and args.engine != "consensus":
+        parser.error("--whole-episodes requires --engine consensus")
     if args.engine == "avsync" and args.avsync_source is None:
         parser.error("avsync requires --avsync-source pointing to pinned AVSync_v14.py")
     if args.mode == "worker":
