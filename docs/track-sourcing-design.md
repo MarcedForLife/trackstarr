@@ -505,17 +505,26 @@ has changed.
 
 ### Continuation checkpoint
 
-Work is on `feature/audio-track-sourcing`. No candidate qualifies yet. The first
-fingerprint prototypes send each short Dark control to review for lack of
-distributed evidence. AVSync's isolated core finds too few anchors and needs about
-340 MiB of dependencies. The Dark and Eternaut fixtures each derive from one
-release, and no independently released pair is available yet.
-
-Phases 2 and 3 need no alignment backend and can start now. Manual copy from an
-explicit source file needs no second arr connection, so a single-connection
+Work is on `feature/audio-track-sourcing`, which differs from `main` only by this
+plan and the research harness. Phase 2 is next. It needs no alignment backend, and
+phase 3's manual copy needs no second arr connection, so a single-connection
 installation can test preparation, rendering and publication end to end.
 
-The [consensus matcher](visual-alignment-comparison.md#consensus-follow-up)
+Phase 2 proceeds in three reviewable steps. First, `OutStream.src` in
+[the planner](../src/trackstarr/planner.py) becomes an explicit input and stream
+reference with the target as input zero, and
+[the command renderer](../src/trackstarr/command.py) maps each stream from its own
+input. The existing suite and rendered commands must stay unchanged. Second, the
+executor prepares selected source tracks in the job workspace, applying a mapping
+by stream copy or lossless intermediate. It registers the source path with the
+guard tag edits check and revalidates the source revision afterwards. Third,
+rendering takes the prepared tracks as further inputs with explicit metadata and
+default-track policy, and validation checks stream counts and timing. A generated
+two-file fixture covers the second and third steps before any real media. Contract
+names in this plan are proposals, so new names go through a naming pass first.
+
+Phase 1 stays open with no backend selected. The
+[consensus matcher](visual-alignment-comparison.md#consensus-follow-up)
 replaces per-probe decisions with offset votes at fixed film speed ratios, checked
 on regions that did not vote. It recovers every valid synthetic mapping except
 crop, and the three valid short Dark controls within 2.5 ms after a change they
