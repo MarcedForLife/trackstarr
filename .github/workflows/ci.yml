@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Astral publishes no floating major tag past v7. Dependabot bumps it.
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
       # uv.lock pins ruff, so this is the same lint that ran locally.
@@ -39,7 +39,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           # The one version requires-python allows and the Alpine image ships.
           # Raise both together.
