@@ -1,0 +1,37 @@
+...@_style/house
+direction: down
+
+pipeline: External pipeline {
+  class: boundary
+  arrs: Radarr / Sonarr {class: external}
+  retention: Retention automation {class: external}
+}
+media: Available library files {class: datastore}
+trackstarr: Trackstarr {
+  class: boundary
+  catalogue: Media catalogue {class: service}
+  coordinator: Processing coordinator {class: service}
+  policy: Sourcing policy {class: service}
+  queue: Existing work queue {class: queue}
+  alignment: Alignment adapter {class: service}
+  planner: Pure planner {class: service}
+  executor: Validating executor {class: service}
+  state: Assessments and history\nMetadata only {class: datastore}
+  ui: Library and API {class: service}
+}
+
+pipeline.arrs -> media: imports and upgrades
+pipeline.retention -> media: retention and deletion
+pipeline.arrs -> trackstarr.catalogue: identity and import events
+media -> trackstarr.catalogue: file observations
+trackstarr.catalogue -> trackstarr.coordinator: inventory changes
+trackstarr.policy -> trackstarr.coordinator: requirements and candidates
+trackstarr.coordinator -> trackstarr.queue: target work
+trackstarr.queue -> trackstarr.alignment: measure timelines
+trackstarr.alignment -> trackstarr.coordinator: evidence and mapping
+trackstarr.coordinator -> trackstarr.planner: accepted input facts
+trackstarr.planner -> trackstarr.executor: explicit stream plan
+trackstarr.executor -> media: publish target only
+trackstarr.coordinator -> trackstarr.state: assessments
+trackstarr.executor -> trackstarr.state: rewrite outcome
+trackstarr.state -> trackstarr.ui: cached projections
