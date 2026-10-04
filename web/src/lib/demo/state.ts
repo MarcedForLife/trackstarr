@@ -177,12 +177,22 @@ export function rewrite(state: State, file: File, at: number): Modified {
 	const before = file.tracks;
 	const dropped = before
 		.map((track) => track.index)
-		.filter((index) => !file.planned.some((track) => track.src === index));
-	const after: Track[] = file.planned.map(({ src: _src, dv_removed: _dvRemoved, ...track }) => {
-		void _src;
-		void _dvRemoved;
-		return track;
-	});
+		.filter(
+			(index) =>
+				!file.planned.some(
+					(track) =>
+						(track.source?.input_index ?? 0) === 0 &&
+						(track.source?.stream_index ?? track.src) === index
+				)
+		);
+	const after: Track[] = file.planned.map(
+		({ source: _source, src: _src, dv_removed: _dvRemoved, ...track }) => {
+			void _source;
+			void _src;
+			void _dvRemoved;
+			return track;
+		}
+	);
 	const made: Modified = {
 		at: stamp(at),
 		...(file.planned.some((track) => track.dv_removed) ? { dv_removed: true } : {}),
@@ -190,7 +200,11 @@ export function rewrite(state: State, file: File, at: number): Modified {
 		bytes_after: bytesOf(after, file.runtime),
 		was: before,
 		dropped,
-		added: after.filter((track) => track.flags?.includes('generated')).map((track) => track.index)
+		added: file.planned
+			.filter(
+				(track) => track.flags?.includes('generated') || (track.source?.input_index ?? 0) !== 0
+			)
+			.map((track) => track.index)
 	};
 	file.contents = after;
 	file.tracks = after;
@@ -346,7 +360,12 @@ export function card(state: State, title: Title): Card {
 		for (const name of added(file.planned)) adds.add(name);
 		if (file.planned.length) {
 			drops += file.tracks.filter(
-				(track) => !file.planned.some((planned) => planned.src === track.index)
+				(track) =>
+					!file.planned.some(
+						(planned) =>
+							(planned.source?.input_index ?? 0) === 0 &&
+							(planned.source?.stream_index ?? planned.src) === track.index
+					)
 			).length;
 		}
 	}

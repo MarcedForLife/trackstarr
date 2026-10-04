@@ -7,7 +7,7 @@ import { describe, expect, test } from 'vitest';
 import { fileRows, fileStatus, progressLabel, remaining, verdicts } from '$lib/runs';
 import type { Activity, Run, Stage } from '$lib/runs';
 import { asVerdict, FILTERS, pip, tint, VERDICTS, verdictLabel } from '$lib/library';
-import type { Shelf, Summary, TitleDetail } from '$lib/library';
+import type { Shelf, Summary, TitleDetail, Track } from '$lib/library';
 import {
 	detail,
 	details,
@@ -30,6 +30,7 @@ import runsJson from './fixtures/runs.json';
 import libraryJson from './fixtures/library.json';
 import summaryJson from './fixtures/summary.json';
 import titleJson from './fixtures/title.json';
+import plannedTracksJson from './fixtures/planned-tracks.json';
 import eventsJson from './fixtures/events.json';
 import pausesJson from './fixtures/pauses.json';
 import settingsJson from './fixtures/settings.json';
@@ -120,6 +121,7 @@ pins<TitleDetail>()({
 	state: asVerdict(title.state),
 	files: title.files.map((file) => ({ ...file, status: asVerdict(file.status) }))
 });
+pins<{ planned: Track[] }>()(spelled(plannedTracksJson));
 pins<EventPage>()({
 	...page,
 	titles: Object.fromEntries(Object.entries(page.titles).map(([id, card]) => [id, verdicted(card)]))

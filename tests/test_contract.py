@@ -89,6 +89,8 @@ LAST_RECHECK = "2026-02-28T21:30:00+13:00#5b4a"
 
 def track(index: int, kind: str, codec: str, **fields) -> dict:
     """One stream as media.track_summary spells it."""
+    if "src" in fields:
+        fields["source"] = {"input_index": 0, "stream_index": fields["src"]}
     return {"index": index, "kind": kind, "codec": codec, **fields}
 
 
@@ -573,6 +575,13 @@ def test_summary(ask):
 
 def test_title(ask):
     hold("title", ask("GET", "/api/library/title?id=arr%3Asonarr%3A12"))
+
+
+def test_planned_tracks(ask):
+    title = ask("GET", "/api/library/title?id=arr%3Aradarr%3A7")
+    planned = title["files"][0]["planned"]
+    assert planned
+    hold("planned-tracks", {"planned": planned})
 
 
 def test_events(ask):

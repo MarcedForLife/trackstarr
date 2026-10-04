@@ -5,10 +5,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { catalogue } from '$lib/demo/catalogue';
 import { nextRun, nextRuns } from '$lib/demo/cron';
+import { changesOf } from '$lib/demo/judge';
 import manifest from '$lib/demo/posters.json';
 import { answer } from '$lib/demo/routes';
 import { queued, reorder, simulateImport, stopTicking, tick, undoQueue } from '$lib/demo/runs';
-import { currentState, pausedTitle, reset } from '$lib/demo/state';
+import { currentState, pausedTitle, reset, rewrite } from '$lib/demo/state';
 import {
 	detail,
 	details,
@@ -26,7 +27,8 @@ import {
 	type Shelf,
 	type Summary,
 	type TitleDetail,
-	type TitleLink
+	type TitleLink,
+	type Track
 } from '$lib/library';
 import type { ConnectionResult } from '$lib/connections';
 import { FLOW } from '$lib/order.svelte';
@@ -62,6 +64,27 @@ async function refusal(method: string, path: string, body: object = {}): Promise
 
 beforeEach(reset);
 afterEach(stopTicking);
+
+test('demo change counts distinguish identical stream indexes across inputs', () => {
+	const tracks: Track[] = [
+		{ index: 1, kind: 'audio' },
+		{ index: 2, kind: 'audio' }
+	];
+	const planned: Track[] = [
+		{ index: 0, kind: 'audio', source: { input_index: 0, stream_index: 2 } },
+		{ index: 1, kind: 'audio', lang: 'fra', source: { input_index: 1, stream_index: 1 } }
+	];
+	expect(changesOf(planned, tracks)).toEqual({ adds: ['fra audio'], rebuilds: [], drops: 1 });
+});
+
+test('demo rewrites remove plan references from observed tracks', () => {
+	const state = currentState();
+	const file = state.titles.flatMap((title) => title.files).find((file) => file.planned.length)!;
+	expect(file.planned.every((track) => track.source?.input_index === 0)).toBe(true);
+	rewrite(state, file, Date.now());
+	expect(file.tracks.length).toBeGreaterThan(0);
+	expect(file.tracks.every((track) => !('source' in track) && !('src' in track))).toBe(true);
+});
 
 /** Move the simulation on by `seconds`, a tick at a time. */
 function advance(seconds: number) {

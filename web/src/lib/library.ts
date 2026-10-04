@@ -7,6 +7,9 @@ import type { Sort } from '$lib/order.svelte';
 // Re-exported: a file's size is read straight off the card that carries it.
 export { size } from '$lib/format';
 
+// Zero-based coordinates within one plan.
+export type StreamRef = Readonly<{ input_index: number; stream_index: number }>;
+
 // One stream as the service summarises it. `flags` are trackstarr's own
 // classifications, so the page reads "commentary" as the rules do.
 export type Track = {
@@ -22,6 +25,8 @@ export type Track = {
 	dv_removed?: boolean;
 	// Only on a planned track: its input stream. A generated downmix names its
 	// source, so two planned entries can share one.
+	source?: StreamRef;
+	// Legacy target-input reference, retained for older cached plans.
 	src?: number;
 };
 
@@ -328,8 +333,12 @@ function pair(file: { tracks: Track[]; planned: Track[] }): Pairing {
 	const kept = new Set<number>();
 	const added = new Set<number>();
 	for (const track of file.planned) {
-		if (track.flags?.includes('generated')) added.add(track.index);
-		else if (track.src !== undefined) kept.add(track.src);
+		if (track.flags?.includes('generated') || (track.source?.input_index ?? 0) !== 0)
+			added.add(track.index);
+		else {
+			const index = track.source?.stream_index ?? track.src;
+			if (index !== undefined) kept.add(index);
+		}
 	}
 	return { kept, added };
 }
@@ -423,7 +432,7 @@ export function listing(file: LibraryFile): { label: string; rows: Listed[] } {
 					? null
 					: row.state === 'dropped'
 						? row.track.index
-						: (row.track.src ?? null)
+						: (row.track.source?.stream_index ?? row.track.src ?? null)
 			)
 		};
 	}

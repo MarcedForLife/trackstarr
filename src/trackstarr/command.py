@@ -18,7 +18,7 @@ def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
         args.append("-xerror")
     args += ["-i", plan.path]
     for out in plan.streams:
-        args += ["-map", f"0:{out.src}"]
+        args += ["-map", f"{out.source.input_index}:{out.source.stream_index}"]
     args += ["-map_chapters", "0", "-c", "copy"]
 
     muxer = MUXERS[os.path.splitext(plan.out_path)[1].lower()]
@@ -30,7 +30,10 @@ def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
         else:
             # One explicit per-stream mapping disables the default copy for
             # all, so each copied stream re-maps its own.
-            args += [f"-map_metadata:s:{out_index}", f"0:s:{out.src}"]
+            args += [
+                f"-map_metadata:s:{out_index}",
+                f"{out.source.input_index}:s:{out.source.stream_index}",
+            ]
             if muxer == "matroska" and out.src_bitrate:
                 # Matroska has no per-stream bitrate field, so a natively
                 # reported rate is written as the BPS tag mkvmerge uses. Only

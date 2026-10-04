@@ -320,12 +320,14 @@ def _tag_only(plan: Plan) -> tuple[int, str] | None:
     so a plan ordering nothing else is worth doing the cheap way. Anything else
     orders a rewrite, which carries the tag for free.
     """
-    if plan.rules != {"tag_original"}:
+    if plan.rules != {"tag_original"} or any(
+        out.source.input_index != 0 for out in plan.streams
+    ):
         return None
-    # A copy, so src is the index the file itself uses.
+    # Only target streams can be edited in place.
     for out in plan.streams:
         if out.kind == "audio" and not out.encode and out.lang:
-            return out.src, out.lang
+            return out.source.stream_index, out.lang
     return None
 
 

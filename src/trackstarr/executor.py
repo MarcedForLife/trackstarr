@@ -382,7 +382,7 @@ def _verify_dv_frames(plan: Plan, staged: str) -> str | None:
     for index, stream in enumerate(plan.streams):
         if not stream.dv_strip:
             continue
-        before = frame_sample(plan.path, stream.src)
+        before = frame_sample(plan.path, stream.source.stream_index)
         after = frame_sample(staged, index)
         if len(before) != len(after):
             return "Dolby Vision verification frame count mismatch"
@@ -425,6 +425,8 @@ def apply_plan(
     ``claim`` is asked for ownership of the source and the output just before
     the rename, and answers false where a skip arrived while it waited.
     """
+    if any(stream.source.input_index for stream in plan.streams):
+        return Outcome.FAILED, "source inputs require preparation before execution"
     cancel = cancel or Cancel(plan.path)
     if taken := _target_taken(plan):
         return Outcome.FAILED, taken

@@ -214,6 +214,7 @@ export function judge(
 				title: layout.name === '2.0' ? 'Stereo' : layout.name,
 				bitrate: bitrate(layout.rate),
 				flags: ['generated'],
+				source: { input_index: 0, stream_index: source.index },
 				src: source.index
 			});
 		}
@@ -268,6 +269,7 @@ export function judge(
 		.filter((track) => !plan.dropped.has(track.index))
 		.map((track) => ({
 			...track,
+			source: { input_index: 0, stream_index: track.index },
 			src: track.index,
 			dv: stripped.has(track.index) ? undefined : track.dv,
 			...(stripped.has(track.index) ? { dv_removed: true } : {}),
@@ -284,8 +286,12 @@ export function judge(
  * them. */
 export function added(planned: Track[]): string[] {
 	return planned
-		.filter((track) => track.flags?.includes('generated') && track.title)
-		.map((track) => track.title!);
+		.filter(
+			(track) =>
+				(track.source?.input_index ?? 0) !== 0 ||
+				(track.flags?.includes('generated') && track.title)
+		)
+		.map((track) => track.title || `${track.lang || 'und'} ${track.kind}`);
 }
 
 /** What a plan comes to, in the three fields the service records. Nothing here
@@ -299,7 +305,14 @@ export function changesOf(
 		adds: added(planned),
 		rebuilds: [],
 		drops: planned.length
-			? tracks.filter((track) => !planned.some((kept) => kept.src === track.index)).length
+			? tracks.filter(
+					(track) =>
+						!planned.some(
+							(kept) =>
+								(kept.source?.input_index ?? 0) === 0 &&
+								(kept.source?.stream_index ?? kept.src) === track.index
+						)
+				).length
 			: 0
 	};
 }

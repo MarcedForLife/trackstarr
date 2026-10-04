@@ -232,7 +232,10 @@ function rewriteDetail(state: State, file: File): string {
 
 function ffmpegLine(file: File): string {
 	const maps = file.planned
-		.map((track) => (track.src === undefined ? '' : `-map 0:${track.src}`))
+		.map((track) => {
+			const index = track.source?.stream_index ?? track.src;
+			return index === undefined ? '' : `-map ${track.source?.input_index ?? 0}:${index}`;
+		})
 		.filter(Boolean);
 	const generated = file.planned.find((track) => track.flags?.includes('generated'));
 	const encode = generated
@@ -330,8 +333,14 @@ function plansFor(state: State, paths: string[]): FilePlans {
 			const file = state.byPath.get(path);
 			if (!file || !file.judged) return [];
 			const drops = file.planned.length
-				? file.tracks.filter((track) => !file.planned.some((kept) => kept.src === track.index))
-						.length
+				? file.tracks.filter(
+						(track) =>
+							!file.planned.some(
+								(kept) =>
+									(kept.source?.input_index ?? 0) === 0 &&
+									(kept.source?.stream_index ?? kept.src) === track.index
+							)
+					).length
 				: 0;
 			return [
 				[

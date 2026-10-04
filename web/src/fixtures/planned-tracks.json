@@ -1,0 +1,73 @@
+{
+	"planned": [
+		{
+			"index": 0,
+			"kind": "video",
+			"codec": "hevc",
+			"src": 0,
+			"dv": {
+				"profile": 8,
+				"compatibility": 1
+			},
+			"source": {
+				"input_index": 0,
+				"stream_index": 0
+			}
+		},
+		{
+			"index": 1,
+			"kind": "audio",
+			"codec": "truehd",
+			"channels": 8,
+			"lang": "eng",
+			"flags": [
+				"default"
+			],
+			"src": 1,
+			"source": {
+				"input_index": 0,
+				"stream_index": 1
+			}
+		},
+		{
+			"index": 2,
+			"kind": "audio",
+			"codec": "ac3",
+			"channels": 6,
+			"lang": "eng",
+			"bitrate": 640000,
+			"src": 2,
+			"source": {
+				"input_index": 0,
+				"stream_index": 2
+			}
+		},
+		{
+			"index": 3,
+			"kind": "audio",
+			"codec": "aac",
+			"channels": 2,
+			"lang": "eng",
+			"title": "Stereo",
+			"flags": [
+				"generated"
+			],
+			"src": 1,
+			"source": {
+				"input_index": 0,
+				"stream_index": 1
+			}
+		},
+		{
+			"index": 4,
+			"kind": "subtitle",
+			"codec": "subrip",
+			"lang": "eng",
+			"src": 3,
+			"source": {
+				"input_index": 0,
+				"stream_index": 3
+			}
+		}
+	]
+}
