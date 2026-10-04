@@ -894,9 +894,12 @@ def test_abort_by_name_marks_the_gate_even_if_ffmpeg_exits_before_the_signal(mon
     cancel = executor.Cancel("/file")
 
     class Process:
-        def terminate(self):
-            raise ProcessLookupError("already exited")
+        pid = 123
 
+    def gone(pid, sig):
+        raise ProcessLookupError("already exited")
+
+    monkeypatch.setattr(executor.os, "killpg", gone)
     monkeypatch.setattr(executor, "_running_ffmpeg", {Process(): cancel})
     assert executor.terminate_running("/other") == 0
     assert not cancel.stopped()

@@ -3,22 +3,32 @@ decides, this renders, :mod:`trackstarr.executor` runs, which is what lets
 ``plan`` print the exact command."""
 
 import os
+from collections.abc import Sequence
 
 from .media import GENERATED_TAG
-from .planner import Plan
+from .planner import Plan, PreparedTrack
 from .policy import MUXERS
 from .tracks import encode_settings
 
 
-def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
+def ffmpeg_args(plan: Plan, dest: str, prepared: Sequence[PreparedTrack] = ()) -> list[str]:
+    if plan.inputs and tuple(track.source for track in prepared) != plan.inputs:
+        raise ValueError("source inputs require matching preparation before rendering")
     args = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-loglevel", "error"]
     if any(out.dv_strip for out in plan.streams):
         # dovi_rpu drops a packet it cannot parse and ffmpeg still exits 0,
         # which would only surface after the whole rewrite.
         args.append("-xerror")
+    if prepared:
+        args += ["-copyts"]
     args += ["-i", plan.path]
+    for track in prepared:
+        args += ["-i", track.path]
     for out in plan.streams:
-        args += ["-map", f"{out.source.input_index}:{out.source.stream_index}"]
+        index = 0 if prepared and out.source.input_index else out.source.stream_index
+        args += ["-map", f"{out.source.input_index}:{index}"]
+    if prepared:
+        args += ["-map_metadata", "0", "-avoid_negative_ts", "disabled"]
     args += ["-map_chapters", "0", "-c", "copy"]
 
     muxer = MUXERS[os.path.splitext(plan.out_path)[1].lower()]
@@ -30,9 +40,10 @@ def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
         else:
             # One explicit per-stream mapping disables the default copy for
             # all, so each copied stream re-maps its own.
+            index = 0 if prepared and out.source.input_index else out.source.stream_index
             args += [
                 f"-map_metadata:s:{out_index}",
-                f"{out.source.input_index}:s:{out.source.stream_index}",
+                f"{out.source.input_index}:s:{index}",
             ]
             if muxer == "matroska" and out.src_bitrate:
                 # Matroska has no per-stream bitrate field, so a natively
@@ -47,7 +58,10 @@ def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
 
     audio_streams = (out for out in plan.streams if out.kind == "audio")
     for idx, out in enumerate(audio_streams):
-        if out.encode:
+        retimed = bool(
+            prepared and out.source.input_index and prepared[out.source.input_index - 1].encode
+        )
+        if out.encode or retimed:
             args += [
                 f"-c:a:{idx}",
                 out.codec,
@@ -55,6 +69,27 @@ def ffmpeg_args(plan: Plan, dest: str) -> list[str]:
                 str(out.channels),
                 f"-b:a:{idx}",
                 out.bitrate,
+            ]
+        if retimed and not out.encode:
+            # Keep descriptive metadata, but discard statistics of the original
+            # encoding and any generated-downmix marker inherited from it.
+            for tag in (
+                "BPS",
+                "BPS-eng",
+                "NUMBER_OF_BYTES",
+                "NUMBER_OF_BYTES-eng",
+                "NUMBER_OF_FRAMES",
+                "NUMBER_OF_FRAMES-eng",
+                "_STATISTICS_WRITING_APP",
+                "_STATISTICS_WRITING_DATE_UTC",
+                "_STATISTICS_TAGS",
+                GENERATED_TAG,
+            ):
+                args += [f"-metadata:s:a:{idx}", f"{tag}="]
+        if prepared and out.source.input_index and not out.encode:
+            args += [f"-disposition:a:{idx}", "-default"]
+        if out.encode:
+            args += [
                 f"-metadata:s:a:{idx}",
                 f"title={out.title}",
                 # So the regenerate rule recognises this track later.

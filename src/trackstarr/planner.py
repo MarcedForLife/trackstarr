@@ -13,6 +13,7 @@ always acts. Every rule is idempotent: apply, re-plan, get an empty plan.
 import os
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
+from fractions import Fraction
 from typing import NamedTuple
 
 from . import config
@@ -74,6 +75,75 @@ class SourceSignature(NamedTuple):
     @classmethod
     def of(cls, st: os.stat_result) -> SourceSignature:
         return cls(st.st_size, st.st_mtime_ns)
+
+
+@dataclass(frozen=True, slots=True)
+class FileRevision:
+    """Filesystem identity at observation time, without a content hash."""
+
+    path: str
+    device: int
+    inode: int
+    size: int
+    mtime_ns: int
+    ctime_ns: int
+
+    @classmethod
+    def of(cls, path: str) -> FileRevision:
+        path = os.path.realpath(path)
+        found = os.stat(path)
+        return cls(
+            path,
+            found.st_dev,
+            found.st_ino,
+            found.st_size,
+            found.st_mtime_ns,
+            found.st_ctime_ns,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TimingMapping:
+    """Container times obey target = scale * source + offset_us / 1_000_000.
+
+    Stream start times are included. Positive offsets delay the source and
+    scales above one lengthen playback. No padding is implied.
+    """
+
+    scale: Fraction = Fraction(1)
+    offset_us: int = 0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.scale, Fraction) or self.scale <= 0:
+            raise ValueError("scale must be a positive Fraction")
+        if type(self.offset_us) is not int:
+            raise ValueError("offset_us must be integer microseconds")
+
+
+@dataclass(frozen=True, slots=True)
+class PlanInput:
+    """One source audio stream, bound to an observed file and timing mapping."""
+
+    revision: FileRevision
+    stream_index: int
+    mapping: TimingMapping = TimingMapping()
+
+    def __post_init__(self) -> None:
+        if self.stream_index < 0:
+            raise ValueError("stream_index must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedTrack:
+    """One workspace file with audio at stream zero on the target timeline.
+
+    Only valid inside the preparation context. ``encode`` requires the final
+    render to encode this lossless intermediate with the selected layout.
+    """
+
+    path: str
+    source: PlanInput
+    encode: bool
 
 
 @dataclass(frozen=True, slots=True, order=True)
@@ -222,6 +292,9 @@ class Plan:
     #: The skip's status: SKIP, or UNSUPPORTED for a container the rules never
     #: write. Means nothing without ``skip``.
     skip_status: Status = Status.SKIP
+    #: Selected external audio tracks. Position zero is input one in StreamRef,
+    #: since input zero remains path. References retain the original stream index.
+    inputs: tuple[PlanInput, ...] = ()
 
     @property
     def needed(self) -> bool:
@@ -489,7 +562,7 @@ def plan_from_probe(plan: Plan, info: dict) -> Plan:
     if not alongside:
         return deciding
     whole = _apply_rules(_for_pass(plan, always | alongside, alongside), info)
-    if deciding.reasons:
+    if deciding.reasons or plan.inputs:
         return whole
     # No rewrite, so no ride-alongs happen; what they would have done is still
     # reported, so a title carrying release tags reads as that rather than as conforming.
@@ -511,6 +584,7 @@ def _for_pass(plan: Plan, acting: frozenset[str], alongside: frozenset[str]) -> 
         src_signature=plan.src_signature,
         acting=acting,
         alongside=alongside,
+        inputs=plan.inputs,
     )
 
 

@@ -16,13 +16,12 @@ import os
 import shlex
 import shutil
 import subprocess
-import threading
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
 from . import config
-from .executor import is_rewriting
+from .executor import _edit_lock, is_rewriting
 from .langs import norm_lang
 from .media import (
     ProbeError,
@@ -70,10 +69,6 @@ MKVMERGE_KINDS = {"audio": "audio", "subtitle": "subtitles"}
 
 #: How much of a tool's output a failure keeps. The tail, where the error is.
 _OUTPUT_TAIL = 300
-
-#: One edit at a time. Two mkvpropedit runs interleaved on one header can
-#: leave the file unreadable, and two requests can name one file.
-_edit_lock = threading.Lock()
 
 
 class Outcome(enum.StrEnum):
@@ -289,6 +284,9 @@ def edit_track(
     starts. A false answer writes nothing.
     """
     with _edit_lock:
+        # A source read may have registered after the caller's preflight.
+        if is_rewriting(path):
+            return Result(path, Outcome.REFUSED, "the file is being read for a rewrite")
         try:
             streams, stream = _stream(path, index)
         except ProbeError as err:
