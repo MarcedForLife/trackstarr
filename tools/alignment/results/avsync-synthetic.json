@@ -1,0 +1,762 @@
+{
+  "schema_version": 1,
+  "engine": "avsync",
+  "automatic_publication": false,
+  "settings": {
+    "regions": 8,
+    "probes_per_region": 12,
+    "max_distance": 60,
+    "ambiguity_margin": 8,
+    "alternative_separation_us": 500000,
+    "min_region_matches": 2,
+    "min_match_fraction": 0.5,
+    "max_residual_us": 50000,
+    "min_span_fraction": 0.8,
+    "min_scale": 0.9,
+    "max_scale": 1.1,
+    "max_duration_seconds": 120,
+    "max_frames": 20000
+  },
+  "manifest_sha256": "09e6fe64d66315e0ec5fb17238d80dbc627c65a7ea3fa1e933b85eec5ee61b93",
+  "ffmpeg_version": "ffmpeg version N-126168-gb16b5f2a01-20260815 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 15.2.0 (crosstool-NG 1.28.0.23_185f348)\nconfiguration: --prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config --cross-prefix=x86_64-ffbuild-linux-gnu- --arch=x86_64 --target-os=linux --enable-gpl --enable-version3 --disable-debug --enable-iconv --enable-zlib --enable-libxml2 --enable-libsoxr --enable-openssl --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype --enable-libfribidi --enable-vulkan --enable-libvorbis --enable-libxcb --enable-xlib --enable-libpulse --enable-gmp --enable-lzma --enable-liblcevc-dec --enable-opencl --enable-amf --enable-libaom --enable-libaribb24 --enable-avisynth --enable-chromaprint --enable-libdav1d --enable-libdavs2 --enable-libdvdread --enable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --enable-frei0r --enable-libgme --enable-libkvazaar --enable-libaribcaption --enable-libass --enable-libbluray --enable-libjxl --enable-libmp3lame --enable-libopus --enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx --enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopenmpt --enable-librav1e --enable-librubberband --disable-schannel --enable-sdl2 --enable-libsnappy --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d --enable-libdrm --enable-vaapi --enable-libvidstab --enable-libvvenc --disable-whisper --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxvid --enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags= --extra-libs='-lgomp -ldl' --extra-ldflags=-pthread --extra-ldexeflags=-pie --cc=x86_64-ffbuild-linux-gnu-gcc --cxx=x86_64-ffbuild-linux-gnu-g++ --ar=x86_64-ffbuild-linux-gnu-gcc-ar --ranlib=x86_64-ffbuild-linux-gnu-gcc-ranlib --nm=x86_64-ffbuild-linux-gnu-gcc-nm --extra-version=20260815\nlibavutil      61.  5.100 / 61.  5.100\nlibavcodec     63.  8.101 / 63.  8.101\nlibavformat    63.  6.100 / 63.  6.100\nlibavdevice    63.  2.100 / 63.  2.100\nlibavfilter    12.  3.101 / 12.  3.101\nlibswscale     10.  2.100 / 10.  2.100\nlibswresample   7.  2.100 /  7.  2.100\n\nExiting with exit code 0\n",
+  "binary_sha256": "f1e69546b9ac98ca220eafa680d3c2ecfd18f6f756452858574f21b6bac04115",
+  "implementation_sha256": {
+    "visual.py": "98ccef77cdbbc7f0088791972da6be9f6fbfe844205be8eb207e63eb9f3d2e93",
+    "avsync_core.py": "bfaa4b9b26017bca09aecf2c11fa7afbbdee562e553dd6c35d8c25d68a041783",
+    "compare_visual.py": "717c293bcf68428f8be814797be8d3d631c438c7a2717dae772239c5bebe27dd"
+  },
+  "results": [
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.417,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "identity",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/identity.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-x76phnay/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 69728,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.464,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "trim_start",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/trim_start.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-gjlovxet/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 68256,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.415,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "leading_black",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/leading_black.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-ph954squ/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 68384,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.464,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "speed_25_24",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/speed_25_24.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-7qxtw86e/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 68232,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.468,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "speed_and_trim",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/speed_and_trim.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-50ybgcdy/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 68240,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.464,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "fps_only",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/fps_only.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-_e9sap3f/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 69652,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.416,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "crop",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/crop.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-zpin3h25/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 68080,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.419,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "surround",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/surround.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-4nbwq5cp/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 69464,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.423,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "different_audio",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/different_audio.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-zbcc0yf5/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 68184,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.415,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "internal_cut",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/internal_cut.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-3qxcddot/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 68344,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.414,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "wrong_video_same_audio",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/wrong_video_same_audio.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-86_y0kn3/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 68184,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 0.417,
+      "stdout": "",
+      "stderr": "  Frame extraction yielded zero frames or timestamps for target.mkv.\nFailed to extract reference frames.\n",
+      "case": "black_silence",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-alignment-corpus-v2/target.mkv",
+        "--source",
+        "/tmp/trackstarr-alignment-corpus-v2/black_silence.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-7mzkg0v8/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 68172,
+      "input_blocks": 0,
+      "output_blocks": 16,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 837
+    }
+  ]
+}

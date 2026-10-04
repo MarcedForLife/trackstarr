@@ -1,0 +1,357 @@
+{
+  "schema_version": 1,
+  "engine": "consensus",
+  "automatic_publication": false,
+  "settings": {
+    "regions": 8,
+    "probes_per_region": 12,
+    "max_distance": 60,
+    "ambiguity_margin": 8,
+    "alternative_separation_us": 500000,
+    "min_region_matches": 2,
+    "min_match_fraction": 0.5,
+    "max_residual_us": 50000,
+    "min_span_fraction": 0.8,
+    "min_scale": 0.9,
+    "max_scale": 1.1,
+    "max_duration_seconds": 120,
+    "max_frames": 20000
+  },
+  "temporal_settings": null,
+  "consensus_settings": {
+    "scales": [
+      "1",
+      "1001/1000",
+      "1000/1001",
+      "25/24",
+      "24/25",
+      "25025/24000",
+      "24000/25025"
+    ],
+    "votes_per_probe": 8,
+    "offset_bin_us": 20000,
+    "min_votes": 10,
+    "min_peak_ratio": 2.0,
+    "max_sample_gap_us": 75000,
+    "probes_per_region": 100,
+    "min_region_confirmations": 3,
+    "min_contradicting_run": 3,
+    "min_confirmed_regions": 5
+  },
+  "episode_settings": {
+    "width": 320,
+    "max_frames": 432000,
+    "timeout_seconds": 7200
+  },
+  "manifest_sha256": "f1c53287a14e9abc2b8418b6a4563da06739573dfdee4265ad0cff8531e76c2e",
+  "ffmpeg_version": "ffmpeg version N-126168-gb16b5f2a01-20260815 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 15.2.0 (crosstool-NG 1.28.0.23_185f348)\nconfiguration: --prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config --cross-prefix=x86_64-ffbuild-linux-gnu- --arch=x86_64 --target-os=linux --enable-gpl --enable-version3 --disable-debug --enable-iconv --enable-zlib --enable-libxml2 --enable-libsoxr --enable-openssl --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype --enable-libfribidi --enable-vulkan --enable-libvorbis --enable-libxcb --enable-xlib --enable-libpulse --enable-gmp --enable-lzma --enable-liblcevc-dec --enable-opencl --enable-amf --enable-libaom --enable-libaribb24 --enable-avisynth --enable-chromaprint --enable-libdav1d --enable-libdavs2 --enable-libdvdread --enable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --enable-frei0r --enable-libgme --enable-libkvazaar --enable-libaribcaption --enable-libass --enable-libbluray --enable-libjxl --enable-libmp3lame --enable-libopus --enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx --enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopenmpt --enable-librav1e --enable-librubberband --disable-schannel --enable-sdl2 --enable-libsnappy --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d --enable-libdrm --enable-vaapi --enable-libvidstab --enable-libvvenc --disable-whisper --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxvid --enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags= --extra-libs='-lgomp -ldl' --extra-ldflags=-pthread --extra-ldexeflags=-pie --cc=x86_64-ffbuild-linux-gnu-gcc --cxx=x86_64-ffbuild-linux-gnu-g++ --ar=x86_64-ffbuild-linux-gnu-gcc-ar --ranlib=x86_64-ffbuild-linux-gnu-gcc-ranlib --nm=x86_64-ffbuild-linux-gnu-gcc-nm --extra-version=20260815\nlibavutil      61.  5.100 / 61.  5.100\nlibavcodec     63.  8.101 / 63.  8.101\nlibavformat    63.  6.100 / 63.  6.100\nlibavdevice    63.  2.100 / 63.  2.100\nlibavfilter    12.  3.101 / 12.  3.101\nlibswscale     10.  2.100 / 10.  2.100\nlibswresample   7.  2.100 /  7.  2.100\n\nExiting with exit code 0\n",
+  "binary_sha256": "f1e69546b9ac98ca220eafa680d3c2ecfd18f6f756452858574f21b6bac04115",
+  "implementation_sha256": {
+    "visual.py": "314a9d3ed2217d2eb0f8a7beb82a0ebd25ce438165594198a66b21c5395a34cc",
+    "temporal.py": "4bccf965d9822bf90992b18dc1dc01ba65b67adaacd0f81bb836c4d0a985e362",
+    "consensus.py": "ede86645b790b4f676bfa6c9d784124d290771645a62a14c19a3640ebfc3800c",
+    "episode_signatures.py": "08507e1209570405ec37450684591b7011158040d639dbac8f6b4ce2f8b13016",
+    "avsync_core.py": "bfaa4b9b26017bca09aecf2c11fa7afbbdee562e553dd6c35d8c25d68a041783",
+    "compare_visual.py": "143b55256b26f66fea8b3c0ee5a8f1804006a6fe3b9bb5b19945d09f59807094"
+  },
+  "results": [
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 1721.405,
+      "stdout": "",
+      "stderr": "[null @ 0x56a4ce905980] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 84000 >= 84000\n[null @ 0x61eff47a91c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 84000 >= 84000\n",
+      "case": "missing_spanish_stereo",
+      "command": [
+        "/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "consensus",
+        "--target",
+        "/tmp/trackstarr-eternaut-pair/target.mkv",
+        "--source",
+        "/tmp/trackstarr-eternaut-pair/source.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-pu_5unw_/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--whole-episodes"
+      ],
+      "max_process_rss_kib": 568984,
+      "input_blocks": 24861928,
+      "output_blocks": 376232,
+      "measurement": {
+        "status": "proposed",
+        "folds": [
+          {
+            "fit_parity": 0,
+            "fit_probes": 400,
+            "hypothesis": {
+              "scale": "1",
+              "offset_us": 0,
+              "votes": 387
+            },
+            "runner_up": {
+              "scale": "1001/1000",
+              "offset_us": -2320000,
+              "votes": 21
+            }
+          },
+          {
+            "fit_parity": 1,
+            "fit_probes": 400,
+            "hypothesis": {
+              "scale": "1",
+              "offset_us": 0,
+              "votes": 324
+            },
+            "runner_up": {
+              "scale": "1000/1001",
+              "offset_us": 2420000,
+              "votes": 50
+            }
+          }
+        ],
+        "region_tallies": [
+          {
+            "consistent": 7642,
+            "confirms": 98,
+            "uninformative": 2
+          },
+          {
+            "consistent": 8091,
+            "confirms": 92,
+            "uninformative": 8
+          },
+          {
+            "consistent": 8092,
+            "confirms": 96,
+            "uninformative": 4
+          },
+          {
+            "consistent": 8091,
+            "confirms": 91,
+            "uninformative": 9
+          },
+          {
+            "consistent": 8069,
+            "confirms": 97,
+            "uninformative": 3
+          },
+          {
+            "consistent": 8091,
+            "confirms": 89,
+            "uninformative": 11
+          },
+          {
+            "consistent": 8092,
+            "confirms": 95,
+            "uninformative": 5
+          },
+          {
+            "consistent": 3555,
+            "confirms": 32,
+            "uninformative": 68
+          }
+        ],
+        "region_verdicts": [
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms"
+        ],
+        "max_region_residual_us": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "confirmed_pairs": 690,
+        "exact_anchors": 412,
+        "span_fraction": {
+          "source": 0.8876271745101629,
+          "target": 0.8876271745101629
+        },
+        "frame_counts": {
+          "target": 60523,
+          "source": 60523
+        },
+        "mapping": {
+          "scale": 1.0,
+          "offset_us": 0.0
+        },
+        "reason": "research_limits_met",
+        "automatic_publication": false
+      },
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_error_us": 0.0,
+      "workspace_bytes_at_exit": 2225
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 1784.932,
+      "stdout": "",
+      "stderr": "[null @ 0x617b2ea3d980] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 84000 >= 84000\n[null @ 0x5a30f04811c0] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 84000 >= 84000\n",
+      "case": "missing_spanish_surround",
+      "command": [
+        "/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "consensus",
+        "--target",
+        "/tmp/trackstarr-eternaut-pair/target.mkv",
+        "--source",
+        "/tmp/trackstarr-eternaut-pair/source.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-mj5a5e31/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--whole-episodes"
+      ],
+      "max_process_rss_kib": 567484,
+      "input_blocks": 24819576,
+      "output_blocks": 376232,
+      "measurement": {
+        "status": "proposed",
+        "folds": [
+          {
+            "fit_parity": 0,
+            "fit_probes": 400,
+            "hypothesis": {
+              "scale": "1",
+              "offset_us": 0,
+              "votes": 387
+            },
+            "runner_up": {
+              "scale": "1001/1000",
+              "offset_us": -2320000,
+              "votes": 21
+            }
+          },
+          {
+            "fit_parity": 1,
+            "fit_probes": 400,
+            "hypothesis": {
+              "scale": "1",
+              "offset_us": 0,
+              "votes": 324
+            },
+            "runner_up": {
+              "scale": "1000/1001",
+              "offset_us": 2420000,
+              "votes": 50
+            }
+          }
+        ],
+        "region_tallies": [
+          {
+            "consistent": 7642,
+            "confirms": 98,
+            "uninformative": 2
+          },
+          {
+            "consistent": 8091,
+            "confirms": 92,
+            "uninformative": 8
+          },
+          {
+            "consistent": 8092,
+            "confirms": 96,
+            "uninformative": 4
+          },
+          {
+            "consistent": 8091,
+            "confirms": 91,
+            "uninformative": 9
+          },
+          {
+            "consistent": 8069,
+            "confirms": 97,
+            "uninformative": 3
+          },
+          {
+            "consistent": 8091,
+            "confirms": 89,
+            "uninformative": 11
+          },
+          {
+            "consistent": 8092,
+            "confirms": 95,
+            "uninformative": 5
+          },
+          {
+            "consistent": 3555,
+            "confirms": 32,
+            "uninformative": 68
+          }
+        ],
+        "region_verdicts": [
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms"
+        ],
+        "max_region_residual_us": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "confirmed_pairs": 690,
+        "exact_anchors": 412,
+        "span_fraction": {
+          "source": 0.8876271745101629,
+          "target": 0.8876271745101629
+        },
+        "frame_counts": {
+          "target": 60523,
+          "source": 60523
+        },
+        "mapping": {
+          "scale": 1.0,
+          "offset_us": 0.0
+        },
+        "reason": "research_limits_met",
+        "automatic_publication": false
+      },
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_error_us": 0.0,
+      "workspace_bytes_at_exit": 2225
+    }
+  ]
+}

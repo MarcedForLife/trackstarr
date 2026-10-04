@@ -1,0 +1,66 @@
+{
+  "review_date": "2026-09-27",
+  "candidates": [
+    {
+      "name": "FFmpeg signature",
+      "repository": "https://github.com/FFmpeg/FFmpeg",
+      "revision": "b16b5f2a01",
+      "additional_tested_build": "Alpine FFmpeg 8.1.2",
+      "fingerprint_prototype_comparison": "results/fingerprints-synthetic.json",
+      "consensus_prototype_comparison": "results/consensus-synthetic.json",
+      "consensus_whole_episodes": [
+        "results/consensus-dark-episode.json",
+        "results/consensus-eternaut-episode.json"
+      ],
+      "consensus_held_out_reencodes": [
+        "results/consensus-futurama-reencode-heldout.json",
+        "results/consensus-breakingbad-reencode-heldout.json"
+      ],
+      "benchmarked": true
+    },
+    {
+      "name": "avsync",
+      "repository": "https://github.com/stinkybread/avsync",
+      "revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+      "benchmarked": true,
+      "benchmark_scope": "Six isolated visual functions, headless OpenCV, VFR option compatibility wrapper",
+      "environment": "avsync-requirements.txt"
+    },
+    {
+      "name": "RedSync",
+      "repository": "https://github.com/720pixel/RedSync",
+      "revision": "cb07566f9c48766d8f335df0caab157f5342569a",
+      "benchmarked": true
+    },
+    {
+      "name": "video-sync",
+      "repository": "https://github.com/Chaphasilor/video-sync",
+      "revision": "90cb048c790648be1c037d3a2b702430e4d27110",
+      "benchmarked": false
+    },
+    {
+      "name": "audalign",
+      "repository": "https://github.com/benfmiller/audalign",
+      "revision": "d87b7a93f944ee3ee436a94e2bc982118df78cac",
+      "benchmarked": false
+    },
+    {
+      "name": "ffsubsync",
+      "repository": "https://github.com/smacke/ffsubsync",
+      "revision": "de310ac6944b8260431a48ee741e7063cec49b0f",
+      "benchmarked": false
+    },
+    {
+      "name": "alass",
+      "repository": "https://github.com/kaegi/alass",
+      "revision": "874f02d9577182752a0f969b6d6b98fd65bdf1fc",
+      "benchmarked": false
+    },
+    {
+      "name": "DubGraft",
+      "repository": "https://github.com/NightCorpse/DubGraft",
+      "revision": "f48f7b9148c31322da5f5386c31e1fb874b9dc1f",
+      "benchmarked": false
+    }
+  ]
+}
