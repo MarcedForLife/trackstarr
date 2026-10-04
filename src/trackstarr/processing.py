@@ -9,15 +9,30 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 
-from . import config, events, mkvtag, pauses, rewrites, runs
+from . import config, events, executor, mkvtag, pauses, rewrites, runs
 from .arr import Arr, LibraryItem
 from .executor import Cancel, Outcome, apply_plan
-from .media import ProbeError
+from .media import ProbeError, probe, stream_lang, stream_title
 from .media_server import refresh_servers
-from .planner import Plan, build_plan, changes, describe, planned_tracks, track_changes, why
+from .planner import (
+    FileRevision,
+    Plan,
+    PlanInput,
+    StreamRef,
+    _trial_dv_strip,
+    build_plan,
+    changes,
+    describe,
+    new_plan,
+    plan_from_probe,
+    planned_tracks,
+    track_changes,
+    why,
+)
 from .policy import Policy
 from .status import Status
 from .sweep_cache import FileKey, Observation, Verdict, cache_key
+from .tracks import CODECS
 
 log = logging.getLogger(__name__)
 
@@ -432,6 +447,124 @@ def _claim(
     return claimed
 
 
+def _build_plan(job: Job, policy: Policy, inputs: tuple[PlanInput, ...]) -> Plan:
+    """Read selected sources under the execution guard, then run ordinary rules."""
+    if not inputs:
+        return build_plan(job.path, job.lang, policy)
+    revision = FileRevision.of(job.path)
+    with executor._read_source(revision):
+        local = build_plan(job.path, job.lang, policy)
+        if local.skip and local.skip not in {
+            "no audio streams",
+            "would remove every audio track",
+        }:
+            return local
+        info = probe(job.path)
+        if "dv_strip" in policy.rules_in("always", "alongside"):
+            _trial_dv_strip(job.path, info)
+        streams = list(info.get("streams", []))
+        next_index = max((s["index"] for s in streams), default=-1) + 1
+        selected: dict[int, tuple[int, dict]] = {}
+        seen = set()
+        source_probes: dict[FileRevision, dict] = {}
+        for position, item in enumerate(inputs, 1):
+            identity = (item.revision.device, item.revision.inode)
+            if identity == (revision.device, revision.inode):
+                raise ValueError("source and target must be different files")
+            key = (*identity, item.stream_index)
+            if key in seen:
+                raise ValueError("source stream selected more than once")
+            seen.add(key)
+            if item.revision not in source_probes:
+                with executor._read_source(item.revision):
+                    source_probes[item.revision] = probe(item.revision.path)
+            source_info = source_probes[item.revision]
+            stream: dict = next(
+                (s for s in source_info.get("streams", []) if s["index"] == item.stream_index),
+                {},
+            )
+            if stream.get("codec_type") != "audio":
+                raise ValueError(f"source stream {item.stream_index} is not audio")
+            # Private indexes let ordinary rules compare every audio track.
+            # Restore the original input coordinates after planning.
+            index = next_index + position - 1
+            streams.append(stream | {"index": index})
+            selected[index] = (position, stream)
+        seed = new_plan(job.path, job.lang, policy)
+        seed.src_signature = local.src_signature
+        seed.inputs = inputs
+        plan = plan_from_probe(seed, info | {"streams": streams})
+        if plan.skip:
+            raise ValueError(plan.skip)
+        for index, (position, _stream) in selected.items():
+            if not any(out.src == index and not out.encode for out in plan.streams):
+                raise ValueError(
+                    f"source stream {inputs[position - 1].stream_index} would be removed "
+                    "or replaced by the current rules"
+                )
+        plan.tracks = local.tracks
+        for out in plan.streams:
+            if out.src not in selected:
+                continue
+            position, stream = selected[out.src]
+            item = inputs[position - 1]
+            out.source = StreamRef(position, item.stream_index)
+            if not out.encode:
+                out.lang = out.lang or stream_lang(stream)
+                out.codec = stream.get("codec_name", "")
+                _, retimed = executor._preparation_timing(item, stream, policy)
+                if retimed:
+                    layout = next(
+                        row
+                        for row in policy.audio_layouts
+                        if row.channels == out.channels and row.codec
+                    )
+                    out.codec, out.bitrate = layout.codec, layout.bitrate
+        for position, item in enumerate(inputs, 1):
+            stream = selected[next_index + position - 1][1]
+            plan.reasons.append(_source_description(item, stream, plan))
+        for item in inputs:
+            executor._check_revision(item.revision)
+        return plan
+
+
+def _source_description(item: PlanInput, stream: dict, plan: Plan) -> str:
+    mapping = item.mapping
+    placed, encode = executor._preparation_timing(item, stream, plan.policy)
+    end = float(mapping.scale) * executor._stream_end(stream) + mapping.offset_us / 1_000_000
+    if end <= max(0, float(placed)):
+        raise ValueError("timing would leave no source audio")
+    operation = "copy encoded audio"
+    if encode:
+        channels = stream.get("channels")
+        if not stream.get("channel_layout") and channels not in (1, 2):
+            raise ValueError("retiming requires a known source channel layout")
+        layout = next(
+            (
+                row
+                for row in plan.policy.audio_layouts
+                if row.channels == channels and row.codec
+            ),
+        )
+        codec_info = CODECS.get(layout.codec)
+        if codec_info and (
+            os.path.splitext(plan.out_path)[1].lower() not in codec_info.containers
+            or (channels or 0) > codec_info.max_channels
+        ):
+            raise ValueError(
+                "source encoder cannot preserve this layout in the target container"
+            )
+        operation = f"encode {layout.codec} {layout.bitrate} after lossless preparation"
+        if placed < 0:
+            operation = f"trim {float(-placed):.6f}s, {operation}"
+    return (
+        f"import {item.revision.path} stream {item.stream_index} "
+        f"({stream_lang(stream) or 'und'}, {stream.get('channels', '?')}ch, "
+        f"{stream_title(stream) or 'untitled'}), "
+        f"offset {mapping.offset_us / 1_000_000:+.6f}s, scale {mapping.scale}, {operation}"
+    )
+
+
 def process(
     job: Job,
     dry_run: bool,
@@ -440,6 +573,7 @@ def process(
     policy: Policy | None = None,
     cancel: Cancel | None = None,
     observation: Observation | None = None,
+    inputs: tuple[PlanInput, ...] = (),
 ) -> ProcessResult:
     """Plan one file and, unless dry_run, rewrite it.
 
@@ -454,8 +588,11 @@ def process(
     pause = pauses.paused(job.path)
     dry_run = effective_dry_run(dry_run, job.path)
     try:
-        plan = build_plan(job.path, job.lang, policy)
-    except ProbeError as err:
+        target_revision = FileRevision.of(job.path) if inputs else None
+        plan = _build_plan(job, policy, inputs)
+    except InterruptedError as err:
+        return ProcessResult(Status.DEFERRED, detail=str(err))
+    except (ProbeError, OSError, ValueError) as err:
         log.warning("probe failed for %s: %s", job.path, err)
         return ProcessResult(Status.FAILED, detail=str(err))
 
@@ -513,6 +650,16 @@ def process(
                 outcome, detail = Outcome.DEFERRED, STOPPED_BEFORE_START
             else:
                 runs.stage(job.run, job.path, runs.ENCODING, plan.src_duration)
+                claim = _claim(observation, plan, cancel)
+                if target_revision is not None:
+                    original_claim = claim
+
+                    def claim() -> bool:
+                        if effective_dry_run(False, job.path) or Policy.from_config() != policy:
+                            return False
+                        executor._check_revision(target_revision)
+                        return original_claim is None or original_claim()
+
                 outcome, detail = apply_plan(
                     plan,
                     functools.partial(runs.progress, job.run, job.path),
@@ -520,7 +667,7 @@ def process(
                     # would say the file is still being written.
                     functools.partial(runs.stage, job.run, job.path, runs.FINISHING),
                     cancel,
-                    _claim(observation, plan, cancel),
+                    claim,
                 )
     # A corrupt result, a source deleted mid-job, WORK_DIR gone. One file must
     # not take the rest of a sweep with it.

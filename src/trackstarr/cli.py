@@ -1,6 +1,7 @@
 """Command line entry point."""
 
 import argparse
+import functools
 import getpass
 import logging
 import os
@@ -8,6 +9,7 @@ import shutil
 import signal
 import sys
 import textwrap
+from fractions import Fraction
 from types import FrameType
 
 from . import __version__, auth, config, events, lifecycle, policy, sessions, sweep_cache, users
@@ -17,8 +19,8 @@ from .command import ffmpeg_args
 from .executor import audio_codec_errors, work_dir_errors
 from .langs import norm_lang
 from .media import ProbeError
-from .planner import build_plan, describe
-from .processing import Job, process, state_dir_errors
+from .planner import FileRevision, PlanInput, TimingMapping, build_plan, describe
+from .processing import Job, _build_plan, process, state_dir_errors
 from .status import Status
 from .sweep import remember, sweep
 from .sweep_cache import cache_key, observing
@@ -116,6 +118,87 @@ def _add_files_arguments(cmd: argparse.ArgumentParser) -> None:
         help="the title's original language (en, eng and English all work), "
         "skipping the *arr lookup",
     )
+    cmd.add_argument("--source-file", help="file supplying explicitly selected audio")
+    cmd.add_argument(
+        "--source-stream",
+        type=int,
+        action="append",
+        help="absolute zero-based audio stream index in the source, repeat for more tracks",
+    )
+    timing = cmd.add_mutually_exclusive_group()
+    timing.add_argument(
+        "--offset",
+        help="signed seconds added to source timestamps, positive delays audio",
+    )
+    timing.add_argument(
+        "--anchor",
+        action="append",
+        metavar="SOURCE=TARGET",
+        help="matching timestamps in seconds or HH:MM:SS, specify exactly twice",
+    )
+
+
+def _seconds(value: str) -> Fraction:
+    parts = value.split(":")
+    if len(parts) == 1:
+        return Fraction(value)
+    if len(parts) != 3:
+        raise ValueError("timestamps must be seconds or HH:MM:SS")
+    hours, minutes, seconds = (Fraction(part) for part in parts)
+    if (
+        hours < 0
+        or hours.denominator != 1
+        or not 0 <= minutes < 60
+        or minutes.denominator != 1
+        or not 0 <= seconds < 60
+    ):
+        raise ValueError("invalid HH:MM:SS timestamp")
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def _manual_inputs(args: argparse.Namespace) -> tuple[PlanInput, ...]:
+    if not args.source_file:
+        if args.source_stream is not None or args.offset is not None or args.anchor is not None:
+            raise ValueError("audio selection and timing require --source-file")
+        return ()
+    if len(args.files) != 1:
+        raise ValueError("manual audio copying requires exactly one target file")
+    if not args.source_stream or any(index < 0 for index in args.source_stream):
+        raise ValueError("specify at least one non-negative --source-stream index")
+    if len(set(args.source_stream)) != len(args.source_stream):
+        raise ValueError("source stream selected more than once")
+    scale = Fraction(1)
+    offset = _seconds(args.offset) if args.offset is not None else Fraction(0)
+    if args.anchor:
+        if len(args.anchor) != 2:
+            raise ValueError("specify exactly two --anchor SOURCE=TARGET pairs")
+        pairs = [
+            tuple(_seconds(value) for value in anchor.split("=")) for anchor in args.anchor
+        ]
+        if any(len(pair) != 2 or min(pair) < 0 for pair in pairs):
+            raise ValueError("each anchor requires non-negative SOURCE=TARGET timestamps")
+        (source1, target1), (source2, target2) = pairs
+        if source2 <= source1 or target2 <= target1:
+            raise ValueError("anchor timestamps must increase in both files")
+        scale = (target2 - target1) / (source2 - source1)
+        offset = target1 - scale * source1
+    if not Fraction(1, 2) <= scale <= 2:
+        raise ValueError("audio preparation supports scales from 1/2 to 2")
+    mapping = TimingMapping(scale, round(offset * 1_000_000))
+    revision = FileRevision.of(args.source_file)
+    return tuple(PlanInput(revision, index, mapping) for index in args.source_stream)
+
+
+def _run_files(args: argparse.Namespace) -> int:
+    try:
+        inputs = _manual_inputs(args)
+    except (ValueError, ZeroDivisionError, OSError) as err:
+        log.error("%s", err)
+        return 1
+    handler = cmd_plan if args.cmd == "plan" else cmd_fix
+    if inputs:
+        return handler(args.files, args.original, inputs)
+    return handler(args.files, args.original)
 
 
 def _resolve_jobs(
@@ -137,14 +220,18 @@ def _resolve_jobs(
     )
 
 
-def cmd_plan(files: list[str], original: str | None) -> int:
+def cmd_plan(files: list[str], original: str | None, inputs: tuple[PlanInput, ...] = ()) -> int:
     failed = False
     jobs, _ = _resolve_jobs(files, original)
     for job in jobs:
         path = job.path
         try:
-            plan = build_plan(path, job.lang)
-        except (ProbeError, OSError) as err:
+            plan = (
+                _build_plan(job, policy.Policy.from_config(), inputs)
+                if inputs
+                else build_plan(path, job.lang)
+            )
+        except (ProbeError, OSError, ValueError) as err:
             print(f"{path}\n  ERROR {err}")
             failed = True
             continue
@@ -190,12 +277,16 @@ def cmd_plan(files: list[str], original: str | None) -> int:
             print(f"  - {reason}")
         for reason in plan.incidental:
             print(f"  - {reason} (rides along)")
-        dest = "OUT" + os.path.splitext(plan.out_path)[1]
-        print("  ffmpeg " + " ".join(ffmpeg_args(plan, dest)[1:]))
+        if inputs:
+            print("  target video and chapters come from the target file; no silence padding")
+            print("  use fix with the same arguments to prepare, validate and publish")
+        else:
+            dest = "OUT" + os.path.splitext(plan.out_path)[1]
+            print("  ffmpeg " + " ".join(ffmpeg_args(plan, dest)[1:]))
     return 1 if failed else 0
 
 
-def cmd_fix(files: list[str], original: str | None) -> int:
+def cmd_fix(files: list[str], original: str | None, inputs: tuple[PlanInput, ...] = ()) -> int:
     """Plan and rewrite specific files, wherever they live.
 
     Same locks, events and REWRITE_MODE latch as everything else. Deferred
@@ -218,14 +309,17 @@ def cmd_fix(files: list[str], original: str | None) -> int:
         # Before the probe, so the verdict is keyed to the file as it was.
         with observing(job.path, policy=policy.Policy.from_config()) as observation:
             key = cache_key(job.path, job.lang)
-            result = process(
+            processor = functools.partial(process, inputs=inputs) if inputs else process
+            result = processor(
                 job,
                 dry_run=False,
                 source="cli",
                 policy=observation.policy,
                 observation=observation,
             )
-            remember(job.path, key, result, observation)
+            # Manual selections are not dependencies of the ordinary sweep cache.
+            if not inputs or result.status is Status.MODIFIED:
+                remember(job.path, key, result, observation)
         print(f"{result.status}  {job.path}")
         # A deferred plan is stale, so its reasons would mislead.
         if (
@@ -337,8 +431,8 @@ def _run_sweep(args: argparse.Namespace) -> int:
 COMMANDS = {
     "serve": (_run_serve, "rewrite"),
     "sweep": (_run_sweep, "rewrite"),
-    "fix": (lambda args: cmd_fix(args.files, args.original), "rewrite"),
-    "plan": (lambda args: cmd_plan(args.files, args.original), "read"),
+    "fix": (_run_files, "rewrite"),
+    "plan": (_run_files, "read"),
     "secret": (lambda args: cmd_secret(args.name, args.rotate), None),
     "user": (cmd_user, None),
 }

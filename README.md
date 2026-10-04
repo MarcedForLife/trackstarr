@@ -140,6 +140,31 @@ trackstarr plan --original eng "Tears of Steel (2012).mkv"
 
 `REWRITE_MODE=report` prevents rewrites even with `fix` or `sweep --apply`. Title pauses also apply.
 
+Manual audio copying accepts one target and an explicit source file. Select audio
+by its absolute, zero-based FFprobe stream index. Repeat `--source-stream` to
+select more than one track from that file.
+
+```sh
+trackstarr plan target.mkv --original eng --source-file source.mkv --source-stream 2 --offset 0.250
+trackstarr fix target.mkv --original eng --source-file source.mkv --source-stream 2 --offset 0.250
+```
+
+A positive offset delays source audio. Omit it for unchanged timestamps. For a
+speed difference, replace `--offset` with two matching timestamp pairs, such as
+`--anchor 00:01:00=00:01:00.250 --anchor 00:17:00=00:17:41.250`.
+Each pair is `SOURCE=TARGET`. Times are seconds or `HH:MM:SS`, with fractional
+seconds allowed.
+
+`plan` describes each import and any trim or encoding it requires. Selected tracks
+participate in normal rules and can supply downmixes. A selection those rules
+would remove or replace is refused. Retiming requires a configured encoder for
+the source channel count. No silence padding is added.
+
+Each invocation reads the current files. `fix` revalidates them during execution
+and checks the policy and target pause again before publication. The source stays
+unchanged and can be paused. Review picture and sound after a manual copy, as
+these timestamps are supplied by you and are not measured alignment results.
+
 ## Configuration
 
 Non-empty environment variables override saved UI settings. See the
