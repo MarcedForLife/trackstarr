@@ -16,7 +16,7 @@ export type Codec = {
 // echoes one.
 export type Setting = { value: SettingValue; env: boolean; env_name?: string; set?: boolean };
 export type ArrType = 'radarr' | 'sonarr';
-export type ArrField = 'url' | 'api_key' | 'public_url' | 'name';
+export type ArrField = 'url' | 'api_key' | 'public_url' | 'name' | 'read_only';
 export type ArrInstance = {
 	id: string;
 	type: ArrType;
@@ -27,7 +27,7 @@ export type ArrChange = {
 	type?: ArrType;
 	create?: boolean;
 	remove?: boolean;
-	values?: Partial<Record<ArrField, string | null>>;
+	values?: Partial<Record<ArrField, string | boolean | null>>;
 };
 export type SettingsChanges = Record<string, SettingValue | null | ArrChange[]>;
 export type SettingsSnapshot = {

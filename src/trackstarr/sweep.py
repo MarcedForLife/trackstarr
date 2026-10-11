@@ -24,7 +24,6 @@ from . import (
     events,
     lifecycle,
     notify,
-    pauses,
     rewrites,
     runs,
     sweep_cache,
@@ -38,6 +37,7 @@ from .processing import (
     ProcessResult,
     Rewritten,
     effective_dry_run,
+    left_alone,
     process,
     verdict_of,
 )
@@ -828,11 +828,11 @@ def _walk_cached(run: str, ready: _Ready, walk: Walk, cache: SweepCache) -> _Tot
             if judged.key:
                 totals.library_bytes += judged.key.size
             wanted = not dry_run and judged.verdict.status is Status.PENDING
-            # A paused file is booked as discovery judged it rather than queued:
-            # the rewrite would latch to report anyway, having spent a slot and
-            # a second probe getting there.
-            pause = pauses.paused(judged.job.path) if wanted else None
-            if wanted and pause is None:
+            # A file left alone is booked as discovery judged it rather than
+            # queued: the rewrite would latch to report anyway, having spent a
+            # slot and a second probe getting there.
+            kept = left_alone(judged.job.path, judged.job.instance_id) if wanted else None
+            if wanted and kept is None:
                 # Queued under this estimate and worked under it: the rewrite
                 # carries it to the page's readout itself.
                 expected = speeds.seconds(judged.verdict.duration, judged.verdict.planned)
@@ -857,8 +857,8 @@ def _walk_cached(run: str, ready: _Ready, walk: Walk, cache: SweepCache) -> _Tot
                 # Said here as well as in process(), which a verdict answered
                 # from the cache never reached, so the row and the report give
                 # the reason either way.
-                if pause is not None:
-                    judged = replace(judged, detail=pause.describe())
+                if kept is not None:
+                    judged = replace(judged, detail=kept)
                 _book(judged, totals, cache, run)
             outstanding = _settle(finished, outstanding, totals, cache, run, waiting=waiting)
             if i % 500 == 0:

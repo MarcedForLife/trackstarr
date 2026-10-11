@@ -103,17 +103,16 @@ Reciprocal lists are valid. UI connection order does not choose a target or impl
 copy permission. Every writable variant with sourcing enabled is evaluated as a
 target independently.
 
-An independent `PROCESS_MEDIA` setting defaults to true and controls mutation of
-that connection's files. False permits indexing, probing and use as a source, but
-prevents rewrites and retagging through every entry point. This supports libraries
-mounted read-only without assigning them a special sourcing role. A permission
-change is checked again at execution and publication.
+An independent `READ_ONLY` setting defaults to false. True permits indexing,
+probing and use as a source, but prevents rewrites and retagging through every
+entry point. This supports libraries mounted read-only without assigning them a
+special sourcing role. The setting is checked again at execution and publication.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `RULE_SOURCE_AUDIO` | `never` | Existing `never`, `alongside`, `always` rule semantics. |
 | `SOURCE_AUDIO_LANGUAGES` | Empty | Languages explicitly required through sourcing. Supports `original`. |
-| `<ARR>_PROCESS_MEDIA` | `true` | Whether Trackstarr may modify this connection's files. |
+| `<ARR>_READ_ONLY` | `false` | Whether Trackstarr must leave this connection's files unchanged. |
 | `<ARR>_AUDIO_SOURCES` | Empty | Ordered source connection IDs for this target connection. |
 
 `<ARR>` follows existing instance names, for example `RADARR_4K`.
@@ -153,8 +152,10 @@ exist. Another readable, eligible source may still satisfy the requirement.
 
 Shared roots with ambiguous ownership, target/source path aliases and files sharing
 an inode are excluded from automatic copying until the conflict is resolved.
-Mutation permission is checked by filesystem ownership resolution, not just by the
-connection ID provided by a caller. Reading a hardlinked source is allowed.
+A connection claims every file under the title folders its arr lists, and the
+file it delivered or matched. A read-only claim refuses a write, and a read-only
+connection that has never answered refuses every write. Claims come from the
+listing, not only from the caller. Reading a hardlinked source is allowed.
 Existing hardlink protection continues to govern writes to targets.
 
 ## Domain contracts
@@ -365,7 +366,7 @@ job, however many imports arrive meanwhile.
 | Target import or upgrade | Assess the new target revision against configured sources. |
 | Source import, replacement, deletion or track edit | Reassess affected target content keys, including unchanged target files. |
 | Rename | Refresh locators, revalidate revisions and invalidate path-bound analysis. |
-| Processing permission, source list or language policy change | Invalidate affected assessments and queued plan permissions. |
+| Read-only switch, source list or language policy change | Invalidate affected assessments and queued plan permissions. |
 | Connection recovery or root remount | Refresh unknown inventory and reconsider waiting targets. |
 | Successful target rewrite | Reprobe the result, then close requirements from observed tracks. |
 
@@ -385,7 +386,7 @@ as import-triggered work. Sweep work reports changes unless mode is `all`. Expli
 the selected targets and is not inherited by other affected variants. Target
 pauses block automatic analysis and publication.
 Pauses retain their mutation meaning. A paused variant can still supply audio to
-another target. `PROCESS_MEDIA=false` likewise prevents writes without preventing
+another target. `READ_ONLY=true` likewise prevents writes without preventing
 reads. Removing a connection from `AUDIO_SOURCES` excludes it from automatic reads.
 
 ## Metadata persistence and recovery
@@ -445,10 +446,10 @@ pipeline does not provide.
 
 ## API, CLI and user experience
 
-Connection settings expose processing permission and ordered source lists. Rule
+Connection settings expose the read-only switch and ordered source lists. Rule
 settings show the sourced-language subset alongside retained-language preferences.
-A library with processing disabled remains browsable, with processing and tag-edit
-actions disabled and an explanation of its mutation permission.
+A read-only library remains browsable, with processing and tag-edit actions
+disabled and an explanation naming the read-only connection.
 
 File details show each requested language, its state and reason. Ready plans name
 the source variant and track, offset, speed adjustment and encoding consequences.
@@ -499,7 +500,8 @@ required for this feature.
 
 Work is on `feature/audio-track-sourcing`. Phase 2 is implemented. Phase 3's
 manual CLI is implemented, with real-media listening and picture review still
-open. Automatic sourcing and its API entry points remain inactive.
+open. Phase 4's read-only enforcement is implemented. Automatic sourcing and its
+API entry points remain inactive.
 
 `plan` and `fix` accept one target, `--source-file`, repeated `--source-stream`
 indexes and either a signed `--offset` or two `--anchor SOURCE=TARGET` pairs.
@@ -530,6 +532,13 @@ Generated-media tests cover offsets, speed changes, downmixes, multiple inputs,
 metadata, source races, cancellation and cleanup. Local-only FFmpeg commands
 retain their baseline output, and older cached plans remain readable.
 
+`<ARR>_READ_ONLY` comes from the settings file or environment, and the settings API edits it.
+[The catalogue](../src/trackstarr/catalogue.py) lists only read-only connections,
+reuses a listing for five minutes and keeps the last answer through an outage.
+`process()` books a claimed file as pending with the reason, checks again at
+publication, and tag edits are refused. Imports, sweeps, title runs, hardlink
+rechecks and CLI `fix` all pass through those two gates.
+
 ### Approved names
 
 These names are implemented and approved. Other names in this design remain
@@ -543,6 +552,8 @@ proposals and need review at their implementation step.
 | `PlanInput`, `Plan.inputs` | Selected source tracks in input order. `SourceFile`, `MediaInput` and `CopySource` obscure single-track scope. `audio_inputs` narrows future scope, `sources` overlaps downmix candidates, `source_tracks` hides numbering. |
 | `PreparedTrack` | Workspace result. `PreparedAudio`, `RenderInput` and `AudioIntermediate` lose track scope or preparation state. |
 | `--source-file`, `--source-stream`, `--offset`, `--anchor` | CLI, docs and tests. Audio-prefixed alternatives overstate file scope, `--from-file`/`--track` obscure indexing, `--delay` fits negative offsets poorly. |
+| `<ARR>_READ_ONLY`, `read_only` | Settings key, settings API field and config attribute, default false. `MODIFY_FILES` was the alternative. `PROCESS_MEDIA` collides with `process()`, which also plans, and with "Processing paused". `WRITABLE` collides with `mkvtag.unwritable()`. "Read-only" also names the viewer role. |
+| `claims` | Connections whose listed title folders hold a file. `owners` collides with the single first-configured owner in `arr.path_index`. `sources_for` overlaps audio sources. |
 
 ### Research checkpoint
 
@@ -565,13 +576,13 @@ while research and manual review remain open.
 | --- | --- | --- |
 | 1. Alignment evaluation | Test independent releases, wrong cuts, ambiguous scenes and crop. Select or reject an adapter using the recorded accuracy, footprint and interface requirements. Finish licence, resource and Alpine amd64/arm64 checks. | Selection report, supported envelope and acceptance limits, adapter proof of concept, packaging evidence and real-media review. A refusal to select a backend is a valid research outcome, but blocks phases 5 and 8. |
 | 3. Manual copy review | Copy explicit tracks between suitable real-media inputs using the implemented CLI. | Listening and picture review confirms offset/speed handling and preservation. Generated tests alone do not close this step. |
-| 4. Identity and permissions | First extract authoritative file/episode facts and enforce processing permission at every mutation entry point. Then add source lists, language requirements, deterministic selection and dependency-aware verdicts. Review proposed names before adding contracts. | Cross-instance identity and ambiguous-ownership tests pass. Read-only variants remain usable as sources. Missing, unavailable and review outcomes cause no rewrite loops. |
+| 4. Identity and permissions | Read-only enforcement is done. Add the connection switch and the library's explanation, then extract authoritative file/episode facts. Then add source lists, language requirements, deterministic selection and dependency-aware verdicts. Review proposed names before adding contracts. | Cross-instance identity and ambiguous-ownership tests pass. Read-only variants remain usable as sources. Missing, unavailable and review outcomes cause no rewrite loops. |
 | 5. Analysis integration | Run the selected adapter through queued work with cancellation. Show measured mappings for review. | Accepted/refused controls and cancellation/restart tests pass. Automatic publication stays disabled. |
 | 6. Reconciliation | Admit affected targets on source changes, coalesce active-work reruns and refresh source fingerprints before sweep cache hits. | Late source, missed event, active-work and upgrade cases converge under existing mode and pause rules. |
 | 7. Product surface | Add settings, source picker, manual timing, assessment/history fields and matching demo fixtures. | Shared contracts pass and the UI refuses stale selections. |
 | 8. Release validation | Run a real-library report, explicit copies and then automatic copies within the supported envelope. Document limits. | The acceptance matrix passes with measured resource bounds and real-media review. |
 
-Phase 4 should land permission enforcement before discovery and assessment work.
+Read-only enforcement landed before discovery and assessment work.
 Each step remains independently reviewable, with sourcing disabled by default.
 The backend, numerical acceptance limits and supported platform builds remain
 evidence-dependent decisions.

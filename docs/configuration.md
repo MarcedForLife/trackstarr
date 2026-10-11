@@ -30,6 +30,7 @@ RADARR_4K_URL=http://radarr4k:7878
 RADARR_4K_API_KEY=your-key
 RADARR_4K_PUBLIC_URL=https://radarr4k.example.com
 RADARR_4K_NAME=UHD shelf
+RADARR_4K_READ_ONLY=true
 ```
 
 IDs use letters and digits (`PUBLIC` is reserved). Names and public URLs are
@@ -43,6 +44,11 @@ selector for each movie or episode. Title actions apply to all variants. Use a
 file's menu to plan, process or pause it individually. The Library flags folders
 shared by multiple connections. Variants are processed independently.
 
+A read-only connection's files are probed, planned and shown, but never
+rewritten or retagged. A file is read-only when a read-only connection lists its
+title folder or delivered its import. Until every read-only connection has
+answered once, no file is changed.
+
 ## Connections
 
 | Variable                                                                           | Default                  | Purpose                                                       |
@@ -53,6 +59,7 @@ shared by multiple connections. Variants are processed independently.
 | `JELLYFIN_URL` / `JELLYFIN_API_KEY`                                                | Unset                    | Jellyfin or Emby refreshes and title links.                   |
 | `PLEX_PATH_MAP` / `JELLYFIN_PATH_MAP`                                              | Unset                    | Comma-separated `LOCAL=REMOTE` path prefixes.                 |
 | `RADARR_PUBLIC_URL`, `SONARR_PUBLIC_URL`, `PLEX_PUBLIC_URL`, `JELLYFIN_PUBLIC_URL` | Service URL              | Addresses to use for title links.                             |
+| `RADARR_READ_ONLY` / `SONARR_READ_ONLY`                                            | `false`                  | Never change this connection's files.                         |
 | `WEBHOOK_URL`                                                                      | `http://trackstarr:5120` | Webhook callback address. Default port follows `LISTEN_PORT`. |
 
 ## Processing

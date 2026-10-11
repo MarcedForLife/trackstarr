@@ -272,7 +272,7 @@ def _webhook_current(notification: dict, payload: dict) -> bool:
     return events_on and fields_match
 
 
-def _client(instance: config.ArrInstanceConfig) -> Arr:
+def client_for(instance: config.ArrInstanceConfig) -> Arr:
     """Attach the service protocol to one captured configuration."""
     if instance.type == "radarr":
         return Arr(
@@ -304,13 +304,13 @@ def _client(instance: config.ArrInstanceConfig) -> Arr:
 
 
 def radarr() -> Arr:
-    return _client(
+    return client_for(
         config.current().arr_instance("radarr") or config.ArrInstanceConfig("radarr")
     )
 
 
 def sonarr() -> Arr:
-    return _client(
+    return client_for(
         config.current().arr_instance("sonarr") or config.ArrInstanceConfig("sonarr")
     )
 
@@ -323,7 +323,7 @@ def source_name(name: str) -> str:
 
 def all_arrs() -> list[Arr]:
     settings = config.current()
-    return [_client(instance) for instance in settings.arr_instances]
+    return [client_for(instance) for instance in settings.arr_instances]
 
 
 #: Registration retry delays. The containers usually start together, so early

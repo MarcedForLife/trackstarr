@@ -719,7 +719,7 @@ def test_a_skip_landing_while_the_file_is_somebody_elses_writes_nothing(tmp_path
         tagged = processing._tag_in_place(
             Job(path), tag_plan(path), (1, "jpn"), "sweep", cancel, waiting
         )
-        assert processing._claim(waiting, needed_plan(path), cancel)() is False
+        assert processing._claim(Job(path), needed_plan(path), cancel, waiting, None)() is False
 
     assert tagged.status is Status.DEFERRED
     assert tagged.detail == processing.STOPPED_BEFORE_START

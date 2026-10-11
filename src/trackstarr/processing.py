@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 
-from . import config, events, executor, mkvtag, pauses, rewrites, runs
+from . import catalogue, config, events, executor, mkvtag, pauses, rewrites, runs
 from .arr import Arr, LibraryItem
 from .executor import Cancel, Outcome, apply_plan
 from .media import ProbeError, probe, stream_lang, stream_title
@@ -415,26 +415,45 @@ def _tag_in_place(
     return ProcessResult(Status.MODIFIED, plan, became=_rejudged(job, plan, key))
 
 
-def effective_dry_run(dry_run: bool, path: str = "") -> bool:
-    """Whether a run is dry, given the caller, REWRITE_MODE and any pause.
+def left_alone(path: str, claimed_by: str = "") -> str | None:
+    """Why this file must not change now, or None: a pause, or a read-only
+    connection claiming it."""
+    if pause := pauses.paused(path):
+        return pause.describe()
+    return catalogue.read_only(path, claimed_by)
 
-    ``report`` latches over every caller, ``sweep --apply`` included, and a
-    pause does the same for the one title; see :mod:`trackstarr.pauses`.
-    """
+
+def effective_dry_run(dry_run: bool, path: str = "", claimed_by: str = "") -> bool:
+    """Whether a run is dry, given the caller, REWRITE_MODE and, for one file,
+    :func:`left_alone`. ``report`` latches over every caller, ``sweep --apply``
+    included."""
     return (
-        dry_run or config.current().REWRITE_MODE == "report" or pauses.paused(path) is not None
+        dry_run
+        or config.current().REWRITE_MODE == "report"
+        or (bool(path) and left_alone(path, claimed_by) is not None)
     )
 
 
 def _claim(
-    observation: Observation | None, plan: Plan, cancel: Cancel | None
-) -> Callable[[], bool] | None:
-    """What the executor asks before it publishes: ownership of both files the
-    rename touches, so no older probe can book a verdict over the result."""
-    if observation is None:
-        return None
+    job: Job,
+    plan: Plan,
+    cancel: Cancel | None,
+    observation: Observation | None,
+    target_revision: FileRevision | None,
+) -> Callable[[], bool]:
+    """What the executor asks before it publishes: that the file may still
+    change, then ownership of both files the rename touches, so no older probe
+    can book a verdict over the result."""
 
     def claimed() -> bool:
+        if reason := catalogue.read_only(job.path, job.instance_id):
+            raise InterruptedError(reason)
+        if target_revision is not None:
+            if effective_dry_run(False, job.path) or Policy.from_config() != plan.policy:
+                return False
+            executor._check_revision(target_revision)
+        if observation is None:
+            return True
         if not observation.changing(
             plan.path, plan.out_path, cancel.stopped if cancel else None
         ):
@@ -585,8 +604,8 @@ def process(
     every mutation here takes ownership through.
     """
     policy = policy or Policy.from_config()
-    pause = pauses.paused(job.path)
-    dry_run = effective_dry_run(dry_run, job.path)
+    kept = left_alone(job.path, job.instance_id)
+    dry_run = effective_dry_run(dry_run) or kept is not None
     try:
         target_revision = FileRevision.of(job.path) if inputs else None
         plan = _build_plan(job, policy, inputs)
@@ -604,12 +623,12 @@ def process(
     if not plan.needed:
         return ProcessResult(Status.CONFORM, plan)
     if dry_run:
-        # A paused file is a pending file nothing picked up, which is what a
-        # reporting run already produces. The detail is the only difference,
+        # A file left alone is a pending file nothing picked up, which is what
+        # a reporting run already produces. The detail is the only difference,
         # and it is what the run row and pending.tsv say instead of the plan.
-        if pause:
-            log.info("not rewriting %s: %s", job.path, pause.describe())
-            return ProcessResult(Status.PENDING, plan, pause.describe())
+        if kept:
+            log.info("not rewriting %s: %s", job.path, kept)
+            return ProcessResult(Status.PENDING, plan, kept)
         log.info("would rewrite %s: %s", job.path, describe(plan))
         return ProcessResult(Status.PENDING, plan)
 
@@ -650,16 +669,7 @@ def process(
                 outcome, detail = Outcome.DEFERRED, STOPPED_BEFORE_START
             else:
                 runs.stage(job.run, job.path, runs.ENCODING, plan.src_duration)
-                claim = _claim(observation, plan, cancel)
-                if target_revision is not None:
-                    original_claim = claim
-
-                    def claim() -> bool:
-                        if effective_dry_run(False, job.path) or Policy.from_config() != policy:
-                            return False
-                        executor._check_revision(target_revision)
-                        return original_claim is None or original_claim()
-
+                claim = _claim(job, plan, cancel, observation, target_revision)
                 outcome, detail = apply_plan(
                     plan,
                     functools.partial(runs.progress, job.run, job.path),

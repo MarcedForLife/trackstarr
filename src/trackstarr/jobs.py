@@ -225,7 +225,7 @@ def _handle(
             continuing = (
                 discovery
                 and result.status is Status.PENDING
-                and not effective_dry_run(False, job.path)
+                and not effective_dry_run(False, job.path, job.instance_id)
             )
     except ObservationStoppedError:
         accounting.status = Status.DEFERRED

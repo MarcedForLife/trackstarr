@@ -53,6 +53,8 @@ EDITABLE = frozenset(
         "SONARR_PUBLIC_URL",
         "RADARR_NAME",
         "SONARR_NAME",
+        "RADARR_READ_ONLY",
+        "SONARR_READ_ONLY",
         "PLEX_URL",
         "PLEX_TOKEN",
         "PLEX_PATH_MAP",
@@ -173,7 +175,7 @@ def _values() -> dict[str, object]:
         {
             instance.setting_name(attribute): getattr(instance, attribute)
             for instance in config.current().arr_instances
-            for attribute in ("url", "public_url", "name")
+            for attribute in ("url", "public_url", "name", "read_only")
         }
     )
     # Every rule's effective mode, not only the stated ones.
@@ -182,7 +184,10 @@ def _values() -> dict[str, object]:
     return values
 
 
-ARR_FIELDS = ("url", "api_key", "public_url", "name")
+ARR_FIELDS = ("url", "api_key", "public_url", "name", "read_only")
+
+#: Connection fields that are switches rather than text.
+_ARR_SWITCHES = frozenset({"read_only"})
 
 
 def arr_snapshot() -> list[dict]:
@@ -259,10 +264,13 @@ def _arr_changes(changes: dict) -> dict:
                 raise ValueError("a removed connection cannot also have field changes")
             values = dict.fromkeys(ARR_FIELDS)
         elif create:
-            values = {**dict.fromkeys(ARR_FIELDS, ""), **values}
+            text_fields = [name for name in ARR_FIELDS if name not in _ARR_SWITCHES]
+            values = {**dict.fromkeys(text_fields, ""), **values}
         for attribute, value in values.items():
-            if value is not None and not isinstance(value, str):
-                raise ValueError(f"connection {identity} {attribute} must be a string or null")
+            kind = bool if attribute in _ARR_SWITCHES else str
+            if value is not None and not isinstance(value, kind):
+                noun = "true, false" if kind is bool else "a string"
+                raise ValueError(f"connection {identity} {attribute} must be {noun} or null")
             # Omission or blank leaves a redacted credential alone; null clears it.
             if attribute == "api_key" and value == "" and not create:
                 continue

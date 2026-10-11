@@ -2,6 +2,7 @@
 	import { saveSettings, type ArrInstance, type SettingValue } from '$lib/settings';
 	import {
 		ARR_FIELDS,
+		blankArrField,
 		arrField,
 		connectionSettings,
 		connectionChanges,
@@ -126,7 +127,7 @@
 		if (name !== 'radarr' && name !== 'sonarr') return;
 		const instance = newInstance(name);
 		instances.push(instance);
-		for (const field of ARR_FIELDS) draft[arrField(instance.id, field)] = '';
+		for (const field of ARR_FIELDS) draft[arrField(instance.id, field)] = blankArrField(field);
 		opened[instance.id] = true;
 	}
 

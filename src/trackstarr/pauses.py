@@ -187,8 +187,6 @@ def paused(path: str, now: float | None = None) -> Pause | None:
     The innermost live pause wins, so a lapsed pause on one episode does not
     hide a standing one on the series.
     """
-    if not path:
-        return None
     found = _read()
     if not found:
         return None

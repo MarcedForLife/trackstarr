@@ -19,6 +19,7 @@ from http.server import ThreadingHTTPServer
 import pytest
 
 from trackstarr import (
+    catalogue,
     config,
     covers,
     jobs,
@@ -153,6 +154,7 @@ def _isolated_state(monkeypatch, tmp_path):
     rewrites.forget()
     # An unwritten publication would otherwise land in the next test's store.
     sweep_cache.forget()
+    catalogue.forget()
     library.reset_refresh()
     yield
     library.stop_refresh()
