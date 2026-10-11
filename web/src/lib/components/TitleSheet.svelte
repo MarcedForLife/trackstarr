@@ -55,6 +55,7 @@
 		coverUrl,
 		initials,
 		kindName,
+		titleReadOnlyNote,
 		verdictLabel,
 		verdictText,
 		type Card,
@@ -678,6 +679,7 @@
 			marks
 			mayRewrite={runner.mayRewrite}
 			refuses={runner.refuses}
+			heldBack={detail ? titleReadOnlyNote(detail.folders) : ''}
 			disabled={runner.starting || !!runner.run || workBusy || !!workError}
 			busy={runner.busy}
 			onrun={(mode) => opened && runner.onrun(opened.id, mode)}

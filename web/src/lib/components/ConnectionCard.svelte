@@ -5,6 +5,7 @@
 	import PathMapList from '$lib/components/PathMapList.svelte';
 	import ServiceIcon from '$lib/components/ServiceIcon.svelte';
 	import SettingRow from '$lib/components/SettingRow.svelte';
+	import Toggle from '$lib/components/Toggle.svelte';
 	import {
 		fallbackName,
 		nameProblem as validateName,
@@ -76,9 +77,12 @@
 			service.key,
 			service.map ?? '',
 			service.publicUrl ?? '',
-			service.nameField ?? ''
+			service.nameField ?? '',
+			service.readOnlyField ?? ''
 		])
 	);
+
+	const filesReadOnly = $derived(!!service.readOnlyField && draft[service.readOnlyField] === true);
 
 	const nameText = $derived(String(draft[service.nameField ?? ''] ?? ''));
 	const nameProblem = $derived(validateName(nameText));
@@ -288,6 +292,7 @@
 					{:else}
 						<span class={pill.class}>{pill.label}</span>
 					{/if}
+					{#if filesReadOnly}<span class="flex-none">Read-only</span>{/if}
 					{#each told as word, at (at)}
 						<span class={`min-w-0 truncate ${word.tone}`}>{word.text}</span>
 					{/each}
@@ -467,6 +472,25 @@
 								/>
 								<div class={gutter}></div>
 							</div>
+						{/snippet}
+					</SettingRow>
+				{/if}
+
+				{#if service.readOnlyField}
+					{@const name = service.readOnlyField}
+					<SettingRow
+						{name}
+						label="Read-only"
+						desc={`Trackstarr checks and plans ${service.label}'s files, and never rewrites or retags them.`}
+					>
+						{#snippet children({ labelledBy, describedBy })}
+							<Toggle
+								on={filesReadOnly}
+								{labelledBy}
+								{describedBy}
+								disabled={settings.envLocked(name)}
+								onchange={(on) => (draft[name] = on)}
+							/>
 						{/snippet}
 					</SettingRow>
 				{/if}

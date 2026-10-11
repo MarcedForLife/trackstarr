@@ -30,7 +30,15 @@
 		rate,
 		videoDetail
 	} from '$lib/format';
-	import { CHIP, PLAIN_TONE, listing, size, verdictLabel, type Track } from '$lib/library';
+	import {
+		CHIP,
+		PLAIN_TONE,
+		listing,
+		readOnlyNote,
+		size,
+		verdictLabel,
+		type Track
+	} from '$lib/library';
 	import { editable, matching } from '$lib/retag';
 
 	// What a rewrite would do to one file: its tracks as it leaves them, why it is
@@ -66,6 +74,7 @@
 	// The one reason a row can carry, said once above the list for a phone and on
 	// each row for a pointer.
 	const MKV_ONLY = 'Tags are edited in place on .mkv files only. The remux rule converts this one.';
+	const whyLocked = $derived(file.read_only ? readOnlyNote(file.read_only) : MKV_ONLY);
 
 	const locked = $derived(!!editing && !editable(file) && shown.rows.some(tagged));
 
@@ -126,7 +135,7 @@
 	     left to a reader who cannot see it. -->
 	<div class="mt-3">
 		{#if locked}
-			<p class="mb-1.5 text-[11px] text-faint">{MKV_ONLY}</p>
+			<p class="mb-1.5 text-[11px] text-faint">{whyLocked}</p>
 		{/if}
 		{@render list(shown.rows)}
 	</div>
@@ -195,7 +204,7 @@
 				     the text alone is a 17px line. -->
 				<div
 					class={`grid grid-cols-[auto_1fr] gap-x-1.5 rounded px-1 py-1.5 ${open ? 'bg-raised' : ''}`}
-					title={editing && tagged(row) && !editable(file) ? MKV_ONLY : undefined}
+					title={editing && tagged(row) && !editable(file) ? whyLocked : undefined}
 				>
 					{@render cells(row, gone, fresh, edits(row))}
 				</div>

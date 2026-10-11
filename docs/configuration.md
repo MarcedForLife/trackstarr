@@ -44,8 +44,9 @@ selector for each movie or episode. Title actions apply to all variants. Use a
 file's menu to plan, process or pause it individually. The Library flags folders
 shared by multiple connections. Variants are processed independently.
 
-A read-only connection's files are probed, planned and shown, but never
-rewritten or retagged. A file is read-only when a read-only connection lists its
+Switch on **Read-only** in a connection's card to stop Trackstarr changing its
+files. They are still probed, planned and shown, but never rewritten or
+retagged, and the title sheet says which connection holds them. A file is read-only when a read-only connection lists its
 title folder or delivered its import. Until every read-only connection has
 answered once, no file is changed.
 

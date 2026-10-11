@@ -31,6 +31,7 @@ import {
 	bytesOf,
 	pausedTitle,
 	pausesNow,
+	readOnly,
 	probe,
 	record,
 	rejudge,
@@ -599,12 +600,13 @@ function judged(
 		defer(state, run, active, file, HARDLINKED, now, changed);
 		return;
 	}
-	if (run.dry_run || pause) {
+	const held = readOnly(state, file.instance_id);
+	if (run.dry_run || pause || held) {
 		const detail = pause
 			? pause.until
 				? `paused until ${pause.until}`
 				: 'paused'
-			: (file.why.reasons ?? []).join(' · ');
+			: (held ?? (file.why.reasons ?? []).join(' · '));
 		settle(state, run, active, file, 'pending', detail, now, changed);
 		return;
 	}

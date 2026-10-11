@@ -335,6 +335,13 @@ const ACTIONABLE: Verdict[] = ['failed', 'pending'];
 
 /** How the pages name an *arr: its name setting, else its kind and the ID
  * its settings keys carry. Read as an answer is built, as the service does. */
+/** Why a connection's files are never changed, when it is read-only. */
+export function readOnly(state: State, id?: string): string | undefined {
+	if (!id || state.settings[`${id.toUpperCase().replaceAll('-', '_')}_READ_ONLY`] !== true)
+		return undefined;
+	return `${sourceName(state, id)} is read-only`;
+}
+
 export function sourceName(state: State, id: string): string {
 	return instanceName(
 		id,
@@ -492,10 +499,12 @@ function servers(state: State, title: Title): TitleServer[] {
 
 export function wireFile(state: State, file: File): LibraryFile {
 	const { path, name, status, bytes, seconds, lang, tracks, planned, why, modified } = file;
+	const held = readOnly(state, file.instance_id);
 	return {
 		path,
 		name,
 		...(file.instance_id ? { source: sourceName(state, file.instance_id) } : {}),
+		...(held ? { read_only: held } : {}),
 		status,
 		bytes,
 		seconds,
@@ -522,10 +531,14 @@ export function detail(state: State, title: Title, pages = 1): TitleDetail {
 			.slice(0, 200 * pages)
 			.flatMap((group) => group.files),
 		total: title.files.length,
-		folders: spec.sources.map(({ instance_id, folder }) => ({
-			source: instance_id ? sourceName(state, instance_id) : '',
-			folder
-		})),
+		folders: spec.sources.map(({ instance_id, folder }) => {
+			const held = readOnly(state, instance_id);
+			return {
+				source: instance_id ? sourceName(state, instance_id) : '',
+				folder,
+				...(held ? { read_only: held } : {})
+			};
+		}),
 		servers: servers(state, title)
 	};
 	if (spec.year) made.year = spec.year;
@@ -656,6 +669,11 @@ export function retag(
 				status: 'refused',
 				detail: 'could not read the file: No such file or directory'
 			});
+			continue;
+		}
+		const held = readOnly(state, file.instance_id);
+		if (held) {
+			outcomes.push({ path: file.path, status: 'refused', detail: held });
 			continue;
 		}
 		// The same order mkvtag.unwritable refuses in, and its words.

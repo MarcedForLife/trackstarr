@@ -8,7 +8,7 @@
 	import QueuePlace from './QueuePlace.svelte';
 	import { ago } from '$lib/events';
 	import { named, titled } from '$lib/format';
-	import { size, verdictLabel, verdictText, type LibraryFile } from '$lib/library';
+	import { readOnlyNote, size, verdictLabel, verdictText, type LibraryFile } from '$lib/library';
 	import { fileState, type TitleWork } from '$lib/queue';
 
 	// One file of a title: what it is and where the queue has it, over the
@@ -134,6 +134,7 @@
 				mayRewrite={runner?.mayRewrite ?? false}
 				runDisabled={!!runner?.starting || !!runner?.run}
 				refuses={runner?.refuses ?? ''}
+				heldBack={file.read_only ? readOnlyNote(file.read_only) : ''}
 			/>
 		{/snippet}
 		{#snippet aside()}

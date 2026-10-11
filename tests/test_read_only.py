@@ -5,8 +5,8 @@ import urllib.error
 
 import pytest
 
-from conftest import needed_plan, read_events, set_config
-from trackstarr import catalogue, config, jobs, processing, retag, settings
+from conftest import configured_arr, needed_plan, read_events, set_config
+from trackstarr import catalogue, config, jobs, library, processing, retag, settings
 from trackstarr.arr import client_for
 from trackstarr.executor import Outcome
 from trackstarr.processing import Job, ProcessResult, process
@@ -239,3 +239,28 @@ def test_a_track_edit_on_a_read_only_file_is_refused(four_k, monkeypatch, tmp_pa
     result = retag.apply(str(path), 1, retag.Edit("jpn"), "operator", {})
     assert result.status is retag.Outcome.REFUSED
     assert result.detail == "Radarr 4k is read-only"
+
+
+def test_the_title_sheet_says_why_a_file_is_left_unchanged(one_title):
+    """From the settings and the folders already listed: a page never waits on
+    an *arr to say so."""
+    set_config(RADARR_READ_ONLY=True)
+    detail = library.title("arr:radarr:7")
+    (dune,) = detail["files"]
+    assert dune["read_only"] == "Radarr is read-only"
+    assert detail["folders"][0]["read_only"] == "Radarr is read-only"
+
+
+def test_a_writable_title_carries_no_reason(one_title):
+    detail = library.title("arr:radarr:7")
+    assert "read_only" not in detail["files"][0]
+    assert "read_only" not in detail["folders"][0]
+
+
+def test_a_read_only_connection_sharing_the_folder_claims_its_files():
+    """The first configured connection owns a shared folder, but either claim
+    keeps it unchanged."""
+    set_config(RADARR_4K_READ_ONLY=True)
+    shared = library.Source("/movies/Dune", configured_arr(), 7, "", ("radarr-4k",))
+    assert library._read_only(shared) == "Radarr 4k is read-only"
+    assert library._read_only(library.Source("/home-videos")) is None

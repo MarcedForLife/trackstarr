@@ -74,6 +74,12 @@ describe('matching', () => {
 		expect(editable(one)).toBe(true);
 	});
 
+	test('a file on a read-only connection is left out', () => {
+		const held = { ...two, read_only: 'Sonarr 4k is read-only' };
+		expect(matching([held], one, one.tracks[1])).toEqual([{ path: one.path, index: 1 }]);
+		expect(editable(held)).toBe(false);
+	});
+
 	test('a track the file does not hold matches nothing', () => {
 		expect(matching([two], one, track(9, 'audio'))).toEqual([]);
 	});

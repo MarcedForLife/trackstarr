@@ -537,7 +537,10 @@ retain their baseline output, and older cached plans remain readable.
 reuses a listing for five minutes and keeps the last answer through an outage.
 `process()` books a claimed file as pending with the reason, checks again at
 publication, and tag edits are refused. Imports, sweeps, title runs, hardlink
-rechecks and CLI `fix` all pass through those two gates.
+rechecks and CLI `fix` all pass through those two gates. Each source card has a
+Read-only switch. The title sheet reads the reason from settings and the listed
+folders, refuses Process for read-only files or a wholly read-only title, and
+hides their tag editors.
 
 ### Approved names
 
@@ -576,7 +579,7 @@ while research and manual review remain open.
 | --- | --- | --- |
 | 1. Alignment evaluation | Test independent releases, wrong cuts, ambiguous scenes and crop. Select or reject an adapter using the recorded accuracy, footprint and interface requirements. Finish licence, resource and Alpine amd64/arm64 checks. | Selection report, supported envelope and acceptance limits, adapter proof of concept, packaging evidence and real-media review. A refusal to select a backend is a valid research outcome, but blocks phases 5 and 8. |
 | 3. Manual copy review | Copy explicit tracks between suitable real-media inputs using the implemented CLI. | Listening and picture review confirms offset/speed handling and preservation. Generated tests alone do not close this step. |
-| 4. Identity and permissions | Read-only enforcement is done. Add the connection switch and the library's explanation, then extract authoritative file/episode facts. Then add source lists, language requirements, deterministic selection and dependency-aware verdicts. Review proposed names before adding contracts. | Cross-instance identity and ambiguous-ownership tests pass. Read-only variants remain usable as sources. Missing, unavailable and review outcomes cause no rewrite loops. |
+| 4. Identity and permissions | Read-only enforcement and its settings and library surface are done. Extract authoritative file/episode facts next. Then add source lists, language requirements, deterministic selection and dependency-aware verdicts. Review proposed names before adding contracts. | Cross-instance identity and ambiguous-ownership tests pass. Read-only variants remain usable as sources. Missing, unavailable and review outcomes cause no rewrite loops. |
 | 5. Analysis integration | Run the selected adapter through queued work with cancellation. Show measured mappings for review. | Accepted/refused controls and cancellation/restart tests pass. Automatic publication stays disabled. |
 | 6. Reconciliation | Admit affected targets on source changes, coalesce active-work reruns and refresh source fingerprints before sweep cache hits. | Late source, missed event, active-work and upgrade cases converge under existing mode and pause rules. |
 | 7. Product surface | Add settings, source picker, manual timing, assessment/history fields and matching demo fixtures. | Shared contracts pass and the UI refuses stale selections. |

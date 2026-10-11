@@ -27,6 +27,7 @@
 		mayRewrite = false,
 		runDisabled = false,
 		refuses = '',
+		heldBack = '',
 		// Read by the caller through bind:, which the rule cannot see.
 		// eslint-disable-next-line no-useless-assignment
 		error = $bindable('')
@@ -44,6 +45,7 @@
 		mayRewrite?: boolean;
 		runDisabled?: boolean;
 		refuses?: string;
+		heldBack?: string;
 		error?: string;
 	} = $props();
 
@@ -134,6 +136,7 @@
 					{mayRewrite}
 					{runDisabled}
 					{refuses}
+					{heldBack}
 					onchoose={(seconds) => act('pause', seconds)}
 					hint={involved
 						? standing.active

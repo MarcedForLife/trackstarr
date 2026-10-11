@@ -51,6 +51,8 @@ export type Service = {
 	publicUrl?: string;
 	// The display name. Only a source has one.
 	nameField?: string;
+	// The switch that stops Trackstarr changing a source's files.
+	readOnlyField?: string;
 	keyLabel: string;
 	placeholder: string;
 };
@@ -65,6 +67,7 @@ export const SERVICES: Service[] = [
 		key: 'arr:radarr:api_key',
 		publicUrl: 'arr:radarr:public_url',
 		nameField: 'arr:radarr:name',
+		readOnlyField: 'arr:radarr:read_only',
 		keyLabel: 'API key',
 		placeholder: 'http://radarr:7878'
 	},
@@ -76,6 +79,7 @@ export const SERVICES: Service[] = [
 		key: 'arr:sonarr:api_key',
 		publicUrl: 'arr:sonarr:public_url',
 		nameField: 'arr:sonarr:name',
+		readOnlyField: 'arr:sonarr:read_only',
 		keyLabel: 'API key',
 		placeholder: 'http://sonarr:8989'
 	},
@@ -212,6 +216,7 @@ export function sources(instances: ArrInstance[], values: Record<string, Setting
 			key: arrField(instance.id, 'api_key'),
 			publicUrl: arrField(instance.id, 'public_url'),
 			nameField: arrField(instance.id, 'name'),
+			readOnlyField: arrField(instance.id, 'read_only'),
 			label: instanceName(instance.id, String(values[arrField(instance.id, 'name')] ?? ''))
 		};
 	});

@@ -81,9 +81,14 @@
 
 	/** The setting names one card edits. */
 	function names(service: Service): string[] {
-		return [service.url, service.key, service.publicUrl, service.map, service.nameField].filter(
-			(name): name is string => !!name
-		);
+		return [
+			service.url,
+			service.key,
+			service.publicUrl,
+			service.map,
+			service.nameField,
+			service.readOnlyField
+		].filter((name): name is string => !!name);
 	}
 	/** Whether the saved settings hold anything for this service. */
 	function saved(service: Service): boolean {

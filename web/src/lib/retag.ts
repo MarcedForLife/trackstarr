@@ -83,9 +83,10 @@ export async function retagTracks(tracks: Target[], edit: Edit): Promise<Outcome
 }
 
 /** Whether the file can be edited in place at all: the service does Matroska
- * only, and says so itself for anything else that stops it. */
-export function editable(file: { name: string }): boolean {
-	return file.name.toLowerCase().endsWith('.mkv');
+ * only, never on a read-only connection, and says so itself for anything else
+ * that stops it. */
+export function editable(file: { name: string; read_only?: string }): boolean {
+	return file.name.toLowerCase().endsWith('.mkv') && !file.read_only;
 }
 
 /** The tracks of one kind in a file, in order: what "the second audio track"

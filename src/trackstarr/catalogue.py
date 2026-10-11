@@ -7,7 +7,7 @@ read-only connections are listed, so an install without one asks nothing.
 import logging
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
 from . import config
@@ -71,6 +71,23 @@ def claims(instance: config.ArrInstanceConfig, path: str) -> bool | None:
     return innermost(folders, path) is not None
 
 
+def _refusal(instance: config.ArrInstanceConfig) -> str:
+    return f"{config.instance_name(instance.id, instance.name)} is read-only"
+
+
+def read_only_claim(claimants: Collection[str]) -> str | None:
+    """Why files these connections claim must not change, from the settings
+    alone, for pages that must not wait on an *arr."""
+    return next(
+        (
+            _refusal(instance)
+            for instance in config.current().arr_instances
+            if instance.read_only and instance.id in claimants
+        ),
+        None,
+    )
+
+
 def read_only(path: str, claimed_by: str = "") -> str | None:
     """Why ``path`` must not change, or None.
 
@@ -81,14 +98,11 @@ def read_only(path: str, claimed_by: str = "") -> str | None:
     for instance in config.current().arr_instances:
         if not instance.read_only:
             continue
-        label = config.instance_name(instance.id, instance.name)
-        if instance.id == claimed_by:
-            return f"{label} is read-only"
-        claimed = claims(instance, path)
+        claimed = instance.id == claimed_by or claims(instance, path)
         if claimed is None:
-            return f"{label} is read-only and could not be listed"
+            return f"{_refusal(instance)} and could not be listed"
         if claimed:
-            return f"{label} is read-only"
+            return _refusal(instance)
     return None
 
 
