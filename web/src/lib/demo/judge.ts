@@ -4,7 +4,14 @@
 // the way it would for real. Regeneration, remuxing, cover art and stray
 // streams are left out; the sample files carry none of them.
 
-import type { Change, LibraryFile, Track, Verdict, Why } from '$lib/library';
+import {
+	pair,
+	type Change,
+	type LibraryFile,
+	type Track,
+	type Verdict,
+	type Why
+} from '$lib/library';
 import type { SettingValue } from '$lib/settings';
 
 export type Settings = Record<string, SettingValue>;
@@ -214,7 +221,7 @@ export function judge(
 				title: layout.name === '2.0' ? 'Stereo' : layout.name,
 				bitrate: bitrate(layout.rate),
 				flags: ['generated'],
-				src: source.index
+				source: { input_index: 0, stream_index: source.index }
 			});
 		}
 	}
@@ -268,7 +275,7 @@ export function judge(
 		.filter((track) => !plan.dropped.has(track.index))
 		.map((track) => ({
 			...track,
-			src: track.index,
+			source: { input_index: 0, stream_index: track.index },
 			dv: stripped.has(track.index) ? undefined : track.dv,
 			...(stripped.has(track.index) ? { dv_removed: true } : {}),
 			title: plan.cleared.has(track.index) ? undefined : track.title
@@ -282,10 +289,14 @@ export function judge(
 
 /** The layouts a plan's generated tracks add, by their titles, as a card names
  * them. */
-export function added(planned: Track[]): string[] {
+function added(planned: Track[]): string[] {
 	return planned
-		.filter((track) => track.flags?.includes('generated') && track.title)
-		.map((track) => track.title!);
+		.filter(
+			(track) =>
+				(track.source?.input_index ?? 0) !== 0 ||
+				(track.flags?.includes('generated') && track.title)
+		)
+		.map((track) => track.title || `${track.lang || 'und'} ${track.kind}`);
 }
 
 /** What a plan comes to, in the three fields the service records. Nothing here
@@ -295,11 +306,10 @@ export function changesOf(
 	planned: Track[],
 	tracks: Track[]
 ): { adds: string[]; rebuilds: string[]; drops: number } {
+	const { kept } = pair({ tracks, planned });
 	return {
 		adds: added(planned),
 		rebuilds: [],
-		drops: planned.length
-			? tracks.filter((track) => !planned.some((kept) => kept.src === track.index)).length
-			: 0
+		drops: tracks.filter((track) => !kept.has(track.index)).length
 	};
 }

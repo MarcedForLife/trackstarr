@@ -38,7 +38,7 @@ from trackstarr import (
 from trackstarr import sweep as sweep_mod
 from trackstarr.arr import LibraryIndex
 from trackstarr.executor import Cancel
-from trackstarr.planner import OutStream, Plan
+from trackstarr.planner import OutStream, Plan, StreamRef
 from trackstarr.policy import Policy
 from trackstarr.processing import Job, ProcessResult, Rewritten
 from trackstarr.status import Status
@@ -1117,7 +1117,7 @@ def test_a_file_skipped_as_its_rewrite_is_planned_is_never_edited(monkeypatch, t
             path=path,
             reasons=["tag audio 1 as jpn"],
             rules={"tag_original"},
-            streams=[OutStream(src=1, kind="audio", lang="jpn")],
+            streams=[OutStream(source=StreamRef(0, 1), kind="audio", lang="jpn")],
         )
 
     monkeypatch.setattr("trackstarr.processing.build_plan", plan_then_skip)

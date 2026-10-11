@@ -5,17 +5,23 @@ import enum
 import errno
 import functools
 import logging
+import math
 import os
+import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import replace
+from fractions import Fraction
 from typing import IO
 
 from . import config
 from .command import ffmpeg_args
+from .langs import norm_lang
 from .media import (
     FRAME_VIDEO_PROPERTIES,
     VIDEO_PROPERTIES,
@@ -26,9 +32,12 @@ from .media import (
     hdr_metadata,
     is_chapter_stream,
     probe,
+    stream_lang,
+    stream_title,
 )
-from .planner import Plan, SourceSignature
-from .tracks import downmixed_layouts
+from .planner import FileRevision, OutStream, Plan, PlanInput, PreparedTrack, SourceSignature
+from .policy import Policy
+from .tracks import CODECS, Layout, downmixed_layouts
 
 log = logging.getLogger(__name__)
 
@@ -176,6 +185,16 @@ class Cancel:
 #: abort can reach them all and a skip can reach exactly one.
 _running_ffmpeg: dict[subprocess.Popen, Cancel] = {}
 _running_lock = threading.Lock()
+# Header edits and source registration share this gate. Reads release it once
+# registered, so unrelated edits remain possible during a long preparation.
+edit_lock = threading.Lock()
+_source_reads: dict[FileRevision, int] = {}
+_preparing: set[str] = set()
+
+#: Codecs a source may be decoded from for retiming, beside any PCM. Object
+#: extensions are not reliably exposed by ffprobe, so their carrier codecs are
+#: refused rather than silently flattened.
+RETIMABLE_CODECS = frozenset({"flac", "alac", "aac", "ac3", "mp3", "opus", "vorbis"})
 
 
 def running_count() -> int:
@@ -186,11 +205,214 @@ def running_count() -> int:
 
 
 def is_rewriting(path: str) -> bool:
-    """Whether an ffmpeg this process started is reading ``path`` for a rewrite.
-    An in-place tag edit under it would hand ffmpeg a header it did not open.
-    A run with no path on record answers for no file."""
+    """Whether this process is rewriting or preparing audio from ``path``.
+
+    Source probes also register here, before opening a header. A run with no
+    path on record answers for no file.
+    """
     with _running_lock:
-        return bool(path) and any(cancel.path == path for cancel in _running_ffmpeg.values())
+        if bool(path) and any(cancel.path == path for cancel in _running_ffmpeg.values()):
+            return True
+        revisions = tuple(_source_reads)
+    # Filesystem lookups can stall on an unavailable mount. They must not
+    # prevent cancellation from taking the process registry lock.
+    if path and revisions:
+        canonical = os.path.realpath(path)
+        if any(revision.path == canonical for revision in revisions):
+            return True
+        # Hardlink aliases share the same header, even under another name.
+        with contextlib.suppress(OSError):
+            found = os.stat(path)
+            return any(
+                revision.identity == (found.st_dev, found.st_ino) for revision in revisions
+            )
+    return False
+
+
+def check_revision(revision: FileRevision) -> None:
+    try:
+        current = FileRevision.of(revision.path)
+    except OSError as err:
+        raise InterruptedError("source is unavailable, preparation discarded") from err
+    if current != revision:
+        raise InterruptedError("source changed, preparation discarded")
+
+
+@contextlib.contextmanager
+def read_source(revision: FileRevision) -> Iterator[None]:
+    with edit_lock:
+        check_revision(revision)
+        with _running_lock:
+            _source_reads[revision] = _source_reads.get(revision, 0) + 1
+    try:
+        yield
+    finally:
+        try:
+            check_revision(revision)
+        finally:
+            with _running_lock:
+                _source_reads[revision] -= 1
+                if not _source_reads[revision]:
+                    del _source_reads[revision]
+
+
+def audio_stream(info: dict, stream_index: int) -> dict:
+    """The audio stream ``stream_index`` names in a probe. Raises ValueError
+    for a missing stream or one of another kind."""
+    stream: dict = next(
+        (item for item in info.get("streams", []) if item["index"] == stream_index), {}
+    )
+    if stream.get("codec_type") != "audio":
+        raise ValueError(f"source stream {stream_index} is not audio")
+    return stream
+
+
+def source_encoder(policy: Policy, channels: int | None) -> Layout:
+    """The AUDIO_LAYOUTS encoder a retimed source with ``channels`` is written
+    with. Raises ValueError when no row names one."""
+    for layout in policy.audio_layouts:
+        if layout.channels == channels and layout.codec:
+            return layout
+    raise ValueError("retiming requires an AUDIO_LAYOUTS encoder for this layout")
+
+
+def check_container(codec_name: str, channels: int | None, extension: str) -> None:
+    """Refuse an encoder the target container cannot hold at this channel
+    count. An encoder CODECS does not know is trusted."""
+    codec = CODECS.get(codec_name)
+    if codec and (extension not in codec.containers or (channels or 0) > codec.max_channels):
+        raise ValueError("source encoder cannot preserve this layout in the target container")
+
+
+def preparation_timing(
+    source: PlanInput, stream: dict, policy: Policy
+) -> tuple[Fraction, bool]:
+    """Shared timing and codec checks for the preview and preparation."""
+    mapping = source.mapping
+    placed = mapping.scale * Fraction(str(stream.get("start_time", "0"))) + Fraction(
+        mapping.offset_us, 1_000_000
+    )
+    encode = mapping.scale != 1 or placed < 0
+    if encode:
+        codec = stream.get("codec_name", "")
+        if not codec.startswith("pcm_") and codec not in RETIMABLE_CODECS:
+            raise ValueError("retiming this codec could discard immersive audio")
+        source_encoder(policy, stream.get("channels"))
+        if not Fraction(1, 2) <= mapping.scale <= 2:
+            raise ValueError("audio preparation supports scales from 1/2 to 2")
+    return placed, encode
+
+
+def _preparation_bytes(source: PlanInput, stream: dict, info: dict) -> int:
+    seconds = duration(info)
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("source duration is required to budget lossless preparation")
+    try:
+        sample_rate = int(stream.get("sample_rate") or 0)
+    except TypeError, ValueError:
+        sample_rate = 0
+    if sample_rate <= 0:
+        raise ValueError("source sample rate is required to budget lossless preparation")
+    start = Fraction(str(stream.get("start_time", "0")))
+    return int(
+        (seconds + abs(float(start)))
+        * float(source.mapping.scale)
+        * sample_rate
+        * stream["channels"]
+        * 8
+    )
+
+
+def _prepare_track(
+    source: PlanInput, dest: str, policy: Policy, cancel: Cancel
+) -> PreparedTrack:
+    """Materialise one audio stream. All source reads occur under the guard."""
+    with read_source(source.revision):
+        if cancel.stopped():
+            raise InterruptedError("audio preparation was stopped")
+        info = probe(source.revision.path)
+        stream = audio_stream(info, source.stream_index)
+        mapping = source.mapping
+        placed, encode = preparation_timing(source, stream, policy)
+        args = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-v", "error", "-xerror", "-copyts"]
+        if not encode:
+            args += ["-itsoffset", f"{mapping.offset_us / 1_000_000:.6f}"]
+        args += [
+            "-i",
+            source.revision.path,
+            "-map",
+            f"0:{source.stream_index}",
+            "-map_metadata",
+            "-1",
+            "-map_chapters",
+            "-1",
+            "-map_metadata:s:0",
+            f"0:s:{source.stream_index}",
+        ]
+        if encode:
+            filters = ["asetpts=PTS-STARTPTS"]
+            if mapping.scale != 1:
+                filters.append(f"atempo={float(1 / mapping.scale):.12g}")
+            if placed < 0:
+                filters.append(f"atrim=start={float(-placed):.9f}")
+            filters.append(f"asetpts=PTS-STARTPTS+{float(max(placed, Fraction(0))):.9f}/TB")
+            # Double PCM stores filter output without a lossy intermediate.
+            args += ["-af", ",".join(filters), "-c:a", "pcm_f64le"]
+            needed = _preparation_bytes(source, stream, info)
+        else:
+            args += ["-c:a", "copy"]
+            needed = source.revision.size
+        if shutil.disk_usage(os.path.dirname(dest)).free < needed * 1.05 + 1024 * 1024:
+            raise OSError(errno.ENOSPC, "not enough space for audio preparation")
+        args += ["-avoid_negative_ts", "disabled", "-f", "matroska", dest]
+        code, stderr = _run_ffmpeg(args, cancel=cancel)
+        if cancel.stopped() or code < 0:
+            raise InterruptedError("audio preparation was stopped")
+        if code:
+            raise RuntimeError(f"audio preparation failed ({code}): {stderr[-_STDERR_TAIL:]}")
+        result = probe(dest)
+        tracks = result.get("streams", [])
+        if len(tracks) != 1 or tracks[0].get("codec_type") != "audio":
+            raise ValueError("prepared file must contain exactly one audio stream")
+        if tracks[0].get("channels") != stream.get("channels"):
+            raise ValueError("prepared audio channel count changed")
+        if _timestamp(duration(result)) <= float(max(placed, Fraction(0))):
+            raise ValueError("prepared audio is empty")
+    return PreparedTrack(dest, source, encode)
+
+
+@contextlib.contextmanager
+def _prepare_inputs(
+    inputs: Sequence[PlanInput], policy: Policy, cancel: Cancel
+) -> Iterator[tuple[PreparedTrack, ...]]:
+    """Own prepared media until rendering finishes, including on cancellation.
+
+    InterruptedError means stale or cancelled work and calls for replanning.
+    Other errors leave the target untouched and remove all prepared media.
+    """
+    if not inputs:
+        yield ()
+        return
+    work_dir = config.current().WORK_DIR
+    os.makedirs(work_dir, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=f"{TEMP_PREFIX}audio-", suffix=TEMP_SUFFIX, dir=work_dir
+    ) as workspace:
+        with _running_lock:
+            _preparing.add(workspace)
+        try:
+            prepared = tuple(
+                _prepare_track(source, os.path.join(workspace, f"{index}.mka"), policy, cancel)
+                for index, source in enumerate(inputs)
+            )
+            for source in inputs:
+                check_revision(source.revision)
+            if cancel.stopped():
+                raise InterruptedError("audio preparation was stopped")
+            yield prepared
+        finally:
+            with _running_lock:
+                _preparing.remove(workspace)
 
 
 def _signal(procs: list[subprocess.Popen]) -> int:
@@ -204,7 +426,7 @@ def _signal(procs: list[subprocess.Popen]) -> int:
     for proc in procs:
         # Gone between the snapshot and here is the normal race, not an error.
         with contextlib.suppress(OSError):
-            proc.terminate()
+            os.killpg(proc.pid, signal.SIGTERM)
     return len(procs)
 
 
@@ -290,6 +512,7 @@ def _run_ffmpeg(
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=True,
             pass_fds=() if write_fd < 0 else (write_fd,),
         )
         if on_progress is not None:
@@ -305,7 +528,8 @@ def _run_ffmpeg(
             _running_ffmpeg[proc] = cancel
     except BaseException:
         if proc is not None:
-            proc.kill()
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
             proc.communicate()
         if readout is not None:
             readout.close()
@@ -320,7 +544,8 @@ def _run_ffmpeg(
     try:
         _, stderr = proc.communicate(timeout=config.current().FFMPEG_TIMEOUT)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(proc.pid, signal.SIGKILL)
         proc.communicate()
         raise
     finally:
@@ -334,6 +559,8 @@ def _verify(plan: Plan, out_info: dict) -> str | None:
     result would silently damage the library."""
     src_dur = plan.src_duration
     out_dur = duration(out_info)
+    if not math.isfinite(src_dur) or not math.isfinite(out_dur):
+        return "invalid media duration"
     drift_allowed = max(DURATION_DRIFT_FLOOR, src_dur * DURATION_DRIFT_RATIO)
     if src_dur and abs(out_dur - src_dur) > drift_allowed:
         return f"duration mismatch: {src_dur:.1f}s -> {out_dur:.1f}s"
@@ -382,7 +609,7 @@ def _verify_dv_frames(plan: Plan, staged: str) -> str | None:
     for index, stream in enumerate(plan.streams):
         if not stream.dv_strip:
             continue
-        before = frame_sample(plan.path, stream.src)
+        before = frame_sample(plan.path, stream.source.stream_index)
         after = frame_sample(staged, index)
         if len(before) != len(after):
             return "Dolby Vision verification frame count mismatch"
@@ -409,6 +636,255 @@ def _target_taken(plan: Plan) -> str:
     )
 
 
+def _input_problem(plan: Plan) -> str:
+    used = set()
+    for stream in plan.streams:
+        index = stream.source.input_index
+        if not index:
+            continue
+        if index > len(plan.inputs):
+            return "source inputs require preparation before execution"
+        if stream.kind != "audio" or stream.dv_strip or stream.sub_codec:
+            return "external inputs must be audio"
+        if stream.source.stream_index != plan.inputs[index - 1].stream_index:
+            return "source stream does not match its selected input"
+        used.add(index)
+    if used != set(range(1, len(plan.inputs) + 1)):
+        return "plan contains unused source inputs"
+    return ""
+
+
+def _render_plan(plan: Plan, prepared: Sequence[PreparedTrack]) -> Plan:
+    """Resolve final encoders without changing the reviewed plan or provenance."""
+    streams = []
+    extension = os.path.splitext(plan.out_path)[1].lower()
+    prepared_streams = [probe(track.path)["streams"][0] for track in prepared]
+    for stream in plan.streams:
+        if stream.source.input_index:
+            track = prepared[stream.source.input_index - 1]
+            info = prepared_streams[stream.source.input_index - 1]
+            stream = replace(stream, title=stream.title or stream_title(info))
+            if track.encode and not stream.encode:
+                layout = source_encoder(plan.policy, info["channels"])
+                stream = replace(
+                    stream,
+                    channels=info["channels"],
+                    codec=layout.codec,
+                    bitrate=layout.bitrate,
+                )
+            if stream.encode or track.encode:
+                check_container(stream.codec, stream.channels, extension)
+        streams.append(stream)
+    return replace(plan, streams=streams)
+
+
+def _timestamp(value) -> float:
+    """Invalid measurements must not pass comparisons through NaN arithmetic."""
+    try:
+        timestamp = float(value)
+    except (TypeError, ValueError, OverflowError) as err:
+        raise ValueError("invalid media timestamp") from err
+    if not math.isfinite(timestamp):
+        raise ValueError("invalid media timestamp")
+    return timestamp
+
+
+def stream_end(stream: dict) -> float:
+    """End on the container timeline, including Matroska's per-track duration."""
+    if stream.get("duration") is not None:
+        return _timestamp(
+            _timestamp(stream.get("start_time", 0)) + _timestamp(stream["duration"])
+        )
+    for key, value in (stream.get("tags") or {}).items():
+        if key.upper() == "DURATION":
+            hours, minutes, seconds = str(value).split(":")
+            return _timestamp(int(hours) * 3600 + int(minutes) * 60 + _timestamp(seconds))
+    raise ValueError("cannot verify source audio end time")
+
+
+def _source_stream(track: PreparedTrack) -> dict:
+    with read_source(track.source.revision):
+        return audio_stream(probe(track.source.revision.path), track.source.stream_index)
+
+
+def source_layout(original: dict) -> str:
+    # Matroska PCM reports channel count without the speaker layout. Restore
+    # the source layout explicitly when encoding that intermediate.
+    layout = original.get("channel_layout") or {1: "mono", 2: "stereo"}.get(
+        original["channels"]
+    )
+    if not layout:
+        raise ValueError("retiming requires a known source channel layout")
+    return layout
+
+
+def _sourced_args(plan: Plan, dest: str, prepared: Sequence[PreparedTrack]) -> list[str]:
+    args = ffmpeg_args(plan, dest, prepared)
+    for index, out in enumerate(plan.streams):
+        if out.source.input_index and not out.encode:
+            track = prepared[out.source.input_index - 1]
+            if track.encode:
+                args[-1:-1] = [
+                    f"-channel_layout:{index}",
+                    source_layout(_source_stream(track)),
+                ]
+    return args
+
+
+def _verify_target_metadata(plan: Plan, target: dict, result: dict) -> str | None:
+    before_chapters = target.get("chapters", [])
+    after_chapters = result.get("chapters", [])
+    if len(before_chapters) != len(after_chapters):
+        return "chapter count mismatch"
+    for before, after in zip(before_chapters, after_chapters, strict=True):
+        if any(
+            abs(_timestamp(before.get(key)) - _timestamp(after.get(key))) > 0.002
+            for key in ("start_time", "end_time")
+        ) or before.get("tags", {}) != after.get("tags", {}):
+            return "chapter content changed"
+    tags = result.get("format", {}).get("tags", {})
+    for key, value in target.get("format", {}).get("tags", {}).items():
+        if key.lower() in {"encoder", "duration"}:
+            continue
+        expected = "" if key.lower() == "title" and plan.clear_container_title else value
+        if tags.get(key, "") != expected:
+            return f"target metadata changed: {key}"
+    return None
+
+
+def _verify_stream(
+    out: OutStream, original: dict, stream: dict, retimed: bool, index: int
+) -> str | None:
+    imported = bool(out.source.input_index)
+    if stream.get("codec_type") != out.kind:
+        return "stream kind mismatch"
+    if (
+        not out.encode
+        and not out.sub_codec
+        and not retimed
+        and stream.get("codec_name") != original.get("codec_name")
+    ):
+        return "copied stream codec changed"
+    if out.kind == "video":
+        if any(original.get(key) != stream.get(key) for key in VIDEO_PROPERTIES):
+            return "target video properties changed"
+        if hdr_metadata(original) != hdr_metadata(stream):
+            return "target video HDR metadata changed"
+    if out.kind == "audio":
+        channels = out.channels if out.encode else original.get("channels")
+        if channels != stream.get("channels"):
+            return "audio channel count mismatch"
+        if not out.encode and original.get("channel_layout") != stream.get("channel_layout"):
+            return "audio channel layout mismatch"
+    if out.kind in {"audio", "subtitle"}:
+        language = norm_lang(out.lang) if out.lang else stream_lang(original)
+        title = "" if out.clear_title else out.title or stream_title(original)
+        if stream_lang(stream) != language or stream_title(stream) != title:
+            return f"stream {index} language or title mismatch"
+        expected_flags = {
+            key for key, value in original.get("disposition", {}).items() if value
+        }
+        if out.encode:
+            expected_flags = set()
+        elif imported:
+            expected_flags.discard("default")
+        flags = {key for key, value in stream.get("disposition", {}).items() if value}
+        if flags != expected_flags:
+            return "stream disposition mismatch"
+    if out.kind in {"video", "audio"} and (
+        abs(_timestamp(original.get("start_time", 0)) - _timestamp(stream.get("start_time", 0)))
+        > 0.05
+    ):
+        return "stream start time mismatch"
+    return None
+
+
+def _decode_audio_samples(
+    staged: str, index: int, start: float, end: float, cancel: Cancel
+) -> str | None:
+    for fraction in (0.0, 0.5, 0.95):
+        position = max(0, start + (end - start) * fraction)
+        args = [
+            "ffmpeg",
+            "-hide_banner",
+            "-nostdin",
+            "-v",
+            "info",
+            "-xerror",
+            "-seek_timestamp",
+            "1",
+            "-ss",
+            f"{position:.6f}",
+            "-i",
+            staged,
+            "-map",
+            f"0:{index}",
+            "-t",
+            "0.25",
+            "-af",
+            "ashowinfo",
+            "-f",
+            "null",
+            "-",
+        ]
+        code, stderr = _run_ffmpeg(args, cancel=cancel)
+        if cancel.stopped() or code < 0:
+            raise InterruptedError("audio verification was stopped")
+        if code or not re.search(r"nb_samples:[1-9]\d*", stderr):
+            return "imported audio sample could not be decoded"
+    return None
+
+
+def _verify_sourced(
+    plan: Plan,
+    target: dict,
+    prepared: Sequence[PreparedTrack],
+    result: dict,
+    staged: str,
+    cancel: Cancel,
+) -> str | None:
+    """Check preservation and each import independently of container duration."""
+    if problem := _verify_target_metadata(plan, target, result):
+        return problem
+    local = {item["index"]: item for item in target["streams"]}
+    prepared_streams: dict[PreparedTrack, dict] = {}
+    source_streams: dict[PreparedTrack, dict] = {}
+    # _verify already accounts for MP4's trailing chapter track.
+    for index, (out, stream) in enumerate(zip(plan.streams, result["streams"], strict=False)):
+        imported = bool(out.source.input_index)
+        retimed = False
+        if imported:
+            track = prepared[out.source.input_index - 1]
+            if track not in prepared_streams:
+                original = probe(track.path)["streams"][0]
+                source_streams[track] = _source_stream(track)
+                if track.encode:
+                    original["channel_layout"] = source_layout(source_streams[track])
+                prepared_streams[track] = original
+            original = prepared_streams[track]
+            retimed = track.encode
+        else:
+            original = local[out.source.stream_index]
+        if problem := _verify_stream(out, original, stream, retimed, index):
+            return problem
+        if not imported:
+            continue
+        start = _timestamp(stream.get("start_time", 0))
+        end = stream_end(stream)
+        if end <= start or abs(end - stream_end(original)) > 0.05:
+            return "imported audio end time mismatch"
+        source = source_streams[track]
+        mapping = track.source.mapping
+        scale, offset = float(mapping.scale), mapping.offset_us / 1_000_000
+        expected_start = max(0, scale * _timestamp(source.get("start_time", 0)) + offset)
+        expected_end = scale * stream_end(source) + offset
+        if abs(start - expected_start) > 0.05 or abs(end - expected_end) > 0.05:
+            return "imported audio timing does not match the selected mapping"
+        if problem := _decode_audio_samples(staged, index, start, end, cancel):
+            return problem
+    return None
+
+
 def apply_plan(
     plan: Plan,
     on_progress: ProgressCallback | None = None,
@@ -425,6 +901,8 @@ def apply_plan(
     ``claim`` is asked for ownership of the source and the output just before
     the rename, and answers false where a skip arrived while it waited.
     """
+    if input_problem := _input_problem(plan):
+        return Outcome.FAILED, input_problem
     cancel = cancel or Cancel(plan.path)
     if taken := _target_taken(plan):
         return Outcome.FAILED, taken
@@ -445,9 +923,27 @@ def apply_plan(
     except OSError as err:
         return Outcome.FAILED, f"could not stage the rewrite in {work_dir}: {err}"
 
-    args = ffmpeg_args(plan, tmp)
-    log.info("ffmpeg %s", " ".join(args[1:]))
+    workspace = contextlib.ExitStack()
     try:
+        prepared: tuple[PreparedTrack, ...] = ()
+        target: dict = {}
+        revision = None
+        if plan.inputs:
+            revision = FileRevision.of(plan.path)
+            for item in plan.inputs:
+                check_revision(item.revision)
+                if item.revision.identity == revision.identity:
+                    raise ValueError("source audio must come from a different file")
+            target = probe(plan.path)
+            prepared = workspace.enter_context(
+                _prepare_inputs(plan.inputs, plan.policy, cancel)
+            )
+            plan = _render_plan(plan, prepared)
+            needed = src_before.st_size + sum(os.stat(track.path).st_size for track in prepared)
+            if shutil.disk_usage(work_dir).free < needed * 1.05 + 1024 * 1024:
+                raise OSError(errno.ENOSPC, "not enough space for sourced rendering")
+        args = _sourced_args(plan, tmp, prepared) if prepared else ffmpeg_args(plan, tmp)
+        log.info("ffmpeg %s", " ".join(args[1:]))
         code, stderr = _run_ffmpeg(args, on_progress, cancel)
         if on_encoded is not None:
             on_encoded()
@@ -459,7 +955,10 @@ def apply_plan(
             stderr_tail = stderr.strip()[-_STDERR_TAIL:]
             return Outcome.FAILED, f"ffmpeg failed ({code}): {stderr_tail}"
 
-        problem = _verify(plan, probe(tmp)) or _verify_dv_frames(plan, tmp)
+        result = probe(tmp)
+        problem = _verify(plan, result) or _verify_dv_frames(plan, tmp)
+        if not problem and prepared:
+            problem = _verify_sourced(plan, target, prepared, result, tmp, cancel)
         if problem:
             return Outcome.FAILED, f"{problem}, result discarded"
 
@@ -475,6 +974,11 @@ def apply_plan(
         if taken := _target_taken(plan):
             return Outcome.FAILED, taken
 
+        if revision is not None:
+            check_revision(revision)
+            for item in plan.inputs:
+                check_revision(item.revision)
+
         # The last moment a skip can still leave the library file as it was.
         # Past this the rename is under way and a late one has nothing to undo.
         if not cancel.commit():
@@ -488,11 +992,20 @@ def apply_plan(
                 log.warning("could not remove %s after remux: %s", plan.path, err)
         log.info("rewrote %s", plan.out_path)
         return Outcome.APPLIED, ""
+    except InterruptedError as err:
+        return Outcome.DEFERRED, f"{err}, result discarded"
     except ProbeError as err:
+        return Outcome.FAILED, f"{err}, result discarded"
+    except (OSError, ValueError, RuntimeError) as err:
+        # Preparing and verifying sourced audio raises these for the one file.
+        # A local rewrite's are the caller's to handle.
+        if not plan.inputs:
+            raise
         return Outcome.FAILED, f"{err}, result discarded"
     except subprocess.TimeoutExpired:
         return Outcome.FAILED, f"ffmpeg timed out after {config.current().FFMPEG_TIMEOUT}s"
     finally:
+        workspace.close()
         # Already gone when _publish renamed it.
         with contextlib.suppress(OSError):
             os.remove(tmp)
@@ -579,11 +1092,17 @@ def drop_staged(path: str, force: bool = False) -> bool:
     Anything older than the ffmpeg timeout has outlived its writer. ``force``
     is for a caller holding every rewrite slot, which proves no writer exists.
     """
+    with _running_lock:
+        if os.path.abspath(path) in _preparing:
+            return False
     timeout = config.current().FFMPEG_TIMEOUT
     try:
         if not force and time.time() - os.stat(path).st_mtime <= timeout:
             return False
-        os.remove(path)
+        if os.path.basename(path).startswith(f"{TEMP_PREFIX}audio-") and os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
     except OSError as err:
         log.warning("could not remove staged file %s: %s", path, err)
         return False

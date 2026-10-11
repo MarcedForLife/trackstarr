@@ -14,7 +14,7 @@ from trackstarr import auth, config, policy, sessions, sweep_cache, users
 from trackstarr.arr import LibraryIndex, LibraryItem, radarr
 from trackstarr.cli import handle_sigterm, main
 from trackstarr.media import ProbeError
-from trackstarr.planner import OutStream, Plan
+from trackstarr.planner import OutStream, Plan, StreamRef
 from trackstarr.policy import Policy
 from trackstarr.processing import ProcessResult
 from trackstarr.status import Status
@@ -336,7 +336,7 @@ def test_plan_prints_the_reasons_and_the_command(startup_ok, monkeypatch, capsys
     """The printed ffmpeg line is the tool showing its work, so it has to be the
     command that would really run."""
     plan = Plan(path="f.mkv", reasons=["drop audio jpn"], incidental=["strip release tags"])
-    plan.streams.append(OutStream(src=0, kind="video"))
+    plan.streams.append(OutStream(source=StreamRef(0, 0), kind="video"))
     _planned(monkeypatch, plan)
 
     assert main(["plan", "f.mkv"]) == 0

@@ -1,7 +1,7 @@
 """Decide what a file needs, without touching it.
 
-Pure given ffprobe output, so the rules are testable without media;
-:func:`build_plan` is the only thing that reads from disk. The rules are named
+Pure given ffprobe output, with target inspection shared by local and sourced
+planning through :func:`probe_plan`. The rules are named
 in :data:`trackstarr.policy.RULES`, each set to never, alongside another rule's
 rewrite, or always. What an AUDIO_LAYOUTS or LANGUAGES row says has no mode and
 always acts. Every rule is idempotent: apply, re-plan, get an empty plan.
@@ -12,7 +12,8 @@ always acts. Every rule is idempotent: apply, re-plan, get an empty plan.
 
 import os
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from fractions import Fraction
 from typing import NamedTuple
 
 from . import config
@@ -76,25 +77,111 @@ class SourceSignature(NamedTuple):
         return cls(st.st_size, st.st_mtime_ns)
 
 
+@dataclass(frozen=True, slots=True)
+class FileRevision:
+    """Filesystem identity at observation time, without a content hash."""
+
+    path: str
+    device: int
+    inode: int
+    size: int
+    mtime_ns: int
+    ctime_ns: int
+
+    @property
+    def identity(self) -> tuple[int, int]:
+        """Device and inode, shared by every name of one file."""
+        return self.device, self.inode
+
+    @classmethod
+    def of(cls, path: str) -> FileRevision:
+        path = os.path.realpath(path)
+        found = os.stat(path)
+        return cls(
+            path,
+            found.st_dev,
+            found.st_ino,
+            found.st_size,
+            found.st_mtime_ns,
+            found.st_ctime_ns,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TimingMapping:
+    """Container times obey target = scale * source + offset_us / 1_000_000.
+
+    Stream start times are included. Positive offsets delay the source and
+    scales above one lengthen playback. No padding is implied.
+    """
+
+    scale: Fraction = Fraction(1)
+    offset_us: int = 0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.scale, Fraction) or self.scale <= 0:
+            raise ValueError("scale must be a positive Fraction")
+        if type(self.offset_us) is not int:
+            raise ValueError("offset_us must be integer microseconds")
+
+
+@dataclass(frozen=True, slots=True)
+class PlanInput:
+    """One source audio stream, bound to an observed file and timing mapping."""
+
+    revision: FileRevision
+    stream_index: int
+    mapping: TimingMapping = TimingMapping()
+
+    def __post_init__(self) -> None:
+        if self.stream_index < 0:
+            raise ValueError("stream_index must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedTrack:
+    """One workspace file with audio at stream zero on the target timeline.
+
+    Only valid inside the preparation context. ``encode`` requires the final
+    render to encode this lossless intermediate with the selected layout.
+    """
+
+    path: str
+    source: PlanInput
+    encode: bool
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class StreamRef:
+    """Zero-based input and stream indices within one plan, not durable identity."""
+
+    input_index: int
+    stream_index: int
+
+    def __post_init__(self) -> None:
+        if self.input_index < 0 or self.stream_index < 0:
+            raise ValueError("input and stream indices must be non-negative")
+
+
 @dataclass
 class OutStream:
     """One output stream and its input source.
 
     ``title`` is the layout name on encodes and the source's title on copies,
     re-asserted because MP4 drops track names on a plain copy. ``codec`` and
-    ``bitrate`` are set only on generated tracks. ``lang`` is asserted where a
+    ``bitrate`` describe generated or imported audio. ``lang`` is asserted where a
     rule has one to write, which on a copy means tag_original. None leaves the
     source's.
     """
 
-    src: int  # stream index in the input file
+    source: StreamRef
     kind: str  # video | audio | subtitle | attachment
     encode: bool = False  # a downmix, or a track re-encoded from itself
     channels: int | None = None
     lang: str | None = None
     title: str = ""
-    codec: str = ""  # resolved encoder, generated downmixes only
-    bitrate: str = ""  # resolved encode rate, generated downmixes only
+    codec: str = ""  # resolved encoder, generated or imported audio only
+    bitrate: str = ""  # resolved encode rate, generated or imported audio only
     clear_title: bool = False  # strip release tags from a title while rewriting anyway
     sub_codec: str | None = None  # convert a subtitle while remuxing (mov_text -> srt)
     #: A copied stream's rate when the output container would otherwise lose
@@ -102,6 +189,11 @@ class OutStream:
     src_bitrate: int | None = None
     dv_strip: bool = False
     video_source: dict = field(default_factory=dict)
+
+    @property
+    def src(self) -> int:
+        """The stream index without its input."""
+        return self.source.stream_index
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +253,9 @@ class Plan:
     #: The skip's status: SKIP, or UNSUPPORTED for a container the rules never
     #: write. Means nothing without ``skip``.
     skip_status: Status = Status.SKIP
+    #: Selected external audio tracks. Position zero is input one in StreamRef,
+    #: since input zero remains path. References retain the original stream index.
+    inputs: tuple[PlanInput, ...] = ()
 
     @property
     def needed(self) -> bool:
@@ -198,15 +293,15 @@ def planned_tracks(plan: Plan) -> list[dict]:
 
     Read beside :attr:`Plan.tracks`, this is the before-and-after a library
     view draws; every entry names its input stream. Copied streams inherit
-    their source's codec, language and flags, minus a cleared title and with
-    a remux's subtitle codec. Generated downmixes carry their layout's settings.
+    their source's codec and flags, with planned language tags, cleared titles
+    and subtitle conversion. Generated downmixes carry their layout's settings.
     """
-    sources = {track.get("index"): track for track in plan.tracks}
+    sources = {StreamRef(0, track["index"]): track for track in plan.tracks}
     out: list[dict] = []
     for position, stream in enumerate(plan.streams):
-        source = sources.get(stream.src) or {}
+        source = sources.get(stream.source) or {}
         if stream.encode:
-            entry = {
+            entry: dict = {
                 "codec": stream.codec,
                 "channels": stream.channels,
                 "lang": stream.lang,
@@ -218,16 +313,24 @@ def planned_tracks(plan: Plan) -> list[dict]:
             entry = {
                 "codec": stream.sub_codec or source.get("codec"),
                 "channels": source.get("channels"),
-                "lang": source.get("lang"),
+                "lang": stream.lang or source.get("lang"),
                 "title": "" if stream.clear_title else source.get("title", ""),
                 "bitrate": source.get("bitrate"),
                 "flags": source.get("flags") or [],
             }
+            if stream.source.input_index:
+                entry.update(
+                    codec=stream.codec,
+                    channels=stream.channels,
+                    lang=stream.lang,
+                    title="" if stream.clear_title else stream.title,
+                    bitrate=bitrate_bps(stream.bitrate) or stream.src_bitrate,
+                )
         if not stream.encode and source.get("dv") is not None and not stream.dv_strip:
             entry["dv"] = source["dv"]
         if stream.dv_strip:
             entry["dv_removed"] = True
-        entry |= {"index": position, "src": stream.src, "kind": stream.kind}
+        entry |= {"index": position, "source": asdict(stream.source), "kind": stream.kind}
         out.append(
             {name: value for name, value in entry.items() if value not in (None, "", [])}
         )
@@ -241,15 +344,23 @@ def track_changes(plan: Plan) -> dict:
     What a before-and-after view needs beyond the two track lists, at a fraction
     of the size of :func:`planned_tracks`: a rewrite's output is probed again
     anyway, so only the source list and this are worth keeping. ``dropped``
-    holds input indices and ``added`` output positions, as ``src`` and ``index``
-    do there.
+    holds input indices and ``added`` output positions, as ``source`` and
+    ``index`` do there.
     """
-    carried = {stream.src for stream in plan.streams if not stream.encode}
+    carried = {
+        stream.source.stream_index
+        for stream in plan.streams
+        if not stream.encode and stream.source.input_index == 0
+    }
     told = {
         "dropped": [
             track["index"] for track in plan.tracks if track.get("index") not in carried
         ],
-        "added": [position for position, stream in enumerate(plan.streams) if stream.encode],
+        "added": [
+            position
+            for position, stream in enumerate(plan.streams)
+            if stream.encode or stream.source.input_index != 0
+        ],
     }
     return {name: value for name, value in told.items() if value}
 
@@ -262,9 +373,22 @@ class Changes(NamedTuple):
     drops: int
 
 
+def _imported(track: dict) -> bool:
+    """Whether a planned track comes from a source file rather than the target."""
+    return track.get("source", {}).get("input_index", 0) != 0
+
+
+def _target_stream(track: dict) -> int | None:
+    """The target stream a planned track reads. ``source`` wins over ``src``,
+    which verdicts stored before ``source`` existed carry alone."""
+    if "source" in track:
+        return track["source"]["stream_index"]
+    return track.get("src")
+
+
 def _dropped(planned: list[dict], tracks: list[dict]) -> list[dict]:
     """The file's streams the rewrite would not carry over."""
-    kept = {track.get("src") for track in planned}
+    kept = {_target_stream(track) for track in planned if not _imported(track)}
     return [track for track in tracks if track.get("index") not in kept]
 
 
@@ -302,6 +426,9 @@ def changes(planned: list[dict], tracks: list[dict]) -> Changes:
     adds: list[str] = []
     rebuilds: list[str] = []
     for track in planned:
+        if _imported(track):
+            adds.append(track.get("title") or f"{track.get('lang') or 'und'} {track['kind']}")
+            continue
         if "generated" not in (track.get("flags") or []):
             continue
         named = rebuilds if _claim(dropped, track) else adds
@@ -356,6 +483,14 @@ def new_plan(path: str, original_lang: str | None, policy: Policy | None = None)
 
 
 def build_plan(path: str, original_lang: str | None, policy: Policy | None = None) -> Plan:
+    plan, info = probe_plan(path, original_lang, policy)
+    return plan if plan.skip else plan_from_probe(plan, info)
+
+
+def probe_plan(
+    path: str, original_lang: str | None, policy: Policy | None = None
+) -> tuple[Plan, dict]:
+    """Read target facts once, retaining the guards shared by both planning paths."""
     plan = new_plan(path, original_lang, policy)
     if not plan.policy.allowed_container(path):
         ext = os.path.splitext(path)[1].lower()
@@ -363,7 +498,7 @@ def build_plan(path: str, original_lang: str | None, policy: Policy | None = Non
         # Only a video file is "unsupported"; a .txt named by hand is skipped.
         if ext in VIDEO_EXTS:
             plan.skip_status = Status.UNSUPPORTED
-        return plan
+        return plan, {}
     try:
         src = os.stat(path)
     except OSError as err:
@@ -372,11 +507,11 @@ def build_plan(path: str, original_lang: str | None, policy: Policy | None = Non
     plan.src_signature = SourceSignature.of(src)
     if plan.policy.skip_hardlinks and src.st_nlink > 1:
         plan.skip = "hardlinked, left for the download client (SKIP_HARDLINKS)"
-        return plan
+        return plan, {}
     info = probe(path)
     if "dv_strip" in plan.policy.rules_in(ALWAYS, ALONGSIDE):
         _trial_dv_strip(path, info)
-    return plan_from_probe(plan, info)
+    return plan, info
 
 
 def _trial_dv_strip(path: str, info: dict) -> None:
@@ -404,7 +539,7 @@ def plan_from_probe(plan: Plan, info: dict) -> Plan:
     if not alongside:
         return deciding
     whole = _apply_rules(_for_pass(plan, always | alongside, alongside), info)
-    if deciding.reasons:
+    if deciding.reasons or plan.inputs:
         return whole
     # No rewrite, so no ride-alongs happen; what they would have done is still
     # reported, so a title carrying release tags reads as that rather than as conforming.
@@ -426,6 +561,7 @@ def _for_pass(plan: Plan, acting: frozenset[str], alongside: frozenset[str]) -> 
         src_signature=plan.src_signature,
         acting=acting,
         alongside=alongside,
+        inputs=plan.inputs,
     )
 
 
@@ -509,7 +645,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     reencoded = {src["index"] for _, src in reencodes}
     audio_out = [
         OutStream(
-            src=stream["index"],
+            source=StreamRef(0, stream["index"]),
             kind="audio",
             channels=stream.get("channels"),
             lang=plan.original_lang if stream is tagged else None,
@@ -522,7 +658,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     ]
     audio_out += [
         OutStream(
-            src=src["index"],
+            source=StreamRef(0, src["index"]),
             kind="audio",
             encode=True,
             channels=layout.channels,
@@ -539,7 +675,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     # named layout, whatever happens to it: that is what Keep is for.
     layout_order = [layout.channels for layout in plan.policy.audio_layouts]
     audio_out.sort(
-        key=lambda out: (channel_rank(out.channels, layout_order), not out.encode, out.src)
+        key=lambda out: (channel_rank(out.channels, layout_order), not out.encode, out.source)
     )
 
     ordered = [_video_out(plan, stream) for stream in video]
@@ -549,7 +685,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
         sub_codec = "srt" if converting and stream.get("codec_name") == "mov_text" else None
         ordered.append(
             OutStream(
-                src=stream["index"],
+                source=StreamRef(0, stream["index"]),
                 kind="subtitle",
                 title=stream_title(stream),
                 clear_title=_flag_release_tags(plan, stream),
@@ -560,7 +696,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
             )
         )
     ordered += [
-        OutStream(src=stream["index"], kind=stream.get("codec_type") or "data")
+        OutStream(source=StreamRef(0, stream["index"]), kind=stream.get("codec_type") or "data")
         for stream in tail
     ]
 
@@ -572,21 +708,29 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     if plan.acts("order"):
         # Copied streams only: a drop is not a reorder, and a generated downmix
         # is an insertion.
-        copied = [out.src for out in ordered if not out.encode]
+        copied = [out.source for out in ordered if not out.encode]
         kept_src = set(copied)
-        current = [stream["index"] for stream in streams if stream["index"] in kept_src]
+        current = [
+            StreamRef(0, stream["index"])
+            for stream in streams
+            if StreamRef(0, stream["index"]) in kept_src
+        ]
         if copied != current:
             _record(plan, "order", "reorder streams")
     else:
         # Preserve input order; a generated downmix follows its source.
-        ordered.sort(key=lambda out: (out.src, out.encode))
+        ordered.sort(key=lambda out: (out.source, out.encode))
     plan.streams = ordered
 
     return plan
 
 
 def _video_out(plan: Plan, stream: dict) -> OutStream:
-    out = OutStream(src=stream["index"], kind="video", src_bitrate=unpreserved_bitrate(stream))
+    out = OutStream(
+        source=StreamRef(0, stream["index"]),
+        kind="video",
+        src_bitrate=unpreserved_bitrate(stream),
+    )
     dv = dolby_vision(stream)
     if not plan.acts("dv_strip") or dv is None or is_cover_art(stream):
         return out

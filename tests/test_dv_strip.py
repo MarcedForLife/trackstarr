@@ -21,6 +21,7 @@ from trackstarr import config, executor, media, planner, processing, rewrites, s
 from trackstarr.command import ffmpeg_args
 from trackstarr.executor import Outcome
 from trackstarr.planner import (
+    StreamRef,
     changes,
     describe,
     new_plan,
@@ -394,7 +395,7 @@ def test_frame_probe_error_discards_stage(staged_plan, monkeypatch):
 
 def test_matching_frames_publish_and_probe_exact_stream_indices(staged_plan, monkeypatch):
     plan, _ = staged_plan
-    plan.streams[0].src = 3
+    plan.streams[0].source = StreamRef(0, 3)
     calls = []
 
     def sample(path, index):

@@ -18,7 +18,7 @@ from conftest import (
 )
 from trackstarr import __version__, config, events, jobs, policy, processing
 from trackstarr.executor import Outcome
-from trackstarr.planner import OutStream, Plan, new_plan, plan_from_probe
+from trackstarr.planner import OutStream, Plan, StreamRef, new_plan, plan_from_probe
 from trackstarr.policy import Policy
 from trackstarr.processing import Job
 from trackstarr.sweep import sweep
@@ -168,9 +168,11 @@ def test_a_modified_event_names_the_downmixes_created(tmp_path, stub_rewrite):
             path=str(path),
             reasons=["add 2.0 downmix from stream 3 (6ch eng)"],
             streams=[
-                OutStream(src=3, kind="audio"),
+                OutStream(source=StreamRef(0, 3), kind="audio"),
                 # The planner titles every encode stream with its layout's name.
-                OutStream(src=3, kind="audio", encode=True, channels=2, title="2.0"),
+                OutStream(
+                    source=StreamRef(0, 3), kind="audio", encode=True, channels=2, title="2.0"
+                ),
             ],
         )
     )
@@ -196,9 +198,14 @@ def test_a_track_written_over_the_one_it_replaces_is_a_rebuild(tmp_path, stub_re
                 {"index": 2, "kind": "audio", "channels": 2, "lang": "eng"},
             ],
             streams=[
-                OutStream(src=1, kind="audio"),
+                OutStream(source=StreamRef(0, 1), kind="audio"),
                 OutStream(
-                    src=1, kind="audio", encode=True, channels=2, lang="eng", title="2.0"
+                    source=StreamRef(0, 1),
+                    kind="audio",
+                    encode=True,
+                    channels=2,
+                    lang="eng",
+                    title="2.0",
                 ),
             ],
         )

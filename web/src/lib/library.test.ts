@@ -91,6 +91,40 @@ describe('unify', () => {
 });
 
 describe('listing', () => {
+	test('an imported stream with the same index is new and cannot edit target tags', () => {
+		const shown = listing(
+			file({
+				tracks: [track(1, 'audio')],
+				planned: [
+					track(0, 'audio', {
+						src: 1,
+						source: { input_index: 1, stream_index: 1 }
+					})
+				]
+			})
+		);
+		expect(shown.rows.map((row) => [row.state, row.stream])).toEqual([
+			['added', null],
+			['dropped', 1]
+		]);
+	});
+
+	test('explicit target references override legacy indexes and support missing aliases', () => {
+		const shown = listing(
+			file({
+				tracks: [track(1, 'audio'), track(2, 'audio')],
+				planned: [
+					track(0, 'audio', { src: 99, source: { input_index: 0, stream_index: 2 } }),
+					track(1, 'audio', { source: { input_index: 0, stream_index: 1 } })
+				]
+			})
+		);
+		expect(shown.rows.map((row) => [row.state, row.stream])).toEqual([
+			['kept', 2],
+			['kept', 1]
+		]);
+	});
+
 	test('a plan is what the file is about to become', () => {
 		const shown = listing(
 			file({

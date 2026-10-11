@@ -14,7 +14,7 @@ import pytest
 from conftest import fake_run, needed_plan, set_config, set_layouts
 from trackstarr import config, executor
 from trackstarr.executor import Outcome, apply_plan, audio_codec_errors, work_dir_errors
-from trackstarr.planner import OutStream, Plan, SourceSignature
+from trackstarr.planner import OutStream, Plan, SourceSignature, StreamRef
 from trackstarr.policy import Policy
 
 
@@ -531,7 +531,12 @@ def test_verification_catches_a_missing_stream():
     """A dropped track is silent otherwise: the file plays, just without the audio
     somebody wanted kept."""
     plan = Plan(path="f.mkv")
-    plan.streams.extend([OutStream(src=0, kind="video"), OutStream(src=1, kind="audio")])
+    plan.streams.extend(
+        [
+            OutStream(source=StreamRef(0, 0), kind="video"),
+            OutStream(source=StreamRef(0, 1), kind="audio"),
+        ]
+    )
     problem = executor._verify(plan, {"format": {}, "streams": [{"index": 0}]})
     assert problem is not None
     assert "stream count mismatch: expected 2, got 1" in problem
@@ -894,9 +899,12 @@ def test_abort_by_name_marks_the_gate_even_if_ffmpeg_exits_before_the_signal(mon
     cancel = executor.Cancel("/file")
 
     class Process:
-        def terminate(self):
-            raise ProcessLookupError("already exited")
+        pid = 123
 
+    def gone(pid, sig):
+        raise ProcessLookupError("already exited")
+
+    monkeypatch.setattr(executor.os, "killpg", gone)
     monkeypatch.setattr(executor, "_running_ffmpeg", {Process(): cancel})
     assert executor.terminate_running("/other") == 0
     assert not cancel.stopped()

@@ -1,4 +1,5 @@
 import type { SettingsChanges } from '$lib/settings';
+import { pair } from '$lib/library';
 import { arrChanges } from './settings';
 // Everything the demo's service knows, held in memory for the life of the tab:
 // the library, the settings, the pauses, the history and who is signed in.
@@ -29,7 +30,7 @@ import type { DoneFile, Run } from '$lib/runs';
 import type { SettingsSnapshot, SettingValue } from '$lib/settings';
 import { catalogue, type FileSpec, type TitleSpec } from './catalogue';
 import { chronicle } from './history';
-import { added, judge, type Settings } from './judge';
+import { changesOf, judge, type Settings } from './judge';
 import { DEFAULTS, ENV_PINNED, problems, RULE_SETTINGS, isSecret, snapshot } from './settings';
 import { publish } from './stream';
 import { DAY_MS, digest, lastAt, MINUTE_MS, slug, stamp, VERSION } from './util';
@@ -175,14 +176,15 @@ export function probe(file: File): void {
  * tracks, and the record of the change stays on it. */
 export function rewrite(state: State, file: File, at: number): Modified {
 	const before = file.tracks;
-	const dropped = before
-		.map((track) => track.index)
-		.filter((index) => !file.planned.some((track) => track.src === index));
-	const after: Track[] = file.planned.map(({ src: _src, dv_removed: _dvRemoved, ...track }) => {
-		void _src;
-		void _dvRemoved;
-		return track;
-	});
+	const { kept, added } = pair(file);
+	const dropped = before.filter((track) => !kept.has(track.index)).map((track) => track.index);
+	const after: Track[] = file.planned.map(
+		({ source: _source, dv_removed: _dvRemoved, ...track }) => {
+			void _source;
+			void _dvRemoved;
+			return track;
+		}
+	);
 	const made: Modified = {
 		at: stamp(at),
 		...(file.planned.some((track) => track.dv_removed) ? { dv_removed: true } : {}),
@@ -190,7 +192,7 @@ export function rewrite(state: State, file: File, at: number): Modified {
 		bytes_after: bytesOf(after, file.runtime),
 		was: before,
 		dropped,
-		added: after.filter((track) => track.flags?.includes('generated')).map((track) => track.index)
+		added: [...added]
 	};
 	file.contents = after;
 	file.tracks = after;
@@ -343,12 +345,9 @@ export function card(state: State, title: Title): Card {
 		judged = Math.max(judged, file.judged);
 		if (file.modified) modified += 1;
 		if (file.tracks.some((track) => track.kind === 'audio' && !track.lang)) untagged += 1;
-		for (const name of added(file.planned)) adds.add(name);
-		if (file.planned.length) {
-			drops += file.tracks.filter(
-				(track) => !file.planned.some((planned) => planned.src === track.index)
-			).length;
-		}
+		const changed = changesOf(file.planned, file.tracks);
+		for (const name of changed.adds) adds.add(name);
+		drops += changed.drops;
 	}
 	const held = STATES.filter((verdict) => counts[verdict]);
 	const worst = held[0] ?? (title.files.length ? 'unchecked' : 'missing');

@@ -13,7 +13,7 @@ import {
 } from '$lib/queue';
 import type { Activity, ActiveFile, DoneFile, Run } from '$lib/runs';
 import { nextRun } from './cron';
-import { added, changesOf } from './judge';
+import { changesOf } from './judge';
 import { configOf } from './settings';
 import { publish } from './stream';
 import {
@@ -232,7 +232,9 @@ function rewriteDetail(state: State, file: File): string {
 
 function ffmpegLine(file: File): string {
 	const maps = file.planned
-		.map((track) => (track.src === undefined ? '' : `-map 0:${track.src}`))
+		.map((track) =>
+			track.source ? `-map ${track.source.input_index}:${track.source.stream_index}` : ''
+		)
 		.filter(Boolean);
 	const generated = file.planned.find((track) => track.flags?.includes('generated'));
 	const encode = generated
@@ -329,21 +331,15 @@ function plansFor(state: State, paths: string[]): FilePlans {
 		paths.flatMap((path) => {
 			const file = state.byPath.get(path);
 			if (!file || !file.judged) return [];
-			const drops = file.planned.length
-				? file.tracks.filter((track) => !file.planned.some((kept) => kept.src === track.index))
-						.length
-				: 0;
 			return [
 				[
 					path,
 					{
 						status: file.status,
 						changes: (file.why.reasons?.length ?? 0) + (file.why.incidental?.length ?? 0),
-						adds: added(file.planned),
 						// The demo has no rebuilds: it never claims a drop for a
 						// generated track the way the planner does.
-						rebuilds: [],
-						drops
+						...changesOf(file.planned, file.tracks)
 					}
 				]
 			];

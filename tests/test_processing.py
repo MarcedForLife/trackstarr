@@ -15,7 +15,7 @@ from conftest import cache_verdict, configured_arr, needed_plan, read_events, se
 from trackstarr import config, estimate, mkvtag, pauses, planner, processing, sweep_cache
 from trackstarr.executor import Cancel, Outcome
 from trackstarr.media import ProbeError
-from trackstarr.planner import OutStream, Plan
+from trackstarr.planner import OutStream, Plan, StreamRef
 from trackstarr.policy import Policy
 from trackstarr.processing import Job, process
 from trackstarr.status import Status
@@ -25,9 +25,9 @@ from trackstarr.sweep import remember
 def stereo_from(*, generated: bool) -> Plan:
     """A plan over one 5.1 track, either copied or downmixed beside."""
     tracks = [{"index": 0, "kind": "audio", "codec": "eac3", "channels": 6}]
-    streams = [OutStream(src=0, kind="audio")]
+    streams = [OutStream(source=StreamRef(0, 0), kind="audio")]
     if generated:
-        streams.append(OutStream(src=0, kind="audio", encode=True, channels=2))
+        streams.append(OutStream(source=StreamRef(0, 0), kind="audio", encode=True, channels=2))
     return needed_plan(tracks=tracks, streams=streams)
 
 
@@ -339,7 +339,7 @@ def tag_plan(path: str = "/x.mkv") -> Plan:
         path=path,
         reasons=["tag audio 1 as jpn"],
         rules={"tag_original"},
-        streams=[OutStream(src=1, kind="audio", lang="jpn")],
+        streams=[OutStream(source=StreamRef(0, 1), kind="audio", lang="jpn")],
     )
 
 
@@ -465,7 +465,10 @@ def test_a_rewrite_ordered_by_anything_else_writes_the_tag_itself():
 def test_a_plan_with_no_tag_to_write_is_not_a_fast_path():
     """The rule names itself only where it has a stream to stamp, so this is
     the door staying shut rather than a case the rules reach."""
-    assert processing._tag_only(replace(tag_plan(), streams=[OutStream(0, "video")])) is None
+    assert (
+        processing._tag_only(replace(tag_plan(), streams=[OutStream(StreamRef(0, 0), "video")]))
+        is None
+    )
 
 
 def test_a_tagged_title_is_rescanned_like_any_other(monkeypatch, stub_tag):

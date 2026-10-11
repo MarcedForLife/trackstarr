@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 #: entry in it. Bump it whenever a field is added, removed or changes meaning,
 #: since :meth:`trackstarr.sweep_cache.SweepCache.carry` moves unchanged
 #: entries forward byte for byte and an added field would never arrive.
-FORMAT = 7
+FORMAT = 8
 
 #: The oldest entry this build will use. Raise it with FORMAT only where an
 #: older entry would be wrong rather than merely thinner, so an update keeps

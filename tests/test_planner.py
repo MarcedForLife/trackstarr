@@ -20,6 +20,7 @@ from trackstarr.media import matches_release_tags
 from trackstarr.planner import (
     OutStream,
     Plan,
+    StreamRef,
     _downmix_rank,
     build_plan,
     channel_rank,
@@ -1373,8 +1374,8 @@ def test_a_source_is_picked_in_the_written_language_order():
 def test_a_kept_subtitle_title_is_reasserted_in_the_command():
     """MP4 drops track names on a plain copy, so every kept title is written again."""
     args = args_for(
-        OutStream(src=0, kind="video"),
-        OutStream(src=1, kind="subtitle", title="Forced (English)"),
+        OutStream(source=StreamRef(0, 0), kind="video"),
+        OutStream(source=StreamRef(0, 1), kind="subtitle", title="Forced (English)"),
     )
     assert "title=Forced (English)" in args
 
@@ -1383,9 +1384,9 @@ def test_a_copied_audio_track_keeps_its_own_title():
     """The ordinary case between a generated downmix and a cleared release tag:
     copied through, title re-asserted as it was."""
     args = args_for(
-        OutStream(src=0, kind="video"),
-        OutStream(src=1, kind="audio", title="Surround 5.1"),
-        OutStream(src=2, kind="audio", title="Commentary"),
+        OutStream(source=StreamRef(0, 0), kind="video"),
+        OutStream(source=StreamRef(0, 1), kind="audio", title="Surround 5.1"),
+        OutStream(source=StreamRef(0, 2), kind="audio", title="Commentary"),
     )
     assert "title=Surround 5.1" in args
     assert "title=Commentary" in args
@@ -1397,9 +1398,9 @@ def test_a_downmix_asserts_only_the_language_its_source_had(lang):
     source never had. It also sorts ahead of that source, so its metadata is
     written mid-list with the copied original still following."""
     args = args_for(
-        OutStream(src=0, kind="video"),
+        OutStream(source=StreamRef(0, 0), kind="video"),
         OutStream(
-            src=1,
+            source=StreamRef(0, 1),
             kind="audio",
             encode=True,
             channels=2,
@@ -1407,7 +1408,7 @@ def test_a_downmix_asserts_only_the_language_its_source_had(lang):
             title="2.0",
             bitrate="192k",
         ),
-        OutStream(src=1, kind="audio", title="Surround 5.1"),
+        OutStream(source=StreamRef(0, 1), kind="audio", title="Surround 5.1"),
     )
     assert [arg for arg in args if arg.startswith("language=")] == (
         [f"language={lang}"] if lang else []
@@ -1448,7 +1449,10 @@ def test_planned_tracks_carry_a_generated_downmix_as_the_track_it_will_be():
     that a 5.1 source becomes a 2.0 AAC at the layout's own rate."""
     planned = planned_for(video(), audio(1, 8))
     generated = [track for track in planned if "generated" in track.get("flags", [])]
-    assert [(track["channels"], track["codec"], track["src"]) for track in generated] == [
+    assert [
+        (track["channels"], track["codec"], track["source"]["stream_index"])
+        for track in generated
+    ] == [
         (2, "aac", 1),
         (6, "ac3", 1),
     ]
@@ -1459,7 +1463,7 @@ def test_a_dropped_track_is_absent_from_the_planned_side():
     """Which is how the view marks it: nothing in the after list names it as
     a source, so the pairing shows the row struck out."""
     plan = plan_for(video(), audio(1, 6), audio(2, 2, lang="dan"))
-    assert 2 not in {track["src"] for track in planned_tracks(plan)}
+    assert 2 not in {track["source"]["stream_index"] for track in planned_tracks(plan)}
     assert 2 in {track["index"] for track in plan.tracks}
 
 
@@ -1470,7 +1474,7 @@ def test_a_copied_track_keeps_its_source_and_loses_a_cleared_title():
     copied = next(
         track
         for track in planned_tracks(plan)
-        if track["src"] == 1 and "generated" not in track.get("flags", [])
+        if track["source"]["stream_index"] == 1 and "generated" not in track.get("flags", [])
     )
     assert copied["codec"] == plan.tracks[1]["codec"]
     assert "title" not in copied
