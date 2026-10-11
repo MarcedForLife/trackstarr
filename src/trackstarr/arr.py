@@ -52,8 +52,9 @@ class Arr:
     url: str
     key: str
     item_ep: str  # endpoint listing the movies/series
+    file_ep: str  # endpoint listing one movie's or series' files
     rescan_cmd: str  # command that re-reads a file from disk
-    rescan_key: str  # id field that command expects
+    rescan_key: str  # id field that command and the file listing expect
     body_key: str  # webhook body key holding the movie/series object
     folder_key: str  # field on that object holding the title's folder
     file_key: str  # webhook body key for a single imported file
@@ -92,6 +93,20 @@ class Arr:
         except API_ERRORS as err:
             log.warning("%s: lookup of id %s failed (%s)", self.instance_id, item_id, err)
             return None
+
+    def files(self, item_id: int) -> list[dict]:
+        """The movie or series files the *arr holds for one title. Raises
+        API_ERRORS, so an outage is not a title without files."""
+        if not self.enabled:
+            return []
+        return self._call(f"{self.file_ep}?{self.rescan_key}={item_id}", timeout=120) or []
+
+    def episodes(self, series_id: int) -> list[dict]:
+        """Sonarr's episodes of one series, each naming its file. Raises
+        API_ERRORS."""
+        if not self.enabled:
+            return []
+        return self._call(f"/api/v3/episode?seriesId={series_id}", timeout=120) or []
 
     def _connection(self) -> dict | None:
         """Our notification entry in this *arr, or None. Raises API_ERRORS."""
@@ -280,6 +295,7 @@ def client_for(instance: config.ArrInstanceConfig) -> Arr:
             url=instance.url,
             key=instance.api_key,
             item_ep="/api/v3/movie",
+            file_ep="/api/v3/moviefile",
             rescan_cmd="RescanMovie",
             rescan_key="movieId",
             body_key="movie",
@@ -293,6 +309,7 @@ def client_for(instance: config.ArrInstanceConfig) -> Arr:
         url=instance.url,
         key=instance.api_key,
         item_ep="/api/v3/series",
+        file_ep="/api/v3/episodefile",
         rescan_cmd="RescanSeries",
         rescan_key="seriesId",
         body_key="series",
