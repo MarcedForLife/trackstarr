@@ -1,0 +1,345 @@
+{
+  "schema_version": 1,
+  "engine": "avsync",
+  "automatic_publication": false,
+  "settings": {
+    "regions": 8,
+    "probes_per_region": 12,
+    "max_distance": 60,
+    "ambiguity_margin": 8,
+    "alternative_separation_us": 500000,
+    "min_region_matches": 2,
+    "min_match_fraction": 0.5,
+    "max_residual_us": 50000,
+    "min_span_fraction": 0.8,
+    "min_scale": 0.9,
+    "max_scale": 1.1,
+    "max_duration_seconds": 120,
+    "max_frames": 20000
+  },
+  "manifest_sha256": "ba13cb21bd6f44aabf93f9695231a83136d0c0b6ae198ebf9311096134b5554f",
+  "ffmpeg_version": "ffmpeg version N-126168-gb16b5f2a01-20260815 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 15.2.0 (crosstool-NG 1.28.0.23_185f348)\nconfiguration: --prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config --cross-prefix=x86_64-ffbuild-linux-gnu- --arch=x86_64 --target-os=linux --enable-gpl --enable-version3 --disable-debug --enable-iconv --enable-zlib --enable-libxml2 --enable-libsoxr --enable-openssl --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype --enable-libfribidi --enable-vulkan --enable-libvorbis --enable-libxcb --enable-xlib --enable-libpulse --enable-gmp --enable-lzma --enable-liblcevc-dec --enable-opencl --enable-amf --enable-libaom --enable-libaribb24 --enable-avisynth --enable-chromaprint --enable-libdav1d --enable-libdavs2 --enable-libdvdread --enable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --enable-frei0r --enable-libgme --enable-libkvazaar --enable-libaribcaption --enable-libass --enable-libbluray --enable-libjxl --enable-libmp3lame --enable-libopus --enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx --enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopenmpt --enable-librav1e --enable-librubberband --disable-schannel --enable-sdl2 --enable-libsnappy --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d --enable-libdrm --enable-vaapi --enable-libvidstab --enable-libvvenc --disable-whisper --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxvid --enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags= --extra-libs='-lgomp -ldl' --extra-ldflags=-pthread --extra-ldexeflags=-pie --cc=x86_64-ffbuild-linux-gnu-gcc --cxx=x86_64-ffbuild-linux-gnu-g++ --ar=x86_64-ffbuild-linux-gnu-gcc-ar --ranlib=x86_64-ffbuild-linux-gnu-gcc-ranlib --nm=x86_64-ffbuild-linux-gnu-gcc-nm --extra-version=20260815\nlibavutil      61.  5.100 / 61.  5.100\nlibavcodec     63.  8.101 / 63.  8.101\nlibavformat    63.  6.100 / 63.  6.100\nlibavdevice    63.  2.100 / 63.  2.100\nlibavfilter    12.  3.101 / 12.  3.101\nlibswscale     10.  2.100 / 10.  2.100\nlibswresample   7.  2.100 /  7.  2.100\n\nExiting with exit code 0\n",
+  "binary_sha256": "f1e69546b9ac98ca220eafa680d3c2ecfd18f6f756452858574f21b6bac04115",
+  "implementation_sha256": {
+    "visual.py": "98ccef77cdbbc7f0088791972da6be9f6fbfe844205be8eb207e63eb9f3d2e93",
+    "avsync_core.py": "bfaa4b9b26017bca09aecf2c11fa7afbbdee562e553dd6c35d8c25d68a041783",
+    "compare_visual.py": "717c293bcf68428f8be814797be8d3d631c438c7a2717dae772239c5bebe27dd"
+  },
+  "results": [
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 1.722,
+      "stdout": "",
+      "stderr": "\n  Caching Foreign Frames:   0%|                                            | 0/3 [00:00<?, ?frame/s]\n                                                                                                    \n\n  Matching Frames:   0%|                                                   | 0/3 [00:00<?, ?frame/s]\n                                                                                                    \n\n  Filtering Similar Refs:   0%|                                            | 0/3 [00:00<?, ?frame/s]\n  Filtering Similar Refs:  33%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588                        | 1/3 [00:00<00:00,  7.03frame/s]\n                                                                                                    \n",
+      "case": "video_only_identity",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/source.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-gve5yen1/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 102024,
+      "input_blocks": 0,
+      "output_blocks": 2944,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [
+          {
+            "target_time_us": 18083000,
+            "source_time_us": 18083000,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 0.0
+          },
+          {
+            "target_time_us": 23042000,
+            "source_time_us": 23042000,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 0.0
+          },
+          {
+            "target_time_us": 27875000,
+            "source_time_us": 27875000,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 0.0
+          }
+        ],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1
+        ],
+        "mapping": {
+          "scale": 1.0,
+          "offset_us": 0.0
+        },
+        "max_fit_residual_us": 0.0,
+        "max_validation_residual_us": 0.0,
+        "span_fraction": {
+          "source": 0.3264,
+          "target": 0.3264
+        },
+        "reason": "insufficient_distributed_evidence",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 1491860
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 1.668,
+      "stdout": "",
+      "stderr": "\n  Caching Foreign Frames:   0%|                                            | 0/3 [00:00<?, ?frame/s]\n                                                                                                    \n\n  Matching Frames:   0%|                                                   | 0/3 [00:00<?, ?frame/s]\n                                                                                                    \n\n  Filtering Similar Refs:   0%|                                            | 0/3 [00:00<?, ?frame/s]\n  Filtering Similar Refs:  33%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588                        | 1/3 [00:00<00:00,  7.53frame/s]\n                                                                                                    \n",
+      "case": "trim_start",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/trim_start.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-lx63ri9a/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 100916,
+      "input_blocks": 0,
+      "output_blocks": 2944,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [
+          {
+            "target_time_us": 18083000,
+            "source_time_us": 16833000,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 0.0
+          },
+          {
+            "target_time_us": 23042000,
+            "source_time_us": 21792000,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 0.0
+          },
+          {
+            "target_time_us": 27875000,
+            "source_time_us": 26625000,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 0.0
+          }
+        ],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          1
+        ],
+        "mapping": {
+          "scale": 1.0,
+          "offset_us": 1250000.0
+        },
+        "max_fit_residual_us": 0.0,
+        "max_validation_residual_us": 0.0,
+        "span_fraction": {
+          "source": 0.3405913043478261,
+          "target": 0.3264
+        },
+        "reason": "insufficient_distributed_evidence",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 1491878
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 1.722,
+      "stdout": "",
+      "stderr": "\n  Caching Foreign Frames:   0%|                                            | 0/3 [00:00<?, ?frame/s]\n                                                                                                    \n\n  Matching Frames:   0%|                                                   | 0/3 [00:00<?, ?frame/s]\n                                                                                                    \n\n  Filtering Similar Refs:   0%|                                            | 0/1 [00:00<?, ?frame/s]\n  Filtering Similar Refs: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:00<00:00,  6.88frame/s]\n                                                                                                    \n",
+      "case": "speed_25_24",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/speed_25_24.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-0cawkrty/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 100756,
+      "input_blocks": 0,
+      "output_blocks": 2944,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [
+          {
+            "target_time_us": 18083000,
+            "source_time_us": 17375000,
+            "region": 4,
+            "role": "fit"
+          }
+        ],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 1491379
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 1.517,
+      "stdout": "",
+      "stderr": "\n  Caching Foreign Frames:   0%|                                            | 0/3 [00:00<?, ?frame/s]\n                                                                                                    \n\n  Matching Frames:   0%|                                                   | 0/3 [00:00<?, ?frame/s]\n                                                                                                    \nNo initial matches found between reference and foreign frames. Cannot proceed.\n",
+      "case": "reversed",
+      "command": [
+        "/tmp/trackstarr-avsync-venv/bin/python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "avsync",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/reversed.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-gbf3ffm0/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe",
+        "--avsync-source",
+        "/tmp/trackstarr-alignment-research/avsync/AVSync_v14.py"
+      ],
+      "max_process_rss_kib": 71820,
+      "input_blocks": 0,
+      "output_blocks": 3000,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [],
+        "region_counts": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "reason": "insufficient_fit_anchors",
+        "independent_validation_search": false,
+        "ambiguity_evidence": false,
+        "upstream_parameters": {
+          "scene_threshold": 0.25,
+          "match_threshold": 0.7,
+          "similarity_threshold": 4
+        },
+        "source_sha256": "28c4a72403062ae371cd860d90ea2a9114ecb8cdbd56241dec52821df43f2b34",
+        "source_revision": "ece9cb6e66b4b7aa7437f23e5b21574aced6cdcc",
+        "compatibility_adapter": [
+          "-vsync vfr replaced with -fps_mode vfr",
+          "extraction failures raise"
+        ],
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 1518152
+    }
+  ]
+}

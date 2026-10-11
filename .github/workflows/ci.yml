@@ -82,6 +82,8 @@ jobs:
       # --cov enforces pyproject's fail_under. The suite refuses to start
       # without ffmpeg, so nothing skips past a broken install.
       - run: uv run pytest -v --cov
+      # Disposable alignment research fixtures, outside the shipped package.
+      - run: uv run pytest tools/alignment -q
 
   # `vite build` type-checks nothing, so without this job a svelte-check or
   # lint failure ships in a green image.

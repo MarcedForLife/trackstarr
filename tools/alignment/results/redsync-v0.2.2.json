@@ -1,0 +1,364 @@
+{
+  "schema_version": 1,
+  "engine": "RedSync v0.2.2",
+  "source_revision": "cb07566f9c48766d8f335df0caab157f5342569a",
+  "binary_sha256": "3aa61215fe4534301a28c9d4d35291d61e7db925ad1556abde9eb1a8fb634acd",
+  "binary_bytes": 17260728,
+  "manifest_sha256": "09e6fe64d66315e0ec5fb17238d80dbc627c65a7ea3fa1e933b85eec5ee61b93",
+  "automatic_publication": false,
+  "results": [
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 1.774,
+      "stderr": "",
+      "max_process_rss_kib": 25328,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_error_us": 0.0,
+      "measurement": {
+        "schema_version": 2,
+        "mode": "audio",
+        "method": "measured",
+        "language": "eng",
+        "dry_run": true,
+        "sync_ms": 0,
+        "scale": 1,
+        "drift_ppm": 0,
+        "fps_conversion": "none (same timing)",
+        "score": 5.490388856117018,
+        "samples": 8,
+        "residual_ms": 0,
+        "segments": [
+          {
+            "target_start_ms": 0,
+            "target_end_ms": 60000,
+            "reference_start_ms": 0,
+            "reference_end_ms": 60000,
+            "offset_ms": 0,
+            "scale": 1,
+            "score": 5.490388856117018,
+            "samples": 8,
+            "residual_ms": 0
+          }
+        ],
+        "gaps": []
+      },
+      "workspace_bytes_at_exit": 876,
+      "case": "identity"
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 2.023,
+      "stderr": "",
+      "max_process_rss_kib": 24116,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        2000.0,
+        2000.0,
+        2000.0,
+        2000.0
+      ],
+      "max_error_us": 2000.0,
+      "measurement": {
+        "schema_version": 2,
+        "mode": "audio",
+        "method": "measured",
+        "language": "eng",
+        "dry_run": true,
+        "sync_ms": 1248,
+        "scale": 1,
+        "drift_ppm": 0,
+        "fps_conversion": "none (same timing)",
+        "score": 4.33135944012458,
+        "samples": 4,
+        "residual_ms": 0,
+        "segments": [
+          {
+            "target_start_ms": 0,
+            "target_end_ms": 58750,
+            "reference_start_ms": 1248,
+            "reference_end_ms": 59998,
+            "offset_ms": 1248,
+            "scale": 1,
+            "score": 4.33135944012458,
+            "samples": 4,
+            "residual_ms": 0
+          }
+        ],
+        "gaps": []
+      },
+      "workspace_bytes_at_exit": 885,
+      "case": "trim_start"
+    },
+    {
+      "returncode": 1,
+      "timed_out": false,
+      "wall_seconds": 2.072,
+      "stderr": "[\u2717] only 2 reliable audio anchors found; need at least 4\n",
+      "max_process_rss_kib": 27196,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "backend_error_or_refusal",
+      "workspace_bytes_at_exit": 128,
+      "case": "leading_black"
+    },
+    {
+      "returncode": 1,
+      "timed_out": false,
+      "wall_seconds": 1.57,
+      "stderr": "[\u2717] only 0 reliable audio anchors found; need at least 4\n",
+      "max_process_rss_kib": 27540,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "backend_error_or_refusal",
+      "workspace_bytes_at_exit": 128,
+      "case": "speed_25_24"
+    },
+    {
+      "returncode": 1,
+      "timed_out": false,
+      "wall_seconds": 1.666,
+      "stderr": "[\u2717] only 0 reliable audio anchors found; need at least 4\n",
+      "max_process_rss_kib": 27476,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "backend_error_or_refusal",
+      "workspace_bytes_at_exit": 128,
+      "case": "speed_and_trim"
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 1.416,
+      "stderr": "",
+      "max_process_rss_kib": 25716,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_error_us": 0.0,
+      "measurement": {
+        "schema_version": 2,
+        "mode": "audio",
+        "method": "measured",
+        "language": "eng",
+        "dry_run": true,
+        "sync_ms": 0,
+        "scale": 1,
+        "drift_ppm": 0,
+        "fps_conversion": "none (same timing)",
+        "score": 5.6392590218876935,
+        "samples": 5,
+        "residual_ms": 0,
+        "segments": [
+          {
+            "target_start_ms": 0,
+            "target_end_ms": 60000,
+            "reference_start_ms": 0,
+            "reference_end_ms": 60000,
+            "offset_ms": 0,
+            "scale": 1,
+            "score": 5.6392590218876935,
+            "samples": 5,
+            "residual_ms": 0
+          }
+        ],
+        "gaps": []
+      },
+      "workspace_bytes_at_exit": 878,
+      "case": "fps_only"
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 1.365,
+      "stderr": "",
+      "max_process_rss_kib": 27364,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_error_us": 0.0,
+      "measurement": {
+        "schema_version": 2,
+        "mode": "audio",
+        "method": "measured",
+        "language": "eng",
+        "dry_run": true,
+        "sync_ms": 0,
+        "scale": 1,
+        "drift_ppm": 0,
+        "fps_conversion": "none (same timing)",
+        "score": 5.490388856117018,
+        "samples": 8,
+        "residual_ms": 0,
+        "segments": [
+          {
+            "target_start_ms": 0,
+            "target_end_ms": 60000,
+            "reference_start_ms": 0,
+            "reference_end_ms": 60000,
+            "offset_ms": 0,
+            "scale": 1,
+            "score": 5.490388856117018,
+            "samples": 8,
+            "residual_ms": 0
+          }
+        ],
+        "gaps": []
+      },
+      "workspace_bytes_at_exit": 872,
+      "case": "crop"
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 1.616,
+      "stderr": "",
+      "max_process_rss_kib": 26204,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_error_us": 0.0,
+      "measurement": {
+        "schema_version": 2,
+        "mode": "audio",
+        "method": "measured",
+        "language": "eng",
+        "dry_run": true,
+        "sync_ms": 0,
+        "scale": 1,
+        "drift_ppm": 0,
+        "fps_conversion": "none (same timing)",
+        "score": 5.490611547372194,
+        "samples": 8,
+        "residual_ms": 0,
+        "segments": [
+          {
+            "target_start_ms": 0,
+            "target_end_ms": 60000,
+            "reference_start_ms": 0,
+            "reference_end_ms": 60000,
+            "offset_ms": 0,
+            "scale": 1,
+            "score": 5.490611547372194,
+            "samples": 8,
+            "residual_ms": 0
+          }
+        ],
+        "gaps": []
+      },
+      "workspace_bytes_at_exit": 876,
+      "case": "surround"
+    },
+    {
+      "returncode": 1,
+      "timed_out": false,
+      "wall_seconds": 1.616,
+      "stderr": "[\u2717] only 0 reliable audio anchors found; need at least 4\n",
+      "max_process_rss_kib": 24856,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "backend_error_or_refusal",
+      "workspace_bytes_at_exit": 128,
+      "case": "different_audio"
+    },
+    {
+      "returncode": 1,
+      "timed_out": false,
+      "wall_seconds": 1.466,
+      "stderr": "[\u2717] only 3 reliable audio anchors found; need at least 4\n",
+      "max_process_rss_kib": 27132,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "backend_error_or_refusal",
+      "workspace_bytes_at_exit": 128,
+      "case": "internal_cut"
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 1.366,
+      "stderr": "",
+      "max_process_rss_kib": 27044,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "unsafe_linear_proposal",
+      "measurement": {
+        "schema_version": 2,
+        "mode": "audio",
+        "method": "measured",
+        "language": "eng",
+        "dry_run": true,
+        "sync_ms": 0,
+        "scale": 1,
+        "drift_ppm": 0,
+        "fps_conversion": "none (same timing)",
+        "score": 5.490388856117018,
+        "samples": 8,
+        "residual_ms": 0,
+        "segments": [
+          {
+            "target_start_ms": 0,
+            "target_end_ms": 60000,
+            "reference_start_ms": 0,
+            "reference_end_ms": 60000,
+            "offset_ms": 0,
+            "scale": 1,
+            "score": 5.490388856117018,
+            "samples": 8,
+            "residual_ms": 0
+          }
+        ],
+        "gaps": []
+      },
+      "workspace_bytes_at_exit": 890,
+      "case": "wrong_video_same_audio"
+    },
+    {
+      "returncode": 1,
+      "timed_out": false,
+      "wall_seconds": 0.614,
+      "stderr": "[\u2717] audio seed confidence is too low (0.00 < 0.50); files may not contain the same programme\n",
+      "max_process_rss_kib": 26944,
+      "input_blocks": 0,
+      "output_blocks": 8,
+      "outcome": "backend_error_or_refusal",
+      "workspace_bytes_at_exit": 164,
+      "case": "black_silence"
+    }
+  ],
+  "run_date": "2026-09-27",
+  "platform": "Linux-7.0.14-15-pve-x86_64-with-glibc2.36",
+  "python": "3.14.7",
+  "ffmpeg": "ffmpeg version N-126168-gb16b5f2a01-20260815 Copyright (c) 2000-2026 the FFmpeg developers",
+  "tolerance_us": 50000,
+  "corpus_bytes": 226582125
+}

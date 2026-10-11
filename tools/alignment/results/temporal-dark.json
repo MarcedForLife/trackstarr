@@ -1,0 +1,4860 @@
+{
+  "schema_version": 1,
+  "engine": "temporal",
+  "automatic_publication": false,
+  "settings": {
+    "regions": 8,
+    "probes_per_region": 12,
+    "max_distance": 60,
+    "ambiguity_margin": 8,
+    "alternative_separation_us": 500000,
+    "min_region_matches": 2,
+    "min_match_fraction": 0.5,
+    "max_residual_us": 50000,
+    "min_span_fraction": 0.8,
+    "min_scale": 0.9,
+    "max_scale": 1.1,
+    "max_duration_seconds": 120,
+    "max_frames": 20000
+  },
+  "temporal_settings": {
+    "context_offsets_us": [
+      -400000,
+      -200000,
+      0,
+      200000,
+      400000
+    ],
+    "context_scales": [
+      0.9,
+      0.92,
+      0.9400000000000001,
+      0.96,
+      0.98,
+      1.0,
+      1.02,
+      1.04,
+      1.06,
+      1.08,
+      1.1
+    ],
+    "max_sample_gap_us": 75000
+  },
+  "manifest_sha256": "ba13cb21bd6f44aabf93f9695231a83136d0c0b6ae198ebf9311096134b5554f",
+  "ffmpeg_version": "ffmpeg version N-126168-gb16b5f2a01-20260815 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 15.2.0 (crosstool-NG 1.28.0.23_185f348)\nconfiguration: --prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config --cross-prefix=x86_64-ffbuild-linux-gnu- --arch=x86_64 --target-os=linux --enable-gpl --enable-version3 --disable-debug --enable-iconv --enable-zlib --enable-libxml2 --enable-libsoxr --enable-openssl --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype --enable-libfribidi --enable-vulkan --enable-libvorbis --enable-libxcb --enable-xlib --enable-libpulse --enable-gmp --enable-lzma --enable-liblcevc-dec --enable-opencl --enable-amf --enable-libaom --enable-libaribb24 --enable-avisynth --enable-chromaprint --enable-libdav1d --enable-libdavs2 --enable-libdvdread --enable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --enable-frei0r --enable-libgme --enable-libkvazaar --enable-libaribcaption --enable-libass --enable-libbluray --enable-libjxl --enable-libmp3lame --enable-libopus --enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx --enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopenmpt --enable-librav1e --enable-librubberband --disable-schannel --enable-sdl2 --enable-libsnappy --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d --enable-libdrm --enable-vaapi --enable-libvidstab --enable-libvvenc --disable-whisper --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxvid --enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags= --extra-libs='-lgomp -ldl' --extra-ldflags=-pthread --extra-ldexeflags=-pie --cc=x86_64-ffbuild-linux-gnu-gcc --cxx=x86_64-ffbuild-linux-gnu-g++ --ar=x86_64-ffbuild-linux-gnu-gcc-ar --ranlib=x86_64-ffbuild-linux-gnu-gcc-ranlib --nm=x86_64-ffbuild-linux-gnu-gcc-nm --extra-version=20260815\nlibavutil      61.  5.100 / 61.  5.100\nlibavcodec     63.  8.101 / 63.  8.101\nlibavformat    63.  6.100 / 63.  6.100\nlibavdevice    63.  2.100 / 63.  2.100\nlibavfilter    12.  3.101 / 12.  3.101\nlibswscale     10.  2.100 / 10.  2.100\nlibswresample   7.  2.100 /  7.  2.100\n\nExiting with exit code 0\n",
+  "binary_sha256": "f1e69546b9ac98ca220eafa680d3c2ecfd18f6f756452858574f21b6bac04115",
+  "implementation_sha256": {
+    "visual.py": "98ccef77cdbbc7f0088791972da6be9f6fbfe844205be8eb207e63eb9f3d2e93",
+    "temporal.py": "4bccf965d9822bf90992b18dc1dc01ba65b67adaacd0f81bb836c4d0a985e362",
+    "avsync_core.py": "bfaa4b9b26017bca09aecf2c11fa7afbbdee562e553dd6c35d8c25d68a041783",
+    "compare_visual.py": "05b072e5fbee620e84225d17a9c6737c45173b826b9ed6ae521a36dbb4ac1d56"
+  },
+  "results": [
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 5.021,
+      "stdout": "",
+      "stderr": "",
+      "case": "video_only_identity",
+      "command": [
+        "python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "temporal",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/source.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-l0ho_eti/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 28144,
+      "input_blocks": 0,
+      "output_blocks": 4208,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [
+          {
+            "source_time_us": 458000,
+            "target_time_us": 458000,
+            "distance": 0.0,
+            "alternative_distance": 20.0,
+            "context_scale": 1.0,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -1425.84796397615
+          },
+          {
+            "source_time_us": 750000,
+            "target_time_us": 750000,
+            "distance": 0.0,
+            "alternative_distance": 12.0,
+            "context_scale": 1.0,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -1350.0522700212896
+          },
+          {
+            "source_time_us": 1083000,
+            "target_time_us": 1083000,
+            "distance": 0.0,
+            "alternative_distance": 9.2,
+            "context_scale": 1.0,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -1263.614029997494
+          },
+          {
+            "source_time_us": 4208000,
+            "target_time_us": 4208000,
+            "distance": 0.0,
+            "alternative_distance": 12.0,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -452.44436010345817
+          },
+          {
+            "source_time_us": 4500000,
+            "target_time_us": 4500000,
+            "distance": 0.0,
+            "alternative_distance": 14.6,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -376.6486661490053
+          },
+          {
+            "source_time_us": 4833000,
+            "target_time_us": 4833000,
+            "distance": 0.0,
+            "alternative_distance": 18.0,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -290.2104261247441
+          },
+          {
+            "source_time_us": 5125000,
+            "target_time_us": 5125000,
+            "distance": 0.0,
+            "alternative_distance": 17.8,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -214.41473217029124
+          },
+          {
+            "source_time_us": 5458000,
+            "target_time_us": 5458000,
+            "distance": 0.0,
+            "alternative_distance": 20.4,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -127.97649214603007
+          },
+          {
+            "source_time_us": 5750000,
+            "target_time_us": 5750000,
+            "distance": 0.0,
+            "alternative_distance": 28.4,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -52.180798191577196
+          },
+          {
+            "source_time_us": 6083000,
+            "target_time_us": 6083000,
+            "distance": 0.0,
+            "alternative_distance": 42.8,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 34.25744183268398
+          },
+          {
+            "source_time_us": 6375000,
+            "target_time_us": 6375000,
+            "distance": 0.0,
+            "alternative_distance": 50.0,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 110.05313578713685
+          },
+          {
+            "source_time_us": 6708000,
+            "target_time_us": 6708000,
+            "distance": 0.0,
+            "alternative_distance": 66.4,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 196.49137581139803
+          },
+          {
+            "source_time_us": 7000000,
+            "target_time_us": 7000000,
+            "distance": 0.0,
+            "alternative_distance": 83.2,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 272.2870697658509
+          },
+          {
+            "source_time_us": 7958000,
+            "target_time_us": 7958000,
+            "distance": 0.0,
+            "alternative_distance": 139.2,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 520.9592437688261
+          },
+          {
+            "source_time_us": 8250000,
+            "target_time_us": 8250000,
+            "distance": 0.0,
+            "alternative_distance": 136.4,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 596.754937723279
+          },
+          {
+            "source_time_us": 8583000,
+            "target_time_us": 8583000,
+            "distance": 0.0,
+            "alternative_distance": 136.4,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 683.1931777466089
+          },
+          {
+            "source_time_us": 8875000,
+            "target_time_us": 8875000,
+            "distance": 0.0,
+            "alternative_distance": 127.6,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 758.9888717029244
+          },
+          {
+            "source_time_us": 9208000,
+            "target_time_us": 9208000,
+            "distance": 0.0,
+            "alternative_distance": 109.6,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 845.4271117262542
+          },
+          {
+            "source_time_us": 9500000,
+            "target_time_us": 9500000,
+            "distance": 0.0,
+            "alternative_distance": 91.6,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 921.2228056807071
+          },
+          {
+            "source_time_us": 9833000,
+            "target_time_us": 9833000,
+            "distance": 0.0,
+            "alternative_distance": 75.2,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 1007.661045704037
+          },
+          {
+            "source_time_us": 10125000,
+            "target_time_us": 10125000,
+            "distance": 0.0,
+            "alternative_distance": 68.0,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 1083.4567396603525
+          },
+          {
+            "source_time_us": 10458000,
+            "target_time_us": 10458000,
+            "distance": 0.0,
+            "alternative_distance": 70.0,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 1169.8949796836823
+          },
+          {
+            "source_time_us": 10750000,
+            "target_time_us": 10750000,
+            "distance": 0.0,
+            "alternative_distance": 70.0,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 1245.6906736381352
+          },
+          {
+            "source_time_us": 11708000,
+            "target_time_us": 11708000,
+            "distance": 0.0,
+            "alternative_distance": 130.8,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1494.3628476411104
+          },
+          {
+            "source_time_us": 12000000,
+            "target_time_us": 12000000,
+            "distance": 0.0,
+            "alternative_distance": 166.0,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1570.1585415955633
+          },
+          {
+            "source_time_us": 12333000,
+            "target_time_us": 12333000,
+            "distance": 0.0,
+            "alternative_distance": 218.8,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1656.5967816188931
+          },
+          {
+            "source_time_us": 12625000,
+            "target_time_us": 12625000,
+            "distance": 0.0,
+            "alternative_distance": 232.4,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1732.3924755752087
+          },
+          {
+            "source_time_us": 12958000,
+            "target_time_us": 12958000,
+            "distance": 0.0,
+            "alternative_distance": 244.0,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1818.8307155985385
+          },
+          {
+            "source_time_us": 13250000,
+            "target_time_us": 13250000,
+            "distance": 0.0,
+            "alternative_distance": 238.4,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1894.6264095529914
+          },
+          {
+            "source_time_us": 13583000,
+            "target_time_us": 13583000,
+            "distance": 0.0,
+            "alternative_distance": 231.2,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1981.0646495763212
+          },
+          {
+            "source_time_us": 13875000,
+            "target_time_us": 13875000,
+            "distance": 0.0,
+            "alternative_distance": 236.8,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2056.8603435326368
+          },
+          {
+            "source_time_us": 14208000,
+            "target_time_us": 14208000,
+            "distance": 0.0,
+            "alternative_distance": 234.4,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2143.2985835559666
+          },
+          {
+            "source_time_us": 14500000,
+            "target_time_us": 14500000,
+            "distance": 0.0,
+            "alternative_distance": 239.2,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2219.0942775104195
+          },
+          {
+            "source_time_us": 15458000,
+            "target_time_us": 15458000,
+            "distance": 0.0,
+            "alternative_distance": 174.8,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2467.7664515133947
+          },
+          {
+            "source_time_us": 15750000,
+            "target_time_us": 15750000,
+            "distance": 0.0,
+            "alternative_distance": 129.2,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2543.5621454678476
+          },
+          {
+            "source_time_us": 16083000,
+            "target_time_us": 16083000,
+            "distance": 0.0,
+            "alternative_distance": 75.2,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2630.0003854911774
+          },
+          {
+            "source_time_us": 16375000,
+            "target_time_us": 16375000,
+            "distance": 0.0,
+            "alternative_distance": 41.2,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2705.796079447493
+          },
+          {
+            "source_time_us": 16708000,
+            "target_time_us": 16708000,
+            "distance": 0.0,
+            "alternative_distance": 26.8,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2792.234319470823
+          },
+          {
+            "source_time_us": 17000000,
+            "target_time_us": 17000000,
+            "distance": 0.0,
+            "alternative_distance": 24.8,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2868.0300134271383
+          },
+          {
+            "source_time_us": 17333000,
+            "target_time_us": 17333000,
+            "distance": 0.0,
+            "alternative_distance": 25.6,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2954.4682534486055
+          },
+          {
+            "source_time_us": 17625000,
+            "target_time_us": 17625000,
+            "distance": 0.0,
+            "alternative_distance": 24.0,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 3030.263947404921
+          },
+          {
+            "source_time_us": 17958000,
+            "target_time_us": 17958000,
+            "distance": 0.0,
+            "alternative_distance": 102.8,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 3116.7021874263883
+          },
+          {
+            "source_time_us": 18250000,
+            "target_time_us": 18208000,
+            "distance": 0.0,
+            "alternative_distance": 99.6,
+            "context_scale": 0.9,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -38807.502118617296
+          },
+          {
+            "source_time_us": 22958000,
+            "target_time_us": 22958000,
+            "distance": 0.0,
+            "alternative_distance": 120.4,
+            "context_scale": 1.0,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 4414.573659256101
+          },
+          {
+            "source_time_us": 23250000,
+            "target_time_us": 23250000,
+            "distance": 0.0,
+            "alternative_distance": 68.4,
+            "context_scale": 1.0,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 4490.369353212416
+          },
+          {
+            "source_time_us": 27625000,
+            "target_time_us": 27583000,
+            "distance": 0.0,
+            "alternative_distance": 62.0,
+            "context_scale": 1.1,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -36373.993108935654
+          },
+          {
+            "source_time_us": 27958000,
+            "target_time_us": 27958000,
+            "distance": 0.0,
+            "alternative_distance": 148.4,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 5712.445131085813
+          },
+          {
+            "source_time_us": 28250000,
+            "target_time_us": 28250000,
+            "distance": 0.0,
+            "alternative_distance": 180.4,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 5788.240825042129
+          },
+          {
+            "source_time_us": 28583000,
+            "target_time_us": 28583000,
+            "distance": 0.0,
+            "alternative_distance": 182.0,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 5874.679065063596
+          },
+          {
+            "source_time_us": 28875000,
+            "target_time_us": 28875000,
+            "distance": 0.0,
+            "alternative_distance": 175.2,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 5950.474759019911
+          },
+          {
+            "source_time_us": 29208000,
+            "target_time_us": 29208000,
+            "distance": 0.0,
+            "alternative_distance": 210.0,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 6036.912999048829
+          },
+          {
+            "source_time_us": 29500000,
+            "target_time_us": 29500000,
+            "distance": 0.0,
+            "alternative_distance": 228.8,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 6112.708692997694
+          }
+        ],
+        "region_counts": [
+          3,
+          10,
+          10,
+          10,
+          10,
+          0,
+          2,
+          7
+        ],
+        "mapping": {
+          "scale": 0.999740425705634,
+          "offset_us": 1544.7329907957464
+        },
+        "max_fit_residual_us": 38807.502118617296,
+        "max_validation_residual_us": 36373.993108935654,
+        "span_fraction": {
+          "source": 0.9694238600707658,
+          "target": 0.9694238600707658
+        },
+        "reason": "ambiguous_or_missing_regions",
+        "probes": [
+          {
+            "source_time_us": 125000,
+            "region": 0,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 458000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 20.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 750000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 12.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 1083000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 9.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 1375000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 6.4,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1708000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 6.8,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2000000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 4.4,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2333000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 4.8,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2625000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 4.4,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2958000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 4.4,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3250000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 5.6,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3583000,
+            "region": 0,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 3875000,
+            "region": 1,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 4208000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 12.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4500000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 14.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4833000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 18.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5125000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 17.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5458000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 20.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5750000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 28.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6083000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 42.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6375000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 50.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6708000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 66.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7000000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 83.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7333000,
+            "region": 1,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 7625000,
+            "region": 2,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 7958000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 139.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8250000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 136.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8583000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 136.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8875000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 127.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9208000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 109.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9500000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 91.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9833000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 75.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10125000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 68.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10458000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 70.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10750000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 70.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11083000,
+            "region": 2,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 11375000,
+            "region": 3,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 11708000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 130.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12000000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 166.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12333000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 218.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12625000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 232.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12958000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 244.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13250000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 238.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13583000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 231.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13875000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 236.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14208000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 234.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14500000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 239.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14833000,
+            "region": 3,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 15125000,
+            "region": 4,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 15458000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 174.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15750000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 129.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16083000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 75.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16375000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 41.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16708000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 26.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17000000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 24.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17333000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 25.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17625000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 24.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17958000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 102.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 18250000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 99.6,
+            "context_scale": 0.9,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 18583000,
+            "region": 4,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 18875000,
+            "region": 5,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 19208000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.0,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19500000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.4,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19833000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.4,
+            "context_scale": 0.96,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20125000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20458000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 4.4,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20750000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 3.2,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21083000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21375000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.4,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21708000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 22000000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 3.6,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 22333000,
+            "region": 5,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 22625000,
+            "region": 6,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 22958000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 120.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 23250000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 68.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 23583000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 7.2,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23875000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 6.0,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24208000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 6.0,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24500000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 6.4,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24833000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 6.8,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25125000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 4.4,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25458000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 5.6,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25750000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 4.8,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26083000,
+            "region": 6,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 26375000,
+            "region": 7,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 26708000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 3.2,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27000000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 3.6,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27333000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 3.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27625000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 62.0,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27958000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 148.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28250000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 180.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28583000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 182.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28875000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 175.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 29208000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 210.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 29500000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 228.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 29833000,
+            "region": 7,
+            "reason": "missing_context"
+          }
+        ],
+        "region_match_fractions": [
+          0.25,
+          0.8333333333333334,
+          0.8333333333333334,
+          0.8333333333333334,
+          0.8333333333333334,
+          0.0,
+          0.16666666666666666,
+          0.5833333333333334
+        ],
+        "independent_validation_search": true,
+        "frame_counts": {
+          "target": 720,
+          "source": 720
+        },
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 2147563
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 4.921,
+      "stdout": "",
+      "stderr": "",
+      "case": "trim_start",
+      "command": [
+        "python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "temporal",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/trim_start.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-48yf99il/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 28176,
+      "input_blocks": 0,
+      "output_blocks": 4128,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [
+          {
+            "source_time_us": 2833000,
+            "target_time_us": 4083000,
+            "distance": 0.0,
+            "alternative_distance": 11.2,
+            "context_scale": 1.0,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -1134.4038804788142
+          },
+          {
+            "source_time_us": 3167000,
+            "target_time_us": 4417000,
+            "distance": 0.0,
+            "alternative_distance": 14.0,
+            "context_scale": 1.0,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -1030.461492214352
+          },
+          {
+            "source_time_us": 4042000,
+            "target_time_us": 5292000,
+            "distance": 0.0,
+            "alternative_distance": 18.2,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -758.1573313428089
+          },
+          {
+            "source_time_us": 4333000,
+            "target_time_us": 5583000,
+            "distance": 0.0,
+            "alternative_distance": 24.4,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -667.59674755577
+          },
+          {
+            "source_time_us": 4667000,
+            "target_time_us": 5917000,
+            "distance": 0.0,
+            "alternative_distance": 35.2,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -563.6543592913076
+          },
+          {
+            "source_time_us": 4958000,
+            "target_time_us": 6208000,
+            "distance": 0.0,
+            "alternative_distance": 44.4,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -473.0937755042687
+          },
+          {
+            "source_time_us": 5250000,
+            "target_time_us": 6500000,
+            "distance": 0.0,
+            "alternative_distance": 58.4,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -382.221986961551
+          },
+          {
+            "source_time_us": 5542000,
+            "target_time_us": 6792000,
+            "distance": 0.0,
+            "alternative_distance": 70.8,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -291.35019841976464
+          },
+          {
+            "source_time_us": 5833000,
+            "target_time_us": 7083000,
+            "distance": 0.0,
+            "alternative_distance": 88.0,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -200.78961463272572
+          },
+          {
+            "source_time_us": 6125000,
+            "target_time_us": 7375000,
+            "distance": 0.0,
+            "alternative_distance": 114.8,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -109.91782609000802
+          },
+          {
+            "source_time_us": 6458000,
+            "target_time_us": 7708000,
+            "distance": 0.0,
+            "alternative_distance": 135.2,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -6.2866425812244415
+          },
+          {
+            "source_time_us": 6750000,
+            "target_time_us": 8000000,
+            "distance": 0.0,
+            "alternative_distance": 139.6,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 84.58514596149325
+          },
+          {
+            "source_time_us": 7625000,
+            "target_time_us": 8875000,
+            "distance": 0.0,
+            "alternative_distance": 127.6,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 356.8893068321049
+          },
+          {
+            "source_time_us": 7917000,
+            "target_time_us": 9167000,
+            "distance": 0.0,
+            "alternative_distance": 110.0,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 447.7610953748226
+          },
+          {
+            "source_time_us": 8250000,
+            "target_time_us": 9500000,
+            "distance": 0.0,
+            "alternative_distance": 91.6,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 551.3922788836062
+          },
+          {
+            "source_time_us": 8542000,
+            "target_time_us": 9792000,
+            "distance": 0.0,
+            "alternative_distance": 75.4,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 642.2640674263239
+          },
+          {
+            "source_time_us": 8833000,
+            "target_time_us": 10083000,
+            "distance": 0.0,
+            "alternative_distance": 67.6,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 732.8246512152255
+          },
+          {
+            "source_time_us": 9125000,
+            "target_time_us": 10375000,
+            "distance": 0.0,
+            "alternative_distance": 73.2,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 823.6964397560805
+          },
+          {
+            "source_time_us": 9417000,
+            "target_time_us": 10667000,
+            "distance": 0.0,
+            "alternative_distance": 68.0,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 914.5682282987982
+          },
+          {
+            "source_time_us": 9708000,
+            "target_time_us": 10958000,
+            "distance": 0.0,
+            "alternative_distance": 77.6,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 1005.1288120858371
+          },
+          {
+            "source_time_us": 10042000,
+            "target_time_us": 11292000,
+            "distance": 0.0,
+            "alternative_distance": 96.4,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 1109.0712003502995
+          },
+          {
+            "source_time_us": 10333000,
+            "target_time_us": 11583000,
+            "distance": 0.0,
+            "alternative_distance": 116.8,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 1199.6317841373384
+          },
+          {
+            "source_time_us": 11208000,
+            "target_time_us": 12458000,
+            "distance": 0.0,
+            "alternative_distance": 230.8,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1471.9359450098127
+          },
+          {
+            "source_time_us": 11500000,
+            "target_time_us": 12750000,
+            "distance": 0.0,
+            "alternative_distance": 244.0,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1562.8077335525304
+          },
+          {
+            "source_time_us": 11833000,
+            "target_time_us": 13083000,
+            "distance": 0.0,
+            "alternative_distance": 246.0,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1666.438917061314
+          },
+          {
+            "source_time_us": 12125000,
+            "target_time_us": 13375000,
+            "distance": 0.0,
+            "alternative_distance": 233.6,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1757.3107056040317
+          },
+          {
+            "source_time_us": 12417000,
+            "target_time_us": 13667000,
+            "distance": 0.0,
+            "alternative_distance": 230.8,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1848.1824941467494
+          },
+          {
+            "source_time_us": 12708000,
+            "target_time_us": 13958000,
+            "distance": 0.0,
+            "alternative_distance": 228.8,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1938.7430779337883
+          },
+          {
+            "source_time_us": 13000000,
+            "target_time_us": 14250000,
+            "distance": 0.0,
+            "alternative_distance": 236.8,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2029.6148664746433
+          },
+          {
+            "source_time_us": 13292000,
+            "target_time_us": 14542000,
+            "distance": 0.0,
+            "alternative_distance": 233.2,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2120.486655017361
+          },
+          {
+            "source_time_us": 13625000,
+            "target_time_us": 14875000,
+            "distance": 0.0,
+            "alternative_distance": 230.4,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2224.1178385261446
+          },
+          {
+            "source_time_us": 13917000,
+            "target_time_us": 15167000,
+            "distance": 0.0,
+            "alternative_distance": 210.4,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2314.9896270688623
+          },
+          {
+            "source_time_us": 14792000,
+            "target_time_us": 16042000,
+            "distance": 0.0,
+            "alternative_distance": 79.6,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2587.2937879413366
+          },
+          {
+            "source_time_us": 15083000,
+            "target_time_us": 16333000,
+            "distance": 0.0,
+            "alternative_distance": 46.0,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2677.8543717283756
+          },
+          {
+            "source_time_us": 15417000,
+            "target_time_us": 16667000,
+            "distance": 0.0,
+            "alternative_distance": 28.0,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2781.796759992838
+          },
+          {
+            "source_time_us": 15708000,
+            "target_time_us": 16958000,
+            "distance": 0.0,
+            "alternative_distance": 25.2,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2872.357343778014
+          },
+          {
+            "source_time_us": 16000000,
+            "target_time_us": 17250000,
+            "distance": 0.0,
+            "alternative_distance": 27.6,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2963.229132324457
+          },
+          {
+            "source_time_us": 16292000,
+            "target_time_us": 17542000,
+            "distance": 0.0,
+            "alternative_distance": 25.6,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 3054.1009208634496
+          },
+          {
+            "source_time_us": 16583000,
+            "target_time_us": 17833000,
+            "distance": 0.0,
+            "alternative_distance": 68.0,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 3144.661504652351
+          },
+          {
+            "source_time_us": 16875000,
+            "target_time_us": 18083000,
+            "distance": 0.0,
+            "alternative_distance": 97.2,
+            "context_scale": 0.9,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -38764.46670680493
+          },
+          {
+            "source_time_us": 17208000,
+            "target_time_us": 18458000,
+            "distance": 0.0,
+            "alternative_distance": 52.4,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 3339.164476700127
+          },
+          {
+            "source_time_us": 21958000,
+            "target_time_us": 23208000,
+            "distance": 0.0,
+            "alternative_distance": 122.0,
+            "context_scale": 0.96,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 4817.387064293027
+          },
+          {
+            "source_time_us": 22250000,
+            "target_time_us": 23500000,
+            "distance": 0.0,
+            "alternative_distance": 9.6,
+            "context_scale": 1.0,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 4908.25885283947
+          },
+          {
+            "source_time_us": 26458000,
+            "target_time_us": 27708000,
+            "distance": 0.0,
+            "alternative_distance": 127.2,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 6217.808463066816
+          },
+          {
+            "source_time_us": 26750000,
+            "target_time_us": 28000000,
+            "distance": 0.0,
+            "alternative_distance": 146.8,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 6308.680251605809
+          },
+          {
+            "source_time_us": 27083000,
+            "target_time_us": 28333000,
+            "distance": 0.0,
+            "alternative_distance": 170.4,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 6412.311435118318
+          },
+          {
+            "source_time_us": 27375000,
+            "target_time_us": 28625000,
+            "distance": 0.0,
+            "alternative_distance": 182.8,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 6503.18322365731
+          },
+          {
+            "source_time_us": 27667000,
+            "target_time_us": 28917000,
+            "distance": 0.0,
+            "alternative_distance": 185.6,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 6594.055012196302
+          },
+          {
+            "source_time_us": 27958000,
+            "target_time_us": 29208000,
+            "distance": 0.0,
+            "alternative_distance": 210.0,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 6684.615595988929
+          },
+          {
+            "source_time_us": 28292000,
+            "target_time_us": 29542000,
+            "distance": 0.0,
+            "alternative_distance": 238.8,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 6788.557984247804
+          }
+        ],
+        "region_counts": [
+          2,
+          10,
+          10,
+          10,
+          9,
+          0,
+          2,
+          7
+        ],
+        "mapping": {
+          "scale": 0.9996887952447178,
+          "offset_us": 1252016.0469521936
+        },
+        "max_fit_residual_us": 38764.46670680493,
+        "max_validation_residual_us": 6788.557984247804,
+        "span_fraction": {
+          "source": 0.8868259718545353,
+          "target": 0.8498230856532479
+        },
+        "reason": "ambiguous_or_missing_regions",
+        "probes": [
+          {
+            "source_time_us": 125000,
+            "region": 0,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 417000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 5.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 750000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 4.4,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1042000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 4.8,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1333000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 4.0,
+            "context_scale": 0.96,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1625000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 4.4,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1958000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 4.8,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2250000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 5.2,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2542000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 7.6,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2833000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 11.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 3167000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 14.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 3458000,
+            "region": 0,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 3750000,
+            "region": 1,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 4042000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 18.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4333000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 24.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4667000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 35.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4958000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 44.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5250000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 58.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5542000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 70.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5833000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 88.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6125000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 114.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6458000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 135.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6750000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 139.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7042000,
+            "region": 1,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 7333000,
+            "region": 2,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 7625000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 127.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7917000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 110.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8250000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 91.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8542000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 75.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8833000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 67.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9125000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 73.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9417000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 68.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9708000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 77.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10042000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 96.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10333000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 116.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10625000,
+            "region": 2,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 10917000,
+            "region": 3,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 11208000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 230.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11500000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 244.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11833000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 246.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12125000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 233.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12417000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 230.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12708000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 228.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13000000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 236.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13292000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 233.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13625000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 230.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13917000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 210.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14208000,
+            "region": 3,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 14500000,
+            "region": 4,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 14792000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 79.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15083000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 46.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15417000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 28.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15708000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 25.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16000000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 27.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16292000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 25.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16583000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 68.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16875000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 97.2,
+            "context_scale": 0.9,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17208000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 52.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17500000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 17792000,
+            "region": 4,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 18083000,
+            "region": 5,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 18375000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.4,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 18667000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.4,
+            "context_scale": 0.96,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19000000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 3.6,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19292000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 4.0,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19583000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19875000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20167000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.4,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20458000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20792000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 3.6,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21083000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 4.0,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21375000,
+            "region": 5,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 21667000,
+            "region": 6,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 21958000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 122.0,
+            "context_scale": 0.96,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22250000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 9.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22583000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 4.8,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 22875000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 7.2,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23167000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 5.6,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23458000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 5.6,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23750000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 4.8,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24042000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 6.0,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24375000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 4.4,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24667000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 5.6,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24958000,
+            "region": 6,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 25250000,
+            "region": 7,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 25542000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 2.4,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25875000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26167000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 3.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26458000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 127.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 26750000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 146.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27083000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 170.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27375000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 182.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27667000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 185.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27958000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 210.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28292000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 238.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28583000,
+            "region": 7,
+            "reason": "missing_context"
+          }
+        ],
+        "region_match_fractions": [
+          0.16666666666666666,
+          0.8333333333333334,
+          0.8333333333333334,
+          0.8333333333333334,
+          0.75,
+          0.0,
+          0.16666666666666666,
+          0.5833333333333334
+        ],
+        "independent_validation_search": true,
+        "frame_counts": {
+          "target": 720,
+          "source": 690
+        },
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 2105814
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 4.92,
+      "stdout": "",
+      "stderr": "[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 500000 >= 500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 1500000 >= 1500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 2458000 >= 2458000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 3500000 >= 3500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 4500000 >= 4500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 5458000 >= 5458000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 6500000 >= 6500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 7500000 >= 7500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 8458000 >= 8458000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 9500000 >= 9500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 10500000 >= 10500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 11458000 >= 11458000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 12500000 >= 12500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 13500000 >= 13500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 14458000 >= 14458000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 15500000 >= 15500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 16500000 >= 16500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 17458000 >= 17458000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 18500000 >= 18500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 19500000 >= 19500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 20458000 >= 20458000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 21500000 >= 21500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 22500000 >= 22500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 23458000 >= 23458000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 24500000 >= 24500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 25500000 >= 25500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 26458000 >= 26458000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 27500000 >= 27500000\n[null @ 0x5f951ddc8880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 28500000 >= 28500000\n",
+      "case": "speed_25_24",
+      "command": [
+        "python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "temporal",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/speed_25_24.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-7y4gkugl/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 28316,
+      "input_blocks": 0,
+      "output_blocks": 4216,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [
+          {
+            "source_time_us": 458000,
+            "target_time_us": 458000,
+            "distance": 1.6,
+            "alternative_distance": 19.2,
+            "context_scale": 1.0,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -20538.031497104093
+          },
+          {
+            "source_time_us": 708000,
+            "target_time_us": 750000,
+            "distance": 1.2,
+            "alternative_distance": 13.6,
+            "context_scale": 1.1,
+            "region": 0,
+            "role": "fit",
+            "residual_us": 11161.666540465434
+          },
+          {
+            "source_time_us": 1042000,
+            "target_time_us": 1083000,
+            "distance": 0.0,
+            "alternative_distance": 9.2,
+            "context_scale": 1.0,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -3599.536881341599
+          },
+          {
+            "source_time_us": 4083000,
+            "target_time_us": 4250000,
+            "distance": 0.0,
+            "alternative_distance": 12.4,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -2892.409952345304
+          },
+          {
+            "source_time_us": 4375000,
+            "target_time_us": 4542000,
+            "distance": 0.8,
+            "alternative_distance": 15.6,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -14923.162644463591
+          },
+          {
+            "source_time_us": 4625000,
+            "target_time_us": 4833000,
+            "distance": 0.4,
+            "alternative_distance": 17.8,
+            "context_scale": 1.1,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 15776.53539310582
+          },
+          {
+            "source_time_us": 4958000,
+            "target_time_us": 5167000,
+            "distance": 0.0,
+            "alternative_distance": 17.6,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 3056.5331791481003
+          },
+          {
+            "source_time_us": 5250000,
+            "target_time_us": 5458000,
+            "distance": 0.4,
+            "alternative_distance": 21.6,
+            "context_scale": 1.1,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -9974.219512970187
+          },
+          {
+            "source_time_us": 5542000,
+            "target_time_us": 5792000,
+            "distance": 1.6,
+            "alternative_distance": 30.0,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 19995.027794910595
+          },
+          {
+            "source_time_us": 5833000,
+            "target_time_us": 6083000,
+            "distance": 0.0,
+            "alternative_distance": 42.8,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 8005.476310641505
+          },
+          {
+            "source_time_us": 6167000,
+            "target_time_us": 6417000,
+            "distance": 2.4,
+            "alternative_distance": 54.4,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -5755.727111165412
+          },
+          {
+            "source_time_us": 6458000,
+            "target_time_us": 6708000,
+            "distance": 2.8,
+            "alternative_distance": 68.4,
+            "context_scale": 1.1,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -17745.2785954345
+          },
+          {
+            "source_time_us": 6708000,
+            "target_time_us": 7000000,
+            "distance": 1.2,
+            "alternative_distance": 82.0,
+            "context_scale": 1.0,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 13954.41944213491
+          },
+          {
+            "source_time_us": 7625000,
+            "target_time_us": 7958000,
+            "distance": 7.2,
+            "alternative_distance": 136.8,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 17172.911843940616
+          },
+          {
+            "source_time_us": 7917000,
+            "target_time_us": 8250000,
+            "distance": 0.0,
+            "alternative_distance": 136.4,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 5142.159151821397
+          },
+          {
+            "source_time_us": 8250000,
+            "target_time_us": 8583000,
+            "distance": 2.4,
+            "alternative_distance": 134.0,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": -8577.843062136322
+          },
+          {
+            "source_time_us": 8500000,
+            "target_time_us": 8875000,
+            "distance": 6.0,
+            "alternative_distance": 130.8,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 23121.85497543402
+          },
+          {
+            "source_time_us": 8833000,
+            "target_time_us": 9208000,
+            "distance": 2.0,
+            "alternative_distance": 111.2,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 9401.852761477232
+          },
+          {
+            "source_time_us": 9125000,
+            "target_time_us": 9500000,
+            "distance": 1.2,
+            "alternative_distance": 91.2,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": -2628.8999306429178
+          },
+          {
+            "source_time_us": 9458000,
+            "target_time_us": 9833000,
+            "distance": 1.6,
+            "alternative_distance": 73.6,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": -16348.902144599706
+          },
+          {
+            "source_time_us": 9708000,
+            "target_time_us": 10125000,
+            "distance": 0.8,
+            "alternative_distance": 68.4,
+            "context_scale": 1.1,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 15350.795892970636
+          },
+          {
+            "source_time_us": 10042000,
+            "target_time_us": 10458000,
+            "distance": 0.0,
+            "alternative_distance": 70.0,
+            "context_scale": 1.0,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 589.5924711637199
+          },
+          {
+            "source_time_us": 10333000,
+            "target_time_us": 10750000,
+            "distance": 4.0,
+            "alternative_distance": 71.6,
+            "context_scale": 1.1,
+            "region": 2,
+            "role": "fit",
+            "residual_us": -10399.959013106301
+          },
+          {
+            "source_time_us": 11250000,
+            "target_time_us": 11708000,
+            "distance": 4.4,
+            "alternative_distance": 134.8,
+            "context_scale": 1.1,
+            "region": 3,
+            "role": "validation",
+            "residual_us": -7181.466611301526
+          },
+          {
+            "source_time_us": 11500000,
+            "target_time_us": 12000000,
+            "distance": 5.6,
+            "alternative_distance": 164.8,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 24518.231426268816
+          },
+          {
+            "source_time_us": 11792000,
+            "target_time_us": 12292000,
+            "distance": 3.6,
+            "alternative_distance": 214.4,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 12487.478734150529
+          },
+          {
+            "source_time_us": 12125000,
+            "target_time_us": 12625000,
+            "distance": 6.0,
+            "alternative_distance": 231.6,
+            "context_scale": 1.1,
+            "region": 3,
+            "role": "validation",
+            "residual_us": -1232.5234798062593
+          },
+          {
+            "source_time_us": 12417000,
+            "target_time_us": 12917000,
+            "distance": 14.8,
+            "alternative_distance": 243.6,
+            "context_scale": 1.1,
+            "region": 3,
+            "role": "validation",
+            "residual_us": -13263.276171926409
+          },
+          {
+            "source_time_us": 12708000,
+            "target_time_us": 13250000,
+            "distance": 6.8,
+            "alternative_distance": 240.4,
+            "context_scale": 1.1,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 16747.172343805432
+          },
+          {
+            "source_time_us": 13000000,
+            "target_time_us": 13542000,
+            "distance": 0.0,
+            "alternative_distance": 232.8,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 4716.419651687145
+          },
+          {
+            "source_time_us": 13333000,
+            "target_time_us": 13875000,
+            "distance": 13.6,
+            "alternative_distance": 238.4,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": -9003.582562271506
+          },
+          {
+            "source_time_us": 13583000,
+            "target_time_us": 14167000,
+            "distance": 10.8,
+            "alternative_distance": 223.6,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 22696.115475298837
+          },
+          {
+            "source_time_us": 13875000,
+            "target_time_us": 14458000,
+            "distance": 7.2,
+            "alternative_distance": 234.0,
+            "context_scale": 1.0,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 9665.36278318055
+          },
+          {
+            "source_time_us": 14792000,
+            "target_time_us": 15417000,
+            "distance": 5.2,
+            "alternative_distance": 186.0,
+            "context_scale": 1.1,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 13883.855184985325
+          },
+          {
+            "source_time_us": 15083000,
+            "target_time_us": 15708000,
+            "distance": 0.0,
+            "alternative_distance": 136.8,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 1894.3037007153034
+          },
+          {
+            "source_time_us": 15417000,
+            "target_time_us": 16042000,
+            "distance": 2.8,
+            "alternative_distance": 77.6,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -11866.899721091613
+          },
+          {
+            "source_time_us": 15708000,
+            "target_time_us": 16375000,
+            "distance": 1.2,
+            "alternative_distance": 44.4,
+            "context_scale": 1.1,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 18143.548794640228
+          },
+          {
+            "source_time_us": 16000000,
+            "target_time_us": 16667000,
+            "distance": 0.0,
+            "alternative_distance": 28.0,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 6112.796102521941
+          },
+          {
+            "source_time_us": 16333000,
+            "target_time_us": 17000000,
+            "distance": 2.8,
+            "alternative_distance": 23.6,
+            "context_scale": 1.1,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -7607.206111438572
+          },
+          {
+            "source_time_us": 16583000,
+            "target_time_us": 17250000,
+            "distance": 1.6,
+            "alternative_distance": 27.6,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -17907.508073866367
+          },
+          {
+            "source_time_us": 16917000,
+            "target_time_us": 17625000,
+            "distance": 0.0,
+            "alternative_distance": 24.0,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 9331.288504324853
+          },
+          {
+            "source_time_us": 17250000,
+            "target_time_us": 17958000,
+            "distance": 0.0,
+            "alternative_distance": 102.8,
+            "context_scale": 1.0,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -4388.713709630072
+          },
+          {
+            "source_time_us": 17500000,
+            "target_time_us": 18167000,
+            "distance": 0.0,
+            "alternative_distance": 99.2,
+            "context_scale": 0.9,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -55689.01567205787
+          },
+          {
+            "source_time_us": 22042000,
+            "target_time_us": 22958000,
+            "distance": 0.0,
+            "alternative_distance": 120.4,
+            "context_scale": 1.0,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 6175.098274499178
+          },
+          {
+            "source_time_us": 22333000,
+            "target_time_us": 23250000,
+            "distance": 0.4,
+            "alternative_distance": 68.0,
+            "context_scale": 1.1,
+            "region": 6,
+            "role": "fit",
+            "residual_us": -4814.453209765255
+          },
+          {
+            "source_time_us": 22583000,
+            "target_time_us": 23542000,
+            "distance": 0.8,
+            "alternative_distance": 10.0,
+            "context_scale": 1.0,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 26885.24482780695
+          },
+          {
+            "source_time_us": 26500000,
+            "target_time_us": 27583000,
+            "distance": 0.0,
+            "alternative_distance": 62.0,
+            "context_scale": 1.1,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -10499.886319555342
+          },
+          {
+            "source_time_us": 26792000,
+            "target_time_us": 27917000,
+            "distance": 0.0,
+            "alternative_distance": 184.8,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 19469.36098832637
+          },
+          {
+            "source_time_us": 27125000,
+            "target_time_us": 28250000,
+            "distance": 0.0,
+            "alternative_distance": 179.6,
+            "context_scale": 1.1,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 5749.358774363995
+          },
+          {
+            "source_time_us": 27417000,
+            "target_time_us": 28542000,
+            "distance": 12.4,
+            "alternative_distance": 195.2,
+            "context_scale": 1.1,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -6281.3939177542925
+          },
+          {
+            "source_time_us": 27708000,
+            "target_time_us": 28875000,
+            "distance": 5.6,
+            "alternative_distance": 171.2,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 23729.054597981274
+          },
+          {
+            "source_time_us": 28042000,
+            "target_time_us": 29208000,
+            "distance": 0.0,
+            "alternative_distance": 210.0,
+            "context_scale": 1.0,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 8967.851176172495
+          },
+          {
+            "source_time_us": 28333000,
+            "target_time_us": 29500000,
+            "distance": 33.2,
+            "alternative_distance": 229.6,
+            "context_scale": 1.1,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -2021.700308099389
+          }
+        ],
+        "region_counts": [
+          3,
+          10,
+          10,
+          10,
+          10,
+          0,
+          3,
+          7
+        ],
+        "mapping": {
+          "scale": 1.0412012078497217,
+          "offset_us": 1667.8783019315451
+        },
+        "max_fit_residual_us": 55689.01567205787,
+        "max_validation_residual_us": 24518.231426268816,
+        "span_fraction": {
+          "source": 0.9695652173913043,
+          "target": 0.9694238600707658
+        },
+        "reason": "ambiguous_or_missing_regions",
+        "probes": [
+          {
+            "source_time_us": 125000,
+            "region": 0,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 458000,
+            "region": 0,
+            "distance": 1.6,
+            "alternative_distance": 19.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 708000,
+            "region": 0,
+            "distance": 1.2,
+            "alternative_distance": 13.6,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 1042000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 9.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 1375000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 6.4,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1625000,
+            "region": 0,
+            "distance": 0.4,
+            "alternative_distance": 6.8,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1958000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 4.0,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2250000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 4.8,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2542000,
+            "region": 0,
+            "distance": 0.4,
+            "alternative_distance": 4.8,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2875000,
+            "region": 0,
+            "distance": 0.0,
+            "alternative_distance": 3.6,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3167000,
+            "region": 0,
+            "distance": 0.4,
+            "alternative_distance": 4.4,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3500000,
+            "region": 0,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 3750000,
+            "region": 1,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 4083000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 12.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4375000,
+            "region": 1,
+            "distance": 0.8,
+            "alternative_distance": 15.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4625000,
+            "region": 1,
+            "distance": 0.4,
+            "alternative_distance": 17.8,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4958000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 17.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5250000,
+            "region": 1,
+            "distance": 0.4,
+            "alternative_distance": 21.6,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5542000,
+            "region": 1,
+            "distance": 1.6,
+            "alternative_distance": 30.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5833000,
+            "region": 1,
+            "distance": 0.0,
+            "alternative_distance": 42.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6167000,
+            "region": 1,
+            "distance": 2.4,
+            "alternative_distance": 54.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6458000,
+            "region": 1,
+            "distance": 2.8,
+            "alternative_distance": 68.4,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6708000,
+            "region": 1,
+            "distance": 1.2,
+            "alternative_distance": 82.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7042000,
+            "region": 1,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 7333000,
+            "region": 2,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 7625000,
+            "region": 2,
+            "distance": 7.2,
+            "alternative_distance": 136.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7917000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 136.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8250000,
+            "region": 2,
+            "distance": 2.4,
+            "alternative_distance": 134.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8500000,
+            "region": 2,
+            "distance": 6.0,
+            "alternative_distance": 130.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8833000,
+            "region": 2,
+            "distance": 2.0,
+            "alternative_distance": 111.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9125000,
+            "region": 2,
+            "distance": 1.2,
+            "alternative_distance": 91.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9458000,
+            "region": 2,
+            "distance": 1.6,
+            "alternative_distance": 73.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9708000,
+            "region": 2,
+            "distance": 0.8,
+            "alternative_distance": 68.4,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10042000,
+            "region": 2,
+            "distance": 0.0,
+            "alternative_distance": 70.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10333000,
+            "region": 2,
+            "distance": 4.0,
+            "alternative_distance": 71.6,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10625000,
+            "region": 2,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 10917000,
+            "region": 3,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 11250000,
+            "region": 3,
+            "distance": 4.4,
+            "alternative_distance": 134.8,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11500000,
+            "region": 3,
+            "distance": 5.6,
+            "alternative_distance": 164.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11792000,
+            "region": 3,
+            "distance": 3.6,
+            "alternative_distance": 214.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12125000,
+            "region": 3,
+            "distance": 6.0,
+            "alternative_distance": 231.6,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12417000,
+            "region": 3,
+            "distance": 14.8,
+            "alternative_distance": 243.6,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12708000,
+            "region": 3,
+            "distance": 6.8,
+            "alternative_distance": 240.4,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13000000,
+            "region": 3,
+            "distance": 0.0,
+            "alternative_distance": 232.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13333000,
+            "region": 3,
+            "distance": 13.6,
+            "alternative_distance": 238.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13583000,
+            "region": 3,
+            "distance": 10.8,
+            "alternative_distance": 223.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13875000,
+            "region": 3,
+            "distance": 7.2,
+            "alternative_distance": 234.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14208000,
+            "region": 3,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 14458000,
+            "region": 4,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 14792000,
+            "region": 4,
+            "distance": 5.2,
+            "alternative_distance": 186.0,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15083000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 136.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15417000,
+            "region": 4,
+            "distance": 2.8,
+            "alternative_distance": 77.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15708000,
+            "region": 4,
+            "distance": 1.2,
+            "alternative_distance": 44.4,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16000000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 28.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16333000,
+            "region": 4,
+            "distance": 2.8,
+            "alternative_distance": 23.6,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16583000,
+            "region": 4,
+            "distance": 1.6,
+            "alternative_distance": 27.6,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16917000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 24.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17250000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 102.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17500000,
+            "region": 4,
+            "distance": 0.0,
+            "alternative_distance": 99.2,
+            "context_scale": 0.9,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17833000,
+            "region": 4,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 18125000,
+            "region": 5,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 18458000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.0,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 18708000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.0,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19042000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.4,
+            "context_scale": 0.96,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19333000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19625000,
+            "region": 5,
+            "distance": 0.4,
+            "alternative_distance": 4.0,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19917000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 3.2,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20250000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20500000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20833000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21125000,
+            "region": 5,
+            "distance": 0.0,
+            "alternative_distance": 3.6,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21458000,
+            "region": 5,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 21708000,
+            "region": 6,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 22042000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 120.4,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22333000,
+            "region": 6,
+            "distance": 0.4,
+            "alternative_distance": 68.0,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22583000,
+            "region": 6,
+            "distance": 0.8,
+            "alternative_distance": 10.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22917000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 6.0,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23208000,
+            "region": 6,
+            "distance": 0.4,
+            "alternative_distance": 6.8,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23500000,
+            "region": 6,
+            "distance": 0.4,
+            "alternative_distance": 6.4,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23792000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 6.0,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24125000,
+            "region": 6,
+            "distance": 0.4,
+            "alternative_distance": 4.0,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24417000,
+            "region": 6,
+            "distance": 0.0,
+            "alternative_distance": 5.6,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24667000,
+            "region": 6,
+            "distance": 0.4,
+            "alternative_distance": 4.8,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25000000,
+            "region": 6,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 25292000,
+            "region": 7,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 25583000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 2.8,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25875000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 3.2,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26208000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 3.2,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26500000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 62.0,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 26792000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 184.8,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27125000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 179.6,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27417000,
+            "region": 7,
+            "distance": 12.4,
+            "alternative_distance": 195.2,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27708000,
+            "region": 7,
+            "distance": 5.6,
+            "alternative_distance": 171.2,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28042000,
+            "region": 7,
+            "distance": 0.0,
+            "alternative_distance": 210.0,
+            "context_scale": 1.0,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28333000,
+            "region": 7,
+            "distance": 33.2,
+            "alternative_distance": 229.6,
+            "context_scale": 1.1,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28625000,
+            "region": 7,
+            "reason": "missing_context"
+          }
+        ],
+        "region_match_fractions": [
+          0.25,
+          0.8333333333333334,
+          0.8333333333333334,
+          0.8333333333333334,
+          0.8333333333333334,
+          0.0,
+          0.25,
+          0.5833333333333334
+        ],
+        "independent_validation_search": true,
+        "frame_counts": {
+          "target": 720,
+          "source": 720
+        },
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 2151542
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 4.92,
+      "stdout": "",
+      "stderr": "",
+      "case": "reversed",
+      "command": [
+        "python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "temporal",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/reversed.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-cqebdnja/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 28044,
+      "input_blocks": 0,
+      "output_blocks": 4184,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [
+          {
+            "source_time_us": 12958000,
+            "target_time_us": 17000000,
+            "distance": 18.8,
+            "alternative_distance": 26.8,
+            "context_scale": 0.9,
+            "region": 3,
+            "role": "validation",
+            "residual_us": -470596.60757089406
+          },
+          {
+            "source_time_us": 13583000,
+            "target_time_us": 16792000,
+            "distance": 37.6,
+            "alternative_distance": 47.2,
+            "context_scale": 0.9400000000000001,
+            "region": 3,
+            "role": "validation",
+            "residual_us": -10777.300852969289
+          },
+          {
+            "source_time_us": 19208000,
+            "target_time_us": 10417000,
+            "distance": 57.2,
+            "alternative_distance": 72.8,
+            "context_scale": 0.9,
+            "region": 5,
+            "role": "validation",
+            "residual_us": -375403.54039166495
+          },
+          {
+            "source_time_us": 19500000,
+            "target_time_us": 10458000,
+            "distance": 53.2,
+            "alternative_distance": 70.8,
+            "context_scale": 0.9,
+            "region": 5,
+            "role": "validation",
+            "residual_us": -22398.36029305309
+          },
+          {
+            "source_time_us": 19833000,
+            "target_time_us": 10292000,
+            "distance": 57.2,
+            "alternative_distance": 72.4,
+            "context_scale": 0.9,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 167415.7663262561
+          },
+          {
+            "source_time_us": 23250000,
+            "target_time_us": 6333000,
+            "distance": 55.6,
+            "alternative_distance": 74.8,
+            "context_scale": 0.9,
+            "region": 6,
+            "role": "fit",
+            "residual_us": -140482.51998551562
+          },
+          {
+            "source_time_us": 23583000,
+            "target_time_us": 6333000,
+            "distance": 42.0,
+            "alternative_distance": 59.6,
+            "context_scale": 0.9,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 215331.60663379356
+          },
+          {
+            "source_time_us": 24208000,
+            "target_time_us": 5375000,
+            "distance": 26.0,
+            "alternative_distance": 35.8,
+            "context_scale": 0.9,
+            "region": 6,
+            "role": "fit",
+            "residual_us": -74849.08664828166
+          }
+        ],
+        "region_counts": [
+          0,
+          0,
+          0,
+          2,
+          0,
+          3,
+          3,
+          0
+        ],
+        "mapping": {
+          "scale": -1.0685108907486764,
+          "offset_us": 31316360.729892243
+        },
+        "max_fit_residual_us": 215331.60663379356,
+        "max_validation_residual_us": 470596.60757089406,
+        "span_fraction": {
+          "source": 0.37552573603044265,
+          "target": 0.3880432605647907
+        },
+        "reason": "ambiguous_or_missing_regions",
+        "probes": [
+          {
+            "source_time_us": 125000,
+            "region": 0,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 458000,
+            "region": 0,
+            "distance": 206.8,
+            "alternative_distance": 233.6,
+            "context_scale": 1.0,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 750000,
+            "region": 0,
+            "distance": 187.6,
+            "alternative_distance": 204.4,
+            "context_scale": 0.9400000000000001,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 1083000,
+            "region": 0,
+            "distance": 154.4,
+            "alternative_distance": 189.6,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 1375000,
+            "region": 0,
+            "distance": 132.4,
+            "alternative_distance": 170.0,
+            "context_scale": 0.9400000000000001,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 1708000,
+            "region": 0,
+            "distance": 148.8,
+            "alternative_distance": 166.0,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 2000000,
+            "region": 0,
+            "distance": 166.0,
+            "alternative_distance": 171.2,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 2333000,
+            "region": 0,
+            "distance": 61.2,
+            "alternative_distance": 63.2,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 2625000,
+            "region": 0,
+            "distance": 0.8,
+            "alternative_distance": 4.4,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2958000,
+            "region": 0,
+            "distance": 0.8,
+            "alternative_distance": 3.6,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3250000,
+            "region": 0,
+            "distance": 2.4,
+            "alternative_distance": 4.0,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3583000,
+            "region": 0,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 3875000,
+            "region": 1,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 4208000,
+            "region": 1,
+            "distance": 4.0,
+            "alternative_distance": 5.2,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 4500000,
+            "region": 1,
+            "distance": 4.0,
+            "alternative_distance": 5.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 4833000,
+            "region": 1,
+            "distance": 3.2,
+            "alternative_distance": 4.4,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 5125000,
+            "region": 1,
+            "distance": 4.8,
+            "alternative_distance": 8.0,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 5458000,
+            "region": 1,
+            "distance": 6.0,
+            "alternative_distance": 7.6,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 5750000,
+            "region": 1,
+            "distance": 5.6,
+            "alternative_distance": 6.8,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 6083000,
+            "region": 1,
+            "distance": 4.8,
+            "alternative_distance": 8.4,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 6375000,
+            "region": 1,
+            "distance": 6.8,
+            "alternative_distance": 9.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 6708000,
+            "region": 1,
+            "distance": 66.8,
+            "alternative_distance": 67.6,
+            "context_scale": 1.1,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 7000000,
+            "region": 1,
+            "distance": 118.8,
+            "alternative_distance": 122.0,
+            "context_scale": 0.9400000000000001,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 7333000,
+            "region": 1,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 7625000,
+            "region": 2,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 7958000,
+            "region": 2,
+            "distance": 3.2,
+            "alternative_distance": 4.4,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 8250000,
+            "region": 2,
+            "distance": 1.6,
+            "alternative_distance": 3.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 8583000,
+            "region": 2,
+            "distance": 1.6,
+            "alternative_distance": 3.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 8875000,
+            "region": 2,
+            "distance": 2.8,
+            "alternative_distance": 3.2,
+            "context_scale": 1.1,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 9208000,
+            "region": 2,
+            "distance": 4.0,
+            "alternative_distance": 4.0,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 9500000,
+            "region": 2,
+            "distance": 4.0,
+            "alternative_distance": 5.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 9833000,
+            "region": 2,
+            "distance": 3.2,
+            "alternative_distance": 4.0,
+            "context_scale": 0.96,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 10125000,
+            "region": 2,
+            "distance": 2.4,
+            "alternative_distance": 2.8,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 10458000,
+            "region": 2,
+            "distance": 0.8,
+            "alternative_distance": 2.0,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 10750000,
+            "region": 2,
+            "distance": 1.6,
+            "alternative_distance": 2.8,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 11083000,
+            "region": 2,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 11375000,
+            "region": 3,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 11708000,
+            "region": 3,
+            "distance": 96.0,
+            "alternative_distance": 98.0,
+            "context_scale": 0.9400000000000001,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 12000000,
+            "region": 3,
+            "distance": 100.0,
+            "alternative_distance": 104.0,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 12333000,
+            "region": 3,
+            "distance": 20.0,
+            "alternative_distance": 26.0,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 12625000,
+            "region": 3,
+            "distance": 22.8,
+            "alternative_distance": 23.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 12958000,
+            "region": 3,
+            "distance": 18.8,
+            "alternative_distance": 26.8,
+            "context_scale": 0.9,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13250000,
+            "region": 3,
+            "distance": 20.8,
+            "alternative_distance": 28.0,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 13583000,
+            "region": 3,
+            "distance": 37.6,
+            "alternative_distance": 47.2,
+            "context_scale": 0.9400000000000001,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13875000,
+            "region": 3,
+            "distance": 73.6,
+            "alternative_distance": 80.8,
+            "context_scale": 0.9400000000000001,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 14208000,
+            "region": 3,
+            "distance": 128.8,
+            "alternative_distance": 136.4,
+            "context_scale": 0.9400000000000001,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 14500000,
+            "region": 3,
+            "distance": 170.4,
+            "alternative_distance": 188.4,
+            "context_scale": 0.9400000000000001,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 14833000,
+            "region": 3,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 15125000,
+            "region": 4,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 15458000,
+            "region": 4,
+            "distance": 202.0,
+            "alternative_distance": 207.2,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 15750000,
+            "region": 4,
+            "distance": 173.2,
+            "alternative_distance": 199.2,
+            "context_scale": 0.9400000000000001,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 16083000,
+            "region": 4,
+            "distance": 166.0,
+            "alternative_distance": 213.2,
+            "context_scale": 1.1,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 16375000,
+            "region": 4,
+            "distance": 165.6,
+            "alternative_distance": 198.8,
+            "context_scale": 0.9400000000000001,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 16708000,
+            "region": 4,
+            "distance": 198.8,
+            "alternative_distance": 205.6,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 17000000,
+            "region": 4,
+            "distance": 196.0,
+            "alternative_distance": 208.0,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 17333000,
+            "region": 4,
+            "distance": 194.0,
+            "alternative_distance": 209.6,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 17625000,
+            "region": 4,
+            "distance": 186.8,
+            "alternative_distance": 198.0,
+            "context_scale": 1.1,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 17958000,
+            "region": 4,
+            "distance": 140.8,
+            "alternative_distance": 146.0,
+            "context_scale": 1.1,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 18250000,
+            "region": 4,
+            "distance": 112.8,
+            "alternative_distance": 116.0,
+            "context_scale": 1.0,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 18583000,
+            "region": 4,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 18875000,
+            "region": 5,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 19208000,
+            "region": 5,
+            "distance": 57.2,
+            "alternative_distance": 72.8,
+            "context_scale": 0.9,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 19500000,
+            "region": 5,
+            "distance": 53.2,
+            "alternative_distance": 70.8,
+            "context_scale": 0.9,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 19833000,
+            "region": 5,
+            "distance": 57.2,
+            "alternative_distance": 72.4,
+            "context_scale": 0.9,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 20125000,
+            "region": 5,
+            "distance": 70.8,
+            "alternative_distance": 86.0,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 20458000,
+            "region": 5,
+            "distance": 88.8,
+            "alternative_distance": 98.8,
+            "context_scale": 0.9400000000000001,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 20750000,
+            "region": 5,
+            "distance": 102.8,
+            "alternative_distance": 117.6,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 21083000,
+            "region": 5,
+            "distance": 118.4,
+            "alternative_distance": 131.8,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 21375000,
+            "region": 5,
+            "distance": 121.2,
+            "alternative_distance": 134.8,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 21708000,
+            "region": 5,
+            "distance": 104.8,
+            "alternative_distance": 139.2,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 22000000,
+            "region": 5,
+            "distance": 117.2,
+            "alternative_distance": 134.8,
+            "context_scale": 0.9,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 22333000,
+            "region": 5,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 22625000,
+            "region": 6,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 22958000,
+            "region": 6,
+            "distance": 78.4,
+            "alternative_distance": 88.8,
+            "context_scale": 0.96,
+            "reason": "no_close_match"
+          },
+          {
+            "source_time_us": 23250000,
+            "region": 6,
+            "distance": 55.6,
+            "alternative_distance": 74.8,
+            "context_scale": 0.9,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 23583000,
+            "region": 6,
+            "distance": 42.0,
+            "alternative_distance": 59.6,
+            "context_scale": 0.9,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 23875000,
+            "region": 6,
+            "distance": 48.4,
+            "alternative_distance": 48.4,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24208000,
+            "region": 6,
+            "distance": 26.0,
+            "alternative_distance": 35.8,
+            "context_scale": 0.9,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 24500000,
+            "region": 6,
+            "distance": 16.8,
+            "alternative_distance": 24.4,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24833000,
+            "region": 6,
+            "distance": 16.0,
+            "alternative_distance": 21.6,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25125000,
+            "region": 6,
+            "distance": 15.6,
+            "alternative_distance": 18.8,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25458000,
+            "region": 6,
+            "distance": 12.4,
+            "alternative_distance": 16.0,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25750000,
+            "region": 6,
+            "distance": 11.2,
+            "alternative_distance": 12.8,
+            "context_scale": 1.0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26083000,
+            "region": 6,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 26375000,
+            "region": 7,
+            "reason": "missing_context"
+          },
+          {
+            "source_time_us": 26708000,
+            "region": 7,
+            "distance": 2.8,
+            "alternative_distance": 5.6,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27000000,
+            "region": 7,
+            "distance": 2.4,
+            "alternative_distance": 5.6,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27333000,
+            "region": 7,
+            "distance": 3.2,
+            "alternative_distance": 3.6,
+            "context_scale": 0.96,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27625000,
+            "region": 7,
+            "distance": 4.0,
+            "alternative_distance": 5.6,
+            "context_scale": 0.9400000000000001,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27958000,
+            "region": 7,
+            "distance": 4.4,
+            "alternative_distance": 4.4,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 28250000,
+            "region": 7,
+            "distance": 4.8,
+            "alternative_distance": 7.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 28583000,
+            "region": 7,
+            "distance": 6.4,
+            "alternative_distance": 7.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 28875000,
+            "region": 7,
+            "distance": 8.8,
+            "alternative_distance": 11.6,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 29208000,
+            "region": 7,
+            "distance": 13.6,
+            "alternative_distance": 17.2,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 29500000,
+            "region": 7,
+            "distance": 20.0,
+            "alternative_distance": 24.4,
+            "context_scale": 0.9,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 29833000,
+            "region": 7,
+            "reason": "missing_context"
+          }
+        ],
+        "region_match_fractions": [
+          0.0,
+          0.0,
+          0.0,
+          0.16666666666666666,
+          0.0,
+          0.25,
+          0.25,
+          0.0
+        ],
+        "independent_validation_search": true,
+        "frame_counts": {
+          "target": 720,
+          "source": 720
+        },
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 2137044
+    }
+  ]
+}

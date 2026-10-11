@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "engine": "RedSync v0.2.2",
+  "source_revision": "cb07566f9c48766d8f335df0caab157f5342569a",
+  "binary_sha256": "3aa61215fe4534301a28c9d4d35291d61e7db925ad1556abde9eb1a8fb634acd",
+  "binary_bytes": 17260728,
+  "manifest_sha256": "f1c53287a14e9abc2b8418b6a4563da06739573dfdee4265ad0cff8531e76c2e",
+  "automatic_publication": false,
+  "results": [
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 8.427,
+      "stderr": "",
+      "max_process_rss_kib": 62356,
+      "input_blocks": 11000376,
+      "output_blocks": 8,
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_error_us": 0.0,
+      "measurement": {
+        "schema_version": 2,
+        "mode": "audio",
+        "method": "measured",
+        "language": "spa",
+        "dry_run": true,
+        "sync_ms": 0,
+        "scale": 1,
+        "drift_ppm": 0,
+        "fps_conversion": "none (same timing)",
+        "score": 8.095240307743952,
+        "samples": 23,
+        "residual_ms": 0,
+        "segments": [
+          {
+            "target_start_ms": 0,
+            "target_end_ms": 2730581,
+            "reference_start_ms": 0,
+            "reference_end_ms": 2730581,
+            "offset_ms": 0,
+            "scale": 1,
+            "score": 8.095240307743952,
+            "samples": 23,
+            "residual_ms": 0
+          }
+        ],
+        "gaps": []
+      },
+      "workspace_bytes_at_exit": 875,
+      "case": "missing_spanish_stereo",
+      "target_audio_stream": 1,
+      "source_audio_stream": 1,
+      "expected": {
+        "scale": "1",
+        "offset_us": 0
+      },
+      "source_points_us": [
+        136529050,
+        819174300,
+        1638348600,
+        2594051950
+      ]
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 8.779,
+      "stderr": "",
+      "max_process_rss_kib": 61248,
+      "input_blocks": 8488744,
+      "output_blocks": 8,
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "max_error_us": 0.0,
+      "measurement": {
+        "schema_version": 2,
+        "mode": "audio",
+        "method": "measured",
+        "language": "spa",
+        "dry_run": true,
+        "sync_ms": 0,
+        "scale": 1,
+        "drift_ppm": 0,
+        "fps_conversion": "none (same timing)",
+        "score": 8.016276635102457,
+        "samples": 23,
+        "residual_ms": 0,
+        "segments": [
+          {
+            "target_start_ms": 0,
+            "target_end_ms": 2730581,
+            "reference_start_ms": 0,
+            "reference_end_ms": 2730581,
+            "offset_ms": 0,
+            "scale": 1,
+            "score": 8.016276635102457,
+            "samples": 23,
+            "residual_ms": 0
+          }
+        ],
+        "gaps": []
+      },
+      "workspace_bytes_at_exit": 874,
+      "case": "missing_spanish_surround",
+      "target_audio_stream": 2,
+      "source_audio_stream": 2,
+      "expected": {
+        "scale": "1",
+        "offset_us": 0
+      },
+      "source_points_us": [
+        136529050,
+        819174300,
+        1638348600,
+        2594051950
+      ]
+    }
+  ],
+  "run_date": "2026-09-27",
+  "fixture": "The Eternaut S01E01, variants from one original",
+  "duration_seconds": 2730.581,
+  "target_languages": [
+    "eng"
+  ],
+  "source_languages": [
+    "spa"
+  ],
+  "original_unchanged": true,
+  "platform": "Linux-7.0.14-15-pve-x86_64-with-glibc2.36",
+  "python": "3.14.7",
+  "ffmpeg": "ffmpeg version N-126168-gb16b5f2a01-20260815 Copyright (c) 2000-2026 the FFmpeg developers",
+  "tolerance_us": 50000
+}

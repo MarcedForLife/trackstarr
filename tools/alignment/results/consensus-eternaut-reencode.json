@@ -1,0 +1,367 @@
+{
+  "schema_version": 1,
+  "engine": "consensus",
+  "automatic_publication": false,
+  "settings": {
+    "regions": 8,
+    "probes_per_region": 12,
+    "max_distance": 60,
+    "ambiguity_margin": 8,
+    "alternative_separation_us": 500000,
+    "min_region_matches": 2,
+    "min_match_fraction": 0.5,
+    "max_residual_us": 50000,
+    "min_span_fraction": 0.8,
+    "min_scale": 0.9,
+    "max_scale": 1.1,
+    "max_duration_seconds": 120,
+    "max_frames": 20000
+  },
+  "temporal_settings": null,
+  "consensus_settings": {
+    "scales": [
+      "1",
+      "1001/1000",
+      "1000/1001",
+      "25/24",
+      "24/25",
+      "25025/24000",
+      "24000/25025"
+    ],
+    "votes_per_probe": 8,
+    "offset_bin_us": 20000,
+    "min_votes": 10,
+    "min_peak_ratio": 2.0,
+    "max_sample_gap_us": 75000,
+    "probes_per_region": 100,
+    "min_region_confirmations": 3,
+    "min_contradicting_run": 3,
+    "min_confirmed_regions": 5
+  },
+  "episode_settings": {
+    "width": 320,
+    "max_frames": 432000,
+    "timeout_seconds": 7200
+  },
+  "manifest_sha256": "797f7fa3dcf53808daa04e4ea71b1df61a14a2dea09b8f9583c9fbc08a48f9a4",
+  "ffmpeg_version": "ffmpeg version N-126168-gb16b5f2a01-20260815 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 15.2.0 (crosstool-NG 1.28.0.23_185f348)\nconfiguration: --prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config --cross-prefix=x86_64-ffbuild-linux-gnu- --arch=x86_64 --target-os=linux --enable-gpl --enable-version3 --disable-debug --enable-iconv --enable-zlib --enable-libxml2 --enable-libsoxr --enable-openssl --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype --enable-libfribidi --enable-vulkan --enable-libvorbis --enable-libxcb --enable-xlib --enable-libpulse --enable-gmp --enable-lzma --enable-liblcevc-dec --enable-opencl --enable-amf --enable-libaom --enable-libaribb24 --enable-avisynth --enable-chromaprint --enable-libdav1d --enable-libdavs2 --enable-libdvdread --enable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --enable-frei0r --enable-libgme --enable-libkvazaar --enable-libaribcaption --enable-libass --enable-libbluray --enable-libjxl --enable-libmp3lame --enable-libopus --enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx --enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopenmpt --enable-librav1e --enable-librubberband --disable-schannel --enable-sdl2 --enable-libsnappy --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d --enable-libdrm --enable-vaapi --enable-libvidstab --enable-libvvenc --disable-whisper --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxvid --enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags= --extra-libs='-lgomp -ldl' --extra-ldflags=-pthread --extra-ldexeflags=-pie --cc=x86_64-ffbuild-linux-gnu-gcc --cxx=x86_64-ffbuild-linux-gnu-g++ --ar=x86_64-ffbuild-linux-gnu-gcc-ar --ranlib=x86_64-ffbuild-linux-gnu-gcc-ranlib --nm=x86_64-ffbuild-linux-gnu-gcc-nm --extra-version=20260815\nlibavutil      61.  5.100 / 61.  5.100\nlibavcodec     63.  8.101 / 63.  8.101\nlibavformat    63.  6.100 / 63.  6.100\nlibavdevice    63.  2.100 / 63.  2.100\nlibavfilter    12.  3.101 / 12.  3.101\nlibswscale     10.  2.100 / 10.  2.100\nlibswresample   7.  2.100 /  7.  2.100\n\nExiting with exit code 0\n",
+  "binary_sha256": "f1e69546b9ac98ca220eafa680d3c2ecfd18f6f756452858574f21b6bac04115",
+  "implementation_sha256": {
+    "visual.py": "314a9d3ed2217d2eb0f8a7beb82a0ebd25ce438165594198a66b21c5395a34cc",
+    "temporal.py": "4bccf965d9822bf90992b18dc1dc01ba65b67adaacd0f81bb836c4d0a985e362",
+    "consensus.py": "45e9c52f18bd5a0d8282670e4add1f610ea1103c6a1e08784e42c3af9fd9745a",
+    "episode_signatures.py": "08507e1209570405ec37450684591b7011158040d639dbac8f6b4ce2f8b13016",
+    "avsync_core.py": "bfaa4b9b26017bca09aecf2c11fa7afbbdee562e553dd6c35d8c25d68a041783",
+    "compare_visual.py": "33db1d0b447e156d6871bb341fd96e79b7480a818d46b02964369b8a9e2462e4"
+  },
+  "results": [
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 862.018,
+      "stdout": "",
+      "stderr": "[null @ 0x57c8f5e2de40] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 84000 >= 84000\n",
+      "case": "reencode_trim",
+      "command": [
+        "/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14",
+        "~/projects/trackstarr/tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "consensus",
+        "--target",
+        "<corpus>/target.mkv",
+        "--source",
+        "<corpus>/reencode_trim.mkv",
+        "--report",
+        "<tmp>/trackstarr-visual-ibb_fsgq/measurement.json",
+        "--ffmpeg",
+        "~/.local/bin/ffmpeg",
+        "--ffprobe",
+        "~/.local/bin/ffprobe",
+        "--whole-episodes"
+      ],
+      "max_process_rss_kib": 571764,
+      "input_blocks": 608,
+      "output_blocks": 376085,
+      "measurement": {
+        "status": "proposed",
+        "folds": [
+          {
+            "fit_parity": 0,
+            "fit_probes": 400,
+            "hypothesis": {
+              "scale": "1",
+              "offset_us": 2000000,
+              "votes": 282
+            },
+            "runner_up": {
+              "scale": "1001/1000",
+              "offset_us": 1800000,
+              "votes": 24
+            }
+          },
+          {
+            "fit_parity": 1,
+            "fit_probes": 400,
+            "hypothesis": {
+              "scale": "1",
+              "offset_us": 2000000,
+              "votes": 230
+            },
+            "runner_up": {
+              "scale": "1000/1001",
+              "offset_us": 4400000,
+              "votes": 29
+            }
+          }
+        ],
+        "region_tallies": [
+          {
+            "consistent": 7685,
+            "unmatched": 14,
+            "confirms": 96,
+            "uninformative": 3
+          },
+          {
+            "consistent": 8085,
+            "confirms": 91,
+            "uninformative": 9
+          },
+          {
+            "consistent": 8086,
+            "confirms": 89,
+            "uninformative": 11
+          },
+          {
+            "consistent": 8084,
+            "uninformative": 21,
+            "confirms": 79,
+            "unmatched": 1
+          },
+          {
+            "consistent": 7823,
+            "confirms": 87,
+            "unmatched": 263,
+            "uninformative": 9
+          },
+          {
+            "consistent": 8084,
+            "confirms": 80,
+            "uninformative": 20,
+            "unmatched": 1
+          },
+          {
+            "consistent": 8086,
+            "confirms": 86,
+            "uninformative": 14
+          },
+          {
+            "consistent": 3780,
+            "confirms": 34,
+            "uninformative": 65,
+            "unmatched": 18
+          }
+        ],
+        "region_verdicts": [
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms"
+        ],
+        "max_region_residual_us": [
+          42209.593610782176,
+          569.7657914757729,
+          763.4529755115509,
+          1485.0530717372894,
+          2165.429527282715,
+          2859.4934647083282,
+          3546.754967689514,
+          38225.05316925049
+        ],
+        "confirmed_pairs": 642,
+        "exact_anchors": 266,
+        "span_fraction": {
+          "source": 0.9789415429723292,
+          "target": 0.978224134773851
+        },
+        "frame_counts": {
+          "target": 60523,
+          "source": 60804
+        },
+        "mapping": {
+          "scale": 0.999997985060813,
+          "offset_us": 2001260.3861978054
+        },
+        "reason": "research_limits_met",
+        "automatic_publication": false
+      },
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        985.4938878540415,
+        388.96766190230846,
+        2038.3215216097888,
+        3962.5676892539486
+      ],
+      "max_error_us": 3962.5676892539486,
+      "workspace_bytes_at_exit": 2367
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 871.822,
+      "stdout": "",
+      "stderr": "[null @ 0x57a1b7e36e40] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 84000 >= 84000\n",
+      "case": "reencode_pal",
+      "command": [
+        "/home/linuxbrew/.linuxbrew/opt/python@3.14/bin/python3.14",
+        "~/projects/trackstarr/tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "consensus",
+        "--target",
+        "<corpus>/target.mkv",
+        "--source",
+        "<corpus>/reencode_pal.mkv",
+        "--report",
+        "<tmp>/trackstarr-visual-7igot4pl/measurement.json",
+        "--ffmpeg",
+        "~/.local/bin/ffmpeg",
+        "--ffprobe",
+        "~/.local/bin/ffprobe",
+        "--whole-episodes"
+      ],
+      "max_process_rss_kib": 571512,
+      "input_blocks": 0,
+      "output_blocks": 376083,
+      "measurement": {
+        "status": "proposed",
+        "folds": [
+          {
+            "fit_parity": 0,
+            "fit_probes": 400,
+            "hypothesis": {
+              "scale": "25/24",
+              "offset_us": 2000000,
+              "votes": 282
+            },
+            "runner_up": {
+              "scale": "1001/960",
+              "offset_us": 1800000,
+              "votes": 25
+            }
+          },
+          {
+            "fit_parity": 1,
+            "fit_probes": 400,
+            "hypothesis": {
+              "scale": "25/24",
+              "offset_us": 2000000,
+              "votes": 230
+            },
+            "runner_up": {
+              "scale": "1001/960",
+              "offset_us": 840000,
+              "votes": 28
+            }
+          }
+        ],
+        "region_tallies": [
+          {
+            "consistent": 7685,
+            "unmatched": 14,
+            "confirms": 96,
+            "uninformative": 3
+          },
+          {
+            "consistent": 8085,
+            "confirms": 91,
+            "uninformative": 9
+          },
+          {
+            "consistent": 8086,
+            "confirms": 88,
+            "uninformative": 12
+          },
+          {
+            "consistent": 8084,
+            "uninformative": 21,
+            "confirms": 79,
+            "unmatched": 1
+          },
+          {
+            "consistent": 7823,
+            "confirms": 87,
+            "unmatched": 263,
+            "uninformative": 9
+          },
+          {
+            "consistent": 8084,
+            "confirms": 80,
+            "uninformative": 20,
+            "unmatched": 1
+          },
+          {
+            "consistent": 8086,
+            "confirms": 86,
+            "uninformative": 14
+          },
+          {
+            "consistent": 3780,
+            "confirms": 34,
+            "uninformative": 65,
+            "unmatched": 18
+          }
+        ],
+        "region_verdicts": [
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms",
+          "confirms"
+        ],
+        "max_region_residual_us": [
+          42008.445020060986,
+          1043.7478567361832,
+          1045.346593260765,
+          1811.5443933010101,
+          2541.7107615470886,
+          3184.9777941703796,
+          3987.471962928772,
+          38473.58463001251
+        ],
+        "confirmed_pairs": 641,
+        "exact_anchors": 266,
+        "span_fraction": {
+          "source": 0.9789418025777289,
+          "target": 0.978224134773851
+        },
+        "frame_counts": {
+          "target": 60523,
+          "source": 60804
+        },
+        "mapping": {
+          "scale": 1.0416644588583448,
+          "offset_us": 2001770.2051069736
+        },
+        "reason": "research_limits_met",
+        "automatic_publication": false
+      },
+      "outcome": "mapping_recovered",
+      "point_errors_us": [
+        1481.0482302680612,
+        35.2638467408251,
+        1699.6774134919979,
+        3723.7755504304077
+      ],
+      "max_error_us": 3723.7755504304077,
+      "workspace_bytes_at_exit": 2373
+    }
+  ]
+}

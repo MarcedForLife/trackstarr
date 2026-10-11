@@ -1,0 +1,5093 @@
+{
+  "schema_version": 1,
+  "engine": "fingerprints",
+  "automatic_publication": false,
+  "settings": {
+    "regions": 8,
+    "probes_per_region": 12,
+    "max_distance": 60,
+    "ambiguity_margin": 8,
+    "alternative_separation_us": 500000,
+    "min_region_matches": 2,
+    "min_match_fraction": 0.5,
+    "max_residual_us": 50000,
+    "min_span_fraction": 0.8,
+    "min_scale": 0.9,
+    "max_scale": 1.1,
+    "max_duration_seconds": 120,
+    "max_frames": 20000
+  },
+  "manifest_sha256": "ba13cb21bd6f44aabf93f9695231a83136d0c0b6ae198ebf9311096134b5554f",
+  "ffmpeg_version": "ffmpeg version N-126168-gb16b5f2a01-20260815 Copyright (c) 2000-2026 the FFmpeg developers\nbuilt with gcc 15.2.0 (crosstool-NG 1.28.0.23_185f348)\nconfiguration: --prefix=/ffbuild/prefix --pkg-config-flags=--static --pkg-config=pkg-config --cross-prefix=x86_64-ffbuild-linux-gnu- --arch=x86_64 --target-os=linux --enable-gpl --enable-version3 --disable-debug --enable-iconv --enable-zlib --enable-libxml2 --enable-libsoxr --enable-openssl --enable-libvmaf --enable-fontconfig --enable-libharfbuzz --enable-libfreetype --enable-libfribidi --enable-vulkan --enable-libvorbis --enable-libxcb --enable-xlib --enable-libpulse --enable-gmp --enable-lzma --enable-liblcevc-dec --enable-opencl --enable-amf --enable-libaom --enable-libaribb24 --enable-avisynth --enable-chromaprint --enable-libdav1d --enable-libdavs2 --enable-libdvdread --enable-libdvdnav --disable-libfdk-aac --enable-ffnvcodec --enable-cuda-llvm --enable-frei0r --enable-libgme --enable-libkvazaar --enable-libaribcaption --enable-libass --enable-libbluray --enable-libjxl --enable-libmp3lame --enable-libopus --enable-libplacebo --enable-librist --enable-libssh --enable-libtheora --enable-libvpx --enable-libwebp --enable-libzmq --enable-lv2 --enable-libvpl --enable-openal --enable-liboapv --enable-libopencore-amrnb --enable-libopencore-amrwb --enable-libopenh264 --enable-libopenjpeg --enable-libopenmpt --enable-librav1e --enable-librubberband --disable-schannel --enable-sdl2 --enable-libsnappy --enable-libsrt --enable-libsvtav1 --enable-libtwolame --enable-libuavs3d --enable-libdrm --enable-vaapi --enable-libvidstab --enable-libvvenc --disable-whisper --enable-libx264 --enable-libx265 --enable-libxavs2 --enable-libxvid --enable-libzimg --enable-libzvbi --extra-cflags=-DLIBTWOLAME_STATIC --extra-cxxflags= --extra-libs='-lgomp -ldl' --extra-ldflags=-pthread --extra-ldexeflags=-pie --cc=x86_64-ffbuild-linux-gnu-gcc --cxx=x86_64-ffbuild-linux-gnu-g++ --ar=x86_64-ffbuild-linux-gnu-gcc-ar --ranlib=x86_64-ffbuild-linux-gnu-gcc-ranlib --nm=x86_64-ffbuild-linux-gnu-gcc-nm --extra-version=20260815\nlibavutil      61.  5.100 / 61.  5.100\nlibavcodec     63.  8.101 / 63.  8.101\nlibavformat    63.  6.100 / 63.  6.100\nlibavdevice    63.  2.100 / 63.  2.100\nlibavfilter    12.  3.101 / 12.  3.101\nlibswscale     10.  2.100 / 10.  2.100\nlibswresample   7.  2.100 /  7.  2.100\n\nExiting with exit code 0\n",
+  "binary_sha256": "f1e69546b9ac98ca220eafa680d3c2ecfd18f6f756452858574f21b6bac04115",
+  "implementation_sha256": {
+    "visual.py": "98ccef77cdbbc7f0088791972da6be9f6fbfe844205be8eb207e63eb9f3d2e93",
+    "avsync_core.py": "bfaa4b9b26017bca09aecf2c11fa7afbbdee562e553dd6c35d8c25d68a041783",
+    "compare_visual.py": "717c293bcf68428f8be814797be8d3d631c438c7a2717dae772239c5bebe27dd"
+  },
+  "results": [
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 4.32,
+      "stdout": "",
+      "stderr": "",
+      "case": "video_only_identity",
+      "command": [
+        "python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "fingerprints",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/source.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-volf2nlb/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 27996,
+      "input_blocks": 0,
+      "output_blocks": 4200,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [
+          {
+            "target_time_us": 125000,
+            "source_time_us": 125000,
+            "distance": 0,
+            "alternative_distance": 26,
+            "region": 0,
+            "role": "fit",
+            "residual_us": 5679.4705559494905
+          },
+          {
+            "target_time_us": 458000,
+            "source_time_us": 458000,
+            "distance": 0,
+            "alternative_distance": 20,
+            "region": 0,
+            "role": "fit",
+            "residual_us": 5603.121359812096
+          },
+          {
+            "target_time_us": 708000,
+            "source_time_us": 750000,
+            "distance": 0,
+            "alternative_distance": 12,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -36463.82748484891
+          },
+          {
+            "target_time_us": 3583000,
+            "source_time_us": 3583000,
+            "distance": 0,
+            "alternative_distance": 8,
+            "region": 0,
+            "role": "fit",
+            "residual_us": 4886.631155820098
+          },
+          {
+            "target_time_us": 3875000,
+            "source_time_us": 3875000,
+            "distance": 0,
+            "alternative_distance": 8,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 4819.682311159093
+          },
+          {
+            "target_time_us": 4208000,
+            "source_time_us": 4208000,
+            "distance": 0,
+            "alternative_distance": 12,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 4743.333115021698
+          },
+          {
+            "target_time_us": 4458000,
+            "source_time_us": 4500000,
+            "distance": 0,
+            "alternative_distance": 16,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -37323.61572963931
+          },
+          {
+            "target_time_us": 4833000,
+            "source_time_us": 4833000,
+            "distance": 0,
+            "alternative_distance": 14,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 4600.035074223764
+          },
+          {
+            "target_time_us": 5125000,
+            "source_time_us": 5125000,
+            "distance": 0,
+            "alternative_distance": 18,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 4533.086229562759
+          },
+          {
+            "target_time_us": 5375000,
+            "source_time_us": 5458000,
+            "distance": 0,
+            "alternative_distance": 18,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -78543.2629665751
+          },
+          {
+            "target_time_us": 5750000,
+            "source_time_us": 5750000,
+            "distance": 0,
+            "alternative_distance": 18,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 4389.788188763894
+          },
+          {
+            "target_time_us": 6083000,
+            "source_time_us": 6083000,
+            "distance": 0,
+            "alternative_distance": 46,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 4313.438992626965
+          },
+          {
+            "target_time_us": 6375000,
+            "source_time_us": 6375000,
+            "distance": 0,
+            "alternative_distance": 62,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 4246.49014796596
+          },
+          {
+            "target_time_us": 6708000,
+            "source_time_us": 6708000,
+            "distance": 0,
+            "alternative_distance": 44,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 4170.1409518281
+          },
+          {
+            "target_time_us": 7000000,
+            "source_time_us": 7000000,
+            "distance": 0,
+            "alternative_distance": 88,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 4103.192107167095
+          },
+          {
+            "target_time_us": 7333000,
+            "source_time_us": 7333000,
+            "distance": 0,
+            "alternative_distance": 120,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 4026.842911030166
+          },
+          {
+            "target_time_us": 7625000,
+            "source_time_us": 7625000,
+            "distance": 0,
+            "alternative_distance": 136,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3959.894066369161
+          },
+          {
+            "target_time_us": 7958000,
+            "source_time_us": 7958000,
+            "distance": 0,
+            "alternative_distance": 122,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3883.5448702313006
+          },
+          {
+            "target_time_us": 8250000,
+            "source_time_us": 8250000,
+            "distance": 0,
+            "alternative_distance": 136,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3816.5960255702958
+          },
+          {
+            "target_time_us": 8583000,
+            "source_time_us": 8583000,
+            "distance": 0,
+            "alternative_distance": 122,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3740.2468294333667
+          },
+          {
+            "target_time_us": 8875000,
+            "source_time_us": 8875000,
+            "distance": 0,
+            "alternative_distance": 128,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3673.2979847714305
+          },
+          {
+            "target_time_us": 9208000,
+            "source_time_us": 9208000,
+            "distance": 0,
+            "alternative_distance": 98,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3596.9487886354327
+          },
+          {
+            "target_time_us": 9500000,
+            "source_time_us": 9500000,
+            "distance": 0,
+            "alternative_distance": 96,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3529.9999439734966
+          },
+          {
+            "target_time_us": 9833000,
+            "source_time_us": 9833000,
+            "distance": 0,
+            "alternative_distance": 62,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3453.650747835636
+          },
+          {
+            "target_time_us": 10125000,
+            "source_time_us": 10125000,
+            "distance": 0,
+            "alternative_distance": 62,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3386.7019031755626
+          },
+          {
+            "target_time_us": 10458000,
+            "source_time_us": 10458000,
+            "distance": 0,
+            "alternative_distance": 58,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3310.352707037702
+          },
+          {
+            "target_time_us": 10750000,
+            "source_time_us": 10750000,
+            "distance": 0,
+            "alternative_distance": 60,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3243.4038623776287
+          },
+          {
+            "target_time_us": 11083000,
+            "source_time_us": 11083000,
+            "distance": 0,
+            "alternative_distance": 82,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 3167.0546662397683
+          },
+          {
+            "target_time_us": 11375000,
+            "source_time_us": 11375000,
+            "distance": 0,
+            "alternative_distance": 104,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 3100.105821577832
+          },
+          {
+            "target_time_us": 11708000,
+            "source_time_us": 11708000,
+            "distance": 0,
+            "alternative_distance": 110,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 3023.7566254418343
+          },
+          {
+            "target_time_us": 12000000,
+            "source_time_us": 12000000,
+            "distance": 0,
+            "alternative_distance": 124,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2956.807780779898
+          },
+          {
+            "target_time_us": 12333000,
+            "source_time_us": 12333000,
+            "distance": 0,
+            "alternative_distance": 168,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2880.4585846420377
+          },
+          {
+            "target_time_us": 12625000,
+            "source_time_us": 12625000,
+            "distance": 0,
+            "alternative_distance": 160,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2813.5097399819642
+          },
+          {
+            "target_time_us": 12958000,
+            "source_time_us": 12958000,
+            "distance": 0,
+            "alternative_distance": 192,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2737.160543844104
+          },
+          {
+            "target_time_us": 13250000,
+            "source_time_us": 13250000,
+            "distance": 0,
+            "alternative_distance": 234,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2670.2116991840303
+          },
+          {
+            "target_time_us": 13583000,
+            "source_time_us": 13583000,
+            "distance": 0,
+            "alternative_distance": 198,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2593.86250304617
+          },
+          {
+            "target_time_us": 13875000,
+            "source_time_us": 13875000,
+            "distance": 0,
+            "alternative_distance": 232,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2526.9136583860964
+          },
+          {
+            "target_time_us": 14208000,
+            "source_time_us": 14208000,
+            "distance": 0,
+            "alternative_distance": 204,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2450.564462248236
+          },
+          {
+            "target_time_us": 14500000,
+            "source_time_us": 14500000,
+            "distance": 0,
+            "alternative_distance": 164,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2383.6156175863
+          },
+          {
+            "target_time_us": 14833000,
+            "source_time_us": 14833000,
+            "distance": 0,
+            "alternative_distance": 226,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2307.266421450302
+          },
+          {
+            "target_time_us": 15125000,
+            "source_time_us": 15125000,
+            "distance": 0,
+            "alternative_distance": 190,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2240.317576788366
+          },
+          {
+            "target_time_us": 15458000,
+            "source_time_us": 15458000,
+            "distance": 0,
+            "alternative_distance": 184,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2163.9683806505054
+          },
+          {
+            "target_time_us": 15750000,
+            "source_time_us": 15750000,
+            "distance": 0,
+            "alternative_distance": 144,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2097.019535990432
+          },
+          {
+            "target_time_us": 16083000,
+            "source_time_us": 16083000,
+            "distance": 0,
+            "alternative_distance": 56,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 2020.6703398525715
+          },
+          {
+            "target_time_us": 16375000,
+            "source_time_us": 16375000,
+            "distance": 0,
+            "alternative_distance": 30,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 1953.721495192498
+          },
+          {
+            "target_time_us": 16708000,
+            "source_time_us": 16708000,
+            "distance": 0,
+            "alternative_distance": 22,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 1877.3722990546376
+          },
+          {
+            "target_time_us": 16958000,
+            "source_time_us": 17000000,
+            "distance": 0,
+            "alternative_distance": 28,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -40189.5765456073
+          },
+          {
+            "target_time_us": 17333000,
+            "source_time_us": 17333000,
+            "distance": 0,
+            "alternative_distance": 22,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 1734.0742582567036
+          },
+          {
+            "target_time_us": 17625000,
+            "source_time_us": 17625000,
+            "distance": 0,
+            "alternative_distance": 30,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 1667.12541359663
+          },
+          {
+            "target_time_us": 17958000,
+            "source_time_us": 17958000,
+            "distance": 0,
+            "alternative_distance": 26,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 1590.776217456907
+          },
+          {
+            "target_time_us": 23250000,
+            "source_time_us": 23250000,
+            "distance": 0,
+            "alternative_distance": 14,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 377.44304640963674
+          },
+          {
+            "target_time_us": 27958000,
+            "source_time_us": 27958000,
+            "distance": 0,
+            "alternative_distance": 164,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -701.9924353174865
+          },
+          {
+            "target_time_us": 28250000,
+            "source_time_us": 28250000,
+            "distance": 0,
+            "alternative_distance": 152,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -768.94127997756
+          },
+          {
+            "target_time_us": 28583000,
+            "source_time_us": 28583000,
+            "distance": 0,
+            "alternative_distance": 158,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -845.2904761135578
+          },
+          {
+            "target_time_us": 28875000,
+            "source_time_us": 28875000,
+            "distance": 0,
+            "alternative_distance": 162,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -912.2393207773566
+          },
+          {
+            "target_time_us": 29208000,
+            "source_time_us": 29208000,
+            "distance": 0,
+            "alternative_distance": 212,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -988.5885169133544
+          },
+          {
+            "target_time_us": 29500000,
+            "source_time_us": 29500000,
+            "distance": 0,
+            "alternative_distance": 216,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -1055.537361573428
+          },
+          {
+            "target_time_us": 29833000,
+            "source_time_us": 29833000,
+            "distance": 0,
+            "alternative_distance": 198,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -1131.886557713151
+          }
+        ],
+        "region_counts": [
+          4,
+          12,
+          12,
+          12,
+          10,
+          0,
+          1,
+          7
+        ],
+        "mapping": {
+          "scale": 1.0002292768652774,
+          "offset_us": -5708.13016410917
+        },
+        "max_fit_residual_us": 40189.5765456073,
+        "max_validation_residual_us": 78543.2629665751,
+        "span_fraction": {
+          "source": 0.9916549836437679,
+          "target": 0.9916549836437679
+        },
+        "reason": "ambiguous_or_missing_regions",
+        "probes": [
+          {
+            "source_time_us": 125000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 26,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 458000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 20,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 750000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 12,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 1083000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1375000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1708000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2000000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2333000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2625000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2958000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3250000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3583000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 8,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 3875000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 8,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4208000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 12,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4500000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 16,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4833000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 14,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5125000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 18,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5458000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 18,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5750000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 18,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6083000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 46,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6375000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 62,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6708000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 44,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7000000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 88,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7333000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 120,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7625000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 136,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7958000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 122,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8250000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 136,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8583000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 122,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8875000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 128,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9208000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 98,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9500000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 96,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9833000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 62,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10125000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 62,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10458000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 58,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10750000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 60,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11083000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 82,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11375000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 104,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11708000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 110,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12000000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 124,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12333000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 168,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12625000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 160,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12958000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 192,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13250000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 234,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13583000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 198,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13875000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 232,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14208000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 204,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14500000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 164,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14833000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 226,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15125000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 190,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15458000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 184,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15750000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 144,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16083000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 56,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16375000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 30,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16708000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 22,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17000000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 28,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17333000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 22,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17625000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 30,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17958000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 26,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 18250000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 18583000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 18875000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19208000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19500000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19833000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20125000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20458000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20750000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21083000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21375000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21708000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 22000000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 22333000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 22625000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 22958000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23250000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 14,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 23583000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23875000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24208000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24500000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24833000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25125000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25458000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25750000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26083000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26375000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26708000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27000000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27333000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27625000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27958000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 164,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28250000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 152,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28583000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 158,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28875000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 162,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 29208000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 212,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 29500000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 216,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 29833000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 198,
+            "reason": "matched"
+          }
+        ],
+        "region_match_fractions": [
+          0.3333333333333333,
+          1.0,
+          1.0,
+          1.0,
+          0.8333333333333334,
+          0.0,
+          0.08333333333333333,
+          0.5833333333333334
+        ],
+        "independent_validation_search": true,
+        "frame_counts": {
+          "target": 720,
+          "source": 720
+        },
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 2145360
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 4.27,
+      "stdout": "",
+      "stderr": "",
+      "case": "trim_start",
+      "command": [
+        "python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "fingerprints",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/trim_start.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-fxzbvh8y/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 29080,
+      "input_blocks": 0,
+      "output_blocks": 4120,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [
+          {
+            "target_time_us": 4083000,
+            "source_time_us": 2833000,
+            "distance": 0,
+            "alternative_distance": 10,
+            "region": 0,
+            "role": "fit",
+            "residual_us": 44554.98170199804
+          },
+          {
+            "target_time_us": 4417000,
+            "source_time_us": 3167000,
+            "distance": 0,
+            "alternative_distance": 16,
+            "region": 0,
+            "role": "fit",
+            "residual_us": 43295.63118973188
+          },
+          {
+            "target_time_us": 4417000,
+            "source_time_us": 3458000,
+            "distance": 0,
+            "alternative_distance": 16,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -248801.58737035654
+          },
+          {
+            "target_time_us": 4958000,
+            "source_time_us": 3750000,
+            "distance": 0,
+            "alternative_distance": 16,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -902.5764409620315
+          },
+          {
+            "target_time_us": 5292000,
+            "source_time_us": 4042000,
+            "distance": 0,
+            "alternative_distance": 24,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 39996.434488434345
+          },
+          {
+            "target_time_us": 5583000,
+            "source_time_us": 4333000,
+            "distance": 0,
+            "alternative_distance": 18,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 38899.21592834592
+          },
+          {
+            "target_time_us": 5917000,
+            "source_time_us": 4667000,
+            "distance": 0,
+            "alternative_distance": 32,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 37639.86541607883
+          },
+          {
+            "target_time_us": 6208000,
+            "source_time_us": 4958000,
+            "distance": 0,
+            "alternative_distance": 50,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 36542.6468559904
+          },
+          {
+            "target_time_us": 6500000,
+            "source_time_us": 5250000,
+            "distance": 0,
+            "alternative_distance": 54,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 35441.65778538678
+          },
+          {
+            "target_time_us": 6792000,
+            "source_time_us": 5542000,
+            "distance": 0,
+            "alternative_distance": 52,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 34340.66871478222
+          },
+          {
+            "target_time_us": 7083000,
+            "source_time_us": 5833000,
+            "distance": 0,
+            "alternative_distance": 88,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 33243.4501546938
+          },
+          {
+            "target_time_us": 7375000,
+            "source_time_us": 6125000,
+            "distance": 0,
+            "alternative_distance": 122,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 32142.461084089242
+          },
+          {
+            "target_time_us": 7708000,
+            "source_time_us": 6458000,
+            "distance": 0,
+            "alternative_distance": 136,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 30886.88108233828
+          },
+          {
+            "target_time_us": 8000000,
+            "source_time_us": 6750000,
+            "distance": 0,
+            "alternative_distance": 118,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 29785.892011733726
+          },
+          {
+            "target_time_us": 8292000,
+            "source_time_us": 7042000,
+            "distance": 0,
+            "alternative_distance": 134,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 28684.9029411301
+          },
+          {
+            "target_time_us": 8583000,
+            "source_time_us": 7333000,
+            "distance": 0,
+            "alternative_distance": 122,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 27587.684381041676
+          },
+          {
+            "target_time_us": 8875000,
+            "source_time_us": 7625000,
+            "distance": 0,
+            "alternative_distance": 128,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 26486.69531043619
+          },
+          {
+            "target_time_us": 9167000,
+            "source_time_us": 7917000,
+            "distance": 0,
+            "alternative_distance": 106,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 25385.706239832565
+          },
+          {
+            "target_time_us": 9500000,
+            "source_time_us": 8250000,
+            "distance": 0,
+            "alternative_distance": 96,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 24130.126238081604
+          },
+          {
+            "target_time_us": 9792000,
+            "source_time_us": 8542000,
+            "distance": 0,
+            "alternative_distance": 69,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 23029.13716747798
+          },
+          {
+            "target_time_us": 10083000,
+            "source_time_us": 8833000,
+            "distance": 0,
+            "alternative_distance": 62,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 21931.918607389554
+          },
+          {
+            "target_time_us": 10375000,
+            "source_time_us": 9125000,
+            "distance": 0,
+            "alternative_distance": 62,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 20830.929536784068
+          },
+          {
+            "target_time_us": 10667000,
+            "source_time_us": 9417000,
+            "distance": 0,
+            "alternative_distance": 62,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 19729.940466180444
+          },
+          {
+            "target_time_us": 10958000,
+            "source_time_us": 9708000,
+            "distance": 0,
+            "alternative_distance": 68,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 18632.721906092018
+          },
+          {
+            "target_time_us": 11292000,
+            "source_time_us": 10042000,
+            "distance": 0,
+            "alternative_distance": 104,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 17373.37139382586
+          },
+          {
+            "target_time_us": 11583000,
+            "source_time_us": 10333000,
+            "distance": 0,
+            "alternative_distance": 104,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 16276.152833737433
+          },
+          {
+            "target_time_us": 11875000,
+            "source_time_us": 10625000,
+            "distance": 0,
+            "alternative_distance": 120,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 15175.163763131946
+          },
+          {
+            "target_time_us": 12167000,
+            "source_time_us": 10917000,
+            "distance": 0,
+            "alternative_distance": 148,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 14074.174692528322
+          },
+          {
+            "target_time_us": 12458000,
+            "source_time_us": 11208000,
+            "distance": 0,
+            "alternative_distance": 172,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 12976.956132439896
+          },
+          {
+            "target_time_us": 12750000,
+            "source_time_us": 11500000,
+            "distance": 0,
+            "alternative_distance": 194,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 11875.967061836272
+          },
+          {
+            "target_time_us": 13083000,
+            "source_time_us": 11833000,
+            "distance": 0,
+            "alternative_distance": 234,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 10620.387060085312
+          },
+          {
+            "target_time_us": 13375000,
+            "source_time_us": 12125000,
+            "distance": 0,
+            "alternative_distance": 224,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 9519.397989479825
+          },
+          {
+            "target_time_us": 13667000,
+            "source_time_us": 12417000,
+            "distance": 0,
+            "alternative_distance": 212,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 8418.408918876201
+          },
+          {
+            "target_time_us": 13958000,
+            "source_time_us": 12708000,
+            "distance": 0,
+            "alternative_distance": 216,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 7321.190358787775
+          },
+          {
+            "target_time_us": 14250000,
+            "source_time_us": 13000000,
+            "distance": 0,
+            "alternative_distance": 218,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 6220.201288182288
+          },
+          {
+            "target_time_us": 14542000,
+            "source_time_us": 13292000,
+            "distance": 0,
+            "alternative_distance": 162,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 5119.212217578664
+          },
+          {
+            "target_time_us": 14875000,
+            "source_time_us": 13625000,
+            "distance": 0,
+            "alternative_distance": 218,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 3863.6322158277035
+          },
+          {
+            "target_time_us": 15167000,
+            "source_time_us": 13917000,
+            "distance": 0,
+            "alternative_distance": 194,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2762.6431452240795
+          },
+          {
+            "target_time_us": 15458000,
+            "source_time_us": 14208000,
+            "distance": 0,
+            "alternative_distance": 184,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1665.4245851356536
+          },
+          {
+            "target_time_us": 15750000,
+            "source_time_us": 14500000,
+            "distance": 0,
+            "alternative_distance": 144,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 564.435514530167
+          },
+          {
+            "target_time_us": 16042000,
+            "source_time_us": 14792000,
+            "distance": 0,
+            "alternative_distance": 56,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -536.553556073457
+          },
+          {
+            "target_time_us": 16292000,
+            "source_time_us": 15083000,
+            "distance": 0,
+            "alternative_distance": 32,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -42633.77211616188
+          },
+          {
+            "target_time_us": 16667000,
+            "source_time_us": 15417000,
+            "distance": 0,
+            "alternative_distance": 22,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -2893.122628428042
+          },
+          {
+            "target_time_us": 16958000,
+            "source_time_us": 15708000,
+            "distance": 0,
+            "alternative_distance": 28,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -3990.341188516468
+          },
+          {
+            "target_time_us": 17250000,
+            "source_time_us": 16000000,
+            "distance": 0,
+            "alternative_distance": 22,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -5091.330259121954
+          },
+          {
+            "target_time_us": 17542000,
+            "source_time_us": 16292000,
+            "distance": 0,
+            "alternative_distance": 26,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -6192.319329723716
+          },
+          {
+            "target_time_us": 17833000,
+            "source_time_us": 16583000,
+            "distance": 0,
+            "alternative_distance": 24,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -7289.537889815867
+          },
+          {
+            "target_time_us": 23208000,
+            "source_time_us": 21958000,
+            "distance": 0,
+            "alternative_distance": 14,
+            "region": 6,
+            "role": "fit",
+            "residual_us": -27556.031912066042
+          },
+          {
+            "target_time_us": 28000000,
+            "source_time_us": 26750000,
+            "distance": 0,
+            "alternative_distance": 158,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -45624.318303629756
+          },
+          {
+            "target_time_us": 28333000,
+            "source_time_us": 27083000,
+            "distance": 0,
+            "alternative_distance": 176,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -46879.898305378854
+          },
+          {
+            "target_time_us": 28625000,
+            "source_time_us": 27375000,
+            "distance": 0,
+            "alternative_distance": 160,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -47980.887375980616
+          },
+          {
+            "target_time_us": 28917000,
+            "source_time_us": 27667000,
+            "distance": 0,
+            "alternative_distance": 166,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -49081.87644658983
+          },
+          {
+            "target_time_us": 29208000,
+            "source_time_us": 27958000,
+            "distance": 0,
+            "alternative_distance": 212,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -50179.09500667453
+          },
+          {
+            "target_time_us": 29542000,
+            "source_time_us": 28292000,
+            "distance": 0,
+            "alternative_distance": 210,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -51438.44551894069
+          },
+          {
+            "target_time_us": 29833000,
+            "source_time_us": 28583000,
+            "distance": 0,
+            "alternative_distance": 198,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -52535.66407903284
+          }
+        ],
+        "region_counts": [
+          3,
+          12,
+          12,
+          12,
+          8,
+          0,
+          1,
+          7
+        ],
+        "mapping": {
+          "scale": 1.0037705105157682,
+          "offset_us": 1194763.1620068308
+        },
+        "max_fit_residual_us": 248801.58737035654,
+        "max_validation_residual_us": 52535.66407903284,
+        "span_fraction": {
+          "source": 0.8969625191584227,
+          "target": 0.859536684691902
+        },
+        "reason": "ambiguous_or_missing_regions",
+        "probes": [
+          {
+            "source_time_us": 125000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 417000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 750000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1042000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1333000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1625000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1958000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2250000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2542000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2833000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 10,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 3167000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 16,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 3458000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 16,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 3750000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 16,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4042000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 24,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4333000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 18,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4667000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 32,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4958000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 50,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5250000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 54,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5542000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 52,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5833000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 88,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6125000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 122,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6458000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 136,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6750000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 118,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7042000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 134,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7333000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 122,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7625000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 128,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7917000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 106,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8250000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 96,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8542000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 69,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8833000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 62,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9125000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 62,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9417000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 62,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9708000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 68,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10042000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 104,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10333000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 104,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10625000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 120,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10917000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 148,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11208000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 172,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11500000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 194,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11833000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 234,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12125000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 224,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12417000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 212,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12708000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 216,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13000000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 218,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13292000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 162,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13625000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 218,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13917000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 194,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14208000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 184,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14500000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 144,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14792000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 56,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15083000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 32,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15417000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 22,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15708000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 28,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16000000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 22,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16292000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 26,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16583000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 24,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16875000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 17208000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 17500000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 17792000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 18083000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 18375000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 18667000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19000000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19292000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19583000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19875000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20167000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20458000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20792000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21083000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21375000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21667000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21958000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 14,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22250000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 22583000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 22875000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23167000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23458000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23750000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24042000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24375000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24667000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24958000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25250000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25542000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25875000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26167000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26458000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26750000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 158,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27083000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 176,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27375000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 160,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27667000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 166,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27958000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 212,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28292000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 210,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28583000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 198,
+            "reason": "matched"
+          }
+        ],
+        "region_match_fractions": [
+          0.25,
+          1.0,
+          1.0,
+          1.0,
+          0.6666666666666666,
+          0.0,
+          0.08333333333333333,
+          0.5833333333333334
+        ],
+        "independent_validation_search": true,
+        "frame_counts": {
+          "target": 720,
+          "source": 690
+        },
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 2103417
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 4.32,
+      "stdout": "",
+      "stderr": "[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 500000 >= 500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 1500000 >= 1500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 2458000 >= 2458000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 3500000 >= 3500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 4500000 >= 4500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 5458000 >= 5458000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 6500000 >= 6500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 7500000 >= 7500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 8458000 >= 8458000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 9500000 >= 9500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 10500000 >= 10500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 11458000 >= 11458000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 12500000 >= 12500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 13500000 >= 13500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 14458000 >= 14458000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 15500000 >= 15500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 16500000 >= 16500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 17458000 >= 17458000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 18500000 >= 18500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 19500000 >= 19500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 20458000 >= 20458000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 21500000 >= 21500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 22500000 >= 22500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 23458000 >= 23458000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 24500000 >= 24500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 25500000 >= 25500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 26458000 >= 26458000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 27500000 >= 27500000\n[null @ 0x61b8e7d9a880] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 28500000 >= 28500000\n",
+      "case": "speed_25_24",
+      "command": [
+        "python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "fingerprints",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/speed_25_24.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-z1nm8klu/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 28532,
+      "input_blocks": 0,
+      "output_blocks": 4208,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [
+          {
+            "target_time_us": 125000,
+            "source_time_us": 125000,
+            "distance": 0,
+            "alternative_distance": 26,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -3017.709160292725
+          },
+          {
+            "target_time_us": 458000,
+            "source_time_us": 458000,
+            "distance": 0,
+            "alternative_distance": 20,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -16576.148228887527
+          },
+          {
+            "target_time_us": 708000,
+            "source_time_us": 708000,
+            "distance": 0,
+            "alternative_distance": 12,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -26755.15653864341
+          },
+          {
+            "target_time_us": 3542000,
+            "source_time_us": 3500000,
+            "distance": 0,
+            "alternative_distance": 8,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -98434.32134199701
+          },
+          {
+            "target_time_us": 3875000,
+            "source_time_us": 3750000,
+            "distance": 0,
+            "alternative_distance": 8,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -25613.329651752952
+          },
+          {
+            "target_time_us": 4208000,
+            "source_time_us": 4083000,
+            "distance": 0,
+            "alternative_distance": 12,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -39171.768720347434
+          },
+          {
+            "target_time_us": 4458000,
+            "source_time_us": 4375000,
+            "distance": 0,
+            "alternative_distance": 16,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -93060.85042614304
+          },
+          {
+            "target_time_us": 4833000,
+            "source_time_us": 4625000,
+            "distance": 0,
+            "alternative_distance": 14,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 21760.14126410149
+          },
+          {
+            "target_time_us": 5125000,
+            "source_time_us": 4958000,
+            "distance": 0,
+            "alternative_distance": 18,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -32798.29780449346
+          },
+          {
+            "target_time_us": 5375000,
+            "source_time_us": 5250000,
+            "distance": 0,
+            "alternative_distance": 18,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -86687.37951028813
+          },
+          {
+            "target_time_us": 5792000,
+            "source_time_us": 5542000,
+            "distance": 0,
+            "alternative_distance": 22,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 26423.538783917204
+          },
+          {
+            "target_time_us": 6083000,
+            "source_time_us": 5833000,
+            "distance": 0,
+            "alternative_distance": 46,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 14575.173111361451
+          },
+          {
+            "target_time_us": 6417000,
+            "source_time_us": 6167000,
+            "distance": 0,
+            "alternative_distance": 60,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 976.0180095275864
+          },
+          {
+            "target_time_us": 6708000,
+            "source_time_us": 6458000,
+            "distance": 0,
+            "alternative_distance": 44,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -10872.347663028166
+          },
+          {
+            "target_time_us": 7000000,
+            "source_time_us": 6708000,
+            "distance": 0,
+            "alternative_distance": 88,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 20948.64402721543
+          },
+          {
+            "target_time_us": 7333000,
+            "source_time_us": 7042000,
+            "distance": 0,
+            "alternative_distance": 120,
+            "region": 1,
+            "role": "validation",
+            "residual_us": 6349.488925381564
+          },
+          {
+            "target_time_us": 7625000,
+            "source_time_us": 7333000,
+            "distance": 0,
+            "alternative_distance": 136,
+            "region": 2,
+            "role": "fit",
+            "residual_us": -4498.8767471741885
+          },
+          {
+            "target_time_us": 7958000,
+            "source_time_us": 7625000,
+            "distance": 0,
+            "alternative_distance": 122,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 24612.04154703114
+          },
+          {
+            "target_time_us": 8250000,
+            "source_time_us": 7917000,
+            "distance": 0,
+            "alternative_distance": 136,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 12722.959841236472
+          },
+          {
+            "target_time_us": 8583000,
+            "source_time_us": 8250000,
+            "distance": 0,
+            "alternative_distance": 122,
+            "region": 2,
+            "role": "fit",
+            "residual_us": -835.4792273584753
+          },
+          {
+            "target_time_us": 8875000,
+            "source_time_us": 8500000,
+            "distance": 0,
+            "alternative_distance": 128,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 30985.51246288605
+          },
+          {
+            "target_time_us": 9208000,
+            "source_time_us": 8833000,
+            "distance": 0,
+            "alternative_distance": 98,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 17427.073394291103
+          },
+          {
+            "target_time_us": 9500000,
+            "source_time_us": 9125000,
+            "distance": 0,
+            "alternative_distance": 96,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 5537.991688495502
+          },
+          {
+            "target_time_us": 9833000,
+            "source_time_us": 9458000,
+            "distance": 0,
+            "alternative_distance": 62,
+            "region": 2,
+            "role": "fit",
+            "residual_us": -8020.447380099446
+          },
+          {
+            "target_time_us": 10125000,
+            "source_time_us": 9708000,
+            "distance": 0,
+            "alternative_distance": 62,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 23800.54431014508
+          },
+          {
+            "target_time_us": 10458000,
+            "source_time_us": 10042000,
+            "distance": 0,
+            "alternative_distance": 58,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 9201.389208311215
+          },
+          {
+            "target_time_us": 10750000,
+            "source_time_us": 10333000,
+            "distance": 0,
+            "alternative_distance": 60,
+            "region": 2,
+            "role": "fit",
+            "residual_us": -1646.9764642454684
+          },
+          {
+            "target_time_us": 11083000,
+            "source_time_us": 10625000,
+            "distance": 0,
+            "alternative_distance": 82,
+            "region": 2,
+            "role": "fit",
+            "residual_us": 27463.941829960793
+          },
+          {
+            "target_time_us": 11375000,
+            "source_time_us": 10917000,
+            "distance": 0,
+            "alternative_distance": 104,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 15574.860124165192
+          },
+          {
+            "target_time_us": 11708000,
+            "source_time_us": 11250000,
+            "distance": 0,
+            "alternative_distance": 110,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2016.4210555702448
+          },
+          {
+            "target_time_us": 12000000,
+            "source_time_us": 11500000,
+            "distance": 0,
+            "alternative_distance": 124,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 33837.41274581477
+          },
+          {
+            "target_time_us": 12292000,
+            "source_time_us": 11792000,
+            "distance": 0,
+            "alternative_distance": 174,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 21948.33104001917
+          },
+          {
+            "target_time_us": 12625000,
+            "source_time_us": 12125000,
+            "distance": 0,
+            "alternative_distance": 160,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 8389.891971426085
+          },
+          {
+            "target_time_us": 12917000,
+            "source_time_us": 12417000,
+            "distance": 0,
+            "alternative_distance": 194,
+            "region": 3,
+            "role": "validation",
+            "residual_us": -3499.1897343695164
+          },
+          {
+            "target_time_us": 13250000,
+            "source_time_us": 12708000,
+            "distance": 0,
+            "alternative_distance": 234,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 26652.4445930738
+          },
+          {
+            "target_time_us": 13542000,
+            "source_time_us": 13000000,
+            "distance": 0,
+            "alternative_distance": 204,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 14763.362887280062
+          },
+          {
+            "target_time_us": 13875000,
+            "source_time_us": 13333000,
+            "distance": 0,
+            "alternative_distance": 232,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 1204.9238186851144
+          },
+          {
+            "target_time_us": 14167000,
+            "source_time_us": 13583000,
+            "distance": 0,
+            "alternative_distance": 200,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 33025.91550892964
+          },
+          {
+            "target_time_us": 14458000,
+            "source_time_us": 13875000,
+            "distance": 0,
+            "alternative_distance": 178,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 20136.83380313404
+          },
+          {
+            "target_time_us": 14792000,
+            "source_time_us": 14208000,
+            "distance": 0,
+            "alternative_distance": 234,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 7578.394734539092
+          },
+          {
+            "target_time_us": 15083000,
+            "source_time_us": 14458000,
+            "distance": 0,
+            "alternative_distance": 194,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 38399.38642478362
+          },
+          {
+            "target_time_us": 15417000,
+            "source_time_us": 14792000,
+            "distance": 0,
+            "alternative_distance": 196,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 24800.231322949752
+          },
+          {
+            "target_time_us": 15708000,
+            "source_time_us": 15083000,
+            "distance": 0,
+            "alternative_distance": 152,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 12951.865650393069
+          },
+          {
+            "target_time_us": 16042000,
+            "source_time_us": 15417000,
+            "distance": 0,
+            "alternative_distance": 56,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -647.2894514407963
+          },
+          {
+            "target_time_us": 16375000,
+            "source_time_us": 15708000,
+            "distance": 0,
+            "alternative_distance": 30,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 29504.344876004383
+          },
+          {
+            "target_time_us": 16667000,
+            "source_time_us": 16000000,
+            "distance": 0,
+            "alternative_distance": 22,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 17615.263170208782
+          },
+          {
+            "target_time_us": 16958000,
+            "source_time_us": 16333000,
+            "distance": 0,
+            "alternative_distance": 28,
+            "region": 4,
+            "role": "fit",
+            "residual_us": -37943.1758983843
+          },
+          {
+            "target_time_us": 17292000,
+            "source_time_us": 16583000,
+            "distance": 0,
+            "alternative_distance": 22,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 35877.81579186022
+          },
+          {
+            "target_time_us": 17625000,
+            "source_time_us": 16917000,
+            "distance": 0,
+            "alternative_distance": 30,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 21278.660690024495
+          },
+          {
+            "target_time_us": 17958000,
+            "source_time_us": 17250000,
+            "distance": 0,
+            "alternative_distance": 26,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 7720.22162143141
+          },
+          {
+            "target_time_us": 23250000,
+            "source_time_us": 22333000,
+            "distance": 0,
+            "alternative_distance": 14,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 9760.624667473137
+          },
+          {
+            "target_time_us": 23333000,
+            "source_time_us": 22583000,
+            "distance": 0,
+            "alternative_distance": 8,
+            "region": 6,
+            "role": "fit",
+            "residual_us": -167418.38364228234
+          },
+          {
+            "target_time_us": 24167000,
+            "source_time_us": 23208000,
+            "distance": 0,
+            "alternative_distance": 8,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 16134.095583327115
+          },
+          {
+            "target_time_us": 27917000,
+            "source_time_us": 26792000,
+            "distance": 0,
+            "alternative_distance": 148,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 36207.832454666495
+          },
+          {
+            "target_time_us": 28250000,
+            "source_time_us": 27125000,
+            "distance": 0,
+            "alternative_distance": 152,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 22649.39338607341
+          },
+          {
+            "target_time_us": 28542000,
+            "source_time_us": 27417000,
+            "distance": 0,
+            "alternative_distance": 170,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 10760.311680275947
+          },
+          {
+            "target_time_us": 28875000,
+            "source_time_us": 27708000,
+            "distance": 0,
+            "alternative_distance": 162,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 40911.946007721126
+          },
+          {
+            "target_time_us": 29208000,
+            "source_time_us": 28042000,
+            "distance": 0,
+            "alternative_distance": 212,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 26312.790905889124
+          },
+          {
+            "target_time_us": 29500000,
+            "source_time_us": 28333000,
+            "distance": 0,
+            "alternative_distance": 216,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 15464.425233330578
+          },
+          {
+            "target_time_us": 29833000,
+            "source_time_us": 28625000,
+            "distance": 0,
+            "alternative_distance": 198,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 44575.34352753684
+          }
+        ],
+        "region_counts": [
+          4,
+          12,
+          12,
+          12,
+          10,
+          0,
+          3,
+          7
+        ],
+        "mapping": {
+          "scale": 1.0407160332390235,
+          "offset_us": -2071.794994585216
+        },
+        "max_fit_residual_us": 167418.38364228234,
+        "max_validation_residual_us": 93060.85042614304,
+        "span_fraction": {
+          "source": 0.991304347826087,
+          "target": 0.9916549836437679
+        },
+        "reason": "ambiguous_or_missing_regions",
+        "probes": [
+          {
+            "source_time_us": 125000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 26,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 458000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 20,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 708000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 12,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 1042000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1375000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1625000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 1958000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2250000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2542000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2875000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3167000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3500000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 8,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 3750000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 8,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4083000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 12,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4375000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 16,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4625000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 14,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 4958000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 18,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5250000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 18,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5542000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 22,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 5833000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 46,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6167000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 60,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6458000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 44,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 6708000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 88,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7042000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 120,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7333000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 136,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7625000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 122,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7917000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 136,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8250000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 122,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8500000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 128,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 8833000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 98,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9125000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 96,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9458000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 62,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 9708000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 62,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10042000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 58,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10333000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 60,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10625000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 82,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 10917000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 104,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11250000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 110,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11500000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 124,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 11792000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 174,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12125000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 160,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12417000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 194,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12708000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 234,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13000000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 204,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13333000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 232,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13583000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 200,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13875000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 178,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14208000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 234,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14458000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 194,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14792000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 196,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15083000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 152,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15417000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 56,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15708000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 30,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16000000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 22,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16333000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 28,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16583000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 22,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16917000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 30,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17250000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 26,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17500000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 17833000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 18125000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 18458000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 18708000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19042000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19333000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19625000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 19917000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20250000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20500000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 20833000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21125000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21458000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 21708000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 22042000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 22333000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 14,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22583000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 8,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22917000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23208000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 8,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 23500000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 23792000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24125000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24417000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 24667000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25000000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25292000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25583000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 25875000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26208000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26500000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 26792000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 148,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27125000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 152,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27417000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 170,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 27708000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 162,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28042000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 212,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28333000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 216,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 28625000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 198,
+            "reason": "matched"
+          }
+        ],
+        "region_match_fractions": [
+          0.3333333333333333,
+          1.0,
+          1.0,
+          1.0,
+          0.8333333333333334,
+          0.0,
+          0.25,
+          0.5833333333333334
+        ],
+        "independent_validation_search": true,
+        "frame_counts": {
+          "target": 720,
+          "source": 720
+        },
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 2149518
+    },
+    {
+      "returncode": 0,
+      "timed_out": false,
+      "wall_seconds": 4.319,
+      "stdout": "",
+      "stderr": "",
+      "case": "reversed",
+      "command": [
+        "python",
+        "tools/alignment/compare_visual.py",
+        "worker",
+        "--engine",
+        "fingerprints",
+        "--target",
+        "/tmp/trackstarr-signature-dark-sample/target.mkv",
+        "--source",
+        "/tmp/trackstarr-signature-dark-sample/reversed.mkv",
+        "--report",
+        "/tmp/trackstarr-visual-4_z9zj2w/measurement.json",
+        "--ffmpeg",
+        "ffmpeg",
+        "--ffprobe",
+        "ffprobe"
+      ],
+      "max_process_rss_kib": 28092,
+      "input_blocks": 0,
+      "output_blocks": 4200,
+      "measurement": {
+        "status": "review_required",
+        "anchors": [
+          {
+            "target_time_us": 29833000,
+            "source_time_us": 125000,
+            "distance": 0,
+            "alternative_distance": 198,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -3082.5441457517445
+          },
+          {
+            "target_time_us": 29500000,
+            "source_time_us": 458000,
+            "distance": 0,
+            "alternative_distance": 216,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -2935.0975400805473
+          },
+          {
+            "target_time_us": 29208000,
+            "source_time_us": 750000,
+            "distance": 0,
+            "alternative_distance": 212,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -2805.805020991713
+          },
+          {
+            "target_time_us": 28875000,
+            "source_time_us": 1083000,
+            "distance": 0,
+            "alternative_distance": 162,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -2658.358415324241
+          },
+          {
+            "target_time_us": 28583000,
+            "source_time_us": 1375000,
+            "distance": 0,
+            "alternative_distance": 158,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -2529.0658962354064
+          },
+          {
+            "target_time_us": 28250000,
+            "source_time_us": 1708000,
+            "distance": 0,
+            "alternative_distance": 152,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -2381.6192905679345
+          },
+          {
+            "target_time_us": 27958000,
+            "source_time_us": 2000000,
+            "distance": 0,
+            "alternative_distance": 164,
+            "region": 0,
+            "role": "fit",
+            "residual_us": -2252.3267714791
+          },
+          {
+            "target_time_us": 23250000,
+            "source_time_us": 6708000,
+            "distance": 0,
+            "alternative_distance": 14,
+            "region": 1,
+            "role": "validation",
+            "residual_us": -167.70629251003265
+          },
+          {
+            "target_time_us": 17958000,
+            "source_time_us": 12000000,
+            "distance": 0,
+            "alternative_distance": 26,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2175.499224629253
+          },
+          {
+            "target_time_us": 17625000,
+            "source_time_us": 12333000,
+            "distance": 0,
+            "alternative_distance": 30,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2322.9458303004503
+          },
+          {
+            "target_time_us": 17333000,
+            "source_time_us": 12625000,
+            "distance": 0,
+            "alternative_distance": 22,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2452.2383493855596
+          },
+          {
+            "target_time_us": 16958000,
+            "source_time_us": 12958000,
+            "distance": 0,
+            "alternative_distance": 28,
+            "region": 3,
+            "role": "validation",
+            "residual_us": -39400.31504494324
+          },
+          {
+            "target_time_us": 16708000,
+            "source_time_us": 13250000,
+            "distance": 0,
+            "alternative_distance": 22,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2728.9774741437286
+          },
+          {
+            "target_time_us": 16375000,
+            "source_time_us": 13583000,
+            "distance": 0,
+            "alternative_distance": 30,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 2876.424079813063
+          },
+          {
+            "target_time_us": 16083000,
+            "source_time_us": 13875000,
+            "distance": 0,
+            "alternative_distance": 56,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 3005.716598900035
+          },
+          {
+            "target_time_us": 15750000,
+            "source_time_us": 14208000,
+            "distance": 0,
+            "alternative_distance": 144,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 3153.163204571232
+          },
+          {
+            "target_time_us": 15458000,
+            "source_time_us": 14500000,
+            "distance": 0,
+            "alternative_distance": 184,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 3282.4557236563414
+          },
+          {
+            "target_time_us": 15125000,
+            "source_time_us": 14833000,
+            "distance": 0,
+            "alternative_distance": 190,
+            "region": 3,
+            "role": "validation",
+            "residual_us": 3429.9023293275386
+          },
+          {
+            "target_time_us": 14833000,
+            "source_time_us": 15125000,
+            "distance": 0,
+            "alternative_distance": 226,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 3559.1948484145105
+          },
+          {
+            "target_time_us": 14500000,
+            "source_time_us": 15458000,
+            "distance": 0,
+            "alternative_distance": 164,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 3706.641454083845
+          },
+          {
+            "target_time_us": 14208000,
+            "source_time_us": 15750000,
+            "distance": 0,
+            "alternative_distance": 204,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 3835.933973170817
+          },
+          {
+            "target_time_us": 13875000,
+            "source_time_us": 16083000,
+            "distance": 0,
+            "alternative_distance": 232,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 3983.380578842014
+          },
+          {
+            "target_time_us": 13583000,
+            "source_time_us": 16375000,
+            "distance": 0,
+            "alternative_distance": 198,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 4112.673097927123
+          },
+          {
+            "target_time_us": 13250000,
+            "source_time_us": 16708000,
+            "distance": 0,
+            "alternative_distance": 234,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 4260.1197035983205
+          },
+          {
+            "target_time_us": 12958000,
+            "source_time_us": 17000000,
+            "distance": 0,
+            "alternative_distance": 192,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 4389.41222268343
+          },
+          {
+            "target_time_us": 12625000,
+            "source_time_us": 17333000,
+            "distance": 0,
+            "alternative_distance": 160,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 4536.858828354627
+          },
+          {
+            "target_time_us": 12333000,
+            "source_time_us": 17625000,
+            "distance": 0,
+            "alternative_distance": 168,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 4666.151347439736
+          },
+          {
+            "target_time_us": 12000000,
+            "source_time_us": 17958000,
+            "distance": 0,
+            "alternative_distance": 124,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 4813.597953110933
+          },
+          {
+            "target_time_us": 11708000,
+            "source_time_us": 18250000,
+            "distance": 0,
+            "alternative_distance": 110,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 4942.890472199768
+          },
+          {
+            "target_time_us": 11375000,
+            "source_time_us": 18583000,
+            "distance": 0,
+            "alternative_distance": 104,
+            "region": 4,
+            "role": "fit",
+            "residual_us": 5090.33707786724
+          },
+          {
+            "target_time_us": 11083000,
+            "source_time_us": 18875000,
+            "distance": 0,
+            "alternative_distance": 82,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 5219.629596956074
+          },
+          {
+            "target_time_us": 10750000,
+            "source_time_us": 19208000,
+            "distance": 0,
+            "alternative_distance": 60,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 5367.076202627271
+          },
+          {
+            "target_time_us": 10458000,
+            "source_time_us": 19500000,
+            "distance": 0,
+            "alternative_distance": 58,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 5496.368721712381
+          },
+          {
+            "target_time_us": 10125000,
+            "source_time_us": 19833000,
+            "distance": 0,
+            "alternative_distance": 62,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 5643.815327383578
+          },
+          {
+            "target_time_us": 9833000,
+            "source_time_us": 20125000,
+            "distance": 0,
+            "alternative_distance": 62,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 5773.107846468687
+          },
+          {
+            "target_time_us": 9500000,
+            "source_time_us": 20458000,
+            "distance": 0,
+            "alternative_distance": 96,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 5920.554452139884
+          },
+          {
+            "target_time_us": 9208000,
+            "source_time_us": 20750000,
+            "distance": 0,
+            "alternative_distance": 98,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 6049.8469712249935
+          },
+          {
+            "target_time_us": 8875000,
+            "source_time_us": 21083000,
+            "distance": 0,
+            "alternative_distance": 128,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 6197.293576896191
+          },
+          {
+            "target_time_us": 8583000,
+            "source_time_us": 21375000,
+            "distance": 0,
+            "alternative_distance": 122,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 6326.5860959813
+          },
+          {
+            "target_time_us": 8250000,
+            "source_time_us": 21708000,
+            "distance": 0,
+            "alternative_distance": 136,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 6474.032701652497
+          },
+          {
+            "target_time_us": 7958000,
+            "source_time_us": 22000000,
+            "distance": 0,
+            "alternative_distance": 122,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 6603.325220737606
+          },
+          {
+            "target_time_us": 7625000,
+            "source_time_us": 22333000,
+            "distance": 0,
+            "alternative_distance": 136,
+            "region": 5,
+            "role": "validation",
+            "residual_us": 6750.7718264088035
+          },
+          {
+            "target_time_us": 7333000,
+            "source_time_us": 22625000,
+            "distance": 0,
+            "alternative_distance": 120,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 6880.064345497638
+          },
+          {
+            "target_time_us": 7000000,
+            "source_time_us": 22958000,
+            "distance": 0,
+            "alternative_distance": 88,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 7027.51095116511
+          },
+          {
+            "target_time_us": 6708000,
+            "source_time_us": 23250000,
+            "distance": 0,
+            "alternative_distance": 44,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 7156.803470253944
+          },
+          {
+            "target_time_us": 6375000,
+            "source_time_us": 23583000,
+            "distance": 0,
+            "alternative_distance": 62,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 7304.250075925142
+          },
+          {
+            "target_time_us": 6083000,
+            "source_time_us": 23875000,
+            "distance": 0,
+            "alternative_distance": 46,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 7433.542595010251
+          },
+          {
+            "target_time_us": 5750000,
+            "source_time_us": 24208000,
+            "distance": 0,
+            "alternative_distance": 18,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 7580.989200681448
+          },
+          {
+            "target_time_us": 5375000,
+            "source_time_us": 24500000,
+            "distance": 0,
+            "alternative_distance": 18,
+            "region": 6,
+            "role": "fit",
+            "residual_us": -75289.71828023344
+          },
+          {
+            "target_time_us": 5125000,
+            "source_time_us": 24833000,
+            "distance": 0,
+            "alternative_distance": 18,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 7857.728325437754
+          },
+          {
+            "target_time_us": 4833000,
+            "source_time_us": 25125000,
+            "distance": 0,
+            "alternative_distance": 14,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 7987.020844522864
+          },
+          {
+            "target_time_us": 4458000,
+            "source_time_us": 25458000,
+            "distance": 0,
+            "alternative_distance": 16,
+            "region": 6,
+            "role": "fit",
+            "residual_us": -33865.53254980594
+          },
+          {
+            "target_time_us": 4208000,
+            "source_time_us": 25750000,
+            "distance": 0,
+            "alternative_distance": 12,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 8263.75996927917
+          },
+          {
+            "target_time_us": 3875000,
+            "source_time_us": 26083000,
+            "distance": 0,
+            "alternative_distance": 8,
+            "region": 6,
+            "role": "fit",
+            "residual_us": 8411.206574950367
+          },
+          {
+            "target_time_us": 3583000,
+            "source_time_us": 26375000,
+            "distance": 0,
+            "alternative_distance": 8,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 8540.499094035476
+          },
+          {
+            "target_time_us": 708000,
+            "source_time_us": 29208000,
+            "distance": 0,
+            "alternative_distance": 12,
+            "region": 7,
+            "role": "validation",
+            "residual_us": -32205.097801264375
+          },
+          {
+            "target_time_us": 458000,
+            "source_time_us": 29500000,
+            "distance": 0,
+            "alternative_distance": 20,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 9924.194717820734
+          },
+          {
+            "target_time_us": 125000,
+            "source_time_us": 29833000,
+            "distance": 0,
+            "alternative_distance": 26,
+            "region": 7,
+            "role": "validation",
+            "residual_us": 10071.641323491931
+          }
+        ],
+        "region_counts": [
+          7,
+          1,
+          0,
+          10,
+          12,
+          12,
+          12,
+          4
+        ],
+        "mapping": {
+          "scale": -1.000442782599611,
+          "offset_us": 29961137.8919707
+        },
+        "max_fit_residual_us": 75289.71828023344,
+        "max_validation_residual_us": 39400.31504494324,
+        "span_fraction": {
+          "source": 0.9916549836437679,
+          "target": 0.9916549836437679
+        },
+        "reason": "ambiguous_or_missing_regions",
+        "probes": [
+          {
+            "source_time_us": 125000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 198,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 458000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 216,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 750000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 212,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 1083000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 162,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 1375000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 158,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 1708000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 152,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 2000000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 164,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 2333000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2625000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 2958000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3250000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3583000,
+            "region": 0,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 3875000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 4208000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 4500000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 4833000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 5125000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 5458000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 5750000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 6083000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 6375000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 6708000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 14,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 7000000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 7333000,
+            "region": 1,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 7625000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 7958000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 8250000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 8583000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 8875000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 9208000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 9500000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 9833000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 10125000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 10458000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 10750000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 11083000,
+            "region": 2,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 11375000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 11708000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 0,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 12000000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 26,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12333000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 30,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12625000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 22,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 12958000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 28,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13250000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 22,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13583000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 30,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 13875000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 56,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14208000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 144,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14500000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 184,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 14833000,
+            "region": 3,
+            "distance": 0,
+            "alternative_distance": 190,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15125000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 226,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15458000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 164,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 15750000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 204,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16083000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 232,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16375000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 198,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 16708000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 234,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17000000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 192,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17333000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 160,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17625000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 168,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 17958000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 124,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 18250000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 110,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 18583000,
+            "region": 4,
+            "distance": 0,
+            "alternative_distance": 104,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 18875000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 82,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 19208000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 60,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 19500000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 58,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 19833000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 62,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 20125000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 62,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 20458000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 96,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 20750000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 98,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 21083000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 128,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 21375000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 122,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 21708000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 136,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22000000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 122,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22333000,
+            "region": 5,
+            "distance": 0,
+            "alternative_distance": 136,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22625000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 120,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 22958000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 88,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 23250000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 44,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 23583000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 62,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 23875000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 46,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 24208000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 18,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 24500000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 18,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 24833000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 18,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 25125000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 14,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 25458000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 16,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 25750000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 12,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 26083000,
+            "region": 6,
+            "distance": 0,
+            "alternative_distance": 8,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 26375000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 8,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 26708000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27000000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27333000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27625000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 2,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 27958000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 28250000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 4,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 28583000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 28875000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 6,
+            "reason": "ambiguous_match"
+          },
+          {
+            "source_time_us": 29208000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 12,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 29500000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 20,
+            "reason": "matched"
+          },
+          {
+            "source_time_us": 29833000,
+            "region": 7,
+            "distance": 0,
+            "alternative_distance": 26,
+            "reason": "matched"
+          }
+        ],
+        "region_match_fractions": [
+          0.5833333333333334,
+          0.08333333333333333,
+          0.0,
+          0.8333333333333334,
+          1.0,
+          1.0,
+          1.0,
+          0.3333333333333333
+        ],
+        "independent_validation_search": true,
+        "frame_counts": {
+          "target": 720,
+          "source": 720
+        },
+        "automatic_publication": false
+      },
+      "outcome": "review_required",
+      "workspace_bytes_at_exit": 2145349
+    }
+  ]
+}

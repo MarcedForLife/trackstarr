@@ -1,0 +1,8 @@
+# Isolated research environment only, tested on CPython 3.14 Linux x86_64 glibc.
+ImageHash==4.3.2
+numpy==2.5.3
+opencv-python-headless==5.0.0.93
+pillow==12.3.0
+PyWavelets==1.10.0
+scipy==1.18.1
+tqdm==4.70.1
