@@ -91,9 +91,9 @@ SCANNED_PREFIXES = (RULE_PREFIX,)
 
 # Named connections keep the existing flat settings/secret-file conventions.
 ARR_SETTING = re.compile(
-    r"(RADARR|SONARR)_((?!PUBLIC_)[A-Z0-9]+)_(URL|API_KEY|PUBLIC_URL|NAME)"
+    r"(RADARR|SONARR)_((?!PUBLIC_)[A-Z0-9]+)_(URL|API_KEY|PUBLIC_URL|NAME|READ_ONLY)"
 )
-ARR_SUFFIXES = ("URL", "API_KEY", "PUBLIC_URL", "NAME")
+ARR_SUFFIXES = ("URL", "API_KEY", "PUBLIC_URL", "NAME", "READ_ONLY")
 
 #: What a connection's display name may hold. Stored data names a connection by
 #: its ID, so the name is free to change; this keeps it fit for a grid line.
@@ -129,6 +129,9 @@ class ArrInstanceConfig:
     api_key: str = field(default="", repr=False)
     public_url: str = ""
     name: str = ""
+    #: Probed, planned and read as an audio source, never changed. The
+    #: catalogue decides which files that covers.
+    read_only: bool = False
 
     @property
     def type(self) -> str:
@@ -436,6 +439,7 @@ class _Source:
                     api_key=self._secret(instance.setting_name("api_key")),
                     public_url=self._raw(instance.setting_name("public_url"), "").rstrip("/"),
                     name=self._raw(instance.setting_name("name"), "").strip(),
+                    read_only=self._bool(instance.setting_name("read_only")),
                 )
             )
         return tuple(instances)

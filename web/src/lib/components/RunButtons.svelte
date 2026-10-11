@@ -11,6 +11,8 @@
 		mayRewrite,
 		// Why neither can be pressed now, in the caller's words.
 		refuses = '',
+		// Why Process alone is refused for these files. Plan still runs.
+		heldBack = '',
 		disabled = false,
 		// Which of the two is under way.
 		busy = '',
@@ -23,6 +25,7 @@
 	}: {
 		mayRewrite: boolean;
 		refuses?: string;
+		heldBack?: string;
 		disabled?: boolean;
 		busy?: '' | RunMode;
 		fill?: boolean;
@@ -61,9 +64,11 @@
 		note.raise();
 	}
 
+	const allowed = $derived(mayRewrite && !heldBack);
+
 	// aria-disabled, so the button still takes the press that explains it.
 	function press(mode: RunMode) {
-		if (mode === 'apply' && !mayRewrite) explain();
+		if (mode === 'apply' && !allowed) explain();
 		else onrun(mode);
 	}
 </script>
@@ -100,13 +105,13 @@
 	<button
 		type="button"
 		onclick={() => press('apply')}
-		disabled={mayRewrite && off}
-		aria-disabled={!mayRewrite || undefined}
+		disabled={allowed && off}
+		aria-disabled={!allowed || undefined}
 		aria-busy={busy === 'apply'}
-		aria-expanded={mayRewrite ? undefined : why}
-		title={mayRewrite
+		aria-expanded={allowed ? undefined : why}
+		title={allowed
 			? 'Reads every file and applies the rules. Changes files on disk.'
-			: REPORT_ONLY_NOTE}
+			: heldBack || REPORT_ONLY_NOTE}
 		class={`${processShape} aria-disabled:opacity-(--disabled)`}
 	>
 		<Spinner glyph="bolt" size={glyphSize} busy={busy === 'apply'} />
@@ -119,9 +124,9 @@
 			role="status"
 			class="absolute top-full left-0 z-30 mt-2 w-64 rounded-xl border border-line-strong bg-raised p-3 text-[12.5px] text-dim shadow-lg"
 		>
-			{REPORT_ONLY_NOTE}
+			{heldBack || REPORT_ONLY_NOTE}
 			<a
-				href={resolve('/settings')}
+				href={heldBack ? resolve('/settings/connections') : resolve('/settings')}
 				class="mt-1 block font-medium text-accent underline underline-offset-2 hover:text-fg"
 			>
 				Change it in Settings

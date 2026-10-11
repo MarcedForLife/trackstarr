@@ -16,6 +16,7 @@
 			"path": "/data/media/tv/Severance/Season 01/Severance - S01E02 - Half Loop.mkv",
 			"name": "Severance - S01E02 - Half Loop.mkv",
 			"source": "Sonarr",
+			"read_only": "Sonarr is read-only",
 			"status": "failed",
 			"bytes": 2147483648,
 			"seconds": 3305.0,
@@ -71,6 +72,7 @@
 			"path": "/data/media/tv/Severance/Season 01/Severance - S01E01 - Good News About Hell.mkv",
 			"name": "Severance - S01E01 - Good News About Hell.mkv",
 			"source": "Sonarr",
+			"read_only": "Sonarr is read-only",
 			"status": "conform",
 			"bytes": 2251799813,
 			"seconds": 3420.0,
@@ -159,7 +161,8 @@
 	"folders": [
 		{
 			"source": "Sonarr",
-			"folder": "/data/media/tv/Severance"
+			"folder": "/data/media/tv/Severance",
+			"read_only": "Sonarr is read-only"
 		}
 	],
 	"servers": [

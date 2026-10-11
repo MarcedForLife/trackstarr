@@ -57,7 +57,7 @@ test('new identity survives typing and clearing a display name, including Public
 				id,
 				type: 'radarr',
 				create: true,
-				values: { url: '', api_key: '', public_url: '', name: label }
+				values: { url: '', api_key: '', public_url: '', name: label, read_only: false }
 			}
 		]);
 		expect(sources(instances, draft).at(-1)!.name).toBe(id);

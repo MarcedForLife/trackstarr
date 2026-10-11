@@ -10,7 +10,7 @@ import type {
 	SettingsSnapshot,
 	SettingValue
 } from '$lib/settings';
-import { ARR_FIELDS } from '$lib/connections';
+import { ARR_FIELDS, blankArrField } from '$lib/connections';
 import { ORIGINAL, STOCK, type Settings } from './judge';
 
 // Every rule, its default mode and the summary its row shows, as the service
@@ -167,6 +167,7 @@ export const DEFAULTS: Settings = {
 	RADARR_API_KEY: '',
 	RADARR_NAME: '',
 	RADARR_PUBLIC_URL: '',
+	RADARR_READ_ONLY: false,
 	RADARR_URL: 'http://localhost:7878',
 	REGENERATE_ABOVE_PERCENT: '0',
 	REGENERATE_BELOW_PERCENT: '80',
@@ -179,6 +180,7 @@ export const DEFAULTS: Settings = {
 	SONARR_API_KEY: '',
 	SONARR_NAME: '',
 	SONARR_PUBLIC_URL: '',
+	SONARR_READ_ONLY: false,
 	SONARR_URL: 'http://localhost:8989',
 	SWEEP_AT: '0 3 * * *',
 	TZ: 'UTC',
@@ -213,7 +215,7 @@ function arrInstances(values: Record<string, Setting>): ArrInstance[] {
 	const ids = new Set<string>();
 	for (const name of Object.keys(values)) {
 		const match = name.match(
-			/^(RADARR|SONARR)_((?!PUBLIC_)[A-Z0-9]+)_(?:URL|API_KEY|PUBLIC_URL|NAME)$/
+			/^(RADARR|SONARR)_((?!PUBLIC_)[A-Z0-9]+)_(?:URL|API_KEY|PUBLIC_URL|NAME|READ_ONLY)$/
 		);
 		if (match) ids.add(`${match[1].toLowerCase()}-${match[2].toLowerCase()}`);
 	}
@@ -229,7 +231,7 @@ function arrInstances(values: Record<string, Setting>): ArrInstance[] {
 						field,
 						{
 							...(values[name] ?? {
-								value: '',
+								value: blankArrField(field),
 								env: false,
 								...(field === 'api_key' ? { set: false } : {})
 							}),
@@ -289,11 +291,19 @@ export function arrChanges(
 		const fields = remove
 			? Object.fromEntries(ARR_FIELDS.map((field) => [field, null]))
 			: create
-				? { ...Object.fromEntries(ARR_FIELDS.map((field) => [field, ''])), ...values }
+				? {
+						...Object.fromEntries(
+							ARR_FIELDS.filter((field) => blankArrField(field) === '').map((field) => [field, ''])
+						),
+						...values
+					}
 				: values;
 		for (const [field, value] of Object.entries(fields)) {
-			if (value !== null && typeof value !== 'string')
-				throw new Error(`connection ${id} ${field} must be a string or null`);
+			const kind = typeof blankArrField(field as ArrField);
+			if (value !== null && typeof value !== kind)
+				throw new Error(
+					`connection ${id} ${field} must be ${kind === 'boolean' ? 'true, false' : 'a string'} or null`
+				);
 			if (field === 'api_key' && value === '' && !create) continue;
 			if (held?.fields[field as ArrField].env)
 				throw new Error('connection field is set by the environment');

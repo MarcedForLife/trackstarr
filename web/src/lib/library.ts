@@ -148,6 +148,8 @@ export type LibraryFile = {
 	// How the settings name the instance whose folder holds the file. Absent
 	// under a folder no *arr claims.
 	source?: string;
+	// Why the file is never changed, when a read-only connection claims it.
+	read_only?: string;
 	status: Verdict;
 	bytes: number;
 	// Running time, which is what turns a track's rate into a size. Zero on a
@@ -187,7 +189,7 @@ export type TitleDetail = {
 	total: number;
 	// Every folder holding the title and whose it is, primary first. An empty
 	// source is a folder no *arr claims.
-	folders: { source: string; folder: string }[];
+	folders: { source: string; folder: string; read_only?: string }[];
 	servers: TitleServer[];
 };
 
@@ -292,6 +294,19 @@ export type RunMode = 'report' | 'apply';
 
 // Why Process cannot be pressed on a report-only install. See RunButtons.
 export const REPORT_ONLY_NOTE = 'This install is set to Report only, so nothing is changed.';
+
+/** Why Process and tag edits are refused for a read-only file. */
+export function readOnlyNote(reason: string): string {
+	return `${reason}, so Trackstarr leaves this file unchanged.`;
+}
+
+/** Why Process is refused for a whole title, when every folder is read-only. */
+export function titleReadOnlyNote(folders: TitleDetail['folders']): string {
+	if (!folders.length || !folders.every((folder) => folder.read_only)) return '';
+	return folders.length === 1
+		? `${folders[0].read_only}, so Trackstarr leaves this title's files unchanged.`
+		: 'Every connection holding this title is read-only, so Trackstarr leaves its files unchanged.';
+}
 
 /**
  * Re-probe the chosen titles now, ignoring the cache. `report` plans, `apply`

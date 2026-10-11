@@ -4,6 +4,8 @@ import {
 	FILTERS,
 	judged,
 	listing,
+	readOnlyNote,
+	titleReadOnlyNote,
 	unify,
 	VERDICTS,
 	type Card,
@@ -274,5 +276,28 @@ describe('asVerdict and judged', () => {
 
 		expect(shelf[0].state).toBe('conform');
 		expect(shelf[0].counts).toBe(counts);
+	});
+});
+
+describe('read-only notes', () => {
+	const folder = (read_only?: string) => ({
+		source: 'Radarr',
+		folder: '/movies/Dune',
+		...(read_only ? { read_only } : {})
+	});
+
+	test('a file names the connection that keeps it unchanged', () => {
+		expect(readOnlyNote('Radarr 4k is read-only')).toBe(
+			'Radarr 4k is read-only, so Trackstarr leaves this file unchanged.'
+		);
+	});
+
+	test('a title refuses Process only when every folder is read-only', () => {
+		expect(titleReadOnlyNote([folder('Radarr is read-only')])).toBe(
+			"Radarr is read-only, so Trackstarr leaves this title's files unchanged."
+		);
+		expect(titleReadOnlyNote([folder('Radarr is read-only'), folder()])).toBe('');
+		expect(titleReadOnlyNote([folder('a'), folder('b')])).toMatch(/^Every connection/);
+		expect(titleReadOnlyNote([])).toBe('');
 	});
 });

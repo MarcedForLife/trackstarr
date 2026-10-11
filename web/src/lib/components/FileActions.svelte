@@ -18,6 +18,7 @@
 		mayRewrite = false,
 		runDisabled = false,
 		refuses = '',
+		heldBack = '',
 		disabled = false,
 		class: shape = '',
 		onchoose
@@ -31,6 +32,8 @@
 		mayRewrite?: boolean;
 		runDisabled?: boolean;
 		refuses?: string;
+		// Why Process alone is refused for this file. Plan still runs.
+		heldBack?: string;
 		disabled?: boolean;
 		class?: string;
 		onchoose: (seconds: number) => Promise<void>;
@@ -138,9 +141,12 @@
 					><Glyph name="doc" /> Plan</button
 				>
 				<button
-					onclick={() => (mayRewrite ? act(() => onrun!('apply')) : (error = REPORT_ONLY_NOTE))}
+					onclick={() =>
+						mayRewrite && !heldBack
+							? act(() => onrun!('apply'))
+							: (error = heldBack || REPORT_ONLY_NOTE)}
 					disabled={busy !== null || disabled || runDisabled || !!refuses}
-					aria-disabled={!mayRewrite || undefined}
+					aria-disabled={!mayRewrite || !!heldBack || undefined}
 					class="flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[13px] font-medium hover:bg-sunken disabled:opacity-(--disabled) aria-disabled:opacity-(--disabled)"
 					><Glyph name="bolt" /> Process</button
 				>

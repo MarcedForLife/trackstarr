@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import NamedTuple
 
-from . import config, notify, ratings, rewrites, state, sweep_cache
+from . import catalogue, config, notify, ratings, rewrites, state, sweep_cache
 from .arr import Arr, all_arrs, innermost, original_of, source_name
 from .client import API_ERRORS
 from .planner import Changes, changes
@@ -998,6 +998,14 @@ def _file_rank(entry: dict) -> tuple[int, int, str]:
     return (-int(season[1]) if season else 1, 0, path)
 
 
+def _read_only(source: Source | None) -> str | None:
+    """Why the folder's files must not change, when a read-only connection
+    claims it."""
+    if source is None or source.arr is None:
+        return None
+    return catalogue.read_only_claim({source.arr.instance_id, *source.conflicting_instances})
+
+
 def _file(entry: dict, source: Source | None = None) -> dict:
     """One file as the sheet reads it: its verdict, what the probe saw and what
     a rewrite would leave.
@@ -1014,10 +1022,12 @@ def _file(entry: dict, source: Source | None = None) -> dict:
     the space it takes.
     """
     modified = entry.get("modified")
+    read_only = _read_only(source)
     return {
         "path": entry["path"],
         "name": os.path.basename(entry["path"]),
         **({"source": source_name(source.arr.instance_id)} if source and source.arr else {}),
+        **({"read_only": read_only} if read_only else {}),
         "status": entry.get("status") or UNCHECKED,
         "bytes": entry.get("size") or 0,
         "seconds": entry.get("duration") or 0,
@@ -1119,6 +1129,7 @@ def title(title_id: str, *, pages: int = 1) -> dict | None:
             {
                 "source": source_name(_instance(source)) if source.arr else "",
                 "folder": source.folder,
+                **({"read_only": read_only} if (read_only := _read_only(source)) else {}),
             }
             for source in found.sources
         ],

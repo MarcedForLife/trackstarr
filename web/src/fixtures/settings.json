@@ -448,6 +448,11 @@
 					"value": "",
 					"env": false,
 					"env_name": "RADARR_NAME"
+				},
+				"read_only": {
+					"value": false,
+					"env": false,
+					"env_name": "RADARR_READ_ONLY"
 				}
 			}
 		},
@@ -475,6 +480,11 @@
 					"value": "",
 					"env": false,
 					"env_name": "SONARR_NAME"
+				},
+				"read_only": {
+					"value": false,
+					"env": false,
+					"env_name": "SONARR_READ_ONLY"
 				}
 			}
 		}

@@ -574,6 +574,8 @@ def test_summary(ask):
 
 
 def test_title(ask):
+    # Read-only, so the contract carries the reason on its files and folder.
+    set_config(SONARR_READ_ONLY=True)
     hold("title", ask("GET", "/api/library/title?id=arr%3Asonarr%3A12"))
 
 

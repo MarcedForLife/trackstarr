@@ -51,6 +51,8 @@ export type Service = {
 	publicUrl?: string;
 	// The display name. Only a source has one.
 	nameField?: string;
+	// The switch that stops Trackstarr changing a source's files.
+	readOnlyField?: string;
 	keyLabel: string;
 	placeholder: string;
 };
@@ -65,6 +67,7 @@ export const SERVICES: Service[] = [
 		key: 'arr:radarr:api_key',
 		publicUrl: 'arr:radarr:public_url',
 		nameField: 'arr:radarr:name',
+		readOnlyField: 'arr:radarr:read_only',
 		keyLabel: 'API key',
 		placeholder: 'http://radarr:7878'
 	},
@@ -76,6 +79,7 @@ export const SERVICES: Service[] = [
 		key: 'arr:sonarr:api_key',
 		publicUrl: 'arr:sonarr:public_url',
 		nameField: 'arr:sonarr:name',
+		readOnlyField: 'arr:sonarr:read_only',
 		keyLabel: 'API key',
 		placeholder: 'http://sonarr:8989'
 	},
@@ -109,7 +113,15 @@ export const MARKS: MarkName[] = [
 	'imdb'
 ];
 
-export const ARR_FIELDS: ArrField[] = ['url', 'api_key', 'public_url', 'name'];
+export const ARR_FIELDS: ArrField[] = ['url', 'api_key', 'public_url', 'name', 'read_only'];
+
+// Fields that are switches rather than text.
+const ARR_SWITCHES: ReadonlySet<ArrField> = new Set(['read_only']);
+
+/** A field's value before anything is entered. */
+export function blankArrField(field: ArrField): string | boolean {
+	return ARR_SWITCHES.has(field) ? false : '';
+}
 
 export function arrField(id: string, field: ArrField): string {
 	return `arr:${id}:${field}`;
@@ -134,11 +146,11 @@ export function connectionChanges(
 	const ordinary = { ...changes };
 	const operations: ArrChange[] = [];
 	for (const instance of instances) {
-		const values: Partial<Record<ArrField, string | null>> = {};
+		const values: Partial<Record<ArrField, string | boolean | null>> = {};
 		for (const field of ARR_FIELDS) {
 			const key = arrField(instance.id, field);
 			if (key in ordinary) {
-				values[field] = ordinary[key] as string | null;
+				values[field] = ordinary[key] as string | boolean | null;
 				delete ordinary[key];
 			}
 		}
@@ -160,7 +172,7 @@ export function newInstance(type: ArrType): ArrInstance {
 		id: `${type}-${Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')}`,
 		type,
 		fields: Object.fromEntries(
-			ARR_FIELDS.map((field) => [field, { value: '', env: false }])
+			ARR_FIELDS.map((field) => [field, { value: blankArrField(field), env: false }])
 		) as Record<ArrField, Setting>
 	};
 }
@@ -204,6 +216,7 @@ export function sources(instances: ArrInstance[], values: Record<string, Setting
 			key: arrField(instance.id, 'api_key'),
 			publicUrl: arrField(instance.id, 'public_url'),
 			nameField: arrField(instance.id, 'name'),
+			readOnlyField: arrField(instance.id, 'read_only'),
 			label: instanceName(instance.id, String(values[arrField(instance.id, 'name')] ?? ''))
 		};
 	});

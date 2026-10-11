@@ -10,7 +10,7 @@ tags themselves beyond a history line saying who changed what.
 import logging
 import re
 
-from . import events, library, rewrites, sweep, sweep_cache
+from . import catalogue, events, library, rewrites, sweep, sweep_cache
 from .arr import Arr, innermost
 from .langs import norm_lang
 from .media_server import refresh_servers
@@ -68,7 +68,7 @@ def refusal(path: str, stored: dict | None) -> str | None:
     entry has shown nothing to aim an edit at. The rules need no such check,
     since they aim at a probe of their own.
     """
-    if why := unwritable(path, stored):
+    if why := catalogue.read_only(path) or unwritable(path, stored):
         return why
     if stored is None:
         return "the file has no verdict yet; sweep or re-check the title first"

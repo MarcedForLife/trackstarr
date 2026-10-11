@@ -2,6 +2,7 @@
 	import { saveSettings, type ArrInstance, type SettingValue } from '$lib/settings';
 	import {
 		ARR_FIELDS,
+		blankArrField,
 		arrField,
 		connectionSettings,
 		connectionChanges,
@@ -80,9 +81,14 @@
 
 	/** The setting names one card edits. */
 	function names(service: Service): string[] {
-		return [service.url, service.key, service.publicUrl, service.map, service.nameField].filter(
-			(name): name is string => !!name
-		);
+		return [
+			service.url,
+			service.key,
+			service.publicUrl,
+			service.map,
+			service.nameField,
+			service.readOnlyField
+		].filter((name): name is string => !!name);
 	}
 	/** Whether the saved settings hold anything for this service. */
 	function saved(service: Service): boolean {
@@ -126,7 +132,7 @@
 		if (name !== 'radarr' && name !== 'sonarr') return;
 		const instance = newInstance(name);
 		instances.push(instance);
-		for (const field of ARR_FIELDS) draft[arrField(instance.id, field)] = '';
+		for (const field of ARR_FIELDS) draft[arrField(instance.id, field)] = blankArrField(field);
 		opened[instance.id] = true;
 	}
 
