@@ -21,6 +21,11 @@ const RULES: Record<string, { default: string; summary: string }> = {
 		summary:
 			'Drop audio and subtitle tracks in a language LANGUAGES does not name. Untagged tracks always stay.'
 	},
+	source_audio: {
+		default: 'never',
+		summary:
+			'Copy main audio in a missing LANGUAGES language from another variant of the title. Automatic sourcing is not yet available.'
+	},
 	tag_original: {
 		default: 'never',
 		summary:

@@ -62,6 +62,11 @@ RULES = {
         "Drop audio and subtitle tracks in a language LANGUAGES does not name. "
         "Untagged tracks always stay.",
     ),
+    "source_audio": Rule(
+        NEVER,
+        "Copy main audio in a missing LANGUAGES language from another variant of "
+        "the title. Automatic sourcing is not yet available.",
+    ),
     "tag_original": Rule(
         NEVER,
         "Tag an untagged audio track with the title's original language. Only "
@@ -114,9 +119,10 @@ RULES = {
 LIST_RULES = ("downmix", "drop_layouts")
 DOWNMIX_RULE, DROP_LAYOUTS_RULE = LIST_RULES
 
-#: Every name a plan may put in Plan.rules or Plan.incidental_rules. Wider than
-#: RULES, which is only what RULE_<NAME> sets a mode for.
-RULE_NAMES = frozenset(RULES) | set(LIST_RULES)
+#: Every name a plan may put in Plan.rules or Plan.incidental_rules, including
+#: layout changes that have no RULE_<NAME> setting.
+#: Sourcing assesses requirements but does not emit rewrite changes yet.
+RULE_NAMES = (frozenset(RULES) - {"source_audio"}) | set(LIST_RULES)
 
 #: How far the regenerate rule reaches. errors() refuses other values.
 REGENERATE_SCOPES = ("generated", "all")
@@ -213,8 +219,7 @@ class Policy:
 
     @classmethod
     def from_config(cls) -> Policy:
-        """The rules in force. One snapshot for all twelve, so a save landing
-        mid-read cannot fingerprint a mix of both."""
+        """One settings snapshot, so a concurrent save cannot mix policies."""
         settings = config.current()
         return cls(
             languages=tuple(resolved_langs(settings.LANGUAGES)),
