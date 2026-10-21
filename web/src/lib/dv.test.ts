@@ -23,7 +23,9 @@ describe('Dolby Vision details', () => {
 		expect(videoDetail({ dv_removed: true })).toBe('Dolby Vision removed · HDR10 preserved');
 		expect(videoDetail({})).toBe('');
 		expect(ruleLabel('dv_strip')).toBe('Remove Dolby Vision');
+		expect(ruleLabel('source_audio')).toBe('Source audio');
 		expect(ruleLabel('order')).toBe('order');
+		expect(ruleLabel('constructor')).toBe('constructor');
 	});
 	test.each(['never', 'alongside', 'always'])('demo respects %s mode', (mode) => {
 		const result = judge({ tracks, ext: '.mkv' }, 'eng', { ...settings, RULE_DV_STRIP: mode });

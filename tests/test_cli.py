@@ -5,16 +5,17 @@ import logging
 import os
 import signal
 import time
+from fractions import Fraction
 from pathlib import Path
 
 import pytest
 
 from conftest import needed_plan, set_config, set_rules
-from trackstarr import auth, config, policy, sessions, sweep_cache, users
+from trackstarr import alignment, auth, config, policy, sessions, sweep_cache, users
 from trackstarr.arr import LibraryIndex, LibraryItem, radarr
 from trackstarr.cli import handle_sigterm, main
 from trackstarr.media import ProbeError
-from trackstarr.planner import OutStream, Plan, StreamRef
+from trackstarr.planner import OutStream, Plan, StreamRef, TimingMapping
 from trackstarr.policy import Policy
 from trackstarr.processing import ProcessResult
 from trackstarr.status import Status
@@ -109,11 +110,11 @@ def test_plan_normalises_the_original_language(startup_ok, monkeypatch):
     plan drops the language it was told to keep."""
     seen = []
 
-    def capture_lang(path, lang):
-        seen.append(lang)
+    def capture_lang(job, policy, inputs=(), **kwargs):
+        seen.append(job.lang)
         raise ProbeError("stop before probing")
 
-    monkeypatch.setattr("trackstarr.cli.build_plan", capture_lang)
+    monkeypatch.setattr("trackstarr.cli.plan_job", capture_lang)
     main(["plan", "--original", "ja", "f.mkv"])
     assert seen == ["jpn"]
 
@@ -263,7 +264,7 @@ def test_secret_refuses_a_path_shaped_name():
 
 def _planned(monkeypatch, plan):
     """Make cmd_plan see one prepared plan instead of probing a real file."""
-    monkeypatch.setattr("trackstarr.cli.build_plan", lambda path, lang, policy=None: plan)
+    monkeypatch.setattr("trackstarr.cli.plan_job", lambda job, policy, inputs=(): plan)
 
 
 def test_plan_prints_the_policy_it_judged_under(startup_ok, monkeypatch, capsys):
@@ -354,13 +355,13 @@ def test_plan_keeps_going_after_an_unreadable_file(startup_ok, monkeypatch, caps
     """One corrupt file in a directory must not hide the rest."""
     seen: list[str] = []
 
-    def build(path, lang):
-        seen.append(path)
-        if path == "bad.mkv":
+    def build(job, policy, inputs=()):
+        seen.append(job.path)
+        if job.path == "bad.mkv":
             raise ProbeError("moov atom not found")
-        return Plan(path=path)
+        return Plan(path=job.path)
 
-    monkeypatch.setattr("trackstarr.cli.build_plan", build)
+    monkeypatch.setattr("trackstarr.cli.plan_job", build)
     assert main(["plan", "bad.mkv", "good.mkv"]) == 1
     assert seen == ["bad.mkv", "good.mkv"]
     assert "ERROR moov atom not found" in capsys.readouterr().out
@@ -543,8 +544,8 @@ def test_a_lowercase_log_level_still_works(startup_ok, monkeypatch):
     """--log-level debug has always worked, and argparse choices= would have
     quietly taken that away."""
     monkeypatch.setattr(
-        "trackstarr.cli.build_plan",
-        lambda path, lang, policy=None: Plan(path=path, skip="nothing to do"),
+        "trackstarr.cli.plan_job",
+        lambda job, policy, inputs=(): Plan(path=job.path, skip="nothing to do"),
     )
     assert main(["--log-level", "debug", "plan", "--original", "eng", "f.mkv"]) == 0
 
@@ -558,9 +559,108 @@ def test_a_rule_that_cannot_fire_is_reported_to_a_command_handed_its_files(
     set_rules(remux="always")
     set_config(ALLOWED_EXTS={".mkv"})
     monkeypatch.setattr(
-        "trackstarr.cli.build_plan",
-        lambda path, lang, policy=None: Plan(path=path, skip="nothing to do"),
+        "trackstarr.cli.plan_job",
+        lambda job, policy, inputs=(): Plan(path=job.path, skip="nothing to do"),
     )
     with caplog.at_level(logging.WARNING):
         main(["plan", "--original", "eng", "f.mkv"])
     assert "RULE_REMUX" in caplog.text
+
+
+def test_plan_says_where_each_requested_language_stands(startup_ok, monkeypatch, capsys):
+    plan = Plan(
+        path="f.mkv",
+        sourcing={
+            "requirements": [
+                {"lang": "eng", "state": "satisfied"},
+                {
+                    "lang": "fre",
+                    "state": "ready",
+                    "track": {"path": "/4k/f.mkv", "index": 2},
+                    "mapping": {"scale": "25/24", "offset_us": -1_250_000},
+                    "measured": True,
+                },
+                {"lang": "ger", "state": "missing_source"},
+                {"lang": "jpn", "state": "needs_review", "reason": "identity in doubt"},
+            ]
+        },
+    )
+    _planned(monkeypatch, plan)
+    assert main(["plan", "f.mkv"]) == 0
+    out = capsys.readouterr().out
+    assert "audio eng         : satisfied" in out
+    assert (
+        "audio fre         : ready, from /4k/f.mkv stream 2, "
+        "offset -1.250000s, scale 25/24 (measured)" in out
+    )
+    assert "audio ger         : missing source" in out
+    assert "audio jpn         : needs review, identity in doubt" in out
+
+
+def test_plan_reports_a_source_that_changed_while_it_was_read(startup_ok, monkeypatch, capsys):
+    def changing(job, policy, inputs=()):
+        raise InterruptedError("source changed, preparation discarded")
+
+    monkeypatch.setattr("trackstarr.cli.plan_job", changing)
+    assert main(["plan", "f.mkv", "--original", "eng"]) == 1
+    assert "ERROR source changed" in capsys.readouterr().out
+
+
+def _aligned(monkeypatch, mapping, **evidence):
+    def analyse(target, source, cancel):
+        status = alignment.ACCEPTED if mapping else alignment.NEEDS_REVIEW
+        reason = "mapping_confirmed" if mapping else "folds_disagree"
+        return alignment.AlignmentResult(target, source, status, reason, mapping, evidence)
+
+    monkeypatch.setattr(alignment, "analyse", analyse)
+
+
+def test_align_prints_the_mapping_and_the_fix_arguments_for_it(
+    startup_ok, tmp_path, monkeypatch, capsys
+):
+    target, source = tmp_path / "target.mkv", tmp_path / "source.mkv"
+    target.write_bytes(b"target")
+    source.write_bytes(b"source")
+    _aligned(
+        monkeypatch,
+        TimingMapping(offset_us=1_250_000),
+        regions=["confirms"] * 7 + ["insufficient"],
+        anchors=300,
+        residual_us=1500,
+    )
+    assert main(["align", str(target), str(source)]) == 0
+    out = capsys.readouterr().out
+    assert "accepted  mapping_confirmed" in out
+    assert "7 of 8 regions confirmed, 300 exact anchors" in out
+    assert "scale 1, offset +1.250000s" in out
+    assert "largest residual 1.5 ms" in out
+    assert f"--source-file {source} --source-stream N --offset 1.250000" in out
+
+
+def test_align_gives_a_speed_change_as_two_anchors_on_both_timelines(
+    startup_ok, tmp_path, monkeypatch, capsys
+):
+    target, source = tmp_path / "target.mkv", tmp_path / "source.mkv"
+    target.write_bytes(b"target")
+    source.write_bytes(b"source")
+    _aligned(monkeypatch, TimingMapping(Fraction(25, 24), -2_000_000))
+    assert main(["align", str(target), str(source)]) == 0
+    out = capsys.readouterr().out
+    # The first anchor is the first whole second the target also reaches.
+    assert "--anchor 2.000000=0.083333 --anchor 602.000000=625.083333" in out
+
+
+def test_align_refusals_print_why_and_fail(startup_ok, tmp_path, monkeypatch, capsys):
+    target, source = tmp_path / "target.mkv", tmp_path / "source.mkv"
+    target.write_bytes(b"target")
+    source.write_bytes(b"source")
+    _aligned(monkeypatch, None)
+    assert main(["align", str(target), str(source)]) == 1
+    assert "needs_review  folds_disagree" in capsys.readouterr().out
+
+
+def test_align_refuses_one_file_named_twice(startup_ok, tmp_path, caplog):
+    target = tmp_path / "target.mkv"
+    target.write_bytes(b"target")
+    assert main(["align", str(target), str(target)]) == 1
+    assert "the same file" in caplog.text

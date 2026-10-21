@@ -4,6 +4,7 @@ import argparse
 import functools
 import getpass
 import logging
+import math
 import os
 import shutil
 import signal
@@ -12,15 +13,26 @@ import textwrap
 from fractions import Fraction
 from types import FrameType
 
-from . import __version__, auth, config, events, lifecycle, policy, sessions, sweep_cache, users
+from . import (
+    __version__,
+    alignment,
+    auth,
+    config,
+    events,
+    lifecycle,
+    policy,
+    sessions,
+    sweep_cache,
+    users,
+)
 from .app import serve
 from .arr import LibraryIndex, all_arrs, match_path, path_index
 from .command import ffmpeg_args
-from .executor import audio_codec_errors, work_dir_errors
+from .executor import Cancel, audio_codec_errors, work_dir_errors
 from .langs import norm_lang
 from .media import ProbeError
-from .planner import FileRevision, PlanInput, TimingMapping, build_plan, describe
-from .processing import Job, plan_job, process, state_dir_errors
+from .planner import FileRevision, PlanInput, TimingMapping, describe
+from .processing import Job, plan_job, process, rewrite_slot, state_dir_errors
 from .status import Status
 from .sweep import remember, sweep
 from .sweep_cache import cache_key, observing
@@ -73,6 +85,12 @@ def build_parser() -> argparse.ArgumentParser:
         "fix", help="plan and rewrite specific files now, wherever they live"
     )
     _add_files_arguments(fix_cmd)
+
+    align_cmd = sub.add_parser(
+        "align", help="measure how a source file's timing maps onto a target's"
+    )
+    align_cmd.add_argument("target", help="the file that would receive audio")
+    align_cmd.add_argument("source", help="the variant that would supply it")
 
     secret_cmd = sub.add_parser(
         "secret", help="mint a caller's webhook secret and print it once"
@@ -224,12 +242,8 @@ def cmd_plan(files: list[str], original: str | None, inputs: tuple[PlanInput, ..
     for job in jobs:
         path = job.path
         try:
-            plan = (
-                plan_job(job, policy.Policy.from_config(), inputs)
-                if inputs
-                else build_plan(path, job.lang)
-            )
-        except (ProbeError, OSError, ValueError) as err:
+            plan = plan_job(job, policy.Policy.from_config(), inputs)
+        except (ProbeError, OSError, ValueError, InterruptedError) as err:
             print(f"{path}\n  ERROR {err}")
             failed = True
             continue
@@ -259,6 +273,10 @@ def cmd_plan(files: list[str], original: str | None, inputs: tuple[PlanInput, ..
             ),
             ("regenerate scope", plan.policy.regenerate_scope),
         ]
+        rows += [
+            (f"audio {item['lang']}", _requirement_line(item))
+            for item in plan.sourcing.get("requirements", [])
+        ]
         for label, value in rows:
             if value:
                 print(f"  {label:<18}: {value}")
@@ -275,13 +293,71 @@ def cmd_plan(files: list[str], original: str | None, inputs: tuple[PlanInput, ..
             print(f"  - {reason}")
         for reason in plan.incidental:
             print(f"  - {reason} (rides along)")
-        if inputs:
+        if plan.inputs:
             print("  target video and chapters come from the target file; no silence padding")
             print("  use fix with the same arguments to prepare, validate and publish")
         else:
             dest = "OUT" + os.path.splitext(plan.out_path)[1]
             print("  ffmpeg " + " ".join(ffmpeg_args(plan, dest)[1:]))
     return 1 if failed else 0
+
+
+def _requirement_line(item: dict) -> str:
+    """One requested language as plan prints it."""
+    parts = [item["state"].replace("_", " ")]
+    if track := item.get("track"):
+        parts.append(f"from {track['path']} stream {track['index']}")
+    if mapping := item.get("mapping"):
+        offset = mapping["offset_us"] / 1_000_000
+        how = "measured" if item.get("measured") else "matching timelines"
+        parts.append(f"offset {offset:+.6f}s, scale {mapping['scale']} ({how})")
+    if reason := item.get("reason"):
+        parts.append(reason)
+    return ", ".join(parts)
+
+
+def cmd_align(target: str, source: str) -> int:
+    """Measure one pair and print the mapping with the fix arguments that
+    apply it. Measures under any REWRITE_MODE, since nothing is written."""
+    revisions = (FileRevision.of(target), FileRevision.of(source))
+    if revisions[0].identity == revisions[1].identity:
+        log.error("the target and the source are the same file")
+        return 1
+    # Decoding two files costs what an encode does. Nothing here can stop
+    # the claim, so it always lands.
+    with rewrite_slot():
+        result = alignment.analyse(*revisions, Cancel(target))
+    print(f"{result.status}  {result.reason}")
+    evidence = result.evidence
+    if regions := evidence.get("regions"):
+        confirmed = regions.count("confirms")
+        print(
+            f"  {confirmed} of {len(regions)} regions confirmed, "
+            f"{evidence.get('anchors', 0)} exact anchors"
+        )
+    if result.mapping is None:
+        return 1
+    mapping = result.mapping
+    print(f"  scale {mapping.scale}, offset {mapping.offset_us / 1_000_000:+.6f}s")
+    if "residual_us" in evidence:
+        print(f"  largest residual {evidence['residual_us'] / 1000:.1f} ms")
+    print(
+        f"  fix {target} --source-file {source} --source-stream N {_timing_arguments(mapping)}"
+    )
+    return 0
+
+
+def _timing_arguments(mapping: TimingMapping) -> str:
+    """The fix arguments for a mapping: an offset, or two anchors at
+    non-negative times on both timelines for a speed change."""
+    offset = Fraction(mapping.offset_us, 1_000_000)
+    if mapping.scale == 1:
+        return f"--offset {float(offset):.6f}"
+    first = math.ceil(max(Fraction(0), -offset / mapping.scale))
+    anchors = [Fraction(first), Fraction(first + 600)]
+    return " ".join(
+        f"--anchor {float(at):.6f}={float(mapping.scale * at + offset):.6f}" for at in anchors
+    )
 
 
 def cmd_fix(files: list[str], original: str | None, inputs: tuple[PlanInput, ...] = ()) -> int:
@@ -427,6 +503,7 @@ def _run_sweep(args: argparse.Namespace) -> int:
 #: config, policy and ffmpeg on PATH; "rewrite" adds the directories and the
 #: encoders. secret and user run bare.
 COMMANDS = {
+    "align": (lambda args: cmd_align(args.target, args.source), "rewrite"),
     "serve": (_run_serve, "rewrite"),
     "sweep": (_run_sweep, "rewrite"),
     "fix": (_run_files, "rewrite"),

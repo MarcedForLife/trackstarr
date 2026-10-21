@@ -30,7 +30,7 @@ import type { DoneFile, Run } from '$lib/runs';
 import type { SettingsSnapshot, SettingValue } from '$lib/settings';
 import { catalogue, type FileSpec, type TitleSpec } from './catalogue';
 import { chronicle } from './history';
-import { changesOf, judge, type Settings } from './judge';
+import { changesOf, judge, type Alignment, type Settings, type Variant } from './judge';
 import { DEFAULTS, ENV_PINNED, problems, RULE_SETTINGS, isSecret, snapshot } from './settings';
 import { publish } from './stream';
 import { DAY_MS, digest, lastAt, MINUTE_MS, slug, stamp, VERSION } from './util';
@@ -53,6 +53,8 @@ export type File = LibraryFile & {
 	/** Why the last rewrite of this file broke. Held here because a verdict is
 	 * derived from the tracks and an outcome is not. */
 	failure?: string;
+	/** Timing measured against a source, by its path. */
+	alignments?: Record<string, Alignment>;
 	title: Title;
 };
 
@@ -154,11 +156,39 @@ function fileOf(title: Title, spec: FileSpec, held = title.spec.sources[0]): Fil
 	};
 }
 
+/** The same film or episode in the title's other connections, preferred in
+ * the order the title lists them. */
+function variantsOf(state: State, file: File): Variant[] {
+	const { spec } = file.title;
+	const item = (other: File) => fileGroups([other], spec.kind)[0].key;
+	const rank = (other: File) =>
+		spec.sources.findIndex((source) => source.instance_id === other.instance_id);
+	return file.title.files
+		.filter(
+			(other) =>
+				other.instance_id && other.instance_id !== file.instance_id && item(other) === item(file)
+		)
+		.sort((first, second) => rank(first) - rank(second))
+		.map((other) => ({
+			path: other.path,
+			instance_id: other.instance_id!,
+			source: sourceName(state, other.instance_id!),
+			tracks: other.contents,
+			seconds: other.runtime
+		}));
+}
+
 /** Judge a file against the settings and keep the answer on it. */
 export function rejudge(state: State, file: File, at: number): void {
-	const verdict = judge(file, file.title.spec.lang, state.settings);
+	const verdict = judge(
+		{ ...file, variants: () => variantsOf(state, file) },
+		file.title.spec.lang,
+		state.settings
+	);
 	file.planned = verdict.planned;
 	file.why = verdict.why;
+	if (verdict.sourcing) file.sourcing = verdict.sourcing;
+	else delete file.sourcing;
 	// A break only stands while there is still the work it broke on: once the
 	// rules leave nothing to do, the file is whatever it is now.
 	if (file.failure && verdict.status !== 'pending') delete file.failure;
@@ -178,13 +208,11 @@ export function rewrite(state: State, file: File, at: number): Modified {
 	const before = file.tracks;
 	const { kept, added } = pair(file);
 	const dropped = before.filter((track) => !kept.has(track.index)).map((track) => track.index);
-	const after: Track[] = file.planned.map(
-		({ source: _source, dv_removed: _dvRemoved, ...track }) => {
-			void _source;
-			void _dvRemoved;
-			return track;
-		}
-	);
+	// An import carries the tag a later probe reads as `imported`.
+	const after: Track[] = file.planned.map(({ source, dv_removed: _dvRemoved, ...track }) => {
+		void _dvRemoved;
+		return source?.input_index ? { ...track, flags: [...(track.flags ?? []), 'imported'] } : track;
+	});
 	const made: Modified = {
 		at: stamp(at),
 		...(file.planned.some((track) => track.dv_removed) ? { dv_removed: true } : {}),
@@ -203,11 +231,15 @@ export function rewrite(state: State, file: File, at: number): Modified {
 	return made;
 }
 
+// The tracks a rewrite of ours adds rather than keeps.
+const OURS = ['generated', 'imported'];
+const ours = (track: Track) => OURS.some((flag) => track.flags?.includes(flag));
+
 /** The record a file rewritten before the demo opened carries. */
 function rewrittenBefore(file: File, at: number): void {
-	const made = file.tracks.filter((track) => track.flags?.includes('generated'));
+	const made = file.tracks.filter(ours);
 	const was = file.tracks
-		.filter((track) => !track.flags?.includes('generated'))
+		.filter((track) => !ours(track))
 		.map((track, position) => ({ ...track, index: position }));
 	file.modified = {
 		at: stamp(at),
@@ -478,7 +510,8 @@ function servers(state: State, title: Title): TitleServer[] {
 }
 
 export function wireFile(state: State, file: File): LibraryFile {
-	const { path, name, status, bytes, seconds, lang, tracks, planned, why, modified } = file;
+	const { path, name, status, bytes, seconds, lang, tracks, planned, why, modified, sourcing } =
+		file;
 	const held = readOnly(state, file.instance_id);
 	return {
 		path,
@@ -492,7 +525,8 @@ export function wireFile(state: State, file: File): LibraryFile {
 		tracks,
 		planned,
 		why,
-		...(modified ? { modified } : {})
+		...(modified ? { modified } : {}),
+		...(sourcing ? { sourcing } : {})
 	};
 }
 
@@ -810,6 +844,28 @@ export function clearVerdicts(state: State): number {
 	return dropped;
 }
 
+/** The title held by a 4K instance of its *arr too: one poster, a second
+ * folder, and the connection's settings. */
+function heldIn4k(state: State, title: Title): { instance_id: string; folder: string } {
+	const { spec } = title;
+	const instance = `${spec.sources[0].instance_id}-4k`;
+	const held = {
+		instance_id: instance,
+		folder: spec.sources[0].folder.replace('/media/', '/media/4k/')
+	};
+	spec.sources.push(held);
+	const prefix = instance.toUpperCase().replace('-', '_');
+	state.settings[`${prefix}_URL`] = `http://localhost:${spec.kind === 'movie' ? 7879 : 8990}`;
+	state.settings[`${prefix}_PUBLIC_URL`] = '';
+	state.settings[`${prefix}_API_KEY`] = '';
+	state.settings[`${prefix}_NAME`] = '';
+	state.secretsSet.add(`${prefix}_API_KEY`);
+	const root = `/data/media/4k/${spec.kind === 'movie' ? 'movies' : 'tv'}`;
+	const dirs = state.settings.MEDIA_DIRS as string[];
+	if (!dirs.includes(root)) state.settings.MEDIA_DIRS = [...dirs, root];
+	return held;
+}
+
 /** Optional board: colliding arr IDs, independent libraries and duplicate
  * files within a library. Nothing in the opening catalogue changes. */
 export function addVariants(state: State, now: number): string[] {
@@ -819,13 +875,7 @@ export function addVariants(state: State, now: number): string[] {
 			state.titles.find((title) => title.spec.kind === kind && title.files.length > 1) ??
 			state.titles.find((title) => title.spec.kind === kind && title.files.length)!;
 		const { spec } = original;
-		const instance = `${spec.sources[0].instance_id}-4k`;
-		// The same title held by a 4K instance too: one poster, a second folder.
-		const held = {
-			instance_id: instance,
-			folder: spec.sources[0].folder.replace('/media/', '/media/4k/')
-		};
-		spec.sources.push(held);
+		const held = heldIn4k(state, original);
 		const upgrades = spec.files.slice(0, kind === 'series' ? 4 : 1).map((file) => ({
 			...file,
 			name: `${file.name.replace(/(?:Bluray-)?1080p/gi, '').trim()} WEBDL-2160p HEVC`,
@@ -872,21 +922,62 @@ export function addVariants(state: State, now: number): string[] {
 			original.files.push(file);
 			state.byPath.set(file.path, file);
 		}
-		const prefix = instance.toUpperCase().replace('-', '_');
-		state.settings[`${prefix}_URL`] = `http://localhost:${kind === 'movie' ? 7879 : 8990}`;
-		state.settings[`${prefix}_PUBLIC_URL`] = '';
-		state.settings[`${prefix}_API_KEY`] = '';
-		state.settings[`${prefix}_NAME`] = '';
-		state.secretsSet.add(`${prefix}_API_KEY`);
 		names.push(spec.name);
 	}
-	state.settings.MEDIA_DIRS = [
-		...(state.settings.MEDIA_DIRS as string[]),
-		'/data/media/4k/movies',
-		'/data/media/4k/tv'
-	];
 	publish('library');
 	return names;
+}
+
+// Metropolis's 1080p has German and a commentary, so no English main audio.
+const SOURCED_FILM = 'arr:radarr:21';
+
+/** Optional board: the source_audio rule always on, and a 4K restoration of
+ * one film carrying the English audio its 1080p lacks. The restoration runs at
+ * another speed, measured before the demo opened, so the import is ready. The
+ * rest of the library says what no variant can supply. */
+export function addSourcing(state: State, now: number): string[] {
+	const title = state.byId.get(SOURCED_FILM)!;
+	const target = title.files[0];
+	const held = heldIn4k(state, title);
+	const restoration = fileOf(
+		title,
+		{
+			name: `${title.spec.name} (${title.spec.year}) Remux-2160p`,
+			ext: '.mkv',
+			seconds: 148 * 60,
+			tracks: [
+				{ index: 0, kind: 'video', codec: 'hevc', bitrate: 32_000_000 },
+				{
+					index: 1,
+					kind: 'audio',
+					codec: 'dts',
+					channels: 6,
+					lang: 'ger',
+					bitrate: 1_509_000,
+					title: 'Score',
+					flags: ['default']
+				},
+				{
+					index: 2,
+					kind: 'audio',
+					codec: 'ac3',
+					channels: 2,
+					lang: 'eng',
+					bitrate: 224_000,
+					title: 'English narration'
+				},
+				{ index: 3, kind: 'subtitle', codec: 'subrip', lang: 'eng', bitrate: 40 }
+			]
+		},
+		held
+	);
+	title.files.push(restoration);
+	state.byPath.set(restoration.path, restoration);
+	target.alignments = { [restoration.path]: { scale: '25/24', offset_us: 1_250_000 } };
+	state.settings.RULE_SOURCE_AUDIO = 'always';
+	for (const file of state.byPath.values()) rejudge(state, file, file.judged * 1000 || now);
+	publish('library');
+	return [title.spec.name];
 }
 
 /** A deliberately long, invented series for paging and season navigation. */

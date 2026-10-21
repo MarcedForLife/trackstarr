@@ -1620,3 +1620,62 @@ def test_partial_refresh_replaces_only_healthy_service_identities(media, monkeyp
         assert library.pause_targets(["arr:sonarr:1", "arr:sonarr:3"]) == []
     finally:
         notify.unsubscribe(subscription)
+
+
+def test_a_file_says_where_its_requested_audio_stands(media, monkeypatch):
+    folder = f"{media}/Dune (2024)"
+    path = f"{folder}/Dune.mkv"
+    stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
+    set_config(arr_settings={"RADARR_4K_NAME": "4K"})
+    sourced = {
+        "completeness": "incomplete",
+        "inventory": "abc",
+        "alignments": [{"status": "accepted"}],
+        "requirements": [
+            {"lang": "eng", "state": "satisfied"},
+            {"lang": "fre", "state": "ready", "track": {"instance_id": "radarr-4k"}},
+            {"lang": "ger", "state": "missing_source"},
+            "damaged",
+        ],
+    }
+    cache((path, Verdict(Status.CONFORM, sourcing=sourced)))
+    told = library.file_detail(path)["file"]["sourcing"]
+    # Measurements stay in the store, the sheet has no use for them.
+    assert told == {
+        "completeness": "incomplete",
+        "requirements": [
+            {"lang": "eng", "state": "satisfied"},
+            {
+                "lang": "fre",
+                "state": "ready",
+                "track": {"instance_id": "radarr-4k", "source": "4K"},
+            },
+            {"lang": "ger", "state": "missing_source"},
+        ],
+    }
+
+
+@pytest.mark.parametrize("stored", [None, "damaged", {"requirements": ["damaged"]}])
+def test_a_file_with_no_readable_assessment_says_nothing_of_its_audio(
+    media, monkeypatch, stored
+):
+    folder = f"{media}/Dune (2024)"
+    path = f"{folder}/Dune.mkv"
+    stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
+    cache((path, pending()))
+    if stored is not None:
+        entries = library.stored_entries()
+        monkeypatch.setattr(
+            library,
+            "_read_cache",
+            lambda: sweep_cache.Stored({path: entries[path] | {"sourcing": stored}}, True),
+        )
+    assert "sourcing" not in library.file_detail(path)["file"]
+
+
+def test_a_path_finds_the_title_whose_folder_holds_it(media, monkeypatch):
+    folder = f"{media}/Dune (2024)"
+    stub_arrs(monkeypatch, [movie(1, "Dune", folder)])
+    found = library.title_for(f"{folder}/Dune.mkv")
+    assert found is not None and found.id == "arr:radarr:1"
+    assert library.title_for(f"{media}/Elsewhere/film.mkv") is None

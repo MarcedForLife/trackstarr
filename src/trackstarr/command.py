@@ -5,7 +5,7 @@ decides, this renders, :mod:`trackstarr.executor` runs, which is what lets
 import os
 from collections.abc import Sequence
 
-from .media import GENERATED_TAG
+from .media import GENERATED_TAG, IMPORTED_TAG
 from .planner import OutStream, Plan, PreparedTrack
 from .policy import MUXERS
 from .tracks import encode_settings
@@ -93,6 +93,13 @@ def ffmpeg_args(plan: Plan, dest: str, prepared: Sequence[PreparedTrack] = ()) -
                 args += [f"-metadata:s:a:{idx}", f"{tag}="]
         if out.source.input_index and not out.encode:
             args += [f"-disposition:a:{idx}", "-default"]
+            # A hand-built plan may name an input it never selected.
+            if out.source.input_index <= len(plan.inputs):
+                mapping = plan.inputs[out.source.input_index - 1].mapping
+                args += [
+                    f"-metadata:s:a:{idx}",
+                    f"{IMPORTED_TAG}=scale={mapping.scale} offset_us={mapping.offset_us}",
+                ]
         if out.encode:
             args += [
                 f"-metadata:s:a:{idx}",

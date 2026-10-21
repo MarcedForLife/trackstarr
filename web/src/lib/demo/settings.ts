@@ -24,7 +24,7 @@ const RULES: Record<string, { default: string; summary: string }> = {
 	source_audio: {
 		default: 'never',
 		summary:
-			'Copy main audio in a missing LANGUAGES language from another variant of the title. Automatic sourcing is not yet available.'
+			'Copy main audio in a missing LANGUAGES language from another variant of the title, timed to this file. Variants with matching timelines copy as they are, others are measured by picture first.'
 	},
 	tag_original: {
 		default: 'never',

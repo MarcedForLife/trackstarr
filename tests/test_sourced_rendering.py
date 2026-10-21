@@ -254,7 +254,7 @@ def verification(media, monkeypatch):
     stream["disposition"]["default"] = 0
     result["streams"].append(stream)
     monkeypatch.setattr(executor, "probe", lambda _: {"streams": [original]})
-    monkeypatch.setattr(executor, "_run_ffmpeg", lambda *a, **kw: (0, "nb_samples:1024"))
+    monkeypatch.setattr(executor, "run_ffmpeg", lambda *a, **kw: (0, "nb_samples:1024"))
     return plan, target, (prepared,), result
 
 
@@ -334,7 +334,7 @@ def test_import_decode_errors_and_cancellation(verification, monkeypatch, code, 
             cancel.ask()
         return code, stderr
 
-    monkeypatch.setattr(executor, "_run_ffmpeg", run)
+    monkeypatch.setattr(executor, "run_ffmpeg", run)
     if stop or code < 0:
         with pytest.raises(InterruptedError, match="verification was stopped"):
             executor._verify_sourced(plan, target, prepared, result, "out.mkv", cancel)
@@ -444,7 +444,7 @@ def test_local_rewrite_keeps_existing_oserror_contract(tmp_path, monkeypatch):
     path.write_bytes(b"unchanged")
     monkeypatch.setattr(
         executor,
-        "_run_ffmpeg",
+        "run_ffmpeg",
         lambda *a, **kw: (_ for _ in ()).throw(OSError("ffmpeg unavailable")),
     )
     with pytest.raises(OSError, match="unavailable"):
@@ -530,7 +530,7 @@ def test_failed_final_verification_never_publishes(media, monkeypatch, failure):
     plan, _ = media
     original = Path(plan.path).read_bytes()
     real_probe = executor.probe
-    real_run = executor._run_ffmpeg
+    real_run = executor.run_ffmpeg
     cancel = executor.Cancel(plan.path)
 
     def inspect(path):
@@ -547,7 +547,7 @@ def test_failed_final_verification_never_publishes(media, monkeypatch, failure):
         return real_run(args, *a, **kw)
 
     monkeypatch.setattr(executor, "probe", inspect)
-    monkeypatch.setattr(executor, "_run_ffmpeg", run)
+    monkeypatch.setattr(executor, "run_ffmpeg", run)
     outcome, _ = apply_plan(plan, cancel=cancel)
     assert outcome == (Outcome.DEFERRED if failure == "cancel" else Outcome.FAILED)
     assert Path(plan.path).read_bytes() == original
@@ -642,7 +642,7 @@ def test_verification_reuses_source_facts_but_decodes_every_output(verification,
         return 0, "nb_samples:1024"
 
     monkeypatch.setattr(executor, "probe", probe_once)
-    monkeypatch.setattr(executor, "_run_ffmpeg", decode)
+    monkeypatch.setattr(executor, "run_ffmpeg", decode)
     assert (
         executor._verify_sourced(plan, target, prepared, result, "out.mkv", executor.Cancel())
         is None

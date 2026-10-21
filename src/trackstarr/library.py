@@ -1023,6 +1023,7 @@ def _file(entry: dict, source: Source | None = None) -> dict:
     """
     modified = entry.get("modified")
     read_only = _read_only(source)
+    sourcing = _sourcing(entry)
     return {
         "path": entry["path"],
         "name": os.path.basename(entry["path"]),
@@ -1036,7 +1037,27 @@ def _file(entry: dict, source: Source | None = None) -> dict:
         "planned": entry.get("planned") or [],
         "why": entry.get("why") or {},
         **({"modified": modified} if modified else {}),
+        **({"sourcing": sourcing} if sourcing else {}),
     }
+
+
+def _sourcing(entry: dict) -> dict:
+    """Where each requested language stands, as the sheet reads it: a source
+    named by its connection's current name, and no measurement records."""
+    stored = entry.get("sourcing")
+    if not isinstance(stored, dict):
+        return {}
+    requirements = []
+    for item in stored.get("requirements") or []:
+        if not isinstance(item, dict):
+            continue
+        track = item.get("track")
+        if isinstance(track, dict) and track.get("instance_id"):
+            item = item | {"track": track | {"source": source_name(track["instance_id"])}}
+        requirements.append(item)
+    if not requirements:
+        return {}
+    return {"completeness": stored.get("completeness"), "requirements": requirements}
 
 
 def file_detail(path: str, *, card: bool = False) -> dict:
@@ -1140,6 +1161,17 @@ def known() -> Shelf:
     """Every title, in order and keyed by id. The way in for anything outside
     this module wanting a :class:`Title` rather than a card."""
     return _shelf(_read_cache())
+
+
+def stored_entries() -> dict[str, dict]:
+    """Every stored verdict as the library reads them, stale ones included.
+    Memoised, so a walk asking per file pays a lookup, not a parse."""
+    return _read_cache().files
+
+
+def title_for(path: str) -> Title | None:
+    """The title whose folder holds ``path``, the deepest one first."""
+    return innermost(_folders(known().titles), path)
 
 
 def selected(title_ids: list[str]) -> list[Title]:

@@ -39,7 +39,9 @@
 		verdictLabel,
 		type Track
 	} from '$lib/library';
+	import { languageNames, readLanguageNames } from '$lib/languages.svelte';
 	import { editable, matching } from '$lib/retag';
+	import { sourcingLines } from '$lib/sourcing';
 
 	// What a rewrite would do to one file: its tracks as it leaves them, why it is
 	// skipped or failed, and the rules behind it. The sheet, the queue, a run and
@@ -59,6 +61,12 @@
 	} = $props();
 
 	const shown = $derived(listing(file));
+
+	// The audio the file still lacks, by language name.
+	const short = $derived(sourcingLines(file, languageNames()));
+	$effect(() => {
+		if (short.length) readLanguageNames();
+	});
 
 	// The same kinds the row's own line says a language on.
 	function tagged(row: Listed): boolean {
@@ -160,6 +168,14 @@
 		<span class="font-medium text-danger">Failed:</span>
 		{file.why.failed}
 	</p>
+{/if}
+
+{#if short.length}
+	<ul class="mt-3 flex flex-col gap-1 text-[12px] text-dim">
+		{#each short as line (line.lang)}
+			<li>{line.text}</li>
+		{/each}
+	</ul>
 {/if}
 
 <!-- A chip opens on the lines its own rule ordered. -->

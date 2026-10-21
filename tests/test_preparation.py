@@ -63,7 +63,7 @@ def source(tmp_path, monkeypatch):
         return 0, ""
 
     monkeypatch.setattr(executor, "probe", lambda name: info if name == str(path) else result)
-    monkeypatch.setattr(executor, "_run_ffmpeg", run)
+    monkeypatch.setattr(executor, "run_ffmpeg", run)
     return SimpleNamespace(
         path=path,
         input=PlanInput(FileRevision.of(str(path)), 1),
@@ -146,7 +146,7 @@ def test_two_sources_with_same_stream_index_and_recheck_before_render(
             source.path.write_bytes(b"replaced during second preparation")
         return 0, ""
 
-    monkeypatch.setattr(executor, "_run_ffmpeg", run)
+    monkeypatch.setattr(executor, "run_ffmpeg", run)
     if replace_first:
         with pytest.raises(InterruptedError, match="source changed"), prepared(inputs):
             pytest.fail("stale first source accepted")
@@ -180,14 +180,14 @@ def test_stale_source_is_discarded_even_with_same_size_and_mtime(
             source.path.unlink()
 
     if during:
-        run = executor._run_ffmpeg
+        run = executor.run_ffmpeg
 
         def changed(args, **kwargs):
             value = run(args, **kwargs)
             change_source()
             return value
 
-        monkeypatch.setattr(executor, "_run_ffmpeg", changed)
+        monkeypatch.setattr(executor, "run_ffmpeg", changed)
     else:
         change_source()
     with pytest.raises(InterruptedError, match="source"), prepared([source.input]):
@@ -315,7 +315,7 @@ def test_process_failure_and_cancellation_clean_workspace(source, monkeypatch, f
             raise ProbeError("bad source")
         return (-15 if failure == "signal" else 1), "broken"
 
-    monkeypatch.setattr(executor, "_run_ffmpeg", run)
+    monkeypatch.setattr(executor, "run_ffmpeg", run)
     with (
         pytest.raises((InterruptedError, RuntimeError, subprocess.TimeoutExpired)),
         prepared([source.input], cancel),
@@ -345,7 +345,7 @@ def test_changed_source_takes_precedence_over_a_failed_read(source, monkeypatch)
         source.path.unlink()
         return 1, "read failed"
 
-    monkeypatch.setattr(executor, "_run_ffmpeg", failed)
+    monkeypatch.setattr(executor, "run_ffmpeg", failed)
     with pytest.raises(InterruptedError, match="unavailable"), prepared([source.input]):
         pytest.fail("missing source should be replanned")
 
@@ -378,7 +378,7 @@ def test_cancellation_reaches_descendants_before_workspace_cleanup(monkeypatch):
 
     def run():
         try:
-            results.append(executor._run_ffmpeg([sys.executable, "-c", parent], cancel=cancel))
+            results.append(executor.run_ffmpeg([sys.executable, "-c", parent], cancel=cancel))
         except BaseException as err:
             results.append(err)
 

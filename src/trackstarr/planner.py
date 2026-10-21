@@ -222,7 +222,7 @@ class Plan:
     #: remux costs far more than the stray track it would drop.
     incidental: list[str] = field(default_factory=list)
     #: The lists above as :data:`trackstarr.policy.RULE_NAMES`, since prose
-    #: gets reworded. Written through :func:`_record`.
+    #: gets reworded. Written through :func:`record`.
     rules: set[str] = field(default_factory=set)
     incidental_rules: set[str] = field(default_factory=set)
     #: The same changes paired with their rule, which the four lists above lose.
@@ -256,6 +256,10 @@ class Plan:
     #: Selected external audio tracks. Position zero is input one in StreamRef,
     #: since input zero remains path. References retain the original stream index.
     inputs: tuple[PlanInput, ...] = ()
+    #: Where each requested language stands, as
+    #: :meth:`trackstarr.sourcing.SourcingAssessment.project` gives it. Empty
+    #: where the rule asks for nothing.
+    sourcing: dict = field(default_factory=dict)
 
     @property
     def needed(self) -> bool:
@@ -455,13 +459,15 @@ def why(plan: Plan) -> dict:
     return {name: value for name, value in told.items() if value}
 
 
-def _record(plan: Plan, rule: str, reason: str) -> None:
+def record(plan: Plan, rule: str, reason: str, *, rides: bool | None = None) -> None:
     """Record a change under its rule: ``incidental`` for a ride-along,
     ``reasons`` otherwise. ``rule`` is from :data:`trackstarr.policy.RULE_NAMES`.
+    ``rides`` overrides the rule's mode, for a change asked for by name.
 
     The one writer of all five stores, so they cannot disagree.
     """
-    rides = rule in plan.alongside
+    if rides is None:
+        rides = rule in plan.alongside
     plan.changes.append(Change(rule, reason, rides))
     if rides:
         plan.incidental.append(reason)
@@ -587,7 +593,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
     converting = plan.acts("remux") and ext not in TAG_PRESERVING_EXTS
     if converting:
         plan.remuxing = True
-        _record(plan, "remux", f"remux to mkv ({config.rule_variable('remux')})")
+        record(plan, "remux", f"remux to mkv ({config.rule_variable('remux')})")
 
     listed = {lang.name for lang in plan.langs}
 
@@ -597,7 +603,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
             return True
         if lang in listed or not plan.acts("languages"):
             return True
-        _record(plan, "languages", f"drop {what} {_stream_label(stream, lang)}")
+        record(plan, "languages", f"drop {what} {_stream_label(stream, lang)}")
         return False
 
     kept_audio = [stream for stream in audio if keep_track(stream, "audio")]
@@ -625,13 +631,13 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
         made = _downmix_source(src)
         # A track dropped for this one to replace is one change, not two.
         if (replaced := _claim_replacement(replacing, layout, src)) is not None:
-            _record(plan, "regenerate", f"{replaced} {made}")
+            record(plan, "regenerate", f"{replaced} {made}")
         else:
-            _record(plan, DOWNMIX_RULE, f"add {layout.name} downmix {made}")
+            record(plan, DOWNMIX_RULE, f"add {layout.name} downmix {made}")
     # Drops nothing came back for: the rebuild found no source in that
     # language and no fallback.
     for orphaned in replacing:
-        _record(plan, "regenerate", orphaned.reason)
+        record(plan, "regenerate", orphaned.reason)
     # Every track the rewrite encodes: a fresh downmix, or one made from itself.
     generated = [*downmixes, *reencodes]
     # Last of the audio rules: the others' output replaces what it drops, and no
@@ -702,7 +708,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
 
     file_title = container_title(info)
     if plan.acts("release_tags") and matches_release_tags(file_title, policy):
-        _record(plan, "release_tags", f"clear release tags on container title ({file_title!r})")
+        record(plan, "release_tags", f"clear release tags on container title ({file_title!r})")
         plan.clear_container_title = True
 
     if plan.acts("order"):
@@ -716,7 +722,7 @@ def _apply_rules(plan: Plan, info: dict) -> Plan:
             if StreamRef(0, stream["index"]) in kept_src
         ]
         if copied != current:
-            _record(plan, "order", "reorder streams")
+            record(plan, "order", "reorder streams")
     else:
         # Preserve input order; a generated downmix follows its source.
         ordered.sort(key=lambda out: (out.source, out.encode))
@@ -745,7 +751,7 @@ def _video_out(plan: Plan, stream: dict) -> OutStream:
         return out
     out.dv_strip = True
     out.video_source = stream
-    _record(
+    record(
         plan,
         "dv_strip",
         f"remove Dolby Vision from video stream {stream['index']} (keep HDR10)",
@@ -769,7 +775,7 @@ def _split_streams(
         kind = stream.get("codec_type")
         if kind == "video":
             if plan.acts("cover_art") and is_cover_art(stream):
-                _record(
+                record(
                     plan,
                     "cover_art",
                     f"drop cover art (stream {stream['index']}, {stream.get('codec_name')})",
@@ -784,7 +790,7 @@ def _split_streams(
             # Fonts for ASS/SSA subtitles; dropping one breaks styled rendering.
             tail.append(stream)
         elif plan.acts("stray_streams"):
-            _record(plan, "stray_streams", f"drop {kind} stream {stream['index']}")
+            record(plan, "stray_streams", f"drop {kind} stream {stream['index']}")
         else:
             tail.append(stream)
     return video, audio, subs, tail
@@ -807,7 +813,7 @@ def _flag_release_tags(plan: Plan, stream: dict) -> bool:
         stream, plan.policy
     ):
         return False
-    _record(
+    record(
         plan,
         "release_tags",
         f"clear release tags on {stream.get('codec_type')} {stream['index']} ({title!r})",
@@ -841,7 +847,7 @@ def _original_to_tag(plan: Plan, audio: list[dict], kept_audio: list[dict]) -> d
         return None
     if (named := named_in(stream_title(stream))) and named != lang:
         return None
-    _record(plan, "tag_original", f"tag audio {_stream_label(stream)} as {lang}")
+    record(plan, "tag_original", f"tag audio {_stream_label(stream)} as {lang}")
     return stream
 
 
@@ -865,7 +871,7 @@ def _drop_redundant_sdh(plan: Plan, kept_subs: list[dict]) -> list[dict]:
     redundant: set[int] = set()
     for stream in sdh:
         if stream_lang(stream) in full_langs:
-            _record(plan, "sdh", f"drop SDH subtitle {_stream_label(stream)}")
+            record(plan, "sdh", f"drop SDH subtitle {_stream_label(stream)}")
             redundant.add(stream["index"])
     return [stream for stream in kept_subs if stream["index"] not in redundant]
 
@@ -884,7 +890,7 @@ def _drop_commentary(plan: Plan, kept_audio: list[dict]) -> list[dict]:
     if not keep:
         return kept_audio
     for stream in dropped:
-        _record(plan, "commentary", f"drop commentary audio {_stream_label(stream)}")
+        record(plan, "commentary", f"drop commentary audio {_stream_label(stream)}")
     return keep
 
 
@@ -916,7 +922,7 @@ def _drop_stand_ins(plan: Plan, kept_audio: list[dict]) -> list[dict]:
         if served is None:
             keep.append(stream)
             continue
-        _record(
+        record(
             plan,
             DOWNMIX_RULE,
             f"drop {layout.name} downmix {_stream_label(stream, lang or 'und')}, "
@@ -1106,7 +1112,7 @@ def _reencode_oversized(plan: Plan, kept_audio: list[dict]) -> list[tuple[Layout
         if layout is None:
             continue
         if (why := _oversized_reason(plan, stream, layout)) is not None:
-            _record(plan, "regenerate", why)
+            record(plan, "regenerate", why)
             reencodes.append((layout, stream))
     return reencodes
 
@@ -1238,7 +1244,7 @@ def _drop_layouts(
         return kept_audio
     for stream in kept_audio:
         if (layout := named.get(stream.get("channels"))) is not None:
-            _record(
+            record(
                 plan,
                 DROP_LAYOUTS_RULE,
                 f"drop {layout} audio {_stream_label(stream, stream_lang(stream) or 'und')}",

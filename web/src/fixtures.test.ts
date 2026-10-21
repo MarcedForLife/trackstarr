@@ -6,8 +6,16 @@
 import { describe, expect, test } from 'vitest';
 import { fileRows, fileStatus, progressLabel, remaining, verdicts } from '$lib/runs';
 import type { Activity, Run, Stage } from '$lib/runs';
-import { asVerdict, FILTERS, pip, tint, VERDICTS, verdictLabel } from '$lib/library';
-import type { Shelf, Summary, TitleDetail, Track } from '$lib/library';
+import {
+	asVerdict,
+	FILTERS,
+	pip,
+	REQUIREMENT_STATES,
+	tint,
+	VERDICTS,
+	verdictLabel
+} from '$lib/library';
+import type { RequirementState, Shelf, Sourcing, Summary, TitleDetail, Track } from '$lib/library';
 import {
 	detail,
 	details,
@@ -119,7 +127,18 @@ const summarised = pins<Summary>()({ ...summary, head: summary.head.map(verdicte
 pins<TitleDetail>()({
 	...title,
 	state: asVerdict(title.state),
-	files: title.files.map((file) => ({ ...file, status: asVerdict(file.status) }))
+	files: title.files.map((file) => ({
+		...file,
+		status: asVerdict(file.status),
+		sourcing: {
+			...file.sourcing,
+			completeness: file.sourcing.completeness as Sourcing['completeness'],
+			requirements: file.sourcing.requirements.map((requirement) => ({
+				...requirement,
+				state: requirement.state as RequirementState
+			}))
+		}
+	}))
 });
 pins<{ planned: Track[] }>()(spelled(plannedTracksJson));
 pins<EventPage>()({
@@ -204,6 +223,16 @@ describe('the library', () => {
 			expect(pip).toHaveProperty(state);
 			// `unchecked` is the one state said as Unknown on purpose.
 			if (state !== 'unchecked') expect(verdictLabel(asVerdict(state))).not.toBe('Unknown');
+		}
+	});
+
+	// Narrowed above by a cast, so a state the service has and the union has not
+	// would go unnoticed, and would have no words in the sheet.
+	test('has the union for every sourcing state the service wrote', () => {
+		for (const file of title.files) {
+			expect(['complete', 'incomplete', 'unknown']).toContain(file.sourcing.completeness);
+			for (const requirement of file.sourcing.requirements)
+				expect(REQUIREMENT_STATES).toContain(requirement.state);
 		}
 	});
 

@@ -71,7 +71,8 @@
 	import { type Season } from '$lib/seasons';
 	import { TitleBrowsing, FILE_PAGE, type Opening } from '$lib/title-browsing.svelte';
 	import { TitleWorkController } from '$lib/title-work.svelte';
-	import { getSettings } from '$lib/settings';
+	import { languageNames, readLanguageNames } from '$lib/languages.svelte';
+	import { missingAudio } from '$lib/sourcing';
 
 	// One title, with what each file is and what a rewrite would leave. Owns
 	// presentation and the two-phase close, coordinating browsing and work when
@@ -151,8 +152,8 @@
 		opener = null;
 		if (up && pencil?.isConnected) pencil.focus();
 	}
-	// The language names for its menu, fetched the first time one opens.
-	let languages = $state<Record<string, string> | null>(null);
+	// The language names for its menu, read the first time one opens.
+	const languages = $derived(languageNames());
 	// What the last edit came to, under the row it was made from, until the
 	// next one or the sheet goes.
 	let retagged = $state<({ path: string; stream: number } & Summary) | null>(null);
@@ -256,9 +257,15 @@
 				before,
 				tone: 'text-dim'
 			}));
-		if (verdict)
-			return [{ key: 'verdict', before: verdictSummary, tone: verdictText[verdict] ?? 'text-dim' }];
-		return [];
+		if (!verdict) return [];
+		const parts = [
+			{ key: 'verdict', before: verdictSummary, tone: verdictText[verdict] ?? 'text-dim' }
+		];
+		// A lone file's row leaves its verdict to the header, so what it lacks too.
+		const lone = !manyFiles && detail?.files.length === 1 ? detail.files[0] : null;
+		const missing = lone ? missingAudio(lone, languages) : '';
+		if (missing) parts.push({ key: 'missing', before: missing, tone: 'text-dim' });
+		return parts;
 	});
 
 	// Settings or a newer version may have made the verdict stale. Not said of
@@ -380,12 +387,8 @@
 		}
 		editing = { path: file.path, stream: row.stream };
 		opener = pressed;
-		if (!languages) {
-			// A menu without names is still a menu of codes.
-			getSettings()
-				.then((snapshot) => (languages = snapshot.languages))
-				.catch(() => (languages = {}));
-		}
+		// A menu without names is still a menu of codes.
+		readLanguageNames();
 	}
 
 	// Something changed. The editor stays up on its own when nothing did.

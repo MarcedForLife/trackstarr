@@ -39,6 +39,9 @@ CACHE_TYPES = (SWEEP, RECHECK)
 WORKING = "working"
 WAITING = "waiting"
 ENCODING = "encoding"
+#: Measuring how a source variant's timeline maps onto the file's, which
+#: decodes both and reports no progress.
+ANALYSING = "analysing"
 #: Verify and publish after the encode, apart from WORKING so the written file
 #: keeps its share of the overall bar.
 FINISHING = "finishing"

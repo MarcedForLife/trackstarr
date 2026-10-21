@@ -80,6 +80,9 @@ class Verdict:
     #: Consecutive failed rewrites of the file as it stands. See
     #: :data:`trackstarr.sweep.MAX_FAILURES`.
     failures: int = 0
+    #: :meth:`trackstarr.sourcing.SourcingAssessment.project`, empty where the
+    #: source_audio rule asks nothing of the file.
+    sourcing: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -148,6 +151,7 @@ def _entry(key: FileKey, verdict: Verdict) -> dict:
         "why": verdict.why,
         "failures": verdict.failures,
         "duration": verdict.duration,
+        "sourcing": verdict.sourcing,
     }
     return {
         **asdict(key),
@@ -768,6 +772,7 @@ class SweepCache:
             stored_why = entry.get("why")
             planned = entry.get("planned")
             duration = entry.get("duration")
+            sourcing = entry.get("sourcing")
             return Verdict(
                 Status(entry.get("status", "")),
                 entry.get("reasons") or "",
@@ -775,6 +780,7 @@ class SweepCache:
                 why=stored_why if isinstance(stored_why, dict) else {},
                 failures=_count(entry.get("failures")),
                 duration=float(duration) if isinstance(duration, int | float) else 0.0,
+                sourcing=sourcing if isinstance(sourcing, dict) else {},
             )
         except ValueError:
             # A hand-edited or damaged entry; treat it as a miss.

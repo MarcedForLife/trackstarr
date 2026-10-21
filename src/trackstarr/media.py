@@ -14,6 +14,10 @@ from .tracks import settings_bitrate
 #: our own tracks. Survives in Matroska; MP4 drops custom tags.
 GENERATED_TAG = "TRACKSTARR"
 
+#: Tag marking audio imported from another variant, valued with its mapping,
+#: so a source of our making ranks below a native one.
+IMPORTED_TAG = "TRACKSTARR_IMPORTED"
+
 
 class ProbeError(RuntimeError):
     """ffprobe could not produce usable output: a corrupt file, a timeout, or
@@ -199,6 +203,7 @@ def track_summary(stream: dict, policy: Policy) -> dict:
             ("cover_art", kind == "video" and is_cover_art(stream)),
             # Only audio is ever generated; the tag scan walks every key.
             ("generated", kind == "audio" and generated_settings(stream) is not None),
+            ("imported", kind == "audio" and tag_value(stream, IMPORTED_TAG) is not None),
         )
         if present
     ]

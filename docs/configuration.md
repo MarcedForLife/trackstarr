@@ -11,7 +11,7 @@ use environment variables and require a restart.
 | Variable                                                                     | Default                                      | Purpose                                                         |
 | ---------------------------------------------------------------------------- | -------------------------------------------- | --------------------------------------------------------------- |
 | `LANGUAGES`                                                                  | `original,eng`                               | Languages to keep and downmix. See [rules](rules.md#languages). |
-| `RULE_SOURCE_AUDIO` | `never` | Copy missing `LANGUAGES` audio from another variant. Automatic sourcing is not yet available. |
+| `RULE_SOURCE_AUDIO` | `never` | Copy missing `LANGUAGES` audio from another variant. See [audio sourcing](rules.md#audio-sourcing). |
 | `AUDIO_LAYOUTS`                                                              | `2.0,5.1`                                    | Layout actions, encoders, bitrates and order.                   |
 | `RULE_DV_STRIP` | `never` | Remove Dolby Vision from HEVC profile 8.1 and 8.6. See [video compatibility](rules.md#video-compatibility). |
 | `RULE_<NAME>`                                                                | [Rules](rules.md)                            | `never`, `alongside` or `always`.                               |

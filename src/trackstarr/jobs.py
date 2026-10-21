@@ -13,7 +13,7 @@ import threading
 import time
 from dataclasses import replace
 
-from . import config, events, lifecycle, runs, sweep, work
+from . import audio_sources, config, events, lifecycle, runs, sourcing, sweep, work
 from .arr import all_arrs, original_of
 from .executor import Cancel
 from .policy import Policy
@@ -41,6 +41,11 @@ def hardlinked(path: str) -> bool:
 #: job runs. The planner would no-op; this saves the probe.
 _inflight: set[str] = set()
 _inflight_lock = threading.Lock()
+
+#: Paths delivered again while in flight, queued once more when the job
+#: holding them settles, however many deliveries came meanwhile. A source that
+#: lands while its target is processed is otherwise never seen by the target.
+_reruns: dict[str, Job] = {}
 
 #: Webhook jobs whose file the download client still hard-links, re-checked on
 #: a timer until the link count drops. Persisted, since the import is the last
@@ -141,6 +146,7 @@ def forget() -> None:
     :func:`trackstarr.lifecycle.reset`."""
     with _inflight_lock:
         _inflight.clear()
+        _reruns.clear()
     with _parked_lock:
         _parked.clear()
 
@@ -235,6 +241,7 @@ def _handle(
         runs.finish(job.run, job.path, continuing=continuing)
     if continuing:
         return job
+    _reassess_variants(job)
     if result.status is Status.PENDING and result.plan:
         # No pending.tsv row for a webhook, so the history is the only record.
         events.record(
@@ -251,6 +258,50 @@ def _handle(
         )
 
     return None
+
+
+def _reassess_variants(job: Job) -> None:
+    """Queue the title's other variants whose open assessments this file may
+    now answer, as part of its own delivery. Never raises: the import itself
+    is already booked."""
+    if not sourcing.active(Policy.from_config()):
+        return
+    try:
+        found = audio_sources.affected(job.path)
+    except Exception:
+        log.exception("could not look for variants waiting on %s", job.path)
+        return
+    if not found:
+        return
+    arrs = {arr.instance_id: arr for arr in all_arrs()}
+    for item in found:
+        variant = item.variant
+        other = Job(
+            variant.path,
+            item.title.lang,
+            variant.item_id,
+            arrs.get(variant.instance_id),
+            job.run,
+            instance_id=variant.instance_id,
+        )
+        if _requeue(other):
+            log.info("queued %s, which may take audio from %s", other.path, job.path)
+
+
+def _requeue(job: Job) -> bool:
+    """Queue a file into its delivery's run again; whether it was queued. A
+    stopping process refuses, and the next sweep has it."""
+    try:
+        if job.run:
+            lifecycle.open_run(job.run, runs.IMPORT, instance_id=job.instance_id)
+        try:
+            return enqueue(job)
+        finally:
+            if job.run:
+                lifecycle.seal(job.run)
+    except ValueError as err:
+        log.info("not queueing %s: %s", job.path, err)
+        return False
 
 
 def _handle_queued(
@@ -289,17 +340,23 @@ def _finish_import(job: Job, accounting: lifecycle.ImportResult) -> None:
             result.status, result.detail = accounting.status, accounting.detail
             result.dropped = accounting.dropped
     finally:
-        _release_import(job.path)
+        if rerun := _release_import(job.path):
+            _requeue(rerun)
 
 
-def _release_import(path: str) -> None:
+def _release_import(path: str) -> Job | None:
+    """Drop the path's claim; the delivery that arrived meanwhile, if any."""
     with _inflight_lock:
         _inflight.discard(path)
+        return _reruns.pop(path, None)
 
 
 def enqueue(job: Job) -> bool:
+    """Queue an import; whether it was. One for a path already in flight is
+    held for a single rerun instead."""
     with _inflight_lock:
         if job.path in _inflight:
+            _reruns[job.path] = job
             return False
         _inflight.add(job.path)
     cancel = Cancel(job.path)

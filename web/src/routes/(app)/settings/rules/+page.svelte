@@ -78,6 +78,9 @@
 	const TAG_ORIGINAL_DESC =
 		"Tag an untagged audio track with the title's original language, as Radarr or Sonarr reports it. Only where the file has one untagged track and nothing in that language already.";
 
+	const SOURCE_AUDIO_DESC =
+		'When a file lacks main audio in a listed language, copy it from another variant of the title, timed to the file. Variants with matching timelines copy as they are, others are measured by picture first.';
+
 	// Mirrors the rule's own guard, that a code the rule above would then drop
 	// is never written.
 	const tagOriginalNote = $derived(
@@ -236,7 +239,7 @@
 		'REGENERATE_SCOPE',
 		'REGENERATE_BELOW_PERCENT',
 		'REGENERATE_ABOVE_PERCENT',
-		...['languages', 'tag_original', 'regenerate', 'commentary', 'sdh'].map(ruleVar)
+		...['languages', 'source_audio', 'tag_original', 'regenerate', 'commentary', 'sdh'].map(ruleVar)
 	];
 	const FORMAT_SETTINGS = ['ALLOWED_EXTS', ruleVar('remux')];
 	const PATTERN_SETTINGS = PATTERNS.map((pattern) => pattern.name);
@@ -378,6 +381,11 @@
 				rule: 'languages',
 				label: 'Unlisted languages',
 				text: 'Drop audio and subtitles in a language the list above does not name. Untagged tracks always stay.'
+			})}
+			{@render ruleRow({
+				rule: 'source_audio',
+				label: 'Missing audio',
+				text: SOURCE_AUDIO_DESC
 			})}
 			{@render ruleRow({
 				rule: 'tag_original',

@@ -11,8 +11,9 @@ import { asVerdict, pip, verdictHint, verdictLabel, type Verdict } from '$lib/li
 export { duration, named, titled };
 
 // What the thread holding a file is doing. A bar at zero means something
-// different for a file queued behind a slot than for one encoding.
-export type Stage = 'working' | 'waiting' | 'encoding' | 'finishing';
+// different for a file queued behind a slot than for one encoding. `analysing`
+// is measuring a source's audio timing, which reports no progress.
+export type Stage = 'working' | 'waiting' | 'analysing' | 'encoding' | 'finishing';
 
 // One file a thread has picked up. Once its encode starts: the running time,
 // how much is written, and the speed as a multiple of realtime.
@@ -395,11 +396,13 @@ export function fileBar(file: ActiveFile): boolean {
 	return file.stage === 'encoding' && file.duration > 0;
 }
 
+const UNMEASURED: Stage[] = ['working', 'analysing', 'finishing'];
+
 /** Whether a thread is on this file with nothing to measure: the probe that
- * plans it, or the verify after an encode. Not a wait for a slot, where
- * nothing is happening. */
+ * plans it, a source's timing, or the verify after an encode. Not a wait for a
+ * slot, where nothing is happening. */
 export function fileWorking(file: ActiveFile): boolean {
-	return file.stage === 'working' || file.stage === 'finishing';
+	return UNMEASURED.includes(file.stage);
 }
 
 // Past ten times realtime the decimal is noise, and a remux runs at hundreds.
@@ -421,10 +424,17 @@ export function fileReadout(file: ActiveFile, age = 0): FileReadout {
 	};
 }
 
+// The stages with a line of their own rather than a readout.
+const STAGE_STATUS: Partial<Record<Stage, string>> = {
+	waiting: 'Waiting for a free rewrite slot',
+	analysing: 'Measuring audio timing'
+};
+
 /** The readout on one line, for a label and for where a row is too narrow to
  * split it. A slot wait gets a line rather than reading as nothing happening. */
 export function fileStatus(file: ActiveFile, age = 0): string {
-	if (file.stage === 'waiting') return 'Waiting for a free rewrite slot';
+	const said = STAGE_STATUS[file.stage];
+	if (said) return said;
 	const { speed, far, left } = fileReadout(file, age);
 	return [far, speed, left].filter(Boolean).join(' · ');
 }

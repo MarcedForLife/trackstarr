@@ -140,6 +140,13 @@ trackstarr plan --original eng "Tears of Steel (2012).mkv"
 
 `REWRITE_MODE=report` prevents rewrites even with `fix` or `sweep --apply`. Title pauses also apply.
 
+`align` measures how a source variant's timing maps onto a target's, the same
+measurement `RULE_SOURCE_AUDIO` runs, and prints the `fix` arguments that apply it.
+
+```sh
+trackstarr align target.mkv source.mkv
+```
+
 Manual audio copying accepts one target and an explicit source file. Select audio
 by its absolute, zero-based FFprobe stream index. Repeat `--source-stream` to
 select more than one track from that file.

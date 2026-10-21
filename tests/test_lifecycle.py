@@ -1066,3 +1066,11 @@ def test_pause_and_stop_leave_an_active_phases_commit_gate_open():
             release.set()
         editing.result(timeout=3)
     assert phase.result()
+
+
+def test_a_skip_during_a_timing_measurement_says_nothing_was_written():
+    held = runs.Active(0.0)
+    held.stage = runs.ANALYSING
+    assert lifecycle._stopped_where("active", held) == (
+        "stopped while its audio timing was measured, nothing written"
+    )

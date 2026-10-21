@@ -163,6 +163,49 @@ export type LibraryFile = {
 	why: Why;
 	// Absent on a file no rewrite of ours has published.
 	modified?: Modified;
+	// Absent where the source_audio rule asks nothing of the file.
+	sourcing?: Sourcing;
+};
+
+// Where one LANGUAGES language stands as main audio. `analysis_required` waits
+// on a timing measurement, `ready` imports on the next rewrite. Every state but
+// the first has its words in $lib/sourcing.
+export const REQUIREMENT_STATES = [
+	'satisfied',
+	'missing_source',
+	'unavailable',
+	'analysis_required',
+	'ready',
+	'needs_review',
+	'failed'
+] as const;
+export type RequirementState = (typeof REQUIREMENT_STATES)[number];
+
+export type Requirement = {
+	// ISO 639-2/B.
+	lang: string;
+	state: RequirementState;
+	reason?: string;
+	// The source stream, named by its connection, once one is chosen.
+	track?: {
+		path: string;
+		instance_id: string;
+		index: number;
+		codec?: string;
+		channels?: number;
+		title?: string;
+		source: string;
+	};
+	// `scale` is a fraction such as "25/24".
+	mapping?: { scale: string; offset_us: number };
+	// The mapping came from comparing pictures rather than matching timelines.
+	measured?: boolean;
+};
+
+// `unknown` where a connection or file could not be read.
+export type Sourcing = {
+	completeness: 'complete' | 'incomplete' | 'unknown';
+	requirements: Requirement[];
 };
 
 // A service the title could be opened in. The sheet draws its buttons from this

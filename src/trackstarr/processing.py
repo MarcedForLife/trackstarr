@@ -9,7 +9,19 @@ import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, replace
 
-from . import catalogue, config, events, executor, mkvtag, pauses, rewrites, runs
+from . import (
+    alignment,
+    audio_sources,
+    catalogue,
+    config,
+    events,
+    executor,
+    mkvtag,
+    pauses,
+    rewrites,
+    runs,
+    sourcing,
+)
 from .arr import Arr, LibraryItem
 from .executor import Cancel, Outcome, apply_plan
 from .media import ProbeError, probe, stream_lang, stream_title
@@ -25,10 +37,12 @@ from .planner import (
     plan_from_probe,
     planned_tracks,
     probe_plan,
+    record,
     track_changes,
     why,
 )
-from .policy import Policy
+from .policy import ALWAYS, Policy
+from .sourcing import ANALYSIS_REQUIRED, NEEDS_REVIEW, READY, Resolution, SourcingAssessment
 from .status import Status
 from .sweep_cache import FileKey, Observation, Verdict, cache_key
 
@@ -234,6 +248,7 @@ def verdict_of(result: ProcessResult, failures: int = 0) -> Verdict:
         # Named, since both are numbers and a swap would be silent.
         duration=plan.src_duration if plan else 0.0,
         failures=failures,
+        sourcing=plan.sourcing if plan else {},
     )
 
 
@@ -482,21 +497,129 @@ def _selected_audio(inputs: tuple[PlanInput, ...], revision: FileRevision) -> li
     return streams
 
 
-def plan_job(job: Job, policy: Policy, inputs: tuple[PlanInput, ...]) -> Plan:
-    """Plan a file, with any selected source audio read under the execution
-    guard and weighed by the ordinary rules."""
-    if not inputs:
+#: Skips an import can lift, since the file is only short of audio.
+_SILENT_SKIPS = frozenset({"no audio streams", "would remove every audio track"})
+
+
+def plan_job(
+    job: Job,
+    policy: Policy,
+    inputs: tuple[PlanInput, ...] = (),
+    *,
+    measure: audio_sources.Measure | None = None,
+) -> Plan:
+    """Plan a file. Selected ``inputs`` are imported whatever the rules' modes.
+    Without them the source_audio rule picks its own, measuring timing only
+    where ``measure`` is given."""
+    if inputs:
+        return _plan_imports(job, policy, inputs, explicit=True)
+    if not sourcing.active(policy):
         return build_plan(job.path, job.lang, policy)
+    seed, info = probe_plan(job.path, job.lang, policy)
+    if seed.skip:
+        return seed
+    local = plan_from_probe(seed, info)
+    if local.skip and local.skip not in _SILENT_SKIPS:
+        return local
+    # Measured only where an import could follow, never to report one.
+    measure = measure if _acting(policy, local) else None
+    assessment = audio_sources.assess(local, info, measure=measure)
+    if assessment is None:
+        return local
+    return _sourced(job, policy, local, assessment, measuring=measure is not None)
+
+
+def _acting(policy: Policy, local: Plan) -> bool:
+    """Whether the rule imports into this file: alone under always, only beside
+    another rule's rewrite under alongside."""
+    return "source_audio" in policy.rules_in(ALWAYS) or local.needed
+
+
+def _sourced(
+    job: Job,
+    policy: Policy,
+    local: Plan,
+    assessment: SourcingAssessment,
+    *,
+    measuring: bool = False,
+) -> Plan:
+    """The local plan with the assessment's ready imports, where the rule acts.
+
+    A measurement still owed is a reason only where nothing could measure it,
+    since a rewrite that carried no import would change nothing. The sweep
+    offers it again; see :func:`trackstarr.sweep._sourcing_stale`.
+    """
+    acting = _acting(policy, local)
+    plan = local
+    if acting and assessment.inputs:
+        plan, assessment = _with_imports(job, policy, local, assessment)
+    if acting and not measuring:
+        waiting = [
+            (resolution.lang, resolution.track.variant.path)
+            for resolution in assessment.resolutions
+            if resolution.state == ANALYSIS_REQUIRED and resolution.track is not None
+        ]
+        if waiting:
+            # A file only short of audio owes the measurement, not a skip.
+            plan.skip = None
+        for lang, path in waiting:
+            record(plan, "source_audio", f"measure timing to import {lang} audio from {path}")
+    plan.sourcing = assessment.project()
+    return plan
+
+
+def _with_imports(
+    job: Job, policy: Policy, local: Plan, assessment: SourcingAssessment
+) -> tuple[Plan, SourcingAssessment]:
+    """Plan the ready imports together, or as many as plan together where the
+    rules refuse some. A refused import becomes a review rather than a
+    failure of the file."""
+    try:
+        return _plan_imports(job, policy, assessment.inputs, explicit=False), assessment
+    except ValueError:
+        pass
+    # One at a time, in requirement order, so a refusal only in company is caught.
+    plan = local
+    kept: tuple[PlanInput, ...] = ()
+    problems: dict[PlanInput, str] = {}
+    for item in assessment.inputs:
+        try:
+            plan = _plan_imports(job, policy, (*kept, item), explicit=False)
+        except ValueError as err:
+            problems[item] = str(err)
+        else:
+            kept += (item,)
+    assessment = replace(
+        assessment,
+        resolutions=tuple(
+            replace(resolution, state=NEEDS_REVIEW, reason=problems[refused])
+            if (refused := _input_of(resolution)) is not None and refused in problems
+            else resolution
+            for resolution in assessment.resolutions
+        ),
+    )
+    return plan, assessment
+
+
+def _input_of(resolution: Resolution) -> PlanInput | None:
+    if resolution.state != READY or resolution.track is None or resolution.mapping is None:
+        return None
+    return PlanInput(resolution.track.revision, resolution.track.index, resolution.mapping)
+
+
+def _plan_imports(
+    job: Job, policy: Policy, inputs: tuple[PlanInput, ...], *, explicit: bool
+) -> Plan:
+    """Plan a file with selected source audio, read under the execution guard
+    and weighed by the ordinary rules. An ``explicit`` import is asked for by
+    name, so it is a reason whatever the rule's mode."""
     revision = FileRevision.of(job.path)
     with executor.read_source(revision):
         seed, info = probe_plan(job.path, job.lang, policy)
         if seed.skip:
             return seed
         local = plan_from_probe(seed, info)
-        if local.skip and local.skip not in {
-            "no audio streams",
-            "would remove every audio track",
-        }:
+        if local.skip and local.skip not in _SILENT_SKIPS:
             return local
         selected = _selected_audio(inputs, revision)
         # Private indexes past the target's let the rules weigh the selected
@@ -531,10 +654,33 @@ def plan_job(job: Job, policy: Policy, inputs: tuple[PlanInput, ...]) -> Plan:
                     f"source stream {item.stream_index} would be removed "
                     "or replaced by the current rules"
                 )
-            plan.reasons.append(_source_description(item, stream, plan))
+            record(
+                plan,
+                "source_audio",
+                _source_description(item, stream, plan),
+                rides=False if explicit else None,
+            )
         for item in inputs:
             executor.check_revision(item.revision)
         return plan
+
+
+def _measurer(job: Job, cancel: Cancel | None) -> audio_sources.Measure:
+    """Measure under a rewrite slot: decoding two files costs what an encode does."""
+    switch = cancel or Cancel(job.path)
+
+    def measure(target: FileRevision, source: FileRevision) -> alignment.AlignmentResult:
+        runs.stage(job.run, job.path, runs.WAITING)
+        try:
+            with rewrite_slot(switch) as claimed:
+                if not claimed:
+                    raise InterruptedError(STOPPED_BEFORE_START)
+                runs.stage(job.run, job.path, runs.ANALYSING)
+                return alignment.analyse(target, source, switch)
+        finally:
+            runs.settle(job.run, job.path)
+
+    return measure
 
 
 def _source_description(item: PlanInput, stream: dict, plan: Plan) -> str:
@@ -579,14 +725,18 @@ def process(
     lasts through the output recheck; direct calls snapshot current settings.
     ``cancel`` is the queued phase's kill switch, where the work came from a
     queue at all, and ``observation`` the caller's read of the file, which
-    every mutation here takes ownership through.
+    every mutation here takes ownership through. Source timing is measured
+    only on a run that may rewrite.
     """
     policy = policy or Policy.from_config()
     kept = left_alone(job.path, job.instance_id)
     dry_run = effective_dry_run(dry_run) or kept is not None
     try:
         target_revision = FileRevision.of(job.path) if inputs else None
-        plan = plan_job(job, policy, inputs)
+        measure = None if dry_run else _measurer(job, cancel)
+        plan = plan_job(job, policy, inputs, measure=measure)
+        if plan.inputs and target_revision is None:
+            target_revision = FileRevision.of(job.path)
     except InterruptedError as err:
         return ProcessResult(Status.DEFERRED, detail=str(err))
     except (ProbeError, OSError, ValueError) as err:

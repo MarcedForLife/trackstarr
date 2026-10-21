@@ -8,6 +8,8 @@ import {
 	pair,
 	type Change,
 	type LibraryFile,
+	type Requirement,
+	type Sourcing,
 	type Track,
 	type Verdict,
 	type Why
@@ -16,7 +18,28 @@ import type { SettingValue } from '$lib/settings';
 
 export type Settings = Record<string, SettingValue>;
 
-export type Judgement = { status: Verdict; planned: Track[]; why: Why };
+export type Judgement = { status: Verdict; planned: Track[]; why: Why; sourcing?: Sourcing };
+
+/** Another copy of the same film or episode in another connection, which may
+ * hold audio the file lacks. */
+export type Variant = {
+	path: string;
+	instance_id: string;
+	source: string;
+	tracks: Track[];
+	seconds: number;
+};
+
+/** A timing measurement the demo holds as already made. */
+export type Alignment = { scale: string; offset_us: number };
+
+/** What the judge reads of a file. Sourcing needs the last three. */
+export type Judged = Pick<LibraryFile, 'tracks'> & {
+	ext: string;
+	runtime?: number;
+	alignments?: Record<string, Alignment>;
+	variants?: () => Variant[];
+};
 
 // Channel counts by layout name, and what a new row of each is made at; the
 // same tables the settings snapshot carries.
@@ -141,11 +164,73 @@ function ordered(tracks: Track[], layouts: Layout[]): Track[] {
 	);
 }
 
-export function judge(
-	file: Pick<LibraryFile, 'tracks'> & { ext: string },
-	titleLang: string | undefined,
-	settings: Settings
-): Judgement {
+/** `+1.250000s`, as the service writes an offset into a reason. */
+function offset(microseconds: number): string {
+	return `${microseconds < 0 ? '-' : '+'}${(Math.abs(microseconds) / 1_000_000).toFixed(6)}s`;
+}
+
+type Sourced = { sourcing: Sourcing; imports: { track: Track; reason: string }[] };
+
+/** Each kept language as main audio, from the first variant holding it. A
+ * source on another timeline needs a stored measurement, since the demo never
+ * measures, so one without waits rather than holding a rewrite. */
+function assess(file: Judged, kept: string[], present: Track[], layouts: Layout[]): Sourced {
+	const imports: Sourced['imports'] = [];
+	const requirements = kept.map((lang): Requirement => {
+		if (present.some((track) => track.lang === lang)) return { lang, state: 'satisfied' };
+		for (const variant of file.variants?.() ?? []) {
+			const stream = variant.tracks.find(
+				(track) =>
+					track.kind === 'audio' && track.lang === lang && !track.flags?.includes('commentary')
+			);
+			if (!stream) continue;
+			const track = {
+				path: variant.path,
+				instance_id: variant.instance_id,
+				index: stream.index,
+				codec: stream.codec,
+				channels: stream.channels,
+				title: stream.title,
+				source: variant.source
+			};
+			const same = variant.seconds === file.runtime;
+			const mapping = same ? { scale: '1', offset_us: 0 } : file.alignments?.[variant.path];
+			if (!mapping) return { lang, state: 'analysis_required', track };
+			// Retimed audio is encoded at its layout's settings.
+			const encode =
+				mapping.scale === '1'
+					? undefined
+					: layouts.find((layout) => layout.channels === stream.channels);
+			imports.push({
+				track: {
+					index: -1,
+					kind: 'audio',
+					codec: encode ? encode.codec : stream.codec,
+					channels: stream.channels,
+					lang,
+					title: stream.title,
+					bitrate: encode ? bitrate(encode.rate) : stream.bitrate,
+					source: { input_index: imports.length + 1, stream_index: stream.index }
+				},
+				reason:
+					`import ${variant.path} stream ${stream.index} (${lang}, ${stream.channels ?? '?'}ch, ` +
+					`${stream.title || 'untitled'}), offset ${offset(mapping.offset_us)}, scale ${mapping.scale}, ` +
+					(encode
+						? `encode ${encode.codec} ${encode.rate} after lossless preparation`
+						: 'copy encoded audio')
+			});
+			return { lang, state: 'ready', track, mapping, measured: !same };
+		}
+		return { lang, state: 'missing_source' };
+	});
+	const complete = requirements.every((requirement) => requirement.state === 'satisfied');
+	return {
+		sourcing: { completeness: complete ? 'complete' : 'incomplete', requirements },
+		imports
+	};
+}
+
+export function judge(file: Judged, titleLang: string | undefined, settings: Settings): Judgement {
 	if (!list(settings, 'ALLOWED_EXTS').includes(file.ext)) return unsupported(file.ext);
 	if (!file.tracks.length) return { status: 'unchecked', planned: [], why: {} };
 
@@ -239,6 +324,12 @@ export function judge(
 		}
 	}
 
+	// Read off what the rewrite keeps, so an import never answers itself.
+	const sourced =
+		mode(settings, 'source_audio') === 'never'
+			? undefined
+			: assess(file, kept, surviving(), layouts);
+
 	const stripped = new Set<number>();
 	for (const track of file.tracks) {
 		if (
@@ -257,6 +348,14 @@ export function judge(
 		)
 			stripped.add(track.index);
 	}
+	// Beside another rule's change only, unless the rule is always on.
+	const imported: Track[] = [];
+	if (sourced && (mode(settings, 'source_audio') === 'always' || plan.reasons.length)) {
+		for (const item of sourced.imports) {
+			if (plan.record('source_audio', item.reason)) imported.push(item.track);
+		}
+	}
+	const sourcing = sourced ? { sourcing: sourced.sourcing } : {};
 	const why: Why = {};
 	if (plan.reasons.length) {
 		why.reasons = plan.reasons;
@@ -267,7 +366,7 @@ export function judge(
 		why.incidental_rules = plan.incidentalRules;
 	}
 	if (plan.changes.length) why.changes = plan.changes;
-	if (!plan.reasons.length) return { status: 'conform', planned: [], why };
+	if (!plan.reasons.length) return { status: 'conform', planned: [], why, ...sourcing };
 
 	// A rewrite: every surviving track in output order, each naming the stream
 	// it copies, and the generated ones among them.
@@ -280,11 +379,10 @@ export function judge(
 			...(stripped.has(track.index) ? { dv_removed: true } : {}),
 			title: plan.cleared.has(track.index) ? undefined : track.title
 		}));
-	const planned = ordered([...kept_tracks, ...generated], layouts).map((track, at) => ({
-		...track,
-		index: at
-	}));
-	return { status: 'pending', planned, why };
+	const planned = ordered([...kept_tracks, ...generated, ...imported], layouts).map(
+		(track, at) => ({ ...track, index: at })
+	);
+	return { status: 'pending', planned, why, ...sourcing };
 }
 
 /** The layouts a plan's generated tracks add, by their titles, as a card names

@@ -118,6 +118,7 @@ describe('fileWorking', () => {
 	test('tells work with nothing to measure from a wait and an encode', () => {
 		expect(fileWorking(file({ stage: 'working' }))).toBe(true);
 		expect(fileWorking(file({ stage: 'finishing' }))).toBe(true);
+		expect(fileWorking(file({ stage: 'analysing' }))).toBe(true);
 		expect(fileWorking(file({ stage: 'waiting' }))).toBe(false);
 		expect(fileWorking(file({ duration: 3600, done: 900, speed: 2 }))).toBe(false);
 	});
@@ -126,6 +127,10 @@ describe('fileWorking', () => {
 describe('fileStatus', () => {
 	test('names the wait a queued rewrite is in', () => {
 		expect(fileStatus(file({ stage: 'waiting' }))).toBe('Waiting for a free rewrite slot');
+	});
+
+	test('names a timing measurement, which has no readout', () => {
+		expect(fileStatus(file({ stage: 'analysing', duration: 3600 }))).toBe('Measuring audio timing');
 	});
 
 	test('says nothing for a file with no bar to caption', () => {

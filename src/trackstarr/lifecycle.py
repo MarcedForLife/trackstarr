@@ -213,6 +213,8 @@ def _stopped_where(where: str, held: runs.Active | None) -> str:
         return "taken off the run before a worker reached it"
     if held is not None and held.stage == runs.WAITING:
         return "stopped while it waited for a rewrite slot"
+    if held is not None and held.stage == runs.ANALYSING:
+        return "stopped while its audio timing was measured, nothing written"
     if held is not None and held.stage == runs.ENCODING and held.total:
         percent = round(100 * held.done / held.total)
         return f"stopped {percent}% into the rewrite, nothing written"

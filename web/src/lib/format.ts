@@ -237,6 +237,12 @@ export function videoDetail(track: {
 	return unsupported ? `${label}. ${unsupported}` : `${label} · HDR10 compatible`;
 }
 
+// Rules whose key reads badly as a chip. The rest are named by their key.
+const RULE_LABELS: Record<string, string> = {
+	dv_strip: 'Remove Dolby Vision',
+	source_audio: 'Source audio'
+};
+
 export function ruleLabel(rule: string): string {
-	return rule === 'dv_strip' ? 'Remove Dolby Vision' : rule;
+	return Object.hasOwn(RULE_LABELS, rule) ? RULE_LABELS[rule] : rule;
 }

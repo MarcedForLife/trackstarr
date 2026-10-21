@@ -875,6 +875,51 @@ test('multiple variants are optional and make one title with a folder per instan
 	expect((await get<Shelf>('/api/library')).titles).toHaveLength(opening.titles.length);
 });
 
+test('audio sourcing imports what a variant has and names what none has', async () => {
+	await post('/api/demo/scenario', { name: 'audio-sourcing' });
+	const metropolis = await get<TitleDetail>('/api/library/title?id=arr:radarr:21');
+	expect(metropolis.folders.map((folder) => folder.source)).toEqual(['Radarr', 'Radarr 4k']);
+	const target = metropolis.files.find((file) => !file.path.includes('/media/4k/'))!;
+	const restoration = metropolis.files.find((file) => file.path.includes('/media/4k/'))!;
+	expect(target.status).toBe('pending');
+	expect(target.sourcing).toEqual({
+		completeness: 'incomplete',
+		requirements: [
+			{ lang: 'ger', state: 'satisfied' },
+			expect.objectContaining({
+				lang: 'eng',
+				state: 'ready',
+				track: expect.objectContaining({ path: restoration.path, index: 2, source: 'Radarr 4k' }),
+				mapping: { scale: '25/24', offset_us: 1_250_000 },
+				measured: true
+			})
+		]
+	});
+	expect(target.why.rules).toContain('source_audio');
+	const imported = target.planned.find((track) => track.source?.input_index === 1);
+	expect(imported).toMatchObject({ lang: 'eng', codec: 'aac', channels: 2 });
+	expect(restoration.sourcing?.completeness).toBe('complete');
+
+	const general = await get<TitleDetail>('/api/library/title?id=arr:radarr:26');
+	expect(general.files[0].status).toBe('conform');
+	expect(general.files[0].sourcing?.requirements).toEqual([
+		{ lang: 'eng', state: 'missing_source' }
+	]);
+
+	// The rewrite takes the import, and the file has the language from then on.
+	rewrite(currentState(), currentState().byPath.get(target.path)!, Date.now());
+	const after = await get<TitleDetail>('/api/library/title?id=arr:radarr:21');
+	const rewritten = after.files.find((file) => file.path === target.path)!;
+	expect(
+		rewritten.tracks.find((track) => track.lang === 'eng' && !track.flags?.includes('commentary'))
+	).toMatchObject({ flags: ['imported'] });
+	expect(rewritten.sourcing?.completeness).toBe('complete');
+
+	await post('/api/demo/scenario', { name: 'full' });
+	const opening = await get<TitleDetail>('/api/library/title?id=arr:radarr:21');
+	expect(opening.files.every((file) => !file.sourcing)).toBe(true);
+});
+
 test('large series pages whole episodes and every scenario resets its predecessor', async () => {
 	const opening = await get<Shelf>('/api/library');
 	await post('/api/demo/scenario', { name: 'multiple-variants' });

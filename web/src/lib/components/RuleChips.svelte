@@ -22,6 +22,7 @@
 	// it had. The plus and minus are the pair `shrank` already uses.
 	const CHANGE_MARKS: [string, string][] = [
 		['add', '+'],
+		['import', '+'],
 		['drop', '−'],
 		['clear', '−'],
 		['regenerate', '~'],

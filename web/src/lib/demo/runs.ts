@@ -26,6 +26,7 @@ import {
 	VERSION
 } from './util';
 import {
+	addSourcing,
 	addVariants,
 	addLargeSeries,
 	bytesOf,
@@ -1033,6 +1034,11 @@ export const SCENARIOS: Record<
 		const fresh = poseOpening(state);
 		abort(fresh, now);
 		return { status: 'posed', titles: addVariants(fresh, now) };
+	},
+	'audio-sourcing': (state, now) => {
+		const fresh = poseOpening(state);
+		abort(fresh, now);
+		return { status: 'posed', titles: addSourcing(fresh, now) };
 	},
 	'large-series': (state, now) => {
 		const fresh = poseOpening(state);

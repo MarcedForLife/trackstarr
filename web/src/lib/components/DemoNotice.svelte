@@ -44,7 +44,7 @@
 	const imported = (titles: string[]) =>
 		`Imported ${titles.join(' and ')} · 4K, surround audio, no stereo.`;
 
-	// In the order they read as a tour: the opening board, then the three that
+	// In the order they read as a tour: the opening board, then the four that
 	// pose something it cannot show on its own.
 	const BOARDS = [
 		{
@@ -52,6 +52,12 @@
 			label: 'Multiple variants',
 			said: (titles: string[]) =>
 				`${titles.join(' and ')} held by a 4K instance as well. Open one to compare the files.`
+		},
+		{
+			name: 'audio-sourcing',
+			label: 'Audio sourcing',
+			said: (titles: string[]) =>
+				`Missing audio is set to Always, and a 4K copy of ${titles.join(' and ')} has the English audio its 1080p lacks.`
 		},
 		{
 			name: 'large-series',

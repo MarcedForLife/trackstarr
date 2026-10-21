@@ -129,6 +129,44 @@ EPISODE_WAS = [
     track(2, "subtitle", "mov_text", lang="eng", flags=["forced"]),
 ]
 EPISODE_ADDED = [2]
+#: Where the source_audio rule left each episode: the first has no French and
+#: its one source could not be timed, the second has a measured import ready.
+EPISODE_ONE_SOURCING = {
+    "completeness": "incomplete",
+    "requirements": [
+        {"lang": "eng", "state": "satisfied"},
+        {
+            "lang": "fre",
+            "state": "needs_review",
+            "reason": "part of the source contradicts the timing",
+        },
+    ],
+}
+EPISODE_TWO_SOURCE = f"{TV}/4K/Severance/Season 01/Severance - S01E02 - Half Loop.mkv"
+EPISODE_TWO_IMPORT = (
+    f"import {EPISODE_TWO_SOURCE} stream 2 (fre, 6ch, Français), "
+    "offset +1.250000s, scale 25/24, encode eac3 640k after lossless preparation"
+)
+EPISODE_TWO_SOURCING = {
+    "completeness": "incomplete",
+    "requirements": [
+        {"lang": "eng", "state": "satisfied"},
+        {
+            "lang": "fre",
+            "state": "ready",
+            "track": {
+                "path": EPISODE_TWO_SOURCE,
+                "instance_id": "sonarr",
+                "index": 2,
+                "codec": "eac3",
+                "channels": 6,
+                "title": "Français",
+            },
+            "mapping": {"scale": "25/24", "offset_us": 1_250_000},
+            "measured": True,
+        },
+    ],
+}
 
 
 class Clock:
@@ -278,7 +316,13 @@ def seed_library(monkeypatch, clock: Clock) -> None:
         cache,
         EPISODE_ONE,
         episode_one,
-        Verdict(Status.CONFORM, "", tracks=EPISODE_TRACKS, duration=3420.0),
+        Verdict(
+            Status.CONFORM,
+            "",
+            tracks=EPISODE_TRACKS,
+            duration=3420.0,
+            sourcing=EPISODE_ONE_SOURCING,
+        ),
     )
     # Passed because we rewrote it, which is the one thing the verdict cannot
     # say. The same rewrite the history's "modified" line records, which is
@@ -305,12 +349,16 @@ def seed_library(monkeypatch, clock: Clock) -> None:
             tracks=EPISODE_TRACKS[:2] + EPISODE_TRACKS[3:],
             why={
                 "failed": "ffmpeg exited 1: Conversion failed!",
-                "reasons": ["add 2.0 downmix (from track 1)"],
-                "rules": ["downmix"],
-                "changes": [{"rule": "downmix", "text": "add 2.0 downmix (from track 1)"}],
+                "reasons": ["add 2.0 downmix (from track 1)", EPISODE_TWO_IMPORT],
+                "rules": ["downmix", "source_audio"],
+                "changes": [
+                    {"rule": "downmix", "text": "add 2.0 downmix (from track 1)"},
+                    {"rule": "source_audio", "text": EPISODE_TWO_IMPORT},
+                ],
             },
             duration=3305.0,
             failures=2,
+            sourcing=EPISODE_TWO_SOURCING,
         ),
     )
     seed_verdict(

@@ -9,7 +9,9 @@
 	import { ago } from '$lib/events';
 	import { named, titled } from '$lib/format';
 	import { readOnlyNote, size, verdictLabel, verdictText, type LibraryFile } from '$lib/library';
+	import { languageNames, readLanguageNames } from '$lib/languages.svelte';
 	import { fileState, type TitleWork } from '$lib/queue';
+	import { missingAudio } from '$lib/sourcing';
 
 	// One file of a title: what it is and where the queue has it, over the
 	// account every panel shows.
@@ -64,6 +66,12 @@
 				: 'text-dim'
 			: (verdictText[file.status] ?? 'text-dim')
 	);
+	// What a passing file still lacks, beside the verdict it qualifies. Read
+	// here as well as in the account, which a folded episode has not mounted.
+	const missing = $derived(standing.label ? '' : missingAudio(file, languageNames()));
+	$effect(() => {
+		if (file.sourcing && file.sourcing.completeness !== 'complete') readLanguageNames();
+	});
 
 	// Films start open, episodes folded. Folding cancels an open tag form, or the
 	// sheet would hold Escape for a hidden one.
@@ -154,6 +162,10 @@
 	<p class="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 pl-[18px] text-[11.5px] text-faint">
 		{#if manyFiles}
 			<span class={`font-semibold ${tone}`}>{led}</span>
+			{#if missing}
+				<span aria-hidden="true">·</span>
+				<span class="text-dim">{missing}</span>
+			{/if}
 			{#if standing.place}
 				<QueuePlace place={standing.place} />
 				{#if standing.waiting.length > 1}

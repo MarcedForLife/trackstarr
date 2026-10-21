@@ -696,6 +696,8 @@ def test_publication_finishes_before_import_accounting_retires_run(clean_registr
 def test_duplicate_delivery_stays_guarded_until_scheduler_releases_task(
     clean_registry, monkeypatch, cancelled
 ):
+    """A delivery for a path in flight is held, then queued once afterwards
+    however many arrived meanwhile."""
     record = lifecycle.open_run("delivery", runs.IMPORT, filling=True)
     job = Job("/file.mkv", run="delivery")
     monkeypatch.setattr(jobs, "_handle", lambda *a, **kw: None)
@@ -724,10 +726,10 @@ def test_duplicate_delivery_stays_guarded_until_scheduler_releases_task(
             release.set()
         execution.result(timeout=3)
     assert task.future.settled.is_set()
-    assert not work.scheduler.tasks
-    assert jobs.enqueue(job)
+    assert list(work.scheduler.tasks) == [("delivery", "/file.mkv")]
     assert record.total == 2
     assert not jobs.enqueue(job)
+    assert jobs._reruns == {"/file.mkv": job}
 
 
 def test_a_skipped_delivery_waiting_for_an_edit_settles_without_reading(imported, monkeypatch):
@@ -809,6 +811,8 @@ def test_import_checks_bypass_sweeps_and_rewrites_respect_manual_order(
         assert record.done == 0
         assert record.counts == {}
         assert not jobs.enqueue(job), "dedup must span the phase handoff"
+        # Held for one rerun after the rewrite, which this test does not follow.
+        assert jobs._reruns.pop(imported) == job
         rewrite = scheduler.tasks[("delivery", imported)]
         assert rewrite.lane == "work" and not rewrite.priority
         assert (rewrite.rank < 0) == (curation != "reordered")

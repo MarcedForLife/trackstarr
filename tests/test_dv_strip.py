@@ -302,7 +302,7 @@ def staged_plan(tmp_path, monkeypatch):
     set_rules(dv_strip="always")
     plan = plan_for(dv_video(), audio(1, 2), path=str(source))
     monkeypatch.setattr(executor, "dv_filter_available", lambda: True)
-    monkeypatch.setattr(executor, "_run_ffmpeg", lambda *a: (0, ""))
+    monkeypatch.setattr(executor, "run_ffmpeg", lambda *a: (0, ""))
     monkeypatch.setattr(
         executor, "probe", lambda path: probe_data(video(codec="hevc"), audio(1, 2))
     )

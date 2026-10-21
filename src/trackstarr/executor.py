@@ -365,7 +365,7 @@ def _prepare_track(
         if shutil.disk_usage(os.path.dirname(dest)).free < needed * 1.05 + 1024 * 1024:
             raise OSError(errno.ENOSPC, "not enough space for audio preparation")
         args += ["-avoid_negative_ts", "disabled", "-f", "matroska", dest]
-        code, stderr = _run_ffmpeg(args, cancel=cancel)
+        code, stderr = run_ffmpeg(args, cancel=cancel)
         if cancel.stopped() or code < 0:
             raise InterruptedError("audio preparation was stopped")
         if code:
@@ -393,23 +393,31 @@ def _prepare_inputs(
     if not inputs:
         yield ()
         return
+    with job_workspace("audio") as workspace:
+        prepared = tuple(
+            _prepare_track(source, os.path.join(workspace, f"{index}.mka"), policy, cancel)
+            for index, source in enumerate(inputs)
+        )
+        for source in inputs:
+            check_revision(source.revision)
+        if cancel.stopped():
+            raise InterruptedError("audio preparation was stopped")
+        yield prepared
+
+
+@contextlib.contextmanager
+def job_workspace(kind: str) -> Iterator[str]:
+    """A private directory in WORK_DIR, removed on the way out. Orphan cleanup
+    leaves it alone while it is registered here."""
     work_dir = config.current().WORK_DIR
     os.makedirs(work_dir, exist_ok=True)
     with tempfile.TemporaryDirectory(
-        prefix=f"{TEMP_PREFIX}audio-", suffix=TEMP_SUFFIX, dir=work_dir
+        prefix=f"{TEMP_PREFIX}{kind}-", suffix=TEMP_SUFFIX, dir=work_dir
     ) as workspace:
         with _running_lock:
             _preparing.add(workspace)
         try:
-            prepared = tuple(
-                _prepare_track(source, os.path.join(workspace, f"{index}.mka"), policy, cancel)
-                for index, source in enumerate(inputs)
-            )
-            for source in inputs:
-                check_revision(source.revision)
-            if cancel.stopped():
-                raise InterruptedError("audio preparation was stopped")
-            yield prepared
+            yield workspace
         finally:
             with _running_lock:
                 _preparing.remove(workspace)
@@ -484,8 +492,11 @@ def _watch_progress(readout: IO[str], on_progress: ProgressCallback) -> None:
                 log.debug("ignoring progress line %r", line.strip(), exc_info=True)
 
 
-def _run_ffmpeg(
-    args: list[str], on_progress: ProgressCallback | None = None, cancel: Cancel | None = None
+def run_ffmpeg(
+    args: list[str],
+    on_progress: ProgressCallback | None = None,
+    cancel: Cancel | None = None,
+    cwd: str | None = None,
 ) -> tuple[int, str]:
     """Run ffmpeg to completion; its exit code and stderr.
 
@@ -493,7 +504,8 @@ def _run_ffmpeg(
     Raises TimeoutExpired like run() does, having killed the process.
     ``on_progress`` gets the readout down a pipe of its own, leaving
     ``communicate`` the standard streams. ``cancel`` names the work this call
-    is for, which is how an abort and a skip each find their process.
+    is for, which is how an abort and a skip each find their process. ``cwd``
+    lets a filter write a bare file name rather than an escaped path.
     """
     cancel = cancel or Cancel()
     read_fd = write_fd = -1
@@ -514,6 +526,7 @@ def _run_ffmpeg(
             text=True,
             start_new_session=True,
             pass_fds=() if write_fd < 0 else (write_fd,),
+            cwd=cwd,
         )
         if on_progress is not None:
             # Close our copy of the writing end, or the reader never sees EOF.
@@ -827,7 +840,7 @@ def _decode_audio_samples(
             "null",
             "-",
         ]
-        code, stderr = _run_ffmpeg(args, cancel=cancel)
+        code, stderr = run_ffmpeg(args, cancel=cancel)
         if cancel.stopped() or code < 0:
             raise InterruptedError("audio verification was stopped")
         if code or not re.search(r"nb_samples:[1-9]\d*", stderr):
@@ -944,7 +957,7 @@ def apply_plan(
                 raise OSError(errno.ENOSPC, "not enough space for sourced rendering")
         args = _sourced_args(plan, tmp, prepared) if prepared else ffmpeg_args(plan, tmp)
         log.info("ffmpeg %s", " ".join(args[1:]))
-        code, stderr = _run_ffmpeg(args, on_progress, cancel)
+        code, stderr = run_ffmpeg(args, on_progress, cancel)
         if on_encoded is not None:
             on_encoded()
         if code != 0 and (code < 0 or cancel.stopped()):
@@ -1099,7 +1112,7 @@ def drop_staged(path: str, force: bool = False) -> bool:
     try:
         if not force and time.time() - os.stat(path).st_mtime <= timeout:
             return False
-        if os.path.basename(path).startswith(f"{TEMP_PREFIX}audio-") and os.path.isdir(path):
+        if os.path.isdir(path):
             shutil.rmtree(path)
         else:
             os.remove(path)

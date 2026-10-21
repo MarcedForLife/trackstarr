@@ -18,6 +18,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from . import (
+    audio_sources,
     config,
     cron,
     estimate,
@@ -26,12 +27,13 @@ from . import (
     notify,
     rewrites,
     runs,
+    sourcing,
     sweep_cache,
     work,
 )
 from .arr import LibraryIndex, all_arrs, match_path, path_index
 from .executor import Cancel, drop_staged, is_staged_file
-from .policy import Policy
+from .policy import ALWAYS, Policy
 from .processing import (
     Job,
     ProcessResult,
@@ -222,7 +224,10 @@ def _judge(
     try:
         job = Job.from_match(path, match_path(index, path), run=run)
         key = cache_key(path, job.lang)
-        if not force and (verdict := cache.lookup(path, key)) is not None:
+        verdict = None if force else cache.lookup(path, key)
+        if verdict is not None and _sourcing_stale(path, verdict):
+            verdict = None
+        if verdict is not None:
             # A cached pending verdict only stands in while reporting; an
             # applying sweep must rewrite the file.
             if verdict.status not in RETRY_STATUSES:
@@ -276,6 +281,24 @@ def _judge(
     except Exception as err:
         log.exception("unhandled error judging %s", path)
         return Judged(Job(path), None, Verdict(Status.FAILED), detail=str(err))
+
+
+def _sourcing_stale(path: str, verdict: Verdict) -> bool:
+    """Whether a stored verdict still waiting on audio from another variant
+    needs judging again although the file is unchanged: the title's variants
+    have moved, or a rewrite left a measurement to retry and nothing queued it."""
+    projection = verdict.sourcing
+    if not sourcing.open_requirements(projection):
+        return False
+    # Only always measures on its own. Under alongside the owed measurement
+    # waits for another rule's rewrite, which a settled verdict does not have.
+    if (
+        verdict.status is not Status.PENDING
+        and "source_audio" in Policy.from_config().rules_in(ALWAYS)
+        and sourcing.awaits_measurement(projection)
+    ):
+        return True
+    return audio_sources.changed(path, projection)
 
 
 @dataclass(frozen=True)

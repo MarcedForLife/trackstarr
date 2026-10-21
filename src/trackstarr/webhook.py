@@ -26,7 +26,19 @@ import urllib.parse
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler
 
-from . import api, assets, auth, events, jobs, lifecycle, runs, sessions, sweep, users
+from . import (
+    api,
+    assets,
+    audio_sources,
+    auth,
+    events,
+    jobs,
+    lifecycle,
+    runs,
+    sessions,
+    sweep,
+    users,
+)
 from .arr import AUTH_HEADER, WEBHOOK_PATH, Arr, all_arrs, original_of
 from .processing import Job
 
@@ -354,6 +366,9 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as err:
             self.reply(400, str(err))
             return
+        if delivered or removed is not None or renamed:
+            # The *arr's file lists have moved, so variants are listed afresh.
+            audio_sources.forget()
         if delivered:
             # Opened before the first file and sealed after the last, so a
             # season import is one run rather than one per file.

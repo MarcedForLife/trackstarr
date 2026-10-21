@@ -18,9 +18,18 @@ from conftest import (
 )
 from trackstarr import __version__, config, events, jobs, policy, processing
 from trackstarr.executor import Outcome
-from trackstarr.planner import OutStream, Plan, StreamRef, new_plan, plan_from_probe
+from trackstarr.inventory import Variant
+from trackstarr.planner import (
+    FileRevision,
+    OutStream,
+    Plan,
+    StreamRef,
+    new_plan,
+    plan_from_probe,
+)
 from trackstarr.policy import Policy
 from trackstarr.processing import Job
+from trackstarr.sourcing import ANALYSIS_REQUIRED, Resolution, SourcingAssessment, TrackRef
 from trackstarr.sweep import sweep
 
 
@@ -157,6 +166,20 @@ def test_the_rules_a_plan_can_name_are_exactly_the_vocabulary():
         ]
     }
     named |= _named("/dv.mkv", dv, audio(1, 2))
+    # An import still to be timed, the one sourcing change planned without a
+    # second file to read.
+    set_rules(source_audio="always")
+    local = plan_from_probe(new_plan("/v.mkv", "eng"), probe_data(video(0), audio(1, 2)))
+    source = Variant("/other/v.mkv", "radarr-4k", 1, 2, ())
+    waiting = Resolution(
+        "fre",
+        ANALYSIS_REQUIRED,
+        track=TrackRef(source, FileRevision("/other/v.mkv", 1, 2, 3, 4, 5), {"index": 1}),
+    )
+    sourced = processing._sourced(
+        Job("/v.mkv"), local.policy, local, SourcingAssessment((waiting,))
+    )
+    named |= sourced.rules
     assert named == policy.RULE_NAMES
 
 

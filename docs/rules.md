@@ -11,6 +11,7 @@ Each `RULE_<NAME>` accepts `always`, `alongside` or `never`:
 | Rule            | Default     | Action                                                                                                |
 | --------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
 | `languages`     | `always`    | Remove audio and subtitles in languages absent from `LANGUAGES`. Untagged tracks stay.                |
+| `source_audio`  | `never`     | Copy main audio in a missing `LANGUAGES` language from another variant. See [audio sourcing](#audio-sourcing). |
 | `tag_original`  | `never`     | Tag untagged audio with the title's original language when it can be identified safely.               |
 | `commentary`    | `never`     | Remove commentary, described audio and isolated scores. These are never downmix sources.              |
 | `sdh`           | `alongside` | Remove SDH subtitles when a full subtitle remains in the same language. Keep forced subtitles.        |
@@ -81,6 +82,36 @@ Unlisted languages follow `RULE_LANGUAGES`. Untagged tracks stay. If a requested
 layout cannot be created in a downmix language, Trackstarr can use another kept
 language, preferring `LANGUAGES` order. This fallback is removed when a requested
 language can supply the layout.
+
+## Audio sourcing
+
+`RULE_SOURCE_AUDIO` fills a missing `LANGUAGES` language from another variant of
+the same film or episode, such as the copy in a 4K connection. It needs no
+other setting. With `always` a missing language is a reason to rewrite, with
+`alongside` it is added only when another rule already rewrites the file.
+
+Variants are the files Radarr and Sonarr list, matched by TMDB or TVDB episode
+id, never by file name. Connections are tried in their configured order and the
+first variant with the language supplies it, native tracks before ones
+Trackstarr imported. Commentary, described audio and removed layouts never
+count. A connection marked read-only still supplies audio. Named editions that
+differ, files several connections share and multi-episode files are left for
+you to decide.
+
+When both videos start and end together at the same frame rate, audio copies
+unchanged. Otherwise Trackstarr compares the pictures of the two files to
+measure the offset and any speed change between 23.976, 24 and 25 fps. Measuring
+decodes both files, takes a rewrite slot and can take as long as an encode. It
+only runs when the file may be rewritten, so `REWRITE_MODE=report` stops at
+"timing to be measured". A cut, an ambiguous match or a cropped picture is left
+for review rather than guessed. `trackstarr align TARGET SOURCE` measures one
+pair by hand and prints the matching `fix` arguments.
+
+Imports keep the target's video, chapters and other tracks. Copied audio keeps
+its codec unless a speed change or trim needs it re-encoded with the
+`AUDIO_LAYOUTS` encoder for its channel count. Imported tracks carry a
+`TRACKSTARR_IMPORTED` tag. MP4 targets need `RULE_REMUX`, since imports are
+written to MKV. Trackstarr never downloads a missing source.
 
 ## Regeneration
 

@@ -65,7 +65,8 @@ RULES = {
     "source_audio": Rule(
         NEVER,
         "Copy main audio in a missing LANGUAGES language from another variant of "
-        "the title. Automatic sourcing is not yet available.",
+        "the title, timed to this file. Variants with matching timelines copy as "
+        "they are, others are measured by picture first.",
     ),
     "tag_original": Rule(
         NEVER,
@@ -121,8 +122,7 @@ DOWNMIX_RULE, DROP_LAYOUTS_RULE = LIST_RULES
 
 #: Every name a plan may put in Plan.rules or Plan.incidental_rules, including
 #: layout changes that have no RULE_<NAME> setting.
-#: Sourcing assesses requirements but does not emit rewrite changes yet.
-RULE_NAMES = (frozenset(RULES) - {"source_audio"}) | set(LIST_RULES)
+RULE_NAMES = frozenset(RULES) | set(LIST_RULES)
 
 #: How far the regenerate rule reaches. errors() refuses other values.
 REGENERATE_SCOPES = ("generated", "all")
